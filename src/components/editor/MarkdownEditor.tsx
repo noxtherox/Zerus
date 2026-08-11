@@ -38,7 +38,7 @@ import {
   Quote,
   Strikethrough,
   Table2,
-} from "lucide-react";
+} from "@/lib/icons";
 import { insertMarkdownTable } from "./markdown-table";
 import { TableSizeDialog } from "./TableSizeDialog";
 import { openExternalUrl } from "@/lib/external-links";

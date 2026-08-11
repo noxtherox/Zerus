@@ -1,15 +1,15 @@
-# Hermes Instructions: Create Linked Grimoire Notes
+# Hermes Instructions: Create Linked Zerus Notes
 
 ## Objective
 
-Create Markdown notes in my Grimoire vault with valid relationships between them. The notes must appear correctly in Grimoire, their relation properties must resolve to real notes, and their visible wikilinks and backlinks must work.
+Create Markdown notes in my Zerus vault with valid relationships between them. The notes must appear correctly in Zerus, their relation properties must resolve to real notes, and their visible wikilinks and backlinks must work.
 
 ## Vault boundary
 
 Work only inside this vault:
 
 ```text
-<REPLACE WITH THE ABSOLUTE PATH TO MY GRIMOIRE VAULT>
+<REPLACE WITH THE ABSOLUTE PATH TO MY ZERUS VAULT>
 ```
 
 Do not create, move, rename, or modify files outside that vault. Do not modify files inside `.grimoire`, `.trash`, or `assets` unless I explicitly request it.
@@ -23,9 +23,9 @@ Do not create, move, rename, or modify files outside that vault. Do not modify f
 5. Build the complete relationship list before writing files.
 6. Preserve existing frontmatter and user-written content when updating a note.
 
-## Grimoire title rules
+## Zerus title rules
 
-Grimoire uses the first non-empty line after YAML frontmatter as the note title. For every note, use this format:
+Zerus uses the first non-empty line after YAML frontmatter as the note title. For every note, use this format:
 
 ```markdown
 # Exact Note Title
@@ -57,7 +57,7 @@ Do not use:
 
 ## Type and folder rules
 
-Folders represent Grimoire note types. Put each note in the type folder requested by the user.
+Folders represent Zerus note types. Put each note in the type folder requested by the user.
 
 Example:
 
@@ -71,7 +71,7 @@ Do not invent a new folder hierarchy when the requested or established type alre
 
 ## Relation-property rules
 
-Use an existing Grimoire Relation property named `Related`, unless the user specifies another existing relation property.
+Use an existing Zerus Relation property named `Related`, unless the user specifies another existing relation property.
 
 Relation values in YAML are plain note titles. Do not wrap them in `[[wikilink brackets]]`.
 
@@ -94,7 +94,7 @@ Related:
 ---
 ```
 
-Important: `Related` must already be configured in Grimoire as a **Relation** property for the note's top-level type. If it is missing or configured as another property type, do not edit `.grimoire/properties.json` automatically. Report the issue and explain which top-level type needs a `Related` Relation property. Continue using body wikilinks when doing so is consistent with the user's request.
+Important: `Related` must already be configured in Zerus as a **Relation** property for the note's top-level type. If it is missing or configured as another property type, do not edit `.grimoire/properties.json` automatically. Report the issue and explain which top-level type needs a `Related` Relation property. Continue using body wikilinks when doing so is consistent with the user's request.
 
 ## Linking rules
 
@@ -110,7 +110,7 @@ If `Architecture Decision` relates to `Project Polaris`:
 - `Architecture Decision` must relate and link to `Project Polaris`.
 - `Project Polaris` must relate and link back to `Architecture Decision`.
 
-A one-way link will already create a backlink in Grimoire. Reciprocal relationships are required here so both notes display an outgoing relation and a visible link to the other note.
+A one-way link will already create a backlink in Zerus. Reciprocal relationships are required here so both notes display an outgoing relation and a visible link to the other note.
 
 ## Creation order
 
@@ -206,7 +206,7 @@ Before reporting completion, verify every affected note:
 
 - The file is inside the specified vault.
 - The file has a `.md` extension.
-- Its folder matches the intended Grimoire type.
+- Its folder matches the intended Zerus type.
 - The first non-empty body line is exactly `# Exact Note Title`.
 - Its filename and title are consistent.
 - Its title is unique across the vault.

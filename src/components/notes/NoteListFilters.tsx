@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Archive, CalendarDays, FileType, Filter, Tag, X } from "lucide-react";
+import { Archive, CalendarDays, FileType, Filter, Tag, X } from "@/lib/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

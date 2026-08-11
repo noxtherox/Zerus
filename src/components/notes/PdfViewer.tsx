@@ -7,7 +7,7 @@ import {
   Minimize,
   ZoomIn,
   ZoomOut,
-} from "lucide-react";
+} from "@/lib/icons";
 import {
   GlobalWorkerOptions,
   getDocument,
@@ -69,7 +69,7 @@ function PdfPage({
       return renderTask.promise;
     }).catch((error) => {
       if (!cancelled && error?.name !== "RenderingCancelledException") {
-        console.error("Grimoire: failed to render PDF page", error);
+        console.error("Zerus: failed to render PDF page", error);
       }
     });
     return () => {

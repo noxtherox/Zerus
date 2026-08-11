@@ -27,7 +27,7 @@ export interface FileHubReference {
   /** Vault- or base-location-relative path, always using forward slashes. */
   path?: string;
   locationId?: string;
-  /** True only for a file Grimoire explicitly copied into the vault. */
+  /** True only for a file Zerus explicitly copied into the vault. */
   managed: boolean;
 }
 

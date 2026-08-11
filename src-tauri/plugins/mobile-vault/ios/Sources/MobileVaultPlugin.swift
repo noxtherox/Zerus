@@ -151,7 +151,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate {
       let values = try url.resourceValues(forKeys: [.isDirectoryKey])
       guard values.isDirectory == true else {
         stopActiveAccess()
-        invoke.reject("Please select a folder for your Grimoire vault")
+        invoke.reject("Please select a folder for your Zerus vault")
         return
       }
       try saveBookmark(for: url)

@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build/launch/drive recipe for verifying Grimoire changes in a real browser.
+description: Build/launch/drive recipe for verifying Zerus changes in a real browser.
 ---
 
-# Verifying Grimoire
+# Verifying Zerus
 
 Vite + React notes app with two vault backends: `DesktopVault` (Tauri fs) and
 `BrowserVault` (localStorage, auto-selected when not running under Tauri).

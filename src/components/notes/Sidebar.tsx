@@ -31,9 +31,9 @@ import {
   Settings,
   Smile,
   Trash2,
-} from "lucide-react";
+} from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import {
   DEFAULT_TYPE,
   MAX_TYPE_DEPTH,
@@ -83,7 +83,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeSettingsDialog } from "./ThemeSettingsDialog";
 import { TypeIcon } from "./TypeIcon";
-import { EmojiPickerDialog } from "./EmojiPickerDialog";
+import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
 
@@ -592,11 +592,11 @@ export function Sidebar({
     <div className="flex h-full flex-col bg-grim-sidebar pt-4">
       <div className="flex items-center justify-between px-4 pb-3">
         <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-grim-sidebar-fg/90">
-          <GrimoireLogo
+          <ZerusLogo
             alt=""
             className="h-6 w-6 shrink-0 rounded-sm"
           />
-          <span className="truncate">Grimoire</span>
+          <span className="truncate">Zerus</span>
         </h1>
         <button
           type="button"
@@ -700,9 +700,10 @@ export function Sidebar({
         onDefaultNoteTypeChange={onDefaultNoteTypeChange}
         onHideSubtypeNotesChange={onHideSubtypeNotesChange}
       />
-      <EmojiPickerDialog
+      <IconPickerDialog
         open={iconTarget !== null}
         typeName={iconTarget?.name ?? ""}
+        value={iconTarget ? typeIcons[typeKey(iconTarget.path)] : undefined}
         onOpenChange={(open) => {
           if (!open) setIconTarget(null);
         }}

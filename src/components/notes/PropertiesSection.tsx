@@ -12,7 +12,7 @@ import {
   SlidersHorizontal,
   Type as TypeIcon,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -64,7 +64,7 @@ import {
 } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
 import { FILE_HUB_PROPERTY_KEYS } from "@/lib/file-hubs";
-import { isReservedGrimoireProperty } from "@/lib/grimoire-metadata";
+import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 import { hasRelationTo } from "@/lib/links";
 import {
   normalizeExternalUrl,
@@ -633,7 +633,7 @@ function DefForm({
   const clean = sanitizePropertyName(name);
   const canSubmit = Boolean(
     clean &&
-      !isReservedGrimoireProperty(clean) &&
+      !isReservedZerusProperty(clean) &&
       (type !== "list" || listOptions.length > 0),
   );
 
@@ -782,7 +782,7 @@ export function PropertiesSection({
   const effectiveEntries = effectivePropertyDefinitions(
     typePath,
     schemas,
-  ).filter(({ def }) => !isReservedGrimoireProperty(def.name));
+  ).filter(({ def }) => !isReservedZerusProperty(def.name));
   const effective = effectiveEntries.map(({ def }) => def);
   const values = getNoteProperties(note.content);
   const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
@@ -793,7 +793,7 @@ export function PropertiesSection({
     ([key]) =>
       !covered.has(key.toLowerCase()) &&
       !FILE_HUB_PROPERTY_KEYS.has(key.toLowerCase()) &&
-      !isReservedGrimoireProperty(key),
+      !isReservedZerusProperty(key),
   );
 
   const valueFor = (name: string): PropertyValue | undefined => {

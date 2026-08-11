@@ -5,9 +5,10 @@ import {
   FileSearch,
   FolderSearch,
   MapPin,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { PdfViewer } from "@/components/notes/PdfViewer";
+import { fileManagerName } from "@/lib/desktop-platform";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import type { Note } from "@/lib/note-utils";
 import {
@@ -89,7 +90,14 @@ export function FileHubPanel({
             <Button size="sm" className="h-8 gap-1.5 text-xs" disabled={!status?.exists} onClick={() => void openFileHub(note.id)}>
               <ExternalLink size={13} /> Open in Default App
             </Button>
-            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={!status?.exists} onClick={() => void revealFileHub(note.id)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              title={`Reveal in ${fileManagerName}`}
+              disabled={!status?.exists}
+              onClick={() => void revealFileHub(note.id)}
+            >
               <FolderSearch size={13} /> Reveal
             </Button>
             {status?.resolved.missingMapping && reference.locationId && (

@@ -22,13 +22,13 @@ export function GrimoireLogo({
         {...props}
         src={getLogoSrc("graphite")}
         alt=""
-        className="grimoire-logo-light h-full w-full"
+        className="brand-logo-light h-full w-full"
       />
       <img
         {...props}
         src={getLogoSrc("white")}
         alt=""
-        className="grimoire-logo-dark h-full w-full"
+        className="brand-logo-dark h-full w-full"
       />
     </span>
   );

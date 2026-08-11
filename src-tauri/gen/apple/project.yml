@@ -1,6 +1,6 @@
 name: app
 options:
-  bundleIdPrefix: com.grimoire.notes
+  bundleIdPrefix: com.zerus.notes
   deploymentTarget:
     iOS: 16.0
 fileGroups: [../../src]
@@ -10,8 +10,8 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Grimoire
-      PRODUCT_BUNDLE_IDENTIFIER: com.grimoire.notes
+      PRODUCT_NAME: Zerus
+      PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes
       ENABLE_USER_SCRIPT_SANDBOXING: NO
 targetTemplates:
   app:

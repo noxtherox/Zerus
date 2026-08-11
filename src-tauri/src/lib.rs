@@ -1,12 +1,17 @@
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
-use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
+
+#[cfg(target_os = "macos")]
+mod mlx_ai_native;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,9 +25,9 @@ struct CliInstallStatus {
 fn cli_target_path() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Could not locate your home folder".to_string())?;
     #[cfg(target_os = "windows")]
-    let path = home.join("AppData/Local/Grimoire/bin/grimoire.exe");
+    let path = home.join("AppData/Local/Zerus/bin/zerus.exe");
     #[cfg(not(target_os = "windows"))]
-    let path = home.join(".local/bin/grimoire");
+    let path = home.join(".local/bin/zerus");
     Ok(path)
 }
 
@@ -53,9 +58,9 @@ fn cli_status() -> Result<CliInstallStatus, String> {
 fn cli_install(app: tauri::AppHandle) -> Result<CliInstallStatus, String> {
     let target = cli_target_path()?;
     let file_name = if cfg!(target_os = "windows") {
-        "grimoire.exe"
+        "zerus.exe"
     } else {
-        "grimoire"
+        "zerus"
     };
     let candidates = [
         app.path()
@@ -93,10 +98,10 @@ fn cli_install(app: tauri::AppHandle) -> Result<CliInstallStatus, String> {
 }
 
 fn sync_opened_vault_record(
-    registry: &mut grimoire_core::VaultRegistry,
-    manifest: &grimoire_core::VaultManifest,
+    registry: &mut zerus_core::VaultRegistry,
+    manifest: &zerus_core::VaultManifest,
     path: std::path::PathBuf,
-) -> grimoire_core::VaultRecord {
+) -> zerus_core::VaultRecord {
     let existing_name = registry
         .vaults
         .iter()
@@ -121,7 +126,7 @@ fn sync_opened_vault_record(
         }
         candidate
     });
-    let record = grimoire_core::VaultRecord {
+    let record = zerus_core::VaultRecord {
         id: manifest.vault_id,
         name,
         path,
@@ -136,33 +141,31 @@ fn sync_opened_vault_record(
 }
 
 #[tauri::command]
-fn cli_register_vault(vault_path: String) -> Result<grimoire_core::VaultRecord, String> {
+fn cli_register_vault(vault_path: String) -> Result<zerus_core::VaultRecord, String> {
     let root = Path::new(&vault_path)
         .canonicalize()
         .map_err(|error| format!("Could not resolve the opened vault: {error}"))?;
-    let manifest =
-        grimoire_core::load_or_create_manifest(&root).map_err(|error| error.to_string())?;
-    let registry_path =
-        grimoire_core::default_registry_path().map_err(|error| error.to_string())?;
+    let manifest = zerus_core::load_or_create_manifest(&root).map_err(|error| error.to_string())?;
+    let registry_path = zerus_core::default_registry_path().map_err(|error| error.to_string())?;
     let mut registry =
-        grimoire_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
+        zerus_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
     let record = sync_opened_vault_record(&mut registry, &manifest, root);
-    grimoire_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
+    zerus_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
     Ok(record)
 }
 
 fn skill_markdown(agent: &str) -> String {
     format!(
         r#"---
-name: grimoire
-description: Work safely with the user's local Grimoire Markdown vault through the Grimoire CLI.
+name: zerus
+description: Work safely with the user's local Zerus Markdown vault through the Zerus CLI.
 ---
 
-# Grimoire CLI
+# Zerus CLI
 
-Use `grimoire` for Grimoire vault notes. Always select the vault explicitly with `--vault` in automation and use `--json` for machine-readable output.
+Use `zerus` for Zerus vault notes. Always select the vault explicitly with `--vault` in automation and use `--json` for machine-readable output.
 
-Start with `grimoire vault list --json` and `grimoire doctor --json`. Read with `note list`, `note get`, and `search`. Mutate with `note create`, `note set-body`, `note append`, `note pin`, `note archive`, `note property set`, `note trash`, `note restore`, and `import`. Include `--if-revision` when changing content read earlier. Preview `migrate` before applying it. Use `history` and `undo` for recovery. Never edit `grimoire-*` properties directly.
+Start with `zerus vault list --json` and `zerus doctor --json`. Read with `note list`, `note get`, and `search`. Mutate with `note create`, `note set-body`, `note append`, `note pin`, `note archive`, `note property set`, `note trash`, `note restore`, and `import`. Include `--if-revision` when changing content read earlier. Preview `migrate` before applying it. Use `history` and `undo` for recovery. Never edit `grimoire-*` properties directly.
 
 Manage property definitions with `schema list|add|remove`; do not hand-edit `.grimoire/properties.json`. Schema type paths are exact and inherit into sub-types. Create relations with `schema add TYPE_PATH NAME relation --relation-type TARGET_TYPE [--multiple]`. Create lists with `schema add TYPE_PATH NAME list --options A,B,C [--multiple]`.
 
@@ -176,16 +179,16 @@ fn cli_install_skill(agent: String, profile: Option<String>) -> Result<String, S
     let home = dirs::home_dir().ok_or_else(|| "Could not locate your home folder".to_string())?;
     let normalized = agent.to_ascii_lowercase();
     let directory = match normalized.as_str() {
-        "codex" | "agent-skills" => home.join(".agents/skills/grimoire"),
-        "claude" => home.join(".claude/skills/grimoire"),
+        "codex" | "agent-skills" => home.join(".agents/skills/zerus"),
+        "claude" => home.join(".claude/skills/zerus"),
         "hermes" => profile
             .filter(|value| !value.trim().is_empty())
             .map(|value| {
                 home.join(".hermes/profiles")
                     .join(value)
-                    .join("skills/note-taking/grimoire")
+                    .join("skills/note-taking/zerus")
             })
-            .unwrap_or_else(|| home.join(".hermes/skills/note-taking/grimoire")),
+            .unwrap_or_else(|| home.join(".hermes/skills/note-taking/zerus")),
         _ => {
             return Err("Supported agents are Codex, Claude, Agent Skills, and Hermes".to_string())
         }
@@ -209,7 +212,7 @@ fn cli_export_skill(path: String) -> Result<String, String> {
         std::path::PathBuf::from(format!("{}.md", selected_path.to_string_lossy()))
     };
     fs::write(&target, skill_markdown("other agents"))
-        .map_err(|error| format!("Could not save the Grimoire skill: {error}"))?;
+        .map_err(|error| format!("Could not save the Zerus skill: {error}"))?;
     Ok(target.to_string_lossy().into_owned())
 }
 
@@ -229,18 +232,18 @@ fn migration_plan(
     root: &Path,
     pinned_paths: &[String],
     archived_paths: &[String],
-) -> Result<grimoire_core::VaultMetadataMigrationPlan, String> {
-    let notes = grimoire_core::scan_vault(root).map_err(|error| error.to_string())?;
+) -> Result<zerus_core::VaultMetadataMigrationPlan, String> {
+    let notes = zerus_core::scan_vault(root).map_err(|error| error.to_string())?;
     let inputs: Vec<_> = notes
         .iter()
-        .map(|note| grimoire_core::MigrationNoteInput {
+        .map(|note| zerus_core::MigrationNoteInput {
             path: &note.path,
             content: &note.content,
             legacy_pinned: pinned_paths.iter().any(|path| path == &note.path),
             legacy_archived: archived_paths.iter().any(|path| path == &note.path),
         })
         .collect();
-    Ok(grimoire_core::plan_vault_metadata_migration(&inputs))
+    Ok(zerus_core::plan_vault_metadata_migration(&inputs))
 }
 
 #[tauri::command]
@@ -284,7 +287,7 @@ fn cli_migration_apply(
         }
         let path = root.join(&note.path);
         let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
-        match grimoire_core::atomic_write(
+        match zerus_core::atomic_write(
             &path,
             &note.plan.next_content,
             Some(&note.plan.before_revision),
@@ -292,7 +295,7 @@ fn cli_migration_apply(
             Ok(_) => written.push((path, original)),
             Err(error) => {
                 for (written_path, original) in written {
-                    let _ = grimoire_core::atomic_write(&written_path, &original, None);
+                    let _ = zerus_core::atomic_write(&written_path, &original, None);
                 }
                 return Err(format!("Migration was rolled back: {error}"));
             }
@@ -328,18 +331,17 @@ fn cli_migration_apply(
         .map_err(|error| error.to_string())?;
     }
     let mut manifest =
-        grimoire_core::load_or_create_manifest(root).map_err(|error| error.to_string())?;
+        zerus_core::load_or_create_manifest(root).map_err(|error| error.to_string())?;
     manifest.metadata_version = 1;
     manifest.ids_required = true;
-    grimoire_core::write_vault_manifest(root, &manifest).map_err(|error| error.to_string())?;
-    let registry_path =
-        grimoire_core::default_registry_path().map_err(|error| error.to_string())?;
+    zerus_core::write_vault_manifest(root, &manifest).map_err(|error| error.to_string())?;
+    let registry_path = zerus_core::default_registry_path().map_err(|error| error.to_string())?;
     let mut registry =
-        grimoire_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
+        zerus_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
     registry
         .vaults
         .retain(|vault| vault.id != manifest.vault_id);
-    registry.vaults.push(grimoire_core::VaultRecord {
+    registry.vaults.push(zerus_core::VaultRecord {
         id: manifest.vault_id,
         name: root
             .file_name()
@@ -354,7 +356,7 @@ fn cli_migration_apply(
     if registry.default_vault_id.is_none() {
         registry.default_vault_id = Some(manifest.vault_id);
     }
-    grimoire_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
+    zerus_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
     Ok(CliMigrationPreview {
         notes_scanned: plan.summary.notes_scanned,
         notes_changed: plan.summary.notes_changed,
@@ -369,12 +371,779 @@ fn cli_migration_apply(
 #[derive(Default)]
 struct PendingOpenFiles(Mutex<Vec<String>>);
 
+#[derive(Default)]
+struct LocalAiRuntimeState {
+    #[cfg(target_os = "macos")]
+    native: mlx_ai_native::NativeAiRuntime,
+}
+
+#[derive(Clone)]
+struct CloudAiCredentials {
+    base_url: String,
+    api_key: String,
+}
+
+#[derive(Default)]
+struct CloudAiState(Mutex<Option<CloudAiCredentials>>);
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+const LOCAL_AI_BASE_URL: &str = "http://127.0.0.1:8080";
+#[cfg(target_os = "macos")]
+const LOCAL_AI_MODEL: &str = "Qwen3-1.7B-4bit";
+#[cfg(not(target_os = "macos"))]
+const LOCAL_AI_MODEL: &str = "gemma-4-E4B-it";
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+const LOCAL_AI_TEMPERATURE: f64 = 0.2;
+#[cfg(not(target_os = "macos"))]
+const LOCAL_AI_MODEL_FILE: &str = "gemma-4-E4B-it.litertlm";
+#[cfg(target_os = "macos")]
+const LOCAL_AI_MODEL_SIZE: u64 = 984_015_687;
+#[cfg(not(target_os = "macos"))]
+const LOCAL_AI_MODEL_SIZE: u64 = 3_659_530_240;
+const LOCAL_AI_MODEL_SHA256: &str =
+    "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0";
+const LOCAL_AI_MODEL_URL: &str = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true";
+static LOCAL_AI_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAiStatus {
+    runtime_ready: bool,
+    model_downloaded: bool,
+    model_path: String,
+    download_size_bytes: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAiDownloadProgress {
+    downloaded_bytes: u64,
+    total_bytes: u64,
+    phase: &'static str,
+}
+
+struct LocalAiDownloadGuard;
+
+impl Drop for LocalAiDownloadGuard {
+    fn drop(&mut self) {
+        LOCAL_AI_DOWNLOAD_ACTIVE.store(false, Ordering::Release);
+    }
+}
+
+fn local_ai_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|path| {
+            #[cfg(target_os = "macos")]
+            {
+                path.join("local-ai").join("mlx")
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                path.join("local-ai")
+                    .join("models")
+                    .join(LOCAL_AI_MODEL_FILE)
+            }
+        })
+        .map_err(|error| format!("Could not locate Zerus's model folder: {error}"))
+}
+
+fn local_ai_model_downloaded(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        path.join(mlx_ai_native::READY_MARKER).is_file()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        path.metadata()
+            .is_ok_and(|metadata| metadata.is_file() && metadata.len() == LOCAL_AI_MODEL_SIZE)
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAiMessage {
+    role: String,
+    content: String,
+    #[serde(default)]
+    image_paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAiChatRequest {
+    system_prompt: String,
+    messages: Vec<LocalAiMessage>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalAiChatResponse {
+    content: String,
+    reasoning: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudAiModel {
+    id: String,
+    name: String,
+}
+
+fn normalized_cloud_ai_base_url(value: &str) -> Result<String, String> {
+    let value = value.trim().trim_end_matches('/');
+    let parsed = reqwest::Url::parse(value).map_err(|_| {
+        "Enter a valid provider URL, such as https://openrouter.ai/api/v1".to_string()
+    })?;
+    let is_loopback = parsed
+        .host_str()
+        .is_some_and(|host| matches!(host, "localhost" | "127.0.0.1" | "::1"));
+    if parsed.scheme() != "https" && !(parsed.scheme() == "http" && is_loopback) {
+        return Err(
+            "Cloud provider URLs must use HTTPS (HTTP is allowed only for localhost)".to_string(),
+        );
+    }
+    if !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(
+            "The provider URL cannot contain credentials, a query, or a fragment".to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
+fn cloud_ai_request_body(
+    request: LocalAiChatRequest,
+    model: &str,
+) -> Result<serde_json::Value, String> {
+    let model = model.trim();
+    if model.is_empty() || model.len() > 200 {
+        return Err("Select a valid cloud model".to_string());
+    }
+    if request.system_prompt.trim().is_empty() {
+        return Err("The AI context is empty".to_string());
+    }
+    if request.messages.is_empty() || request.messages.len() > 64 {
+        return Err("The AI conversation has an invalid number of messages".to_string());
+    }
+
+    let mut messages = vec![serde_json::json!({
+        "role": "system",
+        "content": request.system_prompt,
+    })];
+    for message in request.messages {
+        if !matches!(message.role.as_str(), "user" | "assistant") {
+            return Err("The AI conversation contains an invalid role".to_string());
+        }
+        if message.content.len() > 50_000 {
+            return Err("An AI message is too large".to_string());
+        }
+        if !message.image_paths.is_empty() {
+            return Err("Cloud image attachments are not supported yet".to_string());
+        }
+        messages.push(serde_json::json!({
+            "role": message.role,
+            "content": message.content,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "model": model,
+        "messages": messages,
+        "temperature": LOCAL_AI_TEMPERATURE,
+        "max_tokens": 2048,
+        "stream": false,
+    }))
+}
+
+fn cloud_ai_error(payload: &serde_json::Value, fallback: &str) -> String {
+    payload
+        .pointer("/error/message")
+        .and_then(|value| value.as_str())
+        .or_else(|| payload.get("message").and_then(|value| value.as_str()))
+        .unwrap_or(fallback)
+        .to_string()
+}
+
+fn cloud_ai_credentials(
+    state: &CloudAiState,
+    base_url: &str,
+    api_key: Option<String>,
+) -> Result<CloudAiCredentials, String> {
+    let base_url = normalized_cloud_ai_base_url(base_url)?;
+    let supplied_key = api_key.unwrap_or_default().trim().to_string();
+    let mut stored = state
+        .0
+        .lock()
+        .map_err(|_| "The cloud AI configuration is unavailable")?;
+    if !supplied_key.is_empty() {
+        let credentials = CloudAiCredentials {
+            base_url,
+            api_key: supplied_key,
+        };
+        *stored = Some(credentials.clone());
+        return Ok(credentials);
+    }
+    if let Some(credentials) = stored.as_ref().filter(|value| value.base_url == base_url) {
+        return Ok(credentials.clone());
+    }
+    if base_url == "https://openrouter.ai/api/v1" {
+        if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
+            if !api_key.trim().is_empty() {
+                let credentials = CloudAiCredentials { base_url, api_key };
+                *stored = Some(credentials.clone());
+                return Ok(credentials);
+            }
+        }
+    }
+    Err("Enter an API key. Zerus keeps it in memory for this app session only".to_string())
+}
+
+#[tauri::command]
+fn cloud_ai_configure(
+    state: tauri::State<'_, CloudAiState>,
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    cloud_ai_credentials(&state, &base_url, api_key).map(|_| ())
+}
+
+fn validated_ai_image_path(path: &str) -> Result<String, String> {
+    let canonical = Path::new(path)
+        .canonicalize()
+        .map_err(|error| format!("Could not open the attached image: {error}"))?;
+    if !canonical.is_file() {
+        return Err("The attached image is not a file".to_string());
+    }
+    let supported = canonical
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "webp" | "heic" | "heif"
+            )
+        });
+    if !supported {
+        return Err("The attached file is not a supported image".to_string());
+    }
+    Ok(canonical.to_string_lossy().into_owned())
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn local_ai_request_body(request: LocalAiChatRequest) -> Result<serde_json::Value, String> {
+    if request.system_prompt.trim().is_empty() {
+        return Err("The AI context is empty".to_string());
+    }
+    if request.messages.is_empty() || request.messages.len() > 64 {
+        return Err("The AI conversation has an invalid number of messages".to_string());
+    }
+
+    let mut messages = vec![serde_json::json!({
+        "role": "system",
+        "content": request.system_prompt,
+    })];
+    for message in request.messages {
+        if !matches!(message.role.as_str(), "user" | "assistant") {
+            return Err("The AI conversation contains an invalid role".to_string());
+        }
+        if message.content.len() > 50_000 {
+            return Err("An AI message is too large".to_string());
+        }
+        let content = if message.image_paths.is_empty() {
+            serde_json::Value::String(message.content)
+        } else {
+            let mut parts = vec![serde_json::json!({
+                "type": "text",
+                "text": message.content,
+            })];
+            for path in message.image_paths {
+                parts.push(serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": validated_ai_image_path(&path)?,
+                    },
+                }));
+            }
+            serde_json::Value::Array(parts)
+        };
+        messages.push(serde_json::json!({
+            "role": message.role,
+            "content": content,
+        }));
+    }
+
+    Ok(serde_json::json!({
+        "model": LOCAL_AI_MODEL,
+        "messages": messages,
+        "temperature": LOCAL_AI_TEMPERATURE,
+        "max_tokens": 2048,
+        "stream": false,
+        "reasoning_effort": "medium",
+    }))
+}
+
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn response_text(value: Option<&serde_json::Value>) -> Option<String> {
+    match value {
+        Some(serde_json::Value::String(content)) => Some(content.clone()),
+        Some(serde_json::Value::Array(parts)) => {
+            let text = parts
+                .iter()
+                .filter_map(|part| part.get("text").and_then(|text| text.as_str()))
+                .collect::<Vec<_>>()
+                .join("");
+            (!text.is_empty()).then_some(text)
+        }
+        _ => None,
+    }
+}
+
+async fn local_ai_runtime_ready(app: &tauri::AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        return mlx_ai_native::available(app);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let client = match reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(900))
+            .build()
+        {
+            Ok(client) => client,
+            Err(_) => return false,
+        };
+        let response = match client
+            .get(format!("{LOCAL_AI_BASE_URL}/v1/models"))
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => response,
+            _ => return false,
+        };
+        response
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|payload| {
+                payload
+                    .get("data")
+                    .and_then(|data| data.as_array())
+                    .cloned()
+            })
+            .is_some_and(|models| {
+                models.iter().any(|model| {
+                    model
+                        .get("id")
+                        .and_then(|id| id.as_str())
+                        .is_some_and(|id| id.eq_ignore_ascii_case(LOCAL_AI_MODEL))
+                })
+            })
+    }
+}
+
+#[tauri::command]
+async fn local_ai_status(app: tauri::AppHandle) -> Result<LocalAiStatus, String> {
+    let model_path = local_ai_model_path(&app)?;
+    Ok(LocalAiStatus {
+        runtime_ready: local_ai_runtime_ready(&app).await,
+        model_downloaded: local_ai_model_downloaded(&model_path),
+        model_path: model_path.to_string_lossy().into_owned(),
+        download_size_bytes: LOCAL_AI_MODEL_SIZE,
+    })
+}
+
+#[tauri::command]
+async fn local_ai_download_model(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, LocalAiRuntimeState>,
+) -> Result<LocalAiStatus, String> {
+    #[cfg(target_os = "macos")]
+    {
+        LOCAL_AI_DOWNLOAD_ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "The Qwen model is already downloading".to_string())?;
+        let _download_guard = LocalAiDownloadGuard;
+        let model_path = local_ai_model_path(&app)?;
+        if local_ai_model_downloaded(&model_path) {
+            return local_ai_status(app).await;
+        }
+        mlx_ai_native::download(&app, &runtime.native, &model_path, |progress| {
+            let phase = match progress.phase.as_str() {
+                "installing" => "installing",
+                "complete" => "complete",
+                _ => "downloading",
+            };
+            let _ = app.emit(
+                "local-ai-download-progress",
+                LocalAiDownloadProgress {
+                    downloaded_bytes: progress.downloaded_bytes,
+                    total_bytes: if progress.total_bytes == 0 {
+                        LOCAL_AI_MODEL_SIZE
+                    } else {
+                        progress.total_bytes
+                    },
+                    phase,
+                },
+            );
+        })?;
+        return local_ai_status(app).await;
+    }
+
+    #[allow(unreachable_code)]
+    {
+        LOCAL_AI_DOWNLOAD_ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map_err(|_| "The Gemma model is already downloading".to_string())?;
+        let _download_guard = LocalAiDownloadGuard;
+        let model_path = local_ai_model_path(&app)?;
+        if local_ai_model_downloaded(&model_path) {
+            return local_ai_status(app).await;
+        }
+
+        let parent = model_path
+            .parent()
+            .ok_or_else(|| "The Gemma model path has no parent folder".to_string())?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not create the local AI model folder: {error}"))?;
+        if model_path.exists() {
+            fs::remove_file(&model_path)
+                .map_err(|error| format!("Could not replace the invalid Gemma model: {error}"))?;
+        }
+        let partial_path = model_path.with_extension("litertlm.part");
+        if partial_path.exists() {
+            fs::remove_file(&partial_path).map_err(|error| {
+                format!("Could not clear the incomplete model download: {error}")
+            })?;
+        }
+
+        let result: Result<(), String> = async {
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(60 * 60 * 3))
+                .build()
+                .map_err(|error| error.to_string())?;
+            let mut response = client
+                .get(LOCAL_AI_MODEL_URL)
+                .send()
+                .await
+                .map_err(|error| format!("Could not start the Hugging Face download: {error}"))?;
+            if !response.status().is_success() {
+                return Err(format!(
+                    "Hugging Face returned {} while downloading Gemma",
+                    response.status()
+                ));
+            }
+            if response
+                .content_length()
+                .is_some_and(|size| size != LOCAL_AI_MODEL_SIZE)
+            {
+                return Err("Hugging Face reported an unexpected Gemma model size".to_string());
+            }
+
+            let mut file = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&partial_path)
+                .map_err(|error| format!("Could not create the model download: {error}"))?;
+            let mut hasher = Sha256::new();
+            let mut downloaded = 0_u64;
+            let mut last_emitted = 0_u64;
+            app.emit(
+                "local-ai-download-progress",
+                LocalAiDownloadProgress {
+                    downloaded_bytes: 0,
+                    total_bytes: LOCAL_AI_MODEL_SIZE,
+                    phase: "downloading",
+                },
+            )
+            .map_err(|error| error.to_string())?;
+
+            while let Some(chunk) = response
+                .chunk()
+                .await
+                .map_err(|error| format!("The Gemma download was interrupted: {error}"))?
+            {
+                downloaded = downloaded.saturating_add(chunk.len() as u64);
+                if downloaded > LOCAL_AI_MODEL_SIZE {
+                    return Err("The Gemma download exceeded its expected size".to_string());
+                }
+                file.write_all(&chunk)
+                    .map_err(|error| format!("Could not save the Gemma model: {error}"))?;
+                hasher.update(&chunk);
+                if downloaded == LOCAL_AI_MODEL_SIZE
+                    || downloaded.saturating_sub(last_emitted) >= 8 * 1024 * 1024
+                {
+                    app.emit(
+                        "local-ai-download-progress",
+                        LocalAiDownloadProgress {
+                            downloaded_bytes: downloaded,
+                            total_bytes: LOCAL_AI_MODEL_SIZE,
+                            phase: "downloading",
+                        },
+                    )
+                    .map_err(|error| error.to_string())?;
+                    last_emitted = downloaded;
+                }
+            }
+            file.flush()
+                .map_err(|error| format!("Could not finish saving the Gemma model: {error}"))?;
+            if downloaded != LOCAL_AI_MODEL_SIZE {
+                return Err(format!(
+                "The Gemma download was incomplete ({downloaded} of {LOCAL_AI_MODEL_SIZE} bytes)"
+            ));
+            }
+            app.emit(
+                "local-ai-download-progress",
+                LocalAiDownloadProgress {
+                    downloaded_bytes: downloaded,
+                    total_bytes: LOCAL_AI_MODEL_SIZE,
+                    phase: "verifying",
+                },
+            )
+            .map_err(|error| error.to_string())?;
+            let digest = format!("{:x}", hasher.finalize());
+            if digest != LOCAL_AI_MODEL_SHA256 {
+                return Err("The downloaded Gemma model failed its integrity check".to_string());
+            }
+            app.emit(
+                "local-ai-download-progress",
+                LocalAiDownloadProgress {
+                    downloaded_bytes: downloaded,
+                    total_bytes: LOCAL_AI_MODEL_SIZE,
+                    phase: "installing",
+                },
+            )
+            .map_err(|error| error.to_string())?;
+            fs::rename(&partial_path, &model_path).map_err(|error| {
+                format!("Could not install the downloaded Gemma model: {error}")
+            })?;
+            if !local_ai_model_downloaded(&model_path) {
+                return Err(
+                    "Gemma was downloaded but the installed model could not be verified"
+                        .to_string(),
+                );
+            }
+            app.emit(
+                "local-ai-download-progress",
+                LocalAiDownloadProgress {
+                    downloaded_bytes: downloaded,
+                    total_bytes: LOCAL_AI_MODEL_SIZE,
+                    phase: "complete",
+                },
+            )
+            .map_err(|error| error.to_string())?;
+            Ok(())
+        }
+        .await;
+
+        if let Err(error) = result {
+            let _ = fs::remove_file(&partial_path);
+            return Err(error);
+        }
+        local_ai_status(app).await
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn local_ai_native_response(
+    app: &tauri::AppHandle,
+    runtime: &LocalAiRuntimeState,
+    request: LocalAiChatRequest,
+) -> Result<LocalAiChatResponse, String> {
+    if request.system_prompt.trim().is_empty() || request.messages.is_empty() {
+        return Err("The AI conversation is empty".to_string());
+    }
+    if request
+        .messages
+        .iter()
+        .any(|message| !message.image_paths.is_empty())
+    {
+        return Err("Qwen3 1.7B is text-only and cannot read image attachments".to_string());
+    }
+    let model_path = local_ai_model_path(app)?;
+    if !local_ai_model_downloaded(&model_path) {
+        return Err("Qwen is not downloaded".to_string());
+    }
+    let messages = serde_json::to_value(&request.messages)
+        .map_err(|error| format!("Could not encode the MLX conversation: {error}"))?;
+    let response = mlx_ai_native::chat(
+        app,
+        &runtime.native,
+        &model_path,
+        &request.system_prompt,
+        &messages,
+    )?;
+    Ok(LocalAiChatResponse {
+        content: response.content,
+        reasoning: response.reasoning,
+    })
+}
+
+#[tauri::command]
+async fn local_ai_chat(
+    app: tauri::AppHandle,
+    runtime: tauri::State<'_, LocalAiRuntimeState>,
+    request: LocalAiChatRequest,
+) -> Result<LocalAiChatResponse, String> {
+    #[cfg(target_os = "macos")]
+    {
+        return local_ai_native_response(&app, &runtime, request);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let body = local_ai_request_body(request)?;
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .map_err(|error| error.to_string())?;
+        let response = client
+            .post(format!("{LOCAL_AI_BASE_URL}/v1/chat/completions"))
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| {
+                format!("Could not reach the local Gemma runtime at {LOCAL_AI_BASE_URL}: {error}")
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|error| format!("The local Gemma runtime returned invalid JSON: {error}"))?;
+        if !status.is_success() {
+            let detail = payload
+                .pointer("/error/message")
+                .and_then(|value| value.as_str())
+                .unwrap_or("Unknown local runtime error");
+            return Err(format!("Gemma request failed ({status}): {detail}"));
+        }
+
+        let message = payload
+            .pointer("/choices/0/message")
+            .ok_or_else(|| "The local Gemma runtime returned no message".to_string())?;
+        let content = response_text(message.get("content"))
+            .ok_or_else(|| "The local Gemma response contained no text".to_string())?;
+        let reasoning = response_text(message.get("reasoning_content"))
+            .or_else(|| response_text(message.get("reasoning")));
+        Ok(LocalAiChatResponse { content, reasoning })
+    }
+}
+
+#[tauri::command]
+async fn cloud_ai_models(
+    state: tauri::State<'_, CloudAiState>,
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<Vec<CloudAiModel>, String> {
+    let credentials = cloud_ai_credentials(&state, &base_url, api_key)?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let response = client
+        .get(format!("{}/models", credentials.base_url))
+        .bearer_auth(&credentials.api_key)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
+    let status = response.status();
+    let payload = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Model request failed ({status}): {}",
+            cloud_ai_error(&payload, "Unknown provider error")
+        ));
+    }
+    let models = payload
+        .get("data")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| "The AI provider returned no model list".to_string())?;
+    let mut models = models
+        .iter()
+        .filter_map(|model| {
+            let id = model.get("id")?.as_str()?.trim();
+            if id.is_empty() {
+                return None;
+            }
+            let name = model
+                .get("name")
+                .and_then(|value| value.as_str())
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or(id);
+            Some(CloudAiModel {
+                id: id.to_string(),
+                name: name.to_string(),
+            })
+        })
+        .collect::<Vec<_>>();
+    models.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    models.dedup_by(|left, right| left.id == right.id);
+    if models.is_empty() {
+        return Err("The AI provider returned an empty model list".to_string());
+    }
+    Ok(models)
+}
+
+#[tauri::command]
+async fn cloud_ai_chat(
+    state: tauri::State<'_, CloudAiState>,
+    base_url: String,
+    model: String,
+    request: LocalAiChatRequest,
+) -> Result<LocalAiChatResponse, String> {
+    let credentials = cloud_ai_credentials(&state, &base_url, None)?;
+    let body = cloud_ai_request_body(request, &model)?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut request_builder = client
+        .post(format!("{}/chat/completions", credentials.base_url))
+        .bearer_auth(&credentials.api_key);
+    if credentials.base_url == "https://openrouter.ai/api/v1" {
+        request_builder = request_builder
+            .header("HTTP-Referer", "https://zerus.im")
+            .header("X-Title", "Zerus");
+    }
+    let response = request_builder
+        .json(&body)
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
+    let status = response.status();
+    let payload = response
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "Cloud AI request failed ({status}): {}",
+            cloud_ai_error(&payload, "Unknown provider error")
+        ));
+    }
+    let message = payload
+        .pointer("/choices/0/message")
+        .ok_or_else(|| "The cloud AI provider returned no message".to_string())?;
+    let content = response_text(message.get("content"))
+        .ok_or_else(|| "The cloud AI response contained no text".to_string())?;
+    let reasoning = response_text(message.get("reasoning_content"))
+        .or_else(|| response_text(message.get("reasoning")));
+    Ok(LocalAiChatResponse { content, reasoning })
+}
+
 #[derive(Clone, Default)]
 struct TerminalManager(Arc<TerminalManagerInner>);
 
 #[derive(Default)]
 struct TerminalManagerInner {
-    session: Mutex<Option<TerminalSession>>,
+    sessions: Mutex<HashMap<u64, TerminalSession>>,
     next_id: AtomicU64,
 }
 
@@ -432,16 +1201,21 @@ fn validated_terminal_directory(path: &str) -> Result<std::path::PathBuf, String
 }
 
 #[tauri::command]
-fn terminal_status(state: tauri::State<'_, TerminalManager>) -> Option<TerminalSessionInfo> {
-    let session = state
+fn terminal_status(state: tauri::State<'_, TerminalManager>) -> Vec<TerminalSessionInfo> {
+    let sessions = state
         .0
-        .session
+        .sessions
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    session.as_ref().map(|session| TerminalSessionInfo {
-        session_id: session.id,
-        working_directory: session.cwd.clone(),
-    })
+    let mut infos = sessions
+        .values()
+        .map(|session| TerminalSessionInfo {
+            session_id: session.id,
+            working_directory: session.cwd.clone(),
+        })
+        .collect::<Vec<_>>();
+    infos.sort_by_key(|info| info.session_id);
+    infos
 }
 
 #[tauri::command]
@@ -456,13 +1230,19 @@ fn terminal_start(
     let canonical_directory = directory.to_string_lossy().into_owned();
 
     {
-        let session = state
+        let sessions = state
             .0
-            .session
+            .sessions
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if session.is_some() {
-            return Err("A terminal session is already running".to_string());
+        if let Some(session) = sessions
+            .values()
+            .find(|session| session.cwd == canonical_directory)
+        {
+            return Ok(TerminalSessionInfo {
+                session_id: session.id,
+                working_directory: session.cwd.clone(),
+            });
         }
     }
 
@@ -504,18 +1284,21 @@ fn terminal_start(
     };
     let manager = state.inner().clone();
     {
-        let mut session = manager
+        let mut sessions = manager
             .0
-            .session
+            .sessions
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        *session = Some(TerminalSession {
-            id: session_id,
-            cwd: canonical_directory,
-            writer,
-            master: pair.master,
-            killer,
-        });
+        sessions.insert(
+            session_id,
+            TerminalSession {
+                id: session_id,
+                cwd: canonical_directory,
+                writer,
+                master: pair.master,
+                killer,
+            },
+        );
     }
 
     let output_app = app.clone();
@@ -526,7 +1309,7 @@ fn terminal_start(
                 Ok(0) => break,
                 Ok(count) => {
                     let _ = output_app.emit(
-                        "grimoire-terminal-output",
+                        "zerus-terminal-output",
                         TerminalOutput {
                             session_id,
                             data: buffer[..count].to_vec(),
@@ -543,17 +1326,12 @@ fn terminal_start(
     std::thread::spawn(move || {
         let result = child.wait();
         {
-            let mut active = manager
+            let mut sessions = manager
                 .0
-                .session
+                .sessions
                 .lock()
                 .unwrap_or_else(|error| error.into_inner());
-            if active
-                .as_ref()
-                .is_some_and(|session| session.id == session_id)
-            {
-                active.take();
-            }
+            sessions.remove(&session_id);
         }
         let payload = match result {
             Ok(status) => TerminalExit {
@@ -569,7 +1347,7 @@ fn terminal_start(
                 error: Some(error.to_string()),
             },
         };
-        let _ = exit_app.emit("grimoire-terminal-exit", payload);
+        let _ = exit_app.emit("zerus-terminal-exit", payload);
     });
 
     Ok(info)
@@ -581,14 +1359,13 @@ fn terminal_write(
     session_id: u64,
     data: String,
 ) -> Result<(), String> {
-    let mut active = state
+    let mut sessions = state
         .0
-        .session
+        .sessions
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let session = active
-        .as_mut()
-        .filter(|session| session.id == session_id)
+    let session = sessions
+        .get_mut(&session_id)
         .ok_or_else(|| "The terminal session is no longer running".to_string())?;
     session
         .writer
@@ -604,14 +1381,13 @@ fn terminal_resize(
     rows: u16,
     cols: u16,
 ) -> Result<(), String> {
-    let active = state
+    let sessions = state
         .0
-        .session
+        .sessions
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    let session = active
-        .as_ref()
-        .filter(|session| session.id == session_id)
+    let session = sessions
+        .get(&session_id)
         .ok_or_else(|| "The terminal session is no longer running".to_string())?;
     session
         .master
@@ -626,18 +1402,14 @@ fn terminal_resize(
 
 #[tauri::command]
 fn terminal_stop(state: tauri::State<'_, TerminalManager>, session_id: u64) -> Result<(), String> {
-    let mut active = state
+    let mut sessions = state
         .0
-        .session
+        .sessions
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    if !active
-        .as_ref()
-        .is_some_and(|session| session.id == session_id)
-    {
-        return Err("The terminal session is no longer running".to_string());
-    }
-    let mut session = active.take().expect("checked active terminal session");
+    let mut session = sessions
+        .remove(&session_id)
+        .ok_or_else(|| "The terminal session is no longer running".to_string())?;
     session.killer.kill().map_err(|error| error.to_string())
 }
 
@@ -779,6 +1551,37 @@ fn take_pending_open_files(state: tauri::State<'_, PendingOpenFiles>) -> Vec<Str
     std::mem::take(&mut *paths)
 }
 
+#[cfg(any(target_os = "windows", test))]
+fn desktop_open_paths(args: &[String], cwd: &Path) -> Vec<String> {
+    args.iter()
+        .skip(1)
+        .filter_map(|argument| {
+            let candidate = PathBuf::from(argument);
+            let candidate = if candidate.is_absolute() {
+                candidate
+            } else {
+                cwd.join(candidate)
+            };
+            candidate
+                .is_file()
+                .then(|| candidate.canonicalize().unwrap_or(candidate))
+        })
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect()
+}
+
+fn enqueue_desktop_open_files(app: &tauri::AppHandle, paths: Vec<String>) {
+    if paths.is_empty() {
+        return;
+    }
+    app.state::<PendingOpenFiles>()
+        .0
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .extend(paths);
+    let _ = app.emit("zerus-open-files", ());
+}
+
 #[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
@@ -814,9 +1617,22 @@ fn reveal_in_file_manager(path: String) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "windows")]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        enqueue_desktop_open_files(app, desktop_open_paths(&args, Path::new(&cwd)));
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }));
+
+    let app = builder
         .manage(PendingOpenFiles::default())
         .manage(TerminalManager::default())
+        .manage(LocalAiRuntimeState::default())
+        .manage(CloudAiState::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -832,6 +1648,12 @@ pub fn run() {
             terminal_write,
             terminal_resize,
             terminal_stop,
+            local_ai_status,
+            local_ai_download_model,
+            local_ai_chat,
+            cloud_ai_models,
+            cloud_ai_chat,
+            cloud_ai_configure,
             cli_status,
             cli_install,
             cli_register_vault,
@@ -841,6 +1663,12 @@ pub fn run() {
             cli_migration_apply
         ])
         .setup(|app| {
+            #[cfg(target_os = "windows")]
+            {
+                let args = std::env::args().collect::<Vec<_>>();
+                let cwd = std::env::current_dir().unwrap_or_default();
+                enqueue_desktop_open_files(app.handle(), desktop_open_paths(&args, &cwd));
+            }
             #[cfg(desktop)]
             {
                 app.handle().plugin(tauri_plugin_process::init())?;
@@ -871,21 +1699,19 @@ pub fn run() {
                 return;
             }
 
-            app_handle
-                .state::<PendingOpenFiles>()
-                .0
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .extend(paths);
-            let _ = app_handle.emit("grimoire-open-files", ());
+            enqueue_desktop_open_files(app_handle, paths);
         }
     });
 }
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_os = "macos"))]
+    use super::LOCAL_AI_MODEL_SIZE;
     use super::{
-        cli_export_skill, copy_file_into_vault, sync_opened_vault_record, write_new_vault_file_impl,
+        cli_export_skill, cloud_ai_request_body, copy_file_into_vault, desktop_open_paths,
+        local_ai_model_downloaded, local_ai_request_body, normalized_cloud_ai_base_url,
+        sync_opened_vault_record, write_new_vault_file_impl, LocalAiChatRequest, LocalAiMessage,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -896,7 +1722,130 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("clock should follow the Unix epoch")
             .as_nanos();
-        std::env::temp_dir().join(format!("grimoire-{name}-{}-{nonce}", std::process::id()))
+        std::env::temp_dir().join(format!("zerus-{name}-{}-{nonce}", std::process::id()))
+    }
+
+    #[test]
+    fn desktop_open_paths_keeps_existing_files_and_resolves_relative_paths() {
+        let root = test_root("desktop-open-paths");
+        fs::create_dir_all(&root).expect("create test root");
+        let note = root.join("note.md");
+        fs::write(&note, "# Note").expect("write note");
+        let args = vec![
+            "zerus".to_string(),
+            "note.md".to_string(),
+            "missing.md".to_string(),
+        ];
+
+        assert_eq!(
+            desktop_open_paths(&args, &root),
+            vec![note.canonicalize().unwrap().to_string_lossy().into_owned()]
+        );
+
+        fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn local_ai_request_uses_low_temperature_and_default_reasoning() {
+        let body = local_ai_request_body(LocalAiChatRequest {
+            system_prompt: "Current note context".to_string(),
+            messages: vec![LocalAiMessage {
+                role: "user".to_string(),
+                content: "Summarize this note".to_string(),
+                image_paths: Vec::new(),
+            }],
+        })
+        .expect("build local AI request");
+
+        assert_eq!(body["temperature"], serde_json::json!(0.2));
+        assert_eq!(body["reasoning_effort"], "medium");
+        assert_eq!(body["messages"][0]["role"], "system");
+    }
+
+    #[test]
+    fn cloud_ai_request_uses_the_selected_model() {
+        let body = cloud_ai_request_body(
+            LocalAiChatRequest {
+                system_prompt: "Current note context".to_string(),
+                messages: vec![LocalAiMessage {
+                    role: "user".to_string(),
+                    content: "Summarize this note".to_string(),
+                    image_paths: Vec::new(),
+                }],
+            },
+            "anthropic/claude-sonnet-4",
+        )
+        .expect("build cloud AI request");
+
+        assert_eq!(body["model"], "anthropic/claude-sonnet-4");
+        assert_eq!(body["messages"][0]["role"], "system");
+        assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn cloud_ai_provider_requires_https_except_for_loopback() {
+        assert_eq!(
+            normalized_cloud_ai_base_url("https://openrouter.ai/api/v1/ ").unwrap(),
+            "https://openrouter.ai/api/v1"
+        );
+        assert!(normalized_cloud_ai_base_url("http://openrouter.ai/api/v1").is_err());
+        assert!(normalized_cloud_ai_base_url("http://127.0.0.1:11434/v1").is_ok());
+    }
+
+    #[test]
+    fn local_ai_request_sends_validated_local_images() {
+        let root = test_root("local-ai-image");
+        fs::create_dir_all(&root).expect("create image test root");
+        let image = root.join("context.png");
+        fs::write(&image, b"synthetic image fixture").expect("write image fixture");
+
+        let body = local_ai_request_body(LocalAiChatRequest {
+            system_prompt: "Current note context".to_string(),
+            messages: vec![LocalAiMessage {
+                role: "user".to_string(),
+                content: "Describe this image".to_string(),
+                image_paths: vec![image.to_string_lossy().into_owned()],
+            }],
+        })
+        .expect("build multimodal request");
+
+        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+        assert_eq!(
+            body["messages"][1]["content"][1]["image_url"]["url"],
+            image.canonicalize().unwrap().to_string_lossy().as_ref()
+        );
+
+        fs::remove_dir_all(root).expect("remove image test root");
+    }
+
+    #[test]
+    fn local_ai_model_is_installed_only_at_the_verified_size() {
+        let root = test_root("local-ai-model-status");
+        fs::create_dir_all(&root).expect("create model test root");
+
+        #[cfg(target_os = "macos")]
+        {
+            let model = root.join("mlx");
+            fs::create_dir_all(&model).expect("create MLX cache fixture");
+            assert!(!local_ai_model_downloaded(&model));
+            fs::write(model.join(super::mlx_ai_native::READY_MARKER), b"")
+                .expect("write MLX ready marker");
+            assert!(local_ai_model_downloaded(&model));
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let model = root.join("gemma.litertlm");
+            let file = fs::File::create(&model).expect("create sparse model fixture");
+            file.set_len(LOCAL_AI_MODEL_SIZE - 1)
+                .expect("set incomplete model size");
+            assert!(!local_ai_model_downloaded(&model));
+            file.set_len(LOCAL_AI_MODEL_SIZE)
+                .expect("set complete model size");
+            assert!(local_ai_model_downloaded(&model));
+        }
+
+        fs::remove_dir_all(root).expect("remove model test root");
     }
 
     #[test]
@@ -920,20 +1869,20 @@ mod tests {
         fs::create_dir(&original).expect("create original vault");
         fs::create_dir(&moved).expect("create moved vault");
         fs::create_dir(&other_path).expect("create other vault");
-        let manifest = grimoire_core::load_or_create_manifest(&original).expect("create manifest");
-        grimoire_core::write_vault_manifest(&moved, &manifest).expect("copy manifest");
+        let manifest = zerus_core::load_or_create_manifest(&original).expect("create manifest");
+        zerus_core::write_vault_manifest(&moved, &manifest).expect("copy manifest");
         let other =
-            grimoire_core::load_or_create_manifest(&other_path).expect("create other manifest");
-        let mut registry = grimoire_core::VaultRegistry {
+            zerus_core::load_or_create_manifest(&other_path).expect("create other manifest");
+        let mut registry = zerus_core::VaultRegistry {
             version: 1,
             default_vault_id: Some(other.vault_id),
             vaults: vec![
-                grimoire_core::VaultRecord {
+                zerus_core::VaultRecord {
                     id: manifest.vault_id,
-                    name: "Grimoire".to_string(),
+                    name: "Zerus".to_string(),
                     path: original.clone(),
                 },
-                grimoire_core::VaultRecord {
+                zerus_core::VaultRecord {
                     id: other.vault_id,
                     name: "Other".to_string(),
                     path: other_path.clone(),
@@ -943,7 +1892,7 @@ mod tests {
 
         let record = sync_opened_vault_record(&mut registry, &manifest, moved.clone());
 
-        assert_eq!(record.name, "Grimoire");
+        assert_eq!(record.name, "Zerus");
         assert_eq!(record.path, moved);
         assert_eq!(registry.default_vault_id, Some(manifest.vault_id));
         assert_eq!(
@@ -964,27 +1913,27 @@ mod tests {
     fn opened_vault_gets_a_distinct_name_when_the_folder_name_is_taken() {
         let first_parent = test_root("registry-first-parent");
         let second_parent = test_root("registry-second-parent");
-        let first = first_parent.join("Grimoire");
-        let second = second_parent.join("Grimoire");
+        let first = first_parent.join("Zerus");
+        let second = second_parent.join("Zerus");
         fs::create_dir_all(&first).expect("create first vault");
         fs::create_dir_all(&second).expect("create second vault");
         let first_manifest =
-            grimoire_core::load_or_create_manifest(&first).expect("create first manifest");
+            zerus_core::load_or_create_manifest(&first).expect("create first manifest");
         let second_manifest =
-            grimoire_core::load_or_create_manifest(&second).expect("create second manifest");
-        let mut registry = grimoire_core::VaultRegistry {
+            zerus_core::load_or_create_manifest(&second).expect("create second manifest");
+        let mut registry = zerus_core::VaultRegistry {
             version: 1,
             default_vault_id: Some(first_manifest.vault_id),
-            vaults: vec![grimoire_core::VaultRecord {
+            vaults: vec![zerus_core::VaultRecord {
                 id: first_manifest.vault_id,
-                name: "Grimoire".to_string(),
+                name: "Zerus".to_string(),
                 path: first,
             }],
         };
 
         let record = sync_opened_vault_record(&mut registry, &second_manifest, second);
 
-        assert_eq!(record.name, "Grimoire (2)");
+        assert_eq!(record.name, "Zerus (2)");
         assert_eq!(registry.default_vault_id, Some(second_manifest.vault_id));
         assert_eq!(registry.vaults.len(), 2);
 
@@ -1045,14 +1994,14 @@ mod tests {
     fn exports_the_generic_skill_as_markdown() {
         let root = test_root("skill-export");
         fs::create_dir(&root).expect("create export folder");
-        let requested = root.join("grimoire-skill");
+        let requested = root.join("zerus-skill");
 
-        let saved = cli_export_skill(requested.to_string_lossy().into_owned())
-            .expect("export Grimoire skill");
-        let expected = root.join("grimoire-skill.md");
+        let saved =
+            cli_export_skill(requested.to_string_lossy().into_owned()).expect("export Zerus skill");
+        let expected = root.join("zerus-skill.md");
         assert_eq!(PathBuf::from(saved), expected);
         let contents = fs::read_to_string(&expected).expect("read exported skill");
-        assert!(contents.contains("name: grimoire"));
+        assert!(contents.contains("name: zerus"));
         assert!(contents.contains("Never edit `grimoire-*` properties directly."));
 
         fs::remove_dir_all(root).expect("remove export folder");

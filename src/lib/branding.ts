@@ -1,8 +1,8 @@
 export type LogoStyle = "graphite" | "white";
 
 const LOGO_SOURCES: Record<LogoStyle, string> = {
-  graphite: "/grimoire-logo.svg",
-  white: "/grimoire-logo-white.svg",
+  graphite: "/zerus-logo.svg",
+  white: "/zerus-logo-white.svg",
 };
 
 export function getLogoSrc(style: LogoStyle): string {
@@ -32,7 +32,4 @@ export function applyLogoForSidebar(sidebarBackground: string): void {
     relativeLuminance(sidebarBackground) < 0.4 ? "white" : "graphite";
   document.documentElement.dataset.grimSidebarTone =
     style === "white" ? "dark" : "light";
-
-  const favicon = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (favicon) favicon.href = getLogoSrc(style);
 }

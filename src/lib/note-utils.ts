@@ -17,7 +17,7 @@ export interface Note {
   externalPath?: string;
   content: string;
   pinned: boolean;
-  /** Grimoire-only visibility state; archived notes remain in place on disk. */
+  /** Zerus-only visibility state; archived notes remain in place on disk. */
   archived?: boolean;
   updatedAt: string;
 }

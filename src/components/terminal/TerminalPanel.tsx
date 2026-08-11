@@ -8,14 +8,13 @@ import { Terminal } from "@xterm/xterm";
 import {
   Copy,
   Ellipsis,
-  FolderInput,
   OctagonX,
   RefreshCw,
   Search,
   SquareTerminal,
   TextCursorInput,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import "@xterm/xterm/css/xterm.css";
 
 import {
@@ -38,11 +37,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { openExternalUrl } from "@/lib/external-links";
+import {
+  desktopPlatform,
+  primaryModifierLabel,
+  quoteTerminalArgument,
+} from "@/lib/desktop-platform";
 import type { Note } from "@/lib/note-utils";
 import {
   normalizeFsPath,
   noteAbsolutePath,
-  noteContainingFolder,
   noteTitle,
 } from "@/lib/note-utils";
 import { cn } from "@/lib/utils";
@@ -69,9 +72,24 @@ interface TerminalExitEvent {
   error: string | null;
 }
 
+interface SessionEntry {
+  info: SessionInfo;
+  running: boolean;
+  exit: TerminalExitEvent | null;
+}
+
+interface TerminalView {
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  searchAddon: SearchAddon;
+  dataDisposable: { dispose: () => void };
+  resizeObserver: ResizeObserver;
+}
+
 interface TerminalPanelProps {
   open: boolean;
   note: Note | null;
+  targetDirectory: string | null;
   vaultLocation: string | null;
   onOpenChange: (open: boolean) => void;
 }
@@ -99,185 +117,212 @@ function pathsMatch(left: string | null, right: string | null): boolean {
   return !!left && !!right && normalizeFsPath(left) === normalizeFsPath(right);
 }
 
-function quoteShellArgument(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+function directoryName(path: string | null): string {
+  if (!path) return "Terminal";
+  const normalized = path.replace(/[\\/]+$/, "").replace(/\\/g, "/");
+  return normalized.split("/").pop() || path;
 }
 
 export function TerminalPanel({
   open,
   note,
+  targetDirectory,
   vaultLocation,
   onOpenChange,
 }: TerminalPanelProps) {
-  const terminalContainerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
-  const searchAddonRef = useRef<SearchAddon | null>(null);
-  const sessionRef = useRef<SessionInfo | null>(null);
-  const focusTerminalOnMenuCloseRef = useRef(false);
+  const viewsRef = useRef(new Map<number, TerminalView>());
   const outputBufferRef = useRef(new Map<number, Uint8Array[]>());
-  const startingRef = useRef(false);
-  const hasStartedRef = useRef(false);
+  const activeSessionIdRef = useRef<number | null>(null);
+  const targetDirectoryRef = useRef(targetDirectory);
+  const startingDirectoriesRef = useRef(new Set<string>());
+  const focusTerminalOnMenuCloseRef = useRef(false);
+  const focusActiveSessionRef = useRef(false);
+  const previousOpenRef = useRef(open);
   const openRef = useRef(open);
+  if (open && !previousOpenRef.current) focusActiveSessionRef.current = true;
+  previousOpenRef.current = open;
   openRef.current = open;
-  const [session, setSession] = useState<SessionInfo | null>(null);
-  const [exit, setExit] = useState<TerminalExitEvent | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  targetDirectoryRef.current = targetDirectory;
+
+  const [entries, setEntries] = useState<SessionEntry[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [replacementDirectory, setReplacementDirectory] = useState<
-    string | null
-  >(null);
+  const [restartConfirmOpen, setRestartConfirmOpen] = useState(false);
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [width, setWidth] = useState(storedWidth);
 
+  activeSessionIdRef.current = activeSessionId;
+
   const notePath = note ? noteAbsolutePath(note, vaultLocation) : null;
-  const targetDirectory = note
-    ? noteContainingFolder(note, vaultLocation)
-    : null;
-  const workingInSelectedFolder = pathsMatch(
-    session?.workingDirectory ?? null,
-    targetDirectory,
-  );
+  const activeEntry =
+    entries.find((entry) => entry.info.sessionId === activeSessionId) ?? null;
+  const runningCount = entries.filter((entry) => entry.running).length;
 
-  const writeBufferedOutput = useCallback((sessionId: number) => {
-    const terminal = terminalRef.current;
-    const chunks = outputBufferRef.current.get(sessionId);
-    if (!terminal || !chunks) return;
-    outputBufferRef.current.delete(sessionId);
-    for (const chunk of chunks) terminal.write(chunk);
-  }, []);
-
-  const resizeTerminal = useCallback(() => {
-    if (!openRef.current) return;
-    const terminal = terminalRef.current;
-    const fitAddon = fitAddonRef.current;
-    if (!terminal || !fitAddon) return;
+  const resizeSession = useCallback((sessionId: number) => {
+    if (!openRef.current || activeSessionIdRef.current !== sessionId) return;
+    const view = viewsRef.current.get(sessionId);
+    if (!view) return;
     try {
-      fitAddon.fit();
-      const active = sessionRef.current;
-      if (active) {
-        void invoke("terminal_resize", {
-          sessionId: active.sessionId,
-          rows: terminal.rows,
-          cols: terminal.cols,
-        });
-      }
+      view.fitAddon.fit();
+      void invoke("terminal_resize", {
+        sessionId,
+        rows: view.terminal.rows,
+        cols: view.terminal.cols,
+      }).catch(() => {});
     } catch {
       // The panel may be between display states; the next observer tick retries.
     }
   }, []);
 
-  const startSession = useCallback(
-    async (directory: string) => {
-      if (startingRef.current) return;
-      const terminal = terminalRef.current;
-      startingRef.current = true;
-      setError(null);
-      try {
-        if (sessionRef.current) {
-          await invoke("terminal_stop", {
-            sessionId: sessionRef.current.sessionId,
-          });
+  const disposeView = useCallback((sessionId: number) => {
+    const view = viewsRef.current.get(sessionId);
+    if (!view) return;
+    view.resizeObserver.disconnect();
+    view.dataDisposable.dispose();
+    view.terminal.dispose();
+    viewsRef.current.delete(sessionId);
+    outputBufferRef.current.delete(sessionId);
+  }, []);
+
+  const attachTerminal = useCallback(
+    (info: SessionInfo, container: HTMLDivElement | null) => {
+      if (!container || viewsRef.current.has(info.sessionId)) return;
+      const terminal = new Terminal({
+        allowProposedApi: false,
+        convertEol: false,
+        cursorBlink: true,
+        fontFamily:
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontSize: 13.5,
+        scrollback: 10_000,
+        theme: terminalTheme(),
+      });
+      const fitAddon = new FitAddon();
+      const searchAddon = new SearchAddon();
+      terminal.loadAddon(fitAddon);
+      terminal.loadAddon(searchAddon);
+      terminal.loadAddon(
+        new WebLinksAddon((event, uri) => {
+          event.preventDefault();
+          void openExternalUrl(uri);
+        }),
+      );
+      terminal.open(container);
+
+      const dataDisposable = terminal.onData((data) => {
+        void invoke("terminal_write", {
+          sessionId: info.sessionId,
+          data,
+        }).catch(() => {});
+      });
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (
+          event.type === "keydown" &&
+          (desktopPlatform === "macos"
+            ? event.metaKey
+            : event.ctrlKey && event.shiftKey) &&
+          event.key.toLowerCase() === "c" &&
+          terminal.hasSelection()
+        ) {
+          void navigator.clipboard.writeText(terminal.getSelection());
+          return false;
         }
-        terminal?.reset();
-        setExit(null);
-        sessionRef.current = null;
-        setSession(null);
-        fitAddonRef.current?.fit();
-        const info = await invoke<SessionInfo>("terminal_start", {
-          workingDirectory: directory,
-          rows: terminal?.rows ?? 24,
-          cols: terminal?.cols ?? 80,
+        return true;
+      });
+
+      const resizeObserver = new ResizeObserver(() =>
+        resizeSession(info.sessionId),
+      );
+      resizeObserver.observe(container);
+      viewsRef.current.set(info.sessionId, {
+        terminal,
+        fitAddon,
+        searchAddon,
+        dataDisposable,
+        resizeObserver,
+      });
+
+      const chunks = outputBufferRef.current.get(info.sessionId);
+      if (chunks) {
+        outputBufferRef.current.delete(info.sessionId);
+        for (const chunk of chunks) terminal.write(chunk);
+      }
+      if (activeSessionIdRef.current === info.sessionId) {
+        requestAnimationFrame(() => {
+          resizeSession(info.sessionId);
+          if (focusActiveSessionRef.current) {
+            focusActiveSessionRef.current = false;
+            terminal.focus();
+          }
         });
-        hasStartedRef.current = true;
-        sessionRef.current = info;
-        setSession(info);
-        writeBufferedOutput(info.sessionId);
-        requestAnimationFrame(resizeTerminal);
-        terminal?.focus();
-      } catch (startError) {
-        const message = String(startError);
-        setError(message);
-        showError(`Failed to open terminal: ${message}`);
-      } finally {
-        startingRef.current = false;
       }
     },
-    [resizeTerminal, writeBufferedOutput],
+    [resizeSession],
   );
 
-  useEffect(() => {
-    if (!terminalContainerRef.current) return;
-    const terminal = new Terminal({
-      allowProposedApi: false,
-      convertEol: false,
-      cursorBlink: true,
-      fontFamily:
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-      fontSize: 13.5,
-      scrollback: 10_000,
-      theme: terminalTheme(),
-    });
-    const fitAddon = new FitAddon();
-    const searchAddon = new SearchAddon();
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(searchAddon);
-    terminal.loadAddon(
-      new WebLinksAddon((event, uri) => {
-        event.preventDefault();
-        void openExternalUrl(uri);
-      }),
-    );
-    terminal.open(terminalContainerRef.current);
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
-    searchAddonRef.current = searchAddon;
-
-    const dataDisposable = terminal.onData((data) => {
-      const active = sessionRef.current;
-      if (!active) return;
-      void invoke("terminal_write", {
-        sessionId: active.sessionId,
-        data,
-      }).catch(() => {});
-    });
-    terminal.attachCustomKeyEventHandler((event) => {
-      if (
-        event.type === "keydown" &&
-        event.metaKey &&
-        event.key.toLowerCase() === "c" &&
-        terminal.hasSelection()
-      ) {
-        void navigator.clipboard.writeText(terminal.getSelection());
-        return false;
+  const startSession = useCallback(async (directory: string) => {
+    const key = normalizeFsPath(directory);
+    if (startingDirectoriesRef.current.has(key)) return;
+    startingDirectoriesRef.current.add(key);
+    setError(null);
+    try {
+      const info = await invoke<SessionInfo>("terminal_start", {
+        workingDirectory: directory,
+        rows: 24,
+        cols: 80,
+      });
+      setEntries((current) => {
+        const existing = current.find(
+          (entry) => entry.info.sessionId === info.sessionId,
+        );
+        if (existing) {
+          return current.map((entry) =>
+            entry.info.sessionId === info.sessionId
+              ? { ...entry, info, running: true, exit: null }
+              : entry,
+          );
+        }
+        return [...current, { info, running: true, exit: null }];
+      });
+      if (pathsMatch(targetDirectoryRef.current, info.workingDirectory)) {
+        setActiveSessionId(info.sessionId);
       }
-      return true;
-    });
+    } catch (startError) {
+      const message = String(startError);
+      setError(message);
+      showError(`Failed to open terminal: ${message}`);
+    } finally {
+      startingDirectoriesRef.current.delete(key);
+    }
+  }, []);
 
-    const resizeObserver = new ResizeObserver(() => resizeTerminal());
-    resizeObserver.observe(terminalContainerRef.current);
-
+  useEffect(() => {
     let disposed = false;
     const unlisteners: Array<() => void> = [];
+    const views = viewsRef.current;
     void Promise.all([
-      listen<TerminalOutputEvent>("grimoire-terminal-output", ({ payload }) => {
-        const active = sessionRef.current;
-        if (active?.sessionId === payload.sessionId) {
-          terminal.write(new Uint8Array(payload.data));
+      listen<TerminalOutputEvent>("zerus-terminal-output", ({ payload }) => {
+        const view = viewsRef.current.get(payload.sessionId);
+        if (view) {
+          view.terminal.write(new Uint8Array(payload.data));
           return;
         }
         const chunks = outputBufferRef.current.get(payload.sessionId) ?? [];
         chunks.push(new Uint8Array(payload.data));
         outputBufferRef.current.set(payload.sessionId, chunks);
       }),
-      listen<TerminalExitEvent>("grimoire-terminal-exit", ({ payload }) => {
-        if (sessionRef.current?.sessionId !== payload.sessionId) return;
-        sessionRef.current = null;
-        setSession(null);
-        setExit(payload);
+      listen<TerminalExitEvent>("zerus-terminal-exit", ({ payload }) => {
+        setEntries((current) =>
+          current.map((entry) =>
+            entry.info.sessionId === payload.sessionId
+              ? { ...entry, running: false, exit: payload }
+              : entry,
+          ),
+        );
       }),
     ]).then(async (listeners) => {
       if (disposed) {
@@ -286,15 +331,14 @@ export function TerminalPanel({
       }
       unlisteners.push(...listeners);
       try {
-        const info = await invoke<SessionInfo | null>("terminal_status");
-        if (info && !disposed) {
-          hasStartedRef.current = true;
-          sessionRef.current = info;
-          setSession(info);
-          writeBufferedOutput(info.sessionId);
+        const infos = await invoke<SessionInfo[]>("terminal_status");
+        if (!disposed) {
+          setEntries(
+            infos.map((info) => ({ info, running: true, exit: null })),
+          );
         }
       } catch {
-        // No native session is expected on a fresh frontend mount.
+        // No native sessions are expected on a fresh frontend mount.
       } finally {
         if (!disposed) setReady(true);
       }
@@ -303,31 +347,37 @@ export function TerminalPanel({
     return () => {
       disposed = true;
       unlisteners.forEach((unlisten) => unlisten());
-      resizeObserver.disconnect();
-      dataDisposable.dispose();
-      terminal.dispose();
-      terminalRef.current = null;
-      fitAddonRef.current = null;
-      searchAddonRef.current = null;
+      for (const sessionId of views.keys()) disposeView(sessionId);
     };
-  }, [resizeTerminal, writeBufferedOutput]);
+  }, [disposeView]);
 
   useEffect(() => {
     if (!ready || !open || !targetDirectory) return;
-    requestAnimationFrame(resizeTerminal);
-    if (
-      !sessionRef.current &&
-      !exit &&
-      !startingRef.current &&
-      !hasStartedRef.current
-    ) {
-      void startSession(targetDirectory);
+    const matching = [...entries]
+      .reverse()
+      .find((entry) =>
+        pathsMatch(entry.info.workingDirectory, targetDirectory),
+      );
+    if (matching) {
+      setActiveSessionId(matching.info.sessionId);
+      requestAnimationFrame(() => {
+        resizeSession(matching.info.sessionId);
+        if (focusActiveSessionRef.current) {
+          focusActiveSessionRef.current = false;
+          viewsRef.current.get(matching.info.sessionId)?.terminal.focus();
+        }
+      });
+      return;
     }
-  }, [exit, open, ready, resizeTerminal, startSession, targetDirectory]);
+    void startSession(targetDirectory);
+  }, [entries, open, ready, resizeSession, startSession, targetDirectory]);
 
   useEffect(() => {
     const applyTheme = () => {
-      if (terminalRef.current) terminalRef.current.options.theme = terminalTheme();
+      const theme = terminalTheme();
+      for (const view of viewsRef.current.values()) {
+        view.terminal.options.theme = theme;
+      }
     };
     const observer = new MutationObserver(applyTheme);
     observer.observe(document.documentElement, {
@@ -338,11 +388,12 @@ export function TerminalPanel({
   }, []);
 
   const exitLabel = useMemo(() => {
+    const exit = activeEntry?.exit;
     if (!exit) return null;
     if (exit.error) return `Terminal stopped: ${exit.error}`;
     if (exit.signal) return `Terminal ended by ${exit.signal}`;
     return `Terminal exited with status ${exit.exitCode ?? "unknown"}.`;
-  }, [exit]);
+  }, [activeEntry?.exit]);
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -379,26 +430,54 @@ export function TerminalPanel({
     handle.addEventListener("pointerup", onUp);
   };
 
-  const confirmReplacement = async () => {
-    const directory = replacementDirectory;
-    setReplacementDirectory(null);
-    if (directory) await startSession(directory);
+  const removeEntry = useCallback(
+    (sessionId: number) => {
+      disposeView(sessionId);
+      setEntries((current) =>
+        current.filter((entry) => entry.info.sessionId !== sessionId),
+      );
+    },
+    [disposeView],
+  );
+
+  const restartActiveSession = async () => {
+    setRestartConfirmOpen(false);
+    const entry = activeEntry;
+    if (!entry) return;
+    if (entry.running) {
+      await invoke("terminal_stop", { sessionId: entry.info.sessionId }).catch(
+        () => {},
+      );
+    }
+    removeEntry(entry.info.sessionId);
+    await startSession(entry.info.workingDirectory);
   };
 
   const insertCurrentNotePath = async () => {
-    const active = sessionRef.current;
-    const terminal = terminalRef.current;
-    if (!active || !notePath) return;
+    const entry = activeEntry;
+    const view = entry ? viewsRef.current.get(entry.info.sessionId) : null;
+    if (!entry?.running || !notePath) return;
     focusTerminalOnMenuCloseRef.current = true;
     try {
       await invoke("terminal_write", {
-        sessionId: active.sessionId,
-        data: quoteShellArgument(notePath),
+        sessionId: entry.info.sessionId,
+        data: quoteTerminalArgument(notePath),
       });
-      terminal?.focus();
+      view?.terminal.focus();
     } catch (insertError) {
       showError(`Failed to insert note path: ${String(insertError)}`);
     }
+  };
+
+  const startCurrentDirectory = () => {
+    if (!targetDirectory) return;
+    if (
+      activeEntry &&
+      pathsMatch(activeEntry.info.workingDirectory, targetDirectory)
+    ) {
+      removeEntry(activeEntry.info.sessionId);
+    }
+    void startSession(targetDirectory);
   };
 
   return (
@@ -423,12 +502,23 @@ export function TerminalPanel({
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
           <SquareTerminal className="mx-1 shrink-0 text-grim-accent" size={16} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium">Terminal</div>
+            <div className="flex items-center gap-1.5 truncate text-xs font-medium">
+              <span>Terminal</span>
+              {runningCount > 1 && (
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  · {runningCount} sessions
+                </span>
+              )}
+            </div>
             <div
               className="truncate text-[10px] text-muted-foreground"
-              title={session?.workingDirectory ?? targetDirectory ?? undefined}
+              title={
+                activeEntry?.info.workingDirectory ?? targetDirectory ?? undefined
+              }
             >
-              {session?.workingDirectory ?? targetDirectory ?? "Select a note"}
+              {activeEntry?.info.workingDirectory ??
+                targetDirectory ??
+                "Select a folder or note"}
             </div>
           </div>
           <DropdownMenu>
@@ -445,27 +535,30 @@ export function TerminalPanel({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="w-52"
+              className="w-60"
               onCloseAutoFocus={(event) => {
                 if (!focusTerminalOnMenuCloseRef.current) return;
                 event.preventDefault();
                 focusTerminalOnMenuCloseRef.current = false;
-                requestAnimationFrame(() => terminalRef.current?.focus());
+                requestAnimationFrame(() => {
+                  if (activeSessionIdRef.current !== null) {
+                    viewsRef.current
+                      .get(activeSessionIdRef.current)
+                      ?.terminal.focus();
+                  }
+                });
               }}
             >
-              {session && targetDirectory && !workingInSelectedFolder && (
+              {runningCount > 1 && (
                 <>
-                  <DropdownMenuItem
-                    onSelect={() => setReplacementDirectory(targetDirectory)}
-                  >
-                    <FolderInput className="mr-2" size={14} />
-                    Open terminal here
+                  <DropdownMenuItem disabled>
+                    {runningCount} folder sessions running
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}
               <DropdownMenuItem
-                disabled={!notePath || !session}
+                disabled={!notePath || !activeEntry?.running}
                 onSelect={() => void insertCurrentNotePath()}
               >
                 <TextCursorInput className="mr-2" size={14} />
@@ -481,28 +574,27 @@ export function TerminalPanel({
                 Copy current note path
               </DropdownMenuItem>
               <DropdownMenuItem
+                disabled={!activeEntry}
                 onSelect={() => setSearchOpen((current) => !current)}
               >
                 <Search className="mr-2" size={14} />
                 {searchOpen ? "Hide output search" : "Search terminal output"}
               </DropdownMenuItem>
               <DropdownMenuItem
-                disabled={!session}
-                onSelect={() =>
-                  session && setReplacementDirectory(session.workingDirectory)
-                }
+                disabled={!activeEntry}
+                onSelect={() => setRestartConfirmOpen(true)}
               >
                 <RefreshCw className="mr-2" size={14} />
-                Restart shell
+                Restart shell in {directoryName(activeEntry?.info.workingDirectory ?? null)}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                disabled={!session}
+                disabled={!activeEntry?.running}
                 className="text-destructive focus:text-destructive"
                 onSelect={() => setEndConfirmOpen(true)}
               >
                 <OctagonX className="mr-2" size={14} />
-                End terminal session
+                End this folder session
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -510,7 +602,7 @@ export function TerminalPanel({
             variant="ghost"
             size="icon"
             className="h-7 w-7 shrink-0"
-            title="Hide terminal (⌘J)"
+            title={`Hide terminal (${primaryModifierLabel}J)`}
             onClick={() => onOpenChange(false)}
           >
             <X size={14} />
@@ -521,7 +613,11 @@ export function TerminalPanel({
             className="flex h-9 shrink-0 items-center gap-1 border-b border-border/50 px-2"
             onSubmit={(event) => {
               event.preventDefault();
-              searchAddonRef.current?.findNext(searchQuery);
+              if (activeSessionIdRef.current !== null) {
+                viewsRef.current
+                  .get(activeSessionIdRef.current)
+                  ?.searchAddon.findNext(searchQuery);
+              }
             }}
           >
             <Input
@@ -529,9 +625,13 @@ export function TerminalPanel({
               value={searchQuery}
               onChange={(event) => {
                 setSearchQuery(event.target.value);
-                searchAddonRef.current?.findNext(event.target.value, {
-                  incremental: true,
-                });
+                if (activeSessionIdRef.current !== null) {
+                  viewsRef.current
+                    .get(activeSessionIdRef.current)
+                    ?.searchAddon.findNext(event.target.value, {
+                      incremental: true,
+                    });
+                }
               }}
               placeholder="Search output"
               className="h-7 text-xs"
@@ -541,7 +641,19 @@ export function TerminalPanel({
             </Button>
           </form>
         )}
-        <div ref={terminalContainerRef} className="min-h-0 flex-1 p-2" />
+        <div className="relative min-h-0 flex-1">
+          {entries.map((entry) => (
+            <div
+              key={entry.info.sessionId}
+              ref={(container) => attachTerminal(entry.info, container)}
+              className={cn(
+                "absolute inset-0 p-2",
+                entry.info.sessionId !== activeSessionId &&
+                  "invisible pointer-events-none",
+              )}
+            />
+          ))}
+        </div>
         {(exitLabel || error) && (
           <div className="flex shrink-0 items-center gap-2 border-t border-border/60 px-3 py-2 text-xs">
             <span className="min-w-0 flex-1 truncate text-muted-foreground">
@@ -551,7 +663,7 @@ export function TerminalPanel({
               <Button
                 size="sm"
                 className="h-7 shrink-0 gap-1.5 text-xs"
-                onClick={() => void startSession(targetDirectory)}
+                onClick={startCurrentDirectory}
               >
                 <RefreshCw size={13} /> Start new shell
               </Button>
@@ -560,29 +672,25 @@ export function TerminalPanel({
         )}
         {note && (
           <div className="shrink-0 truncate border-t border-border/40 px-3 py-1.5 text-[10px] text-muted-foreground">
-            Selected note: <span title={notePath ?? undefined}>{noteTitle(note)}</span>
+            Selected note:{" "}
+            <span title={notePath ?? undefined}>{noteTitle(note)}</span>
           </div>
         )}
       </div>
 
-      <AlertDialog
-        open={!!replacementDirectory}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) setReplacementDirectory(null);
-        }}
-      >
+      <AlertDialog open={restartConfirmOpen} onOpenChange={setRestartConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Replace the running terminal?</AlertDialogTitle>
+            <AlertDialogTitle>Restart this folder’s terminal?</AlertDialogTitle>
             <AlertDialogDescription>
-              This ends the current shell and any Claude, Codex, or other process
-              running inside it. Its terminal output will be cleared.
+              This ends the current shell and any process running inside it. Its
+              terminal output will be cleared. Other folder sessions are not affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Keep current terminal</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void confirmReplacement()}>
-              End and start here
+            <AlertDialogCancel>Keep running</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void restartActiveSession()}>
+              End and restart
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -590,11 +698,10 @@ export function TerminalPanel({
       <AlertDialog open={endConfirmOpen} onOpenChange={setEndConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>End the terminal session?</AlertDialogTitle>
+            <AlertDialogTitle>End this folder’s terminal?</AlertDialogTitle>
             <AlertDialogDescription>
-              This stops the shell and any Claude, Codex, or other process
-              running inside it. The terminal output stays visible until you
-              start a new shell.
+              This stops the shell and any process running inside it. Other folder
+              sessions keep running, and this terminal’s output remains visible.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -602,9 +709,11 @@ export function TerminalPanel({
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => {
-                const active = sessionRef.current;
-                if (active) {
-                  void invoke("terminal_stop", { sessionId: active.sessionId });
+                setEndConfirmOpen(false);
+                if (activeEntry?.running) {
+                  void invoke("terminal_stop", {
+                    sessionId: activeEntry.info.sessionId,
+                  });
                 }
               }}
             >

@@ -1,10 +1,20 @@
-import { Folder, FolderOpen } from "lucide-react";
-import { isEmojiValue } from "@/lib/type-icons";
+import { useEffect, useState } from "react";
+import type { Icon } from "@tabler/icons-react";
+import { Folder, FolderOpen } from "@/lib/icons";
+import { tablerIconName } from "@/lib/type-icons";
 
-/**
- * The icon for a type: its custom emoji when one is set, otherwise the
- * default folder glyph.
- */
+let iconCatalog: Map<string, Icon> | null = null;
+let iconCatalogPromise: Promise<Map<string, Icon>> | null = null;
+
+function loadIconCatalog(): Promise<Map<string, Icon>> {
+  iconCatalogPromise ??= import("@/lib/tabler-icon-catalog").then((catalog) => {
+    iconCatalog = catalog.TABLER_ICONS_BY_NAME;
+    return iconCatalog;
+  });
+  return iconCatalogPromise;
+}
+
+/** A type's custom Tabler icon, or the default folder glyph. */
 export function TypeIcon({
   icon,
   open = false,
@@ -12,32 +22,39 @@ export function TypeIcon({
   className,
   style,
 }: {
-  /** Emoji stored for this type, if any. */
   icon?: string;
-  /** Renders the fallback as an open folder (expanded tree rows). */
   open?: boolean;
   size: number;
   className?: string;
   style?: React.CSSProperties;
 }) {
-  if (isEmojiValue(icon)) {
-    return (
-      <span
-        role="img"
-        className={className}
-        style={{
-          fontSize: size,
-          lineHeight: 1,
-          width: size,
-          display: "inline-flex",
-          justifyContent: "center",
-          ...style,
-        }}
-      >
-        {icon}
-      </span>
-    );
+  const name = tablerIconName(icon);
+  const [CustomIcon, setCustomIcon] = useState<Icon | null>(() =>
+    name && iconCatalog ? iconCatalog.get(name) ?? null : null,
+  );
+
+  useEffect(() => {
+    if (!name) {
+      setCustomIcon(null);
+      return;
+    }
+    const cached = iconCatalog?.get(name);
+    if (cached) {
+      setCustomIcon(() => cached);
+      return;
+    }
+    let cancelled = false;
+    void loadIconCatalog().then((catalog) => {
+      if (!cancelled) setCustomIcon(() => catalog.get(name) ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+
+  if (CustomIcon) {
+    return <CustomIcon size={size} className={className} style={style} aria-hidden="true" />;
   }
   const Fallback = open ? FolderOpen : Folder;
-  return <Fallback size={size} className={className} style={style} />;
+  return <Fallback size={size} className={className} style={style} aria-hidden="true" />;
 }

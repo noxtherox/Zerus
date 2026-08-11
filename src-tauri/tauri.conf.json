@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Grimoire",
+  "productName": "Zerus",
   "version": "0.3.1",
-  "identifier": "com.grimoire.notes",
+  "identifier": "com.zerus.notes",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:8080",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Grimoire",
+        "title": "Zerus",
         "width": 1280,
         "height": 820,
         "minWidth": 900,
@@ -30,10 +30,12 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": [
-      "binaries/*"
+      "binaries/*",
+      "vendor/mlx/**/*"
     ],
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
     },
     "icon": [
       "icons/32x32.png",
@@ -110,7 +112,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3MTFGMjMwMDQ0QTMxQTUKUldTbE1Vb0VNUElSbC9vUWhHM200UWxmR1FZMEU1QjlGL0xtbWJnR0REZFdBSXhMQmpjY3N6VGEK",
       "endpoints": [
-        "https://github.com/noxtherox/grimoire/releases/latest/download/latest.json"
+        "https://github.com/noxtherox/zerus/releases/latest/download/latest.json"
       ]
     }
   }

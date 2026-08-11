@@ -17,9 +17,9 @@ type DownloadResponse = {
 };
 
 const LATEST_RELEASE_API =
-  "https://api.github.com/repos/noxtherox/grimoire/releases/latest";
+  "https://api.github.com/repos/noxtherox/zerus/releases/latest";
 const LATEST_RELEASE_PAGE =
-  "https://github.com/noxtherox/grimoire/releases/latest";
+  "https://github.com/noxtherox/zerus/releases/latest";
 
 function redirect(response: DownloadResponse, location: string, cache: string) {
   response.statusCode = 307;
@@ -43,7 +43,7 @@ export default async function handler(
     const githubResponse = await fetch(LATEST_RELEASE_API, {
       headers: {
         Accept: "application/vnd.github+json",
-        "User-Agent": "grimoire-download-redirect",
+        "User-Agent": "zerus-download-redirect",
         "X-GitHub-Api-Version": "2022-11-28",
       },
     });
@@ -67,7 +67,7 @@ export default async function handler(
       "public, s-maxage=300, stale-while-revalidate=86400",
     );
   } catch (error) {
-    console.error("Could not resolve the latest Grimoire download", error);
+    console.error("Could not resolve the latest Zerus download", error);
     redirect(
       response,
       LATEST_RELEASE_PAGE,

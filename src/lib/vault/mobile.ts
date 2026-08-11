@@ -16,15 +16,15 @@ import type { VaultBackend, VaultFile } from "./backend";
 
 const ROOT = "vault";
 const VAULT_MARKER_PATH = ".grimoire/mobile-vault-v1";
-const DEFAULT_VAULT_NAME = "Grimoire";
+const DEFAULT_VAULT_NAME = "Zerus";
 
 const STARTER_NOTES: Array<{ path: string; content: string }> = [
   {
-    path: "Ideas/Ideas for Grimoire mobile.md",
+    path: "Ideas/Ideas for Zerus mobile.md",
     content: `---
 grimoire-pinned: true
 ---
-# Ideas for Grimoire mobile
+# Ideas for Zerus mobile
 
 A calm place to capture thoughts before they disappear.
 
@@ -232,7 +232,7 @@ abstract class MobileFilesystemVault implements VaultBackend {
     return this.exists(VAULT_MARKER_PATH);
   }
 
-  async hasGrimoireMetadata(): Promise<boolean> {
+  async hasZerusMetadata(): Promise<boolean> {
     return this.exists(".grimoire");
   }
 
@@ -306,7 +306,7 @@ export class MobileFolderVault extends MobileFilesystemVault {
     if (
       name.localeCompare(DEFAULT_VAULT_NAME, undefined, { sensitivity: "accent" }) === 0 ||
       (await vault.hasVaultMarker()) ||
-      (await vault.hasGrimoireMetadata())
+      (await vault.hasZerusMetadata())
     ) {
       return vault;
     }
@@ -318,7 +318,7 @@ export class MobileFolderVault extends MobileFilesystemVault {
     if (await nested.rootExists()) return nested;
 
     // The bookmark itself records the user's choice. Existing desktop vaults do
-    // not necessarily contain Grimoire metadata and may have a custom name.
+    // not necessarily contain Zerus metadata and may have a custom name.
     return vault;
   }
 
@@ -327,7 +327,7 @@ export class MobileFolderVault extends MobileFilesystemVault {
     if (
       name.localeCompare(DEFAULT_VAULT_NAME, undefined, { sensitivity: "accent" }) === 0 ||
       (await selected.hasVaultMarker()) ||
-      (await selected.hasGrimoireMetadata())
+      (await selected.hasZerusMetadata())
     ) {
       return selected;
     }
@@ -340,7 +340,7 @@ export class MobileFolderVault extends MobileFilesystemVault {
 
     // Selecting a directory in the document picker is an explicit request to
     // use that directory as the vault. Do not reject custom-named or older
-    // vaults just because they predate Grimoire's metadata marker.
+    // vaults just because they predate Zerus's metadata marker.
     return selected;
   }
 

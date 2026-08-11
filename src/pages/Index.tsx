@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FolderOpen, Loader2 } from "lucide-react";
+import { FolderOpen, Loader2 } from "@/lib/icons";
 import type {
   ImperativePanelGroupHandle,
   ImperativePanelHandle,
@@ -14,8 +14,9 @@ import { Sidebar } from "@/components/notes/Sidebar";
 import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
 import { EditorPane } from "@/components/notes/EditorPane";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
+import { AiPanel } from "@/components/ai/AiPanel";
 import {
   chooseVaultFolder,
   createFileNote,
@@ -34,7 +35,11 @@ import {
   type NoteFilter,
   type NoteListFilters,
 } from "@/lib/filters";
-import { DEFAULT_TYPE } from "@/lib/note-utils";
+import {
+  DEFAULT_TYPE,
+  noteContainingFolder,
+  normalizeFsPath,
+} from "@/lib/note-utils";
 import {
   loadDefaultNoteType,
   loadHideSubtypeNotes,
@@ -56,6 +61,18 @@ const DEFAULT_PANEL_LAYOUT = [
   EDITOR_DEFAULT_SIZE,
 ];
 
+function filterTerminalDirectory(
+  filter: NoteFilter,
+  vaultLocation: string | null,
+): string | null {
+  if (!vaultLocation) return null;
+  const root = vaultLocation.replace(/[\\/]$/, "");
+  if (filter.kind === "type") return `${root}/${filter.path.join("/")}`;
+  if (filter.kind === "trash") return `${root}/.trash`;
+  if (filter.kind === "all" || filter.kind === "files") return root;
+  return null;
+}
+
 const Index = () => {
   const vault = useVault();
   const [filter, setFilter] = useState<NoteFilter>({ kind: "all" });
@@ -65,6 +82,8 @@ const Index = () => {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [terminalDirectory, setTerminalDirectory] = useState<string | null>(null);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
@@ -73,6 +92,7 @@ const Index = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const expandedPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
   const previousPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
+  const terminalNoteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const stopListening = onDesktopNotesOpened(
@@ -127,9 +147,39 @@ const Index = () => {
   const handleFilterChange = (nextFilter: NoteFilter) => {
     setFilter(nextFilter);
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSelectedNoteId(null);
+    terminalNoteIdRef.current = null;
+    const directory = filterTerminalDirectory(nextFilter, vault.location);
+    if (directory) setTerminalDirectory(directory);
   };
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const selectedNoteDirectory = selectedNote
+    ? noteContainingFolder(selectedNote, vault.location)
+    : null;
+  const terminalTargetDirectory =
+    terminalDirectory ?? selectedNoteDirectory ?? vault.location;
+
+  useEffect(() => {
+    if (
+      !selectedNoteId ||
+      !selectedNoteDirectory ||
+      terminalNoteIdRef.current === selectedNoteId
+    ) {
+      return;
+    }
+    terminalNoteIdRef.current = selectedNoteId;
+    setTerminalDirectory((current) =>
+      current && normalizeFsPath(current) === normalizeFsPath(selectedNoteDirectory)
+        ? current
+        : selectedNoteDirectory,
+    );
+  }, [selectedNoteDirectory, selectedNoteId]);
+
+  useEffect(() => {
+    setTerminalDirectory(vault.location);
+    terminalNoteIdRef.current = null;
+  }, [vault.location]);
 
   useEffect(() => {
     setDefaultNoteType(loadDefaultNoteType(vault.location));
@@ -210,26 +260,41 @@ const Index = () => {
       event.preventDefault();
       if (vault.isRefreshing) return;
       if (!vault.isDesktop) return;
-      if (!selectedNote) {
-        showError("Select a note to open its terminal.");
+      if (!terminalTargetDirectory) {
+        showError("Select a folder or note to open its terminal.");
         return;
       }
-      setTerminalOpen((current) => !current);
+      setTerminalOpen((current) => {
+        if (!current) setAiOpen(false);
+        return !current;
+      });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNote, vault.isDesktop, vault.isRefreshing]);
+  }, [terminalTargetDirectory, vault.isDesktop, vault.isRefreshing]);
 
   const handleOpenNote = (id: string) => {
     setFilter({ kind: "all" });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     setSelectedNoteId(id);
+    const openedNote = notes.find((note) => note.id === id);
+    const directory = openedNote
+      ? noteContainingFolder(openedNote, vault.location)
+      : null;
+    if (directory) setTerminalDirectory(directory);
+    terminalNoteIdRef.current = id;
     void prioritizeNoteLoad(id);
   };
 
   const handleSelectNote = (id: string) => {
     setSelectedNoteId(id);
+    const openedNote = notes.find((note) => note.id === id);
+    const directory = openedNote
+      ? noteContainingFolder(openedNote, vault.location)
+      : null;
+    if (directory) setTerminalDirectory(directory);
+    terminalNoteIdRef.current = id;
     void prioritizeNoteLoad(id);
   };
 
@@ -249,6 +314,10 @@ const Index = () => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     setSelectedNoteId(id);
+    setTerminalDirectory(
+      filterTerminalDirectory({ kind: "type", path: typePath }, vault.location),
+    );
+    terminalNoteIdRef.current = id;
   };
 
   const handleToggleFocusMode = () => {
@@ -293,14 +362,14 @@ const Index = () => {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-grim-surface">
         <div className="max-w-sm text-center">
-          <GrimoireLogo
-            alt="Grimoire"
+          <ZerusLogo
+            alt="Zerus"
             className="mx-auto h-20 w-20 rounded-xl"
           />
-          <h1 className="mt-4 text-xl font-semibold">Grimoire</h1>
+          <h1 className="mt-4 text-xl font-semibold">Zerus</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Your notes are plain markdown files in a folder — folders are types.
-            Point Grimoire at a folder to open your vault.
+            Point Zerus at a folder to open your vault.
           </p>
           {vault.status === "error" && (
             <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -456,7 +525,17 @@ const Index = () => {
                 isDesktop={vault.isDesktop}
                 terminalOpen={terminalOpen}
                 onToggleTerminal={() =>
-                  setTerminalOpen((current) => !current)
+                  setTerminalOpen((current) => {
+                    if (!current) setAiOpen(false);
+                    return !current;
+                  })
+                }
+                aiOpen={aiOpen}
+                onToggleAi={() =>
+                  setAiOpen((current) => {
+                    if (!current) setTerminalOpen(false);
+                    return !current;
+                  })
                 }
                 conflict={
                   selectedNote
@@ -466,9 +545,20 @@ const Index = () => {
               />
             </div>
             {vault.isDesktop && (
+              <AiPanel
+                open={aiOpen}
+                note={selectedNote}
+                notes={notes}
+                targetDirectory={terminalTargetDirectory}
+                vaultLocation={vault.location}
+                onOpenChange={setAiOpen}
+              />
+            )}
+            {vault.isDesktop && (
               <TerminalPanel
                 open={terminalOpen}
                 note={selectedNote}
+                targetDirectory={terminalTargetDirectory}
                 vaultLocation={vault.location}
                 onOpenChange={setTerminalOpen}
               />

@@ -1,13 +1,13 @@
-# Grimoire CLI
+# Zerus CLI
 
-The `grimoire` command automates local Grimoire vaults while keeping Markdown
+The `zerus` command automates local Zerus vaults while keeping Markdown
 as the primary document format. Install it and the optional AI-agent skills
 from **Settings → CLI** in the desktop app.
 
 ## Vaults and output
 
-Register vaults with `grimoire vault add NAME PATH`, inspect them with
-`grimoire vault list`, and set a default with `grimoire vault default NAME`.
+Register vaults with `zerus vault add NAME PATH`, inspect them with
+`zerus vault list`, and set a default with `zerus vault default NAME`.
 The desktop app automatically registers each successfully opened vault and
 makes it the CLI default, including updating the path when a vault is moved.
 Automation should pass `--vault NAME_OR_PATH --json` explicitly. Use `--jsonl`
@@ -36,11 +36,11 @@ Epics, and User Stories, while one on `Development/Initiatives` applies only to
 Initiatives and any types nested below it.
 
 ```sh
-grimoire --vault VAULT schema add Development/Initiatives Epics relation \
+zerus --vault VAULT schema add Development/Initiatives Epics relation \
   --relation-type Development/Epics --multiple
-grimoire --vault VAULT schema add Development/Epics Initiative relation \
+zerus --vault VAULT schema add Development/Epics Initiative relation \
   --relation-type Development/Initiatives
-grimoire --vault VAULT schema add "Development/User Stories" Status list \
+zerus --vault VAULT schema add "Development/User Stories" Status list \
   --options Planned,Active,Done --multiple
 ```
 
@@ -56,12 +56,12 @@ the selected type and its sub-types.
 
 ## Hidden metadata and migration
 
-Grimoire reserves `grimoire-*` frontmatter. The current metadata is
+Zerus reserves `grimoire-*` frontmatter. The current metadata is
 `grimoire-id`, `grimoire-pinned`, and `grimoire-archived`; these fields never
 appear in the normal Properties UI. False pin/archive values are omitted, and
 archiving always unpins a note.
 
-Run `grimoire migrate preview` before `grimoire migrate apply --yes`. Duplicate
+Run `zerus migrate preview` before `zerus migrate apply --yes`. Duplicate
 IDs or malformed reserved metadata block migration for review. Once ready, the
 vault manifest records that IDs are required on every device.
 

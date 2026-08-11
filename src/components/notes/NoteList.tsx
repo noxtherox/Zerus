@@ -12,7 +12,7 @@ import {
   Trash2,
   Undo2,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Input } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +61,10 @@ import {
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import {
+  fileManagerName,
+  primaryModifierLabel,
+} from "@/lib/desktop-platform";
 
 const INITIAL_NOTE_COUNT = 100;
 const NOTE_LOAD_INCREMENT = 50;
@@ -200,7 +204,7 @@ export function NoteList({
                   ? "Add a file to Files"
                   : inExternal
                     ? "Open markdown file(s)"
-                    : "New note (⌘N)"}
+                    : `New note (${primaryModifierLabel}N)`}
               </TooltipContent>
             </Tooltip>
           </Button>
@@ -317,7 +321,8 @@ export function NoteList({
                 <ContextMenuItem
                   onClick={() => void revealNoteInDesktop(note.id)}
                 >
-                  <FolderSearch size={14} className="mr-2" /> Reveal in Finder
+                  <FolderSearch size={14} className="mr-2" /> Reveal in{" "}
+                  {fileManagerName}
                 </ContextMenuItem>
                 {external ? (
                   <>
@@ -416,7 +421,7 @@ export function NoteList({
                 : "this note"}”?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Grimoire will stop tracking this external note. The file will be
+              Zerus will stop tracking this external note. The file will be
               saved and left in its current location.
             </AlertDialogDescription>
           </AlertDialogHeader>

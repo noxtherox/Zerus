@@ -12,13 +12,13 @@ import {
   Sparkles,
   TerminalSquare,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { GrimoireLogo } from "@/components/GrimoireLogo";
 import "./Landing.css";
 
 const DOWNLOAD_URL = "/api/download";
-const RELEASES_URL = "https://github.com/noxtherox/grimoire/releases/latest";
-const REPOSITORY_URL = "https://github.com/noxtherox/grimoire";
+const RELEASES_URL = "https://github.com/noxtherox/Zerus/releases/latest";
+const REPOSITORY_URL = "https://github.com/noxtherox/Zerus";
 
 const features = [
   {
@@ -269,9 +269,9 @@ function ProductPreview() {
           <GrimoireLogo className="landing-product-logo" />
           <nav aria-label="Example vault folders">
             <a className="is-active"><Folder /> Notes <span>12</span></a>
-            <a><span className="folder-emoji">◈</span> Projects <span>6</span></a>
-            <a><span className="folder-emoji">✦</span> Ideas <span>18</span></a>
-            <a><span className="folder-emoji">◎</span> People <span>9</span></a>
+            <a><span className="folder-icon">◈</span> Projects <span>6</span></a>
+            <a><span className="folder-icon">✦</span> Ideas <span>18</span></a>
+            <a><span className="folder-icon">◎</span> People <span>9</span></a>
           </nav>
         </aside>
         <div className="landing-product-list">

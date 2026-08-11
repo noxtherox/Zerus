@@ -39,10 +39,10 @@ import {
   withBody,
 } from "@/lib/frontmatter";
 import {
-  isReservedGrimoireProperty,
-  readGrimoireMetadata,
-  setGrimoireState,
-} from "@/lib/grimoire-metadata";
+  isReservedZerusProperty,
+  readZerusMetadata,
+  setZerusState,
+} from "@/lib/zerus-metadata";
 import {
   type PropertyDef,
   type PropertySchemas,
@@ -52,7 +52,7 @@ import {
 } from "@/lib/properties";
 import {
   type TypeIcons,
-  isEmojiValue,
+  isTypeIconValue,
   suggestIconForType,
 } from "@/lib/type-icons";
 import type { VaultBackend } from "@/lib/vault/backend";
@@ -86,11 +86,11 @@ import {
   type ResolvedFileHub,
 } from "@/lib/file-hubs";
 
-const VAULT_PATH_KEY = "grimoire.vaultPath";
-const EXTERNAL_PATHS_KEY = "grimoire.externalPaths";
-const FILE_LOCATION_MAPPINGS_KEY = "grimoire.fileLocationMappings.v1";
-const FILE_HUB_MAPPINGS_KEY = "grimoire.fileHubMappings.v1";
-const STARTUP_CACHE_KEY_PREFIX = "grimoire.startupCache.v1.";
+const VAULT_PATH_KEY = "zerus.vaultPath";
+const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
+const FILE_LOCATION_MAPPINGS_KEY = "zerus.fileLocationMappings.v1";
+const FILE_HUB_MAPPINGS_KEY = "zerus.fileHubMappings.v1";
+const STARTUP_CACHE_KEY_PREFIX = "zerus.startupCache.v1.";
 const FLUSH_DELAY_MS = 500;
 
 export interface VaultState {
@@ -103,7 +103,7 @@ export interface VaultState {
   extraTypes: string[][];
   /** Property definitions, keyed by top-level type key ("work"). */
   schemas: PropertySchemas;
-  /** Custom lucide icon per type, keyed by full type key ("work/projects"). */
+  /** Custom Tabler icon per type, keyed by full type key ("work/projects"). */
   typeIcons: TypeIcons;
   /** Synced names/IDs for portable base folders. Absolute roots stay local. */
   fileLocations: FileLocationDefinition[];
@@ -220,7 +220,7 @@ export function prioritizeNoteLoad(id: string): Promise<void> {
       });
     })
     .catch((error) => {
-      console.error("Grimoire: failed to prioritize startup note", error);
+      console.error("Zerus: failed to prioritize startup note", error);
     })
     .finally(() => {
       pendingStartupNoteLoads.delete(id);
@@ -278,7 +278,7 @@ function setFileHubMapping(id: string, path: string | null) {
 // ---- note display state, persisted per vault ------------------------------
 
 function pinnedStorageKey(): string {
-  return `grimoire.pinned.${state.location ?? "browser"}`;
+  return `zerus.pinned.${state.location ?? "browser"}`;
 }
 
 function loadPinnedPaths(): Set<string> {
@@ -303,7 +303,7 @@ function savePinnedPaths() {
 }
 
 function archivedStorageKey(): string {
-  return `grimoire.archived.${state.location ?? "browser"}`;
+  return `zerus.archived.${state.location ?? "browser"}`;
 }
 
 function loadArchivedPaths(): Set<string> {
@@ -448,10 +448,10 @@ async function loadTypeIcons(fromBackend: VaultBackend): Promise<TypeIcons> {
     const raw = await fromBackend.readText(TYPE_ICONS_PATH);
     const parsed = JSON.parse(raw) as TypeIcons;
     if (!parsed || typeof parsed !== "object") return {};
-    // keep only emoji values — drops entries from the short-lived lucide format
+    // Ignore legacy emoji and obsolete Lucide values. They fall back to folders.
     const typeIcons: TypeIcons = {};
     for (const [key, value] of Object.entries(parsed)) {
-      if (isEmojiValue(value)) typeIcons[key] = value;
+      if (isTypeIconValue(value)) typeIcons[key] = value;
     }
     return typeIcons;
   } catch {
@@ -569,7 +569,7 @@ function noteFromVaultFile(
   archivedPaths: Set<string>,
   existingId?: string,
 ): Note {
-  const metadata = readGrimoireMetadata(file.content);
+  const metadata = readZerusMetadata(file.content);
   return {
     id: existingId ?? metadata.id ?? crypto.randomUUID(),
     path: file.path,
@@ -857,7 +857,7 @@ export async function createMobileVaultOnDevice(): Promise<boolean> {
 export async function chooseVaultFolder() {
   const folder = await openDialog({
     directory: true,
-    title: "Choose your Grimoire vault folder",
+    title: "Choose your Zerus vault folder",
   });
   if (typeof folder !== "string" || !folder) return;
   if (backend && !(await flushAll())) return;
@@ -882,7 +882,7 @@ export async function refreshVaultFromDisk() {
   const external = state.notes.filter(isExternalNote);
   const refreshed = files.map((file) => {
     const previous = existingByPath.get(file.path);
-    const metadata = readGrimoireMetadata(file.content);
+    const metadata = readZerusMetadata(file.content);
     const note: Note = {
       id: metadata.id ?? previous?.id ?? crypto.randomUUID(),
       path: file.path,
@@ -977,9 +977,9 @@ export async function synchronizeDesktopFiles() {
       loadFileLocations(activeBackend),
     ]);
     if (backend !== activeBackend || state.status !== "ready") return;
-    // The filesystem scan is asynchronous. If Grimoire edited, saved, renamed,
+    // The filesystem scan is asynchronous. If Zerus edited, saved, renamed,
     // added, or removed a note while it was in progress, its results may describe
-    // the disk from before Grimoire's own write. Ignore that stale scan and let
+    // the disk from before Zerus's own write. Ignore that stale scan and let
     // the next poll compare against the new snapshot.
     if (!desktopSyncBasisIsCurrent(syncBasis)) return;
 
@@ -1146,7 +1146,7 @@ export async function synchronizeDesktopFiles() {
     }
     if (registryChanged) saveExternalPaths();
   } catch (error) {
-    console.error("Grimoire: failed to synchronize files", error);
+    console.error("Zerus: failed to synchronize files", error);
   } finally {
     desktopSyncInFlight = false;
   }
@@ -1226,7 +1226,7 @@ function setNoteBusy(id: string, busy: boolean) {
 }
 
 function reportError(action: string, error: unknown) {
-  console.error(`Grimoire: failed to ${action}`, error);
+  console.error(`Zerus: failed to ${action}`, error);
   showError(`Failed to ${action}: ${error}`);
 }
 
@@ -1395,7 +1395,7 @@ async function flushUntilIdle(id: string): Promise<boolean> {
 
 async function flushAll(): Promise<boolean> {
   if (Object.keys(state.conflicts).length > 0) {
-    showError("Resolve note changes from disk before closing Grimoire.");
+    showError("Resolve note changes from disk before closing Zerus.");
     return false;
   }
   let saved = true;
@@ -1486,9 +1486,9 @@ async function collectPendingDesktopOpenPaths() {
 function installDesktopOpenHook() {
   if (desktopOpenHookInstalled) return;
   desktopOpenHookInstalled = true;
-  void listen("grimoire-open-files", () => {
+  void listen("zerus-open-files", () => {
     void collectPendingDesktopOpenPaths().catch((error) =>
-      reportError("open file from Finder", error),
+      reportError("open file from desktop", error),
     );
   })
     .then(() => collectPendingDesktopOpenPaths())
@@ -1507,7 +1507,7 @@ async function drainDesktopOpenPaths(): Promise<void> {
       const notePaths = paths.filter(isMarkdownFilePath);
       const documentPaths = paths.filter((path) => !isMarkdownFilePath(path));
       const ids = [
-        ...(await openDocumentPathsFromFinder(documentPaths)),
+        ...(await openDocumentPathsFromDesktop(documentPaths)),
         ...(await openExternalPaths(notePaths)),
       ];
       if (!ids.length) continue;
@@ -1525,7 +1525,7 @@ async function drainDesktopOpenPaths(): Promise<void> {
   return desktopOpenDrain;
 }
 
-export async function openDocumentPathsFromFinder(
+export async function openDocumentPathsFromDesktop(
   paths: string[],
 ): Promise<string[]> {
   const ids: string[] = [];
@@ -2165,7 +2165,7 @@ function schemaOwnerKey(typeKeyOrPath: string): string {
 }
 
 export function addTypeProperty(typeKeyOrPath: string, def: PropertyDef) {
-  if (isReservedGrimoireProperty(def.name)) return;
+  if (isReservedZerusProperty(def.name)) return;
   const ownerKey = schemaOwnerKey(typeKeyOrPath);
   const defs = state.schemas[ownerKey] ?? [];
   if (defs.some((d) => d.name.toLowerCase() === def.name.toLowerCase())) return;
@@ -2178,7 +2178,7 @@ export function updateTypeProperty(
   oldName: string,
   def: PropertyDef,
 ) {
-  if (isReservedGrimoireProperty(def.name)) return;
+  if (isReservedZerusProperty(def.name)) return;
   const ownerKey = schemaOwnerKey(typeKeyOrPath);
   const defs = state.schemas[ownerKey] ?? [];
   const idx = defs.findIndex(
@@ -2254,7 +2254,7 @@ export function setNoteProperty(
   name: string,
   value: PropertyValue | null,
 ) {
-  if (isReservedGrimoireProperty(name)) return;
+  if (isReservedZerusProperty(name)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return;
   const next = setContentProperty(note.content, name, value);
@@ -2279,7 +2279,7 @@ function saveTypeIcons(typeIcons: TypeIcons) {
     .catch((error) => reportError("save type icons", error));
 }
 
-/** Sets (or with `null`, resets to the default folder) a type's emoji. */
+/** Sets (or with `null`, resets to the default folder) a type's Tabler icon. */
 export function setTypeIcon(typePath: string[], icon: string | null) {
   const key = typeKey(typePath);
   if (!key) return;
@@ -2290,7 +2290,7 @@ export function setTypeIcon(typePath: string[], icon: string | null) {
 }
 
 /**
- * Guesses emoji for type levels that didn't exist before (e.g. creating
+ * Guesses a Tabler icon for type levels that didn't exist before (e.g. creating
  * "work/recipes" suggests for both "work" and "work/recipes" if both are new).
  * Never touches types that already existed or already have an icon.
  */
@@ -2484,7 +2484,7 @@ export async function createNote(
   );
   const path = uniquePath(dir, stem);
   const id = crypto.randomUUID();
-  const persistedContent = setGrimoireState(content, { id });
+  const persistedContent = setZerusState(content, { id });
   const note: Note = {
     id,
     path,
@@ -2587,7 +2587,7 @@ export function toggleNotePinned(id: string) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note)) return;
   const pinned = !note.pinned;
-  updateNoteContent(id, setGrimoireState(note.content, { pinned }));
+  updateNoteContent(id, setZerusState(note.content, { pinned }));
   updateNote(id, { pinned });
   savePinnedPaths();
 }
@@ -2599,7 +2599,7 @@ export function toggleNoteArchived(id: string) {
   const pinned = archived ? false : note.pinned;
   updateNoteContent(
     id,
-    setGrimoireState(note.content, { archived, pinned }),
+    setZerusState(note.content, { archived, pinned }),
   );
   updateNote(id, { archived, pinned });
   saveNoteDisplayState();

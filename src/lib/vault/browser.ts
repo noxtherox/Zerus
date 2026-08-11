@@ -30,11 +30,11 @@ function seedFiles(): Record<string, StoredFile> {
   const at = (offsetMinutes: number) =>
     new Date(now - offsetMinutes * 60_000).toISOString();
   return {
-    "inbox/Welcome to Grimoire.md": {
+    "inbox/Welcome to Zerus.md": {
       updatedAt: at(60),
-      content: `# Welcome to Grimoire
+      content: `# Welcome to Zerus
 
-Grimoire is a Bear-style notes app where your notes are plain markdown files in folders, and the folders are your **types**: every note has a type, and optionally a sub-type and sub-sub-type.
+Zerus is a Bear-style notes app where your notes are plain markdown files in folders, and the folders are your **types**: every note has a type, and optionally a sub-type and sub-sub-type.
 
 ## The basics
 
@@ -48,7 +48,7 @@ Type \`[[\` to link to another note — try it! For example: [[Project Polaris]]
 
 Cmd/Ctrl+Click a link to follow it. Open [[Project Polaris]] and toggle the **Backlinks** sidebar with the link button at the top right: notes that link to it are grouped by their type, so you can see *where* a note is referenced from at a glance.
 
-> In the desktop app you point Grimoire at any folder of .md files and they show up here with their types.`,
+> In the desktop app you point Zerus at any folder of .md files and they show up here with their types.`,
     },
     "work/projects/Project Polaris.md": {
       updatedAt: at(50),
