@@ -8,12 +8,12 @@ fn fixture() -> TempDir {
     fs::create_dir_all(directory.path().join("work")).unwrap();
     fs::write(
         directory.path().join("work/Plan.md"),
-        "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\nstatus: active\n---\n# Project Plan\n\nAction items\n",
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\nstatus: active\n---\n# Project Plan\n\nAction items\n",
     )
     .unwrap();
     fs::write(
         directory.path().join("work/Archived.md"),
-        "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c39\ngrimoire-archived: true\n---\n# Old Plan\n",
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c39\nzerus-archived: true\n---\n# Old Plan\n",
     )
     .unwrap();
     directory
@@ -96,7 +96,7 @@ fn reports_ambiguous_titles_without_prompting() {
     let vault = fixture();
     fs::write(
         vault.path().join("Project Plan.md"),
-        "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c40\n---\n# Project Plan\n",
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c40\n---\n# Project Plan\n",
     )
     .unwrap();
     let output = cli()
@@ -132,13 +132,13 @@ fn mutates_reserved_state_and_can_undo() {
         .assert()
         .success();
     let pinned = fs::read_to_string(vault.path().join("work/Plan.md")).unwrap();
-    assert!(pinned.contains("grimoire-pinned: true"));
+    assert!(pinned.contains("zerus-pinned: true"));
     cli()
         .args(["--vault", vault.path().to_str().unwrap(), "undo"])
         .assert()
         .success();
     let restored = fs::read_to_string(vault.path().join("work/Plan.md")).unwrap();
-    assert!(!restored.contains("grimoire-pinned"));
+    assert!(!restored.contains("zerus-pinned"));
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn migrates_creates_and_trashes_notes() {
         .success();
     assert!(fs::read_to_string(vault.path().join("Loose.md"))
         .unwrap()
-        .contains("grimoire-id:"));
+        .contains("zerus-id:"));
     cli()
         .args([
             "--vault",
@@ -192,6 +192,58 @@ fn migrates_creates_and_trashes_notes() {
         .assert()
         .success();
     assert!(vault.path().join("ideas/New.md").exists());
+}
+
+#[test]
+fn previews_and_applies_the_legacy_brand_migration() {
+    let vault = TempDir::new().unwrap();
+    fs::create_dir_all(vault.path().join(".grimoire")).unwrap();
+    fs::write(
+        vault.path().join(".grimoire/vault.json"),
+        r#"{"version":1,"vaultId":"019f7922-8fae-7335-8d44-39d5a5822de8","metadataVersion":1,"idsRequired":true}"#,
+    )
+    .unwrap();
+    fs::write(
+        vault.path().join("Legacy.md"),
+        "---\ngrimoire-id: 019f7922-8fae-7335-8d44-39d5a5822de9\ngrimoire-pinned: true\ngrimoire-file-id: attachment-1\n---\n# Legacy\n",
+    )
+    .unwrap();
+
+    let preview = cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "migrate",
+            "preview",
+        ])
+        .output()
+        .unwrap();
+    assert!(preview.status.success());
+    let preview: Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_eq!(preview["data"]["notesChanged"], 1);
+    assert_eq!(preview["data"]["legacyKeysRenamed"], 3);
+    assert_eq!(preview["data"]["movesMetadataDirectory"], true);
+    assert_eq!(preview["data"]["changes"][0]["addsId"], false);
+
+    cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "migrate",
+            "apply",
+            "--yes",
+        ])
+        .assert()
+        .success();
+
+    let migrated = fs::read_to_string(vault.path().join("Legacy.md")).unwrap();
+    assert!(migrated.contains("zerus-id: 019f7922-8fae-7335-8d44-39d5a5822de9"));
+    assert!(migrated.contains("zerus-pinned: true"));
+    assert!(migrated.contains("zerus-file-id: attachment-1"));
+    assert!(!migrated.contains("grimoire-"));
+    assert!(vault.path().join(".zerus/vault.json").is_file());
+    assert!(!vault.path().join(".grimoire").exists());
 }
 
 #[test]
@@ -265,7 +317,7 @@ fn adds_inherited_and_subtype_relation_schemas() {
         .success();
 
     let schemas: Value =
-        serde_json::from_slice(&fs::read(vault.path().join(".grimoire/properties.json")).unwrap())
+        serde_json::from_slice(&fs::read(vault.path().join(".zerus/properties.json")).unwrap())
             .unwrap();
     assert_eq!(
         schemas["Development/Initiatives"][0]["relationTypeKey"],
@@ -318,7 +370,7 @@ fn writes_list_multiplicity_and_rejects_kind_specific_flags() {
         .assert()
         .success();
     let schemas: Value =
-        serde_json::from_slice(&fs::read(vault.path().join(".grimoire/properties.json")).unwrap())
+        serde_json::from_slice(&fs::read(vault.path().join(".zerus/properties.json")).unwrap())
             .unwrap();
     assert_eq!(
         schemas["Development/Epics"][0]["listOptions"],
@@ -353,12 +405,12 @@ fn removing_and_purging_a_subtype_schema_does_not_touch_siblings() {
     fs::create_dir_all(vault.path().join("Development/Epics")).unwrap();
     fs::write(
         vault.path().join("Development/Initiatives/Initiative.md"),
-        "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c41\nEpics: Epic One\n---\n# Initiative One\n",
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c41\nEpics: Epic One\n---\n# Initiative One\n",
     )
     .unwrap();
     fs::write(
         vault.path().join("Development/Epics/Epic.md"),
-        "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c42\nEpics: Keep me\n---\n# Epic One\n",
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c42\nEpics: Keep me\n---\n# Epic One\n",
     )
     .unwrap();
     cli()

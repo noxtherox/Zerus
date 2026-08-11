@@ -32,13 +32,13 @@ describe("AI provider configuration", () => {
       baseUrl: "https://openrouter.ai/api/v1",
       model: "anthropic/claude-sonnet-4",
     });
-    expect(localStorage.getItem("grimoire.ai.provider.v1")).not.toContain(
+    expect(localStorage.getItem("zerus.ai.provider.v1")).not.toContain(
       "apiKey",
     );
   });
 
   it("falls back safely when stored data is invalid", () => {
-    localStorage.setItem("grimoire.ai.provider.v1", "not-json");
+    localStorage.setItem("zerus.ai.provider.v1", "not-json");
     expect(readAiProviderConfig()).toEqual(LOCAL_AI_CONFIG);
   });
 });

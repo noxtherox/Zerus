@@ -17,7 +17,7 @@ export const LOCAL_AI_CONFIG: AiProviderConfig = {
   model: "Qwen3-1.7B-4bit",
 };
 
-const CONFIG_STORAGE_KEY = "grimoire.ai.provider.v1";
+const CONFIG_STORAGE_KEY = "zerus.ai.provider.v1";
 
 export function readAiProviderConfig(): AiProviderConfig {
   try {

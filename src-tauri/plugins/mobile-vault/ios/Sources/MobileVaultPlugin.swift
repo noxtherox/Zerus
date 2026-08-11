@@ -5,8 +5,8 @@ import UniformTypeIdentifiers
 import WebKit
 
 final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate {
-  private let bookmarkKey = "grimoire.mobileVaultBookmark.v1"
-  private let externalBookmarksKey = "grimoire.mobileExternalBookmarks.v1"
+  private let bookmarkKey = "zerus.mobileVaultBookmark.v1"
+  private let externalBookmarksKey = "zerus.mobileExternalBookmarks.v1"
   private var activeURL: URL?
   private var activeAccess = false
   private var activeExternalURLs: [String: URL] = [:]

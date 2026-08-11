@@ -39,7 +39,7 @@ pub enum RegistryError {
 pub fn default_registry_path() -> Result<PathBuf, RegistryError> {
     let config = dirs::config_dir().ok_or(RegistryError::ConfigDirectory)?;
     let current = config.join("zerus").join("vaults.json");
-    let legacy = config.join("grimoire").join("vaults.json");
+    let legacy = config.join("zerus").join("vaults.json");
     Ok(if current.exists() || !legacy.exists() {
         current
     } else {

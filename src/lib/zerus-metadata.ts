@@ -2,17 +2,17 @@ import { getNoteProperties, setContentProperty } from "@/lib/frontmatter";
 
 /** Reserved frontmatter owned by Zerus rather than user property schemas. */
 export const ZERUS_METADATA_KEYS = {
-  id: "grimoire-id",
-  pinned: "grimoire-pinned",
-  archived: "grimoire-archived",
+  id: "zerus-id",
+  pinned: "zerus-pinned",
+  archived: "zerus-archived",
 } as const;
 
 /**
- * All `grimoire-*` keys are reserved so future metadata remains hidden and
+ * All `zerus-*` keys are reserved so future metadata remains hidden and
  * cannot accidentally become an editable user property.
  */
 export function isReservedZerusProperty(key: string): boolean {
-  return key.trim().toLowerCase().startsWith("grimoire-");
+  return key.trim().toLowerCase().startsWith("zerus-");
 }
 
 export function readZerusMetadata(content: string) {

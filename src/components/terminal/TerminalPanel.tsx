@@ -53,7 +53,7 @@ import { showError } from "@/utils/toast";
 
 const DEFAULT_WIDTH = 420;
 const MIN_WIDTH = 320;
-const WIDTH_STORAGE_KEY = "grimoire.terminal.width";
+const WIDTH_STORAGE_KEY = "zerus.terminal.width";
 
 interface SessionInfo {
   sessionId: number;

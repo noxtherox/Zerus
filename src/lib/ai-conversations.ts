@@ -12,7 +12,7 @@ interface StoredAiConversation {
 
 type StoredAiConversations = Record<string, StoredAiConversation>;
 
-const STORAGE_KEY = "grimoire.ai.conversations.v1";
+const STORAGE_KEY = "zerus.ai.conversations.v1";
 const MAX_CONVERSATIONS = 50;
 const MAX_MESSAGES = 64;
 const MAX_STORAGE_LENGTH = 4_000_000;

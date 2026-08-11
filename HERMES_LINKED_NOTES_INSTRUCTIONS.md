@@ -12,7 +12,7 @@ Work only inside this vault:
 <REPLACE WITH THE ABSOLUTE PATH TO MY ZERUS VAULT>
 ```
 
-Do not create, move, rename, or modify files outside that vault. Do not modify files inside `.grimoire`, `.trash`, or `assets` unless I explicitly request it.
+Do not create, move, rename, or modify files outside that vault. Do not modify files inside `.zerus`, `.trash`, or `assets` unless I explicitly request it.
 
 ## Before creating notes
 
@@ -94,7 +94,7 @@ Related:
 ---
 ```
 
-Important: `Related` must already be configured in Zerus as a **Relation** property for the note's top-level type. If it is missing or configured as another property type, do not edit `.grimoire/properties.json` automatically. Report the issue and explain which top-level type needs a `Related` Relation property. Continue using body wikilinks when doing so is consistent with the user's request.
+Important: `Related` must already be configured in Zerus as a **Relation** property for the note's top-level type. If it is missing or configured as another property type, do not edit `.zerus/properties.json` automatically. Report the issue and explain which top-level type needs a `Related` Relation property. Continue using body wikilinks when doing so is consistent with the user's request.
 
 ## Linking rules
 

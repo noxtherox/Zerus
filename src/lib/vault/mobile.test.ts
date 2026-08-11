@@ -48,7 +48,7 @@ describe("MobileFolderVault discovery", () => {
     expect((await vault?.loadAll())?.map((file) => file.path)).toEqual([
       "Ideas/Existing.md",
     ]);
-    await expect(readFile(join(root, ".grimoire", "mobile-vault-v1"))).rejects.toThrow();
+    await expect(readFile(join(root, ".zerus", "mobile-vault-v1"))).rejects.toThrow();
   });
 
   it("finds a Zerus vault inside the selected iCloud parent folder", async () => {

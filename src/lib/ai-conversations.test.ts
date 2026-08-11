@@ -47,7 +47,7 @@ describe("AI conversations", () => {
   });
 
   it("ignores malformed stored history", () => {
-    localStorage.setItem("grimoire.ai.conversations.v1", "not-json");
+    localStorage.setItem("zerus.ai.conversations.v1", "not-json");
     expect(readAiConversation("anything")).toEqual([]);
   });
 

@@ -1,8 +1,8 @@
 import type { VaultBackend, VaultFile } from "./backend";
 
-const STORAGE_KEY = "grimoire.browserVault.v1";
-const ASSETS_KEY = "grimoire.browserVault.assets.v1";
-const DIRS_KEY = "grimoire.browserVault.dirs.v1";
+const STORAGE_KEY = "zerus.browserVault.v1";
+const ASSETS_KEY = "zerus.browserVault.assets.v1";
+const DIRS_KEY = "zerus.browserVault.dirs.v1";
 
 interface StoredFile {
   content: string;
@@ -150,7 +150,7 @@ export class BrowserVault implements VaultBackend {
   }
 
   async loadAll(): Promise<VaultFile[]> {
-    // only .md files are notes — config files (.grimoire/…) also live in
+    // only .md files are notes — config files (.zerus/…) also live in
     // `files` via write(), and must not show up as notes
     return Object.entries(this.files)
       .filter(([path]) => /\.md$/i.test(path))

@@ -56,8 +56,8 @@ the selected type and its sub-types.
 
 ## Hidden metadata and migration
 
-Zerus reserves `grimoire-*` frontmatter. The current metadata is
-`grimoire-id`, `grimoire-pinned`, and `grimoire-archived`; these fields never
+Zerus reserves `zerus-*` frontmatter. The current metadata is
+`zerus-id`, `zerus-pinned`, and `zerus-archived`; these fields never
 appear in the normal Properties UI. False pin/archive values are omitted, and
 archiving always unpins a note.
 

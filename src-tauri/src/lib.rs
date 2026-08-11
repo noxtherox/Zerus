@@ -165,9 +165,9 @@ description: Work safely with the user's local Zerus Markdown vault through the 
 
 Use `zerus` for Zerus vault notes. Always select the vault explicitly with `--vault` in automation and use `--json` for machine-readable output.
 
-Start with `zerus vault list --json` and `zerus doctor --json`. Read with `note list`, `note get`, and `search`. Mutate with `note create`, `note set-body`, `note append`, `note pin`, `note archive`, `note property set`, `note trash`, `note restore`, and `import`. Include `--if-revision` when changing content read earlier. Preview `migrate` before applying it. Use `history` and `undo` for recovery. Never edit `grimoire-*` properties directly.
+Start with `zerus vault list --json` and `zerus doctor --json`. Read with `note list`, `note get`, and `search`. Mutate with `note create`, `note set-body`, `note append`, `note pin`, `note archive`, `note property set`, `note trash`, `note restore`, and `import`. Include `--if-revision` when changing content read earlier. Preview `migrate` before applying it. Use `history` and `undo` for recovery. Never edit `zerus-*` properties directly.
 
-Manage property definitions with `schema list|add|remove`; do not hand-edit `.grimoire/properties.json`. Schema type paths are exact and inherit into sub-types. Create relations with `schema add TYPE_PATH NAME relation --relation-type TARGET_TYPE [--multiple]`. Create lists with `schema add TYPE_PATH NAME list --options A,B,C [--multiple]`.
+Manage property definitions with `schema list|add|remove`; do not hand-edit `.zerus/properties.json`. Schema type paths are exact and inherit into sub-types. Create relations with `schema add TYPE_PATH NAME relation --relation-type TARGET_TYPE [--multiple]`. Create lists with `schema add TYPE_PATH NAME list --options A,B,C [--multiple]`.
 
 For destructive or bulk operations, explain the preview and obtain explicit user approval. This package targets {agent}.
 "#
@@ -301,7 +301,7 @@ fn cli_migration_apply(
             }
         }
     }
-    let history_dir = root.join(".grimoire/history");
+    let history_dir = root.join(".zerus/history");
     fs::create_dir_all(&history_dir).map_err(|error| error.to_string())?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -2002,7 +2002,7 @@ mod tests {
         assert_eq!(PathBuf::from(saved), expected);
         let contents = fs::read_to_string(&expected).expect("read exported skill");
         assert!(contents.contains("name: zerus"));
-        assert!(contents.contains("Never edit `grimoire-*` properties directly."));
+        assert!(contents.contains("Never edit `zerus-*` properties directly."));
 
         fs::remove_dir_all(root).expect("remove export folder");
     }

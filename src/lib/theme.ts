@@ -177,8 +177,8 @@ export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
   },
 ];
 
-const STORAGE_KEY = "grimoire-theme";
-const SAVED_THEMES_STORAGE_KEY = "grimoire-saved-themes";
+const STORAGE_KEY = "zerus-theme";
+const SAVED_THEMES_STORAGE_KEY = "zerus-saved-themes";
 export const MAX_SAVED_THEME_NAME_LENGTH = 40;
 
 const CSS_VARS: Record<keyof ZerusTheme, string> = {

@@ -3,7 +3,7 @@ import type { PropertyValue } from "@/lib/frontmatter";
 /**
  * Property definitions can live on any note type and cascade to sub-types.
  * Values are stored per note as YAML frontmatter; definitions are stored per
- * vault in `.grimoire/properties.json`.
+ * vault in `.zerus/properties.json`.
  */
 
 export type PropertyType =

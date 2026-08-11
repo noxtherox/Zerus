@@ -3,9 +3,10 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const ZERUS_ID_KEY: &str = "grimoire-id";
-pub const ZERUS_PINNED_KEY: &str = "grimoire-pinned";
-pub const ZERUS_ARCHIVED_KEY: &str = "grimoire-archived";
+pub const ZERUS_ID_KEY: &str = "zerus-id";
+pub const ZERUS_PINNED_KEY: &str = "zerus-pinned";
+pub const ZERUS_ARCHIVED_KEY: &str = "zerus-archived";
+const LEGACY_METADATA_PREFIX: &str = "grimoire-";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,6 +24,8 @@ pub struct MetadataMigrationPlan {
     pub metadata: NoteMetadata,
     pub next_content: String,
     pub changed: bool,
+    pub id_added: bool,
+    pub legacy_keys_renamed: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -48,6 +51,7 @@ pub struct MetadataMigrationSummary {
     pub ids_added: usize,
     pub pinned_added: usize,
     pub archived_added: usize,
+    pub legacy_keys_renamed: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -78,6 +82,11 @@ pub enum MetadataError {
     InvalidId { key: String },
     #[error("'{key}' must be true or false")]
     InvalidBoolean { key: String },
+    #[error("legacy metadata key '{legacy_key}' conflicts with existing '{zerus_key}'")]
+    LegacyKeyCollision {
+        legacy_key: String,
+        zerus_key: String,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -140,6 +149,63 @@ fn unquote(value: &str) -> &str {
     } else {
         trimmed
     }
+}
+
+fn top_level_key(line: &str) -> Option<&str> {
+    if line.starts_with(char::is_whitespace) {
+        return None;
+    }
+    line.split_once(':').map(|(key, _)| key.trim())
+}
+
+fn rename_legacy_metadata_keys(content: &str) -> Result<(String, usize), MetadataError> {
+    let Some(frontmatter) = split_frontmatter(content)? else {
+        return Ok((content.to_string(), 0));
+    };
+    let keys = frontmatter
+        .raw
+        .lines()
+        .filter_map(top_level_key)
+        .map(str::to_ascii_lowercase)
+        .collect::<std::collections::HashSet<_>>();
+    let mut renamed = 0;
+    let mut next_raw = String::with_capacity(frontmatter.raw.len());
+
+    for segment in frontmatter.raw.split_inclusive('\n') {
+        let line = segment.trim_end_matches(['\r', '\n']);
+        let ending = &segment[line.len()..];
+        let Some(raw_key) = top_level_key(line) else {
+            next_raw.push_str(segment);
+            continue;
+        };
+        let normalized = raw_key.to_ascii_lowercase();
+        let Some(suffix) = normalized.strip_prefix(LEGACY_METADATA_PREFIX) else {
+            next_raw.push_str(segment);
+            continue;
+        };
+        let zerus_key = format!("zerus-{suffix}");
+        if keys.contains(&zerus_key) {
+            return Err(MetadataError::LegacyKeyCollision {
+                legacy_key: raw_key.to_string(),
+                zerus_key,
+            });
+        }
+        let colon = line.find(':').expect("top-level key has a colon");
+        next_raw.push_str(&zerus_key);
+        next_raw.push_str(&line[colon..]);
+        next_raw.push_str(ending);
+        renamed += 1;
+    }
+
+    if renamed == 0 {
+        return Ok((content.to_string(), 0));
+    }
+    let raw_start = if content.starts_with("---\r\n") { 5 } else { 4 };
+    let mut next = String::with_capacity(content.len());
+    next.push_str(&content[..raw_start]);
+    next.push_str(&next_raw);
+    next.push_str(&content[frontmatter.closing_offset..]);
+    Ok((next, renamed))
 }
 
 fn reserved_values(raw: &str) -> Result<Vec<(String, String)>, MetadataError> {
@@ -238,8 +304,9 @@ pub fn plan_note_metadata_migration(
     legacy_pinned: bool,
     legacy_archived: bool,
 ) -> Result<MetadataMigrationPlan, MetadataError> {
-    let current = read_note_metadata(content)?;
-    let frontmatter = split_frontmatter(content)?;
+    let (renamed_content, legacy_keys_renamed) = rename_legacy_metadata_keys(content)?;
+    let current = read_note_metadata(&renamed_content)?;
+    let frontmatter = split_frontmatter(&renamed_content)?;
     let existing_values = frontmatter
         .map(|value| reserved_values(value.raw))
         .transpose()?
@@ -258,7 +325,8 @@ pub fn plan_note_metadata_migration(
         lines.push(format!("{ZERUS_PINNED_KEY}: true"));
     }
 
-    let next_content = append_metadata_lines(content, &lines)?;
+    let id_added = current.id.is_none();
+    let next_content = append_metadata_lines(&renamed_content, &lines)?;
     let metadata = read_note_metadata(&next_content)?;
     Ok(MetadataMigrationPlan {
         before_revision: content_revision(content),
@@ -266,6 +334,8 @@ pub fn plan_note_metadata_migration(
         changed: next_content != content,
         metadata,
         next_content,
+        id_added,
+        legacy_keys_renamed,
     })
 }
 
@@ -300,9 +370,10 @@ pub fn plan_vault_metadata_migration(
                 }
                 if plan.changed {
                     result.summary.notes_changed += 1;
-                    if before_metadata.id.is_none() {
+                    if plan.id_added {
                         result.summary.ids_added += 1;
                     }
+                    result.summary.legacy_keys_renamed += plan.legacy_keys_renamed;
                     if note.legacy_pinned
                         && !note.legacy_archived
                         && !before_metadata.pinned
@@ -366,7 +437,7 @@ mod tests {
         let plan = plan_note_metadata_migration("# Note\n\nBody\n", id(), true, false).unwrap();
         assert_eq!(
             plan.next_content,
-            "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\ngrimoire-pinned: true\n---\n# Note\n\nBody\n"
+            "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\nzerus-pinned: true\n---\n# Note\n\nBody\n"
         );
         assert!(plan.changed);
         assert_eq!(plan.metadata.id, Some(id()));
@@ -379,7 +450,7 @@ mod tests {
         let plan = plan_note_metadata_migration(content, id(), false, true).unwrap();
         assert_eq!(
             plan.next_content,
-            "---\nstatus: draft\n# preserved comment\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\ngrimoire-archived: true\n---\n# Note\n"
+            "---\nstatus: draft\n# preserved comment\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\nzerus-archived: true\n---\n# Note\n"
         );
         assert!(plan.metadata.archived);
         assert!(!plan.metadata.pinned);
@@ -395,6 +466,30 @@ mod tests {
     }
 
     #[test]
+    fn renames_all_legacy_reserved_keys_without_changing_the_note_id() {
+        let content = "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\ngrimoire-pinned: true\ngrimoire-file-id: file-1\n---\n# Note\n";
+        let plan = plan_note_metadata_migration(content, Uuid::now_v7(), false, false).unwrap();
+        assert_eq!(plan.metadata.id, Some(id()));
+        assert!(plan.metadata.pinned);
+        assert!(!plan.id_added);
+        assert_eq!(plan.legacy_keys_renamed, 3);
+        assert!(plan
+            .next_content
+            .contains("zerus-id: 019f7922-8fae-7733-8357-48b16a134c38"));
+        assert!(plan.next_content.contains("zerus-file-id: file-1"));
+        assert!(!plan.next_content.contains("grimoire-"));
+    }
+
+    #[test]
+    fn blocks_conflicting_legacy_and_zerus_keys() {
+        let content = "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c39\n---\n";
+        assert!(matches!(
+            plan_note_metadata_migration(content, Uuid::now_v7(), false, false),
+            Err(MetadataError::LegacyKeyCollision { .. })
+        ));
+    }
+
+    #[test]
     fn preserves_crlf_line_endings() {
         let plan = plan_note_metadata_migration(
             "---\r\nstatus: draft\r\n---\r\n# Note\r\n",
@@ -405,13 +500,13 @@ mod tests {
         .unwrap();
         assert_eq!(
             plan.next_content,
-            "---\r\nstatus: draft\r\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\r\n---\r\n# Note\r\n"
+            "---\r\nstatus: draft\r\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\r\n---\r\n# Note\r\n"
         );
     }
 
     #[test]
     fn rejects_duplicate_reserved_keys() {
-        let content = "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\nGrimoire-ID: 019f7922-8fae-7733-8357-48b16a134c38\n---\n";
+        let content = "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\nZerus-ID: 019f7922-8fae-7733-8357-48b16a134c38\n---\n";
         assert_eq!(
             read_note_metadata(content),
             Err(MetadataError::DuplicateKey {
@@ -447,7 +542,7 @@ mod tests {
 
     #[test]
     fn vault_preview_blocks_duplicate_ids() {
-        let content = "---\ngrimoire-id: 019f7922-8fae-7733-8357-48b16a134c38\n---\n# Note\n";
+        let content = "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\n---\n# Note\n";
         let notes = [
             MigrationNoteInput {
                 path: "One.md",

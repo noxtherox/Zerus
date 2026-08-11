@@ -7,7 +7,7 @@
     </radialGradient>
   </defs>
   <rect width="1920" height="1262" fill="url(#bg)"/>
-  <text x="960" y="565" text-anchor="middle" fill="#f4f6f8" font-family="SF Pro Display, Arial, sans-serif" font-size="118" font-weight="700" letter-spacing="10">GRIMOIRE</text>
+  <text x="960" y="565" text-anchor="middle" fill="#f4f6f8" font-family="SF Pro Display, Arial, sans-serif" font-size="118" font-weight="700" letter-spacing="10">ZERUS</text>
   <text x="960" y="675" text-anchor="middle" fill="#cfd6df" font-family="SF Pro Text, Arial, sans-serif" font-size="40">Portable knowledge, connected your way.</text>
   <circle cx="960" cy="765" r="7" fill="#e5484d"/>
 </svg>

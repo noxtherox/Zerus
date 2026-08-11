@@ -47,14 +47,14 @@ My Vault/
 ├── People/
 │   └── Ada.md
 ├── assets/                 # pasted and dropped images
-├── .grimoire/              # Zerus's vault metadata
+├── .zerus/              # Zerus's vault metadata
 └── .trash/                 # recoverable deleted notes
 ```
 
 Each `.md` file is a note. Zerus derives its type from its containing folders,
 up to three levels deep. Moving a note to another type moves the file; changing
 the title line renames it. Property values stay in the note's frontmatter, while
-vault-wide property definitions and display metadata live under `.grimoire/`.
+vault-wide property definitions and display metadata live under `.zerus/`.
 
 ## Getting started
 
@@ -107,7 +107,7 @@ again in 24 hours. Zerus relaunches after an accepted update is installed.
 
 The updater private key is stored in the repository's
 `TAURI_SIGNING_PRIVATE_KEY` Actions secret. Back up the local key at
-`~/.tauri/grimoire-updater.key`; losing it prevents existing installations from
+`~/.tauri/zerus-updater.key`; losing it prevents existing installations from
 accepting future updates.
 
 The project is built with React, TypeScript, CodeMirror 6, Tailwind CSS,

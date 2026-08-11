@@ -15,7 +15,7 @@ import {
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const REMIND_LATER_MS = 24 * 60 * 60 * 1000;
-const REMINDER_STORAGE_KEY = "grimoire-update-reminder";
+const REMINDER_STORAGE_KEY = "zerus-update-reminder";
 
 interface DeferredUpdate {
   version: string;

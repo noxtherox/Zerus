@@ -7,8 +7,8 @@ import {
 describe("Zerus reserved metadata", () => {
   it("reserves the legacy vault metadata namespace case-insensitively", () => {
     expect(isReservedZerusProperty(ZERUS_METADATA_KEYS.id)).toBe(true);
-    expect(isReservedZerusProperty("Grimoire-Pinned")).toBe(true);
-    expect(isReservedZerusProperty(" grimoire-future-key ")).toBe(true);
+    expect(isReservedZerusProperty("Zerus-Pinned")).toBe(true);
+    expect(isReservedZerusProperty(" zerus-future-key ")).toBe(true);
   });
 
   it("does not hide ordinary user properties", () => {

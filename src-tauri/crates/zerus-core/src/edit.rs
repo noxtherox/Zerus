@@ -156,11 +156,11 @@ mod tests {
 
     #[test]
     fn edits_properties_and_hides_false_state() {
-        let note = "---\nstatus: draft\ngrimoire-pinned: true\n---\n# Note\n";
+        let note = "---\nstatus: draft\nzerus-pinned: true\n---\n# Note\n";
         let note = set_property(note, "status", Some("done")).unwrap();
         let note = set_note_state(&note, Some(false), Some(true)).unwrap();
         assert!(note.contains("status: done"));
         assert!(!note.contains(ZERUS_PINNED_KEY));
-        assert!(note.contains("grimoire-archived: true"));
+        assert!(note.contains("zerus-archived: true"));
     }
 }

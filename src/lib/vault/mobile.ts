@@ -15,14 +15,14 @@ import { MAX_TYPE_DEPTH, TRASH_DIR } from "@/lib/note-utils";
 import type { VaultBackend, VaultFile } from "./backend";
 
 const ROOT = "vault";
-const VAULT_MARKER_PATH = ".grimoire/mobile-vault-v1";
+const VAULT_MARKER_PATH = ".zerus/mobile-vault-v1";
 const DEFAULT_VAULT_NAME = "Zerus";
 
 const STARTER_NOTES: Array<{ path: string; content: string }> = [
   {
     path: "Ideas/Ideas for Zerus mobile.md",
     content: `---
-grimoire-pinned: true
+zerus-pinned: true
 ---
 # Ideas for Zerus mobile
 
@@ -38,7 +38,7 @@ A calm place to capture thoughts before they disappear.
   {
     path: "Books/The Left Hand of Darkness.md",
     content: `---
-grimoire-pinned: true
+zerus-pinned: true
 ---
 # The Left Hand of Darkness
 
@@ -233,7 +233,7 @@ abstract class MobileFilesystemVault implements VaultBackend {
   }
 
   async hasZerusMetadata(): Promise<boolean> {
-    return this.exists(".grimoire");
+    return this.exists(".zerus");
   }
 
   async rootExists(): Promise<boolean> {
@@ -270,7 +270,7 @@ export class MobileVault extends MobileFilesystemVault {
   }
 
   private async initialize(): Promise<void> {
-    await mkdir(this.target(".grimoire"), {
+    await mkdir(this.target(".zerus"), {
       baseDir: BaseDirectory.AppData,
       recursive: true,
     });

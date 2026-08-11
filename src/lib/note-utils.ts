@@ -332,7 +332,7 @@ export function noteMatchesSearch(note: Note, query: string): boolean {
   if (!q) return true;
   return (
     note.content.toLowerCase().includes(q) ||
-    String(getNoteProperties(note.content)["grimoire-file-name"] ?? "")
+    String(getNoteProperties(note.content)["zerus-file-name"] ?? "")
       .toLowerCase()
       .includes(q) ||
     note.externalPath?.toLowerCase().includes(q) ||

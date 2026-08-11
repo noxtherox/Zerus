@@ -262,8 +262,8 @@ export function ThemeSettingsDialog({
       if (idsAdded !== null) {
         setCliMessage(
           idsAdded === 0
-            ? "CLI installed successfully. Your notes already have grimoire-id."
-            : `CLI installed successfully. Added grimoire-id to ${idsAdded} ${idsAdded === 1 ? "note" : "notes"}.`,
+            ? "CLI installed successfully. Your notes already have zerus-id."
+            : `CLI installed successfully. Added zerus-id to ${idsAdded} ${idsAdded === 1 ? "note" : "notes"}.`,
         );
       } else {
         setCliMessage(`CLI reinstalled successfully at ${status.executablePath}.`);
@@ -859,7 +859,7 @@ export function ThemeSettingsDialog({
             <AlertDialogTitle>Install the Zerus CLI?</AlertDialogTitle>
             <AlertDialogDescription>
               To make your notes safely addressable from the command line,
-              Zerus will add a hidden <code>grimoire-id</code> property to
+              Zerus will add a hidden <code>zerus-id</code> property to
               {migrationPreview
                 ? ` ${migrationPreview.idsAdded} ${migrationPreview.idsAdded === 1 ? "note" : "notes"}`
                 : " your notes"}

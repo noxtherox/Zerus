@@ -1,10 +1,10 @@
 import { DEFAULT_TYPE, parseTypePath, typeKey } from "@/lib/note-utils";
 
-const DEFAULT_TYPE_STORAGE_PREFIX = "grimoire.defaultNoteType.";
-const TYPE_ORDER_STORAGE_PREFIX = "grimoire.noteTypeOrder.";
-const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "grimoire.hideSubtypeNotes.";
-const NOTE_WIDTH_STORAGE_KEY = "grimoire.noteWidth";
-const NOTE_ALIGNMENT_STORAGE_KEY = "grimoire.noteAlignment";
+const DEFAULT_TYPE_STORAGE_PREFIX = "zerus.defaultNoteType.";
+const TYPE_ORDER_STORAGE_PREFIX = "zerus.noteTypeOrder.";
+const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
+const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
+const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
 
 export const NOTE_WIDTH_OPTIONS = [100, 85, 75, 60] as const;
 export type NoteWidth = (typeof NOTE_WIDTH_OPTIONS)[number];

@@ -425,7 +425,7 @@ async function loadExternalNotes(): Promise<Note[]> {
 
 // ---- vault lifecycle -------------------------------------------------------
 
-const SCHEMAS_PATH = ".grimoire/properties.json";
+const SCHEMAS_PATH = ".zerus/properties.json";
 
 async function loadSchemas(
   fromBackend: VaultBackend,
@@ -440,8 +440,8 @@ async function loadSchemas(
   }
 }
 
-const TYPE_ICONS_PATH = ".grimoire/type-icons.json";
-const FILE_LOCATIONS_PATH = ".grimoire/file-locations.json";
+const TYPE_ICONS_PATH = ".zerus/type-icons.json";
+const FILE_LOCATIONS_PATH = ".zerus/file-locations.json";
 
 async function loadTypeIcons(fromBackend: VaultBackend): Promise<TypeIcons> {
   try {

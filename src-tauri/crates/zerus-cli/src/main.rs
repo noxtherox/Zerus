@@ -385,7 +385,7 @@ fn registry() -> Result<(PathBuf, VaultRegistry), CliError> {
 fn upward_vault(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
-        .find(|path| path.join(".grimoire/vault.json").is_file())
+        .find(|path| path.join(".zerus/vault.json").is_file())
         .map(Path::to_path_buf)
 }
 
@@ -395,8 +395,7 @@ fn resolve_root(cli: &Cli) -> Result<(PathBuf, String), CliError> {
         .vault
         .as_deref()
         .map(str::to_string)
-        .or_else(|| env::var("ZERUS_VAULT").ok())
-        .or_else(|| env::var("GRIMOIRE_VAULT").ok());
+        .or_else(|| env::var("ZERUS_VAULT").ok());
     if let Some(selector) = requested.as_deref() {
         let explicit = Path::new(selector);
         if explicit.is_dir() {
@@ -452,7 +451,7 @@ fn load_notes(cli: &Cli) -> Result<(Vec<ScannedNote>, String, PathBuf), CliError
 }
 
 fn history_dir(root: &Path) -> PathBuf {
-    root.join(".grimoire/history")
+    root.join(".zerus/history")
 }
 
 fn save_history(
@@ -559,7 +558,7 @@ fn valid_note_destination(root: &Path, relative: &str) -> Result<PathBuf, CliErr
 }
 
 fn schema_path(root: &Path) -> PathBuf {
-    root.join(".grimoire/properties.json")
+    root.join(".zerus/properties.json")
 }
 
 fn load_schemas(root: &Path) -> Result<serde_json::Map<String, Value>, CliError> {
@@ -1403,6 +1402,16 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
         }
         Command::Migrate { command } => {
             let (notes, _, root) = load_notes(cli)?;
+            let legacy_metadata_dir = root.join(".grimoire");
+            let zerus_metadata_dir = root.join(".zerus");
+            let moves_metadata_directory = legacy_metadata_dir.is_dir();
+            if moves_metadata_directory && zerus_metadata_dir.exists() {
+                return Err(CliError::new(
+                    "migration_blocked",
+                    "both .grimoire and .zerus exist; merge or remove one before migrating",
+                    4,
+                ));
+            }
             let mut plans = Vec::new();
             for note in &notes {
                 let plan = plan_note_metadata_migration(
@@ -1421,7 +1430,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
             match command {
                 MigrateCommand::Preview => success(
                     cli,
-                    json!({"notesScanned": notes.len(), "notesChanged": plans.len(), "changes": plans.iter().map(|(note, plan)| json!({"path": note.path, "beforeRevision": plan.before_revision, "afterRevision": plan.after_revision, "addsId": note.id.is_none()})).collect::<Vec<_>>() }),
+                    json!({"notesScanned": notes.len(), "notesChanged": plans.len(), "legacyKeysRenamed": plans.iter().map(|(_, plan)| plan.legacy_keys_renamed).sum::<usize>(), "movesMetadataDirectory": moves_metadata_directory, "changes": plans.iter().map(|(note, plan)| json!({"path": note.path, "beforeRevision": plan.before_revision, "afterRevision": plan.after_revision, "addsId": plan.id_added, "legacyKeysRenamed": plan.legacy_keys_renamed})).collect::<Vec<_>>() }),
                     || {
                         format!(
                             "{} of {} notes will receive hidden Zerus metadata",
@@ -1437,6 +1446,11 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                             "review `zerus migrate preview`, then run with --yes",
                             6,
                         ));
+                    }
+                    if moves_metadata_directory {
+                        fs::rename(&legacy_metadata_dir, &zerus_metadata_dir).map_err(|error| {
+                            CliError::new("migration_metadata_move_failed", error.to_string(), 5)
+                        })?;
                     }
                     let mut transaction_ids = Vec::new();
                     for (note, plan) in plans {
@@ -1738,7 +1752,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     if zerus_core::is_reserved_key(name) {
                         return Err(CliError::new(
                             "property_invalid",
-                            "grimoire-* names are reserved",
+                            "zerus-* names are reserved",
                             3,
                         ));
                     }

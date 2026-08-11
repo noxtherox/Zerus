@@ -10,7 +10,7 @@ use std::time::UNIX_EPOCH;
 use thiserror::Error;
 use uuid::Uuid;
 
-pub const VAULT_MANIFEST_PATH: &str = ".grimoire/vault.json";
+pub const VAULT_MANIFEST_PATH: &str = ".zerus/vault.json";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -261,9 +261,9 @@ mod tests {
     fn scans_notes_without_following_hidden_directories() {
         let root = temporary_vault("scan");
         fs::create_dir_all(root.join("work")).unwrap();
-        fs::create_dir_all(root.join(".grimoire")).unwrap();
+        fs::create_dir_all(root.join(".zerus")).unwrap();
         fs::write(root.join("work/Plan.md"), "# Plan\n").unwrap();
-        fs::write(root.join(".grimoire/Hidden.md"), "# Hidden\n").unwrap();
+        fs::write(root.join(".zerus/Hidden.md"), "# Hidden\n").unwrap();
         let notes = scan_vault(&root).unwrap();
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].path, "work/Plan.md");
