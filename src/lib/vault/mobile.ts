@@ -12,7 +12,8 @@ import {
   writeTextFile,
 } from "@tauri-apps/plugin-fs";
 import { MAX_TYPE_DEPTH, TRASH_DIR } from "@/lib/note-utils";
-import type { VaultBackend, VaultFile } from "./backend";
+import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
+import type { VaultBackend, VaultFile, VaultFileEntry } from "./backend";
 
 const ROOT = "vault";
 const VAULT_MARKER_PATH = ".grimoire/mobile-vault-v1";
@@ -118,10 +119,22 @@ abstract class MobileFilesystemVault implements VaultBackend {
     await mkdir(this.target(dir), { ...this.options(), recursive: true });
   }
 
-  async loadAll(): Promise<VaultFile[]> {
-    const files: VaultFile[] = [];
+  private async findMarkdownPaths(): Promise<string[]> {
+    const paths: string[] = [];
+    mobileDiagnostic("vault.files.load.started", { location: this.location });
     const walk = async (relativeDir: string, depth: number): Promise<void> => {
-      const entries = await readDir(this.target(relativeDir), this.options());
+      mobileDiagnostic("vault.directory.read.started", { depth });
+      let entries: Awaited<ReturnType<typeof readDir>>;
+      try {
+        entries = await readDir(this.target(relativeDir), this.options());
+        mobileDiagnostic("vault.directory.read.resolved", {
+          depth,
+          entries: entries.length,
+        });
+      } catch (error) {
+        mobileDiagnostic("vault.directory.read.failed", { depth, error });
+        throw error;
+      }
       for (const entry of entries) {
         const relativePath = relativeDir
           ? `${relativeDir}/${entry.name}`
@@ -133,24 +146,82 @@ abstract class MobileFilesystemVault implements VaultBackend {
           continue;
         }
         if (!entry.isFile || !/\.md$/i.test(entry.name)) continue;
-        const diskPath = this.target(relativePath);
-        const [content, info] = await Promise.all([
-          readTextFile(diskPath, this.options()),
-          stat(diskPath, this.options()),
-        ]);
-        files.push({
-          path: relativePath,
-          content,
+        paths.push(relativePath);
+      }
+    };
+    await walk("", 0);
+    return paths;
+  }
+
+  async listNoteEntries(): Promise<VaultFileEntry[]> {
+    const paths = await this.findMarkdownPaths();
+    const entries: VaultFileEntry[] = [];
+    const concurrency = 12;
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < paths.length) {
+        const path = paths[nextIndex++];
+        const info = await stat(this.target(path), this.options());
+        entries.push({
+          path,
           updatedAt: (info.mtime ?? new Date()).toISOString(),
         });
       }
     };
-    await walk("", 0);
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, paths.length) }, () => worker()),
+    );
+    entries.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() ||
+        a.path.localeCompare(b.path),
+    );
+    mobileDiagnostic("vault.files.index.resolved", { files: entries.length });
+    return entries;
+  }
+
+  async loadFiles(paths: string[]): Promise<VaultFile[]> {
+    const files = await Promise.all(
+      paths.map(async (path, index) => {
+        assertSafeVaultPath(path);
+        mobileDiagnostic("vault.note.read.started", { fileIndex: index + 1 });
+        const [content, info] = await Promise.all([
+          readTextFile(this.target(path), this.options()),
+          stat(this.target(path), this.options()),
+        ]);
+        mobileDiagnostic("vault.note.read.resolved", { fileIndex: index + 1 });
+        return {
+          path,
+          content,
+          updatedAt: (info.mtime ?? new Date()).toISOString(),
+        };
+      }),
+    );
+    mobileDiagnostic("vault.files.load.resolved", { files: files.length });
     return files;
+  }
+
+  async loadAll(): Promise<VaultFile[]> {
+    const entries = await this.listNoteEntries();
+    return this.loadFiles(entries.map((entry) => entry.path));
   }
 
   async readText(path: string): Promise<string> {
     return readTextFile(this.target(path), this.options());
+  }
+
+  async listFiles(path: string): Promise<string[]> {
+    const files: string[] = [];
+    const walk = async (relativeDir: string): Promise<void> => {
+      if (!(await exists(this.target(relativeDir), this.options()))) return;
+      for (const entry of await readDir(this.target(relativeDir), this.options())) {
+        const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        if (entry.isDirectory) await walk(relativePath);
+        else if (entry.isFile) files.push(relativePath);
+      }
+    };
+    await walk(path.replace(/\/$/, ""));
+    return files.sort();
   }
 
   async write(path: string, content: string): Promise<void> {
@@ -323,12 +394,14 @@ export class MobileFolderVault extends MobileFilesystemVault {
   }
 
   static async locate(rootUrl: string, name: string): Promise<MobileFolderVault | null> {
+    mobileDiagnostic("vault.locate.started", { name });
     const selected = new MobileFolderVault(rootUrl, name);
     if (
       name.localeCompare(DEFAULT_VAULT_NAME, undefined, { sensitivity: "accent" }) === 0 ||
       (await selected.hasVaultMarker()) ||
       (await selected.hasGrimoireMetadata())
     ) {
+      mobileDiagnostic("vault.locate.selected-root", { name });
       return selected;
     }
 
@@ -341,6 +414,7 @@ export class MobileFolderVault extends MobileFilesystemVault {
     // Selecting a directory in the document picker is an explicit request to
     // use that directory as the vault. Do not reject custom-named or older
     // vaults just because they predate Grimoire's metadata marker.
+    mobileDiagnostic("vault.locate.selected-custom-root", { name });
     return selected;
   }
 

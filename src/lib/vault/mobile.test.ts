@@ -64,4 +64,24 @@ describe("MobileFolderVault discovery", () => {
       "Journal/Today.md",
     ]);
   });
+
+  it("indexes every note while loading content only for the requested page", async () => {
+    const root = await mkdtemp(join(tmpdir(), "grimoire-mobile-page-"));
+    await mkdir(join(root, "Ideas"), { recursive: true });
+    await writeFile(join(root, "Ideas", "Older.md"), "# Older\n", "utf8");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await writeFile(join(root, "Ideas", "Newest.md"), "# Newest\n", "utf8");
+
+    const vault = new MobileFolderVault(pathToFileURL(root).href, "Grimoire");
+    const entries = await vault.listNoteEntries();
+
+    expect(entries.map((entry) => entry.path).sort()).toEqual([
+      "Ideas/Newest.md",
+      "Ideas/Older.md",
+    ]);
+    const files = await vault.loadFiles(["Ideas/Newest.md"]);
+    expect(files).toEqual([
+      expect.objectContaining({ path: "Ideas/Newest.md", content: "# Newest\n" }),
+    ]);
+  });
 });

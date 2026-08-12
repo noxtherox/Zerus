@@ -34,7 +34,96 @@ impl<R: Runtime> MobileVault<R> {
         Ok(PickedFilesResponse::default())
     }
 
+    pub fn pick_external_folder(&self) -> crate::Result<PickedFilesResponse> {
+        Ok(PickedFilesResponse::default())
+    }
+
     pub fn open_file(&self, _request: OpenFileRequest) -> crate::Result<()> {
         Ok(())
+    }
+
+    pub fn local_ai_status(&self) -> crate::Result<LocalAiStatusResponse> {
+        Err(crate::Error::Unavailable(
+            "Local AI is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn download_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.local_ai_status()
+    }
+
+    pub fn cancel_local_ai_download(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.local_ai_status()
+    }
+
+    pub fn load_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.local_ai_status()
+    }
+
+    pub fn generate_local_ai(
+        &self,
+        _request: LocalAiGenerateRequest,
+    ) -> crate::Result<LocalAiGenerateResponse> {
+        Err(crate::Error::Unavailable(
+            "Local AI is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn delete_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.local_ai_status()
+    }
+
+    pub fn cloud_ai_status(&self) -> crate::Result<CloudAiStatusResponse> {
+        Err(crate::Error::Unavailable(
+            "Cloud chat configuration is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn configure_cloud_ai(
+        &self,
+        _request: CloudAiConfigureRequest,
+    ) -> crate::Result<CloudAiStatusResponse> {
+        self.cloud_ai_status()
+    }
+
+    pub fn generate_cloud_ai(
+        &self,
+        _request: CloudAiGenerateRequest,
+    ) -> crate::Result<CloudAiGenerateResponse> {
+        Err(crate::Error::Unavailable(
+            "Cloud chat is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn start_speech_recognition(
+        &self,
+        _request: SpeechRecognitionStartRequest,
+    ) -> crate::Result<SpeechRecognitionStatusResponse> {
+        Err(crate::Error::Unavailable(
+            "On-device speech recognition is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn speech_recognition_progress(&self) -> crate::Result<SpeechRecognitionProgressResponse> {
+        Err(crate::Error::Unavailable(
+            "On-device speech recognition is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn stop_speech_recognition(&self) -> crate::Result<SpeechRecognitionResponse> {
+        Err(crate::Error::Unavailable(
+            "On-device speech recognition is only available in the iOS app".into(),
+        ))
+    }
+
+    pub fn cancel_speech_recognition(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
+    pub fn device_name(&self) -> crate::Result<DeviceNameResponse> {
+        let name = std::env::var("HOSTNAME")
+            .or_else(|_| std::env::var("COMPUTERNAME"))
+            .unwrap_or_else(|_| "Desktop".into());
+        Ok(DeviceNameResponse { name })
     }
 }

@@ -83,7 +83,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeSettingsDialog } from "./ThemeSettingsDialog";
 import { TypeIcon } from "./TypeIcon";
-import { EmojiPickerDialog } from "./EmojiPickerDialog";
+import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
 
@@ -700,9 +700,10 @@ export function Sidebar({
         onDefaultNoteTypeChange={onDefaultNoteTypeChange}
         onHideSubtypeNotesChange={onHideSubtypeNotesChange}
       />
-      <EmojiPickerDialog
+      <IconPickerDialog
         open={iconTarget !== null}
         typeName={iconTarget?.name ?? ""}
+        value={iconTarget ? typeIcons[typeKey(iconTarget.path)] : undefined}
         onOpenChange={(open) => {
           if (!open) setIconTarget(null);
         }}

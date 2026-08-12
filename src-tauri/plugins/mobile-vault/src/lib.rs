@@ -41,7 +41,22 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::clear_vault_folder,
             commands::pick_external_notes,
             commands::pick_files,
+            commands::pick_external_folder,
             commands::open_file,
+            commands::local_ai_status,
+            commands::download_local_ai,
+            commands::cancel_local_ai_download,
+            commands::load_local_ai,
+            commands::generate_local_ai,
+            commands::delete_local_ai,
+            commands::cloud_ai_status,
+            commands::configure_cloud_ai,
+            commands::generate_cloud_ai,
+            commands::start_speech_recognition,
+            commands::speech_recognition_progress,
+            commands::stop_speech_recognition,
+            commands::cancel_speech_recognition,
+            commands::device_name,
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

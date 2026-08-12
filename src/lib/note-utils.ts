@@ -242,6 +242,36 @@ export function buildTypeTree(
   return roots;
 }
 
+/** Builds a type tree from direct per-type counts without loaded note bodies. */
+export function buildTypeTreeFromCounts(
+  directCounts: Readonly<Record<string, number>>,
+  extraTypePaths: string[][] = [],
+): TypeNode[] {
+  const roots: TypeNode[] = [];
+  const ensureChild = (list: TypeNode[], name: string, path: string[]) => {
+    let node = list.find((child) => child.name === name);
+    if (!node) {
+      node = { name, path, count: 0, children: [] };
+      list.push(node);
+      list.sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return node;
+  };
+  const addPath = (typePath: string[], count: number) => {
+    let level = roots;
+    for (let depth = 0; depth < typePath.length; depth++) {
+      const node = ensureChild(level, typePath[depth], typePath.slice(0, depth + 1));
+      node.count += count;
+      level = node.children;
+    }
+  };
+  extraTypePaths.forEach((path) => addPath(path.slice(0, MAX_TYPE_DEPTH), 0));
+  Object.entries(directCounts).forEach(([key, count]) => {
+    if (key && count > 0) addPath(key.split("/").slice(0, MAX_TYPE_DEPTH), count);
+  });
+  return roots;
+}
+
 /** Returns a stable type order after moving one type before or after a sibling. */
 export function reorderTypeTree(
   nodes: TypeNode[],

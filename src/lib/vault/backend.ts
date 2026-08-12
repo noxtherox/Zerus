@@ -5,6 +5,12 @@ export interface VaultFile {
   updatedAt: string;
 }
 
+/** Lightweight note metadata used to paginate without reading file contents. */
+export interface VaultFileEntry {
+  path: string;
+  updatedAt: string;
+}
+
 export interface VaultBackend {
   readonly kind: "desktop" | "browser" | "mobile";
   /** Human-readable location of the vault (absolute path, or a label). */
@@ -12,8 +18,14 @@ export interface VaultBackend {
   /** Device filesystem path for a vault-relative file, when the shell can open it. */
   absolutePath?(path: string): string | null;
   loadAll(): Promise<VaultFile[]>;
+  /** Optional fast path for backends that can discover notes before reading them. */
+  listNoteEntries?(): Promise<VaultFileEntry[]>;
+  /** Loads only the requested notes. Paths must be vault-relative. */
+  loadFiles?(paths: string[]): Promise<VaultFile[]>;
   /** Reads any text file in the vault (config etc.), throws if missing. */
   readText(path: string): Promise<string>;
+  /** Recursively lists files below an arbitrary vault-relative metadata folder. */
+  listFiles(path: string): Promise<string[]>;
   write(path: string, content: string): Promise<void>;
   /** Atomically creates a file and fails if the path already exists. */
   writeNew(path: string, content: string): Promise<void>;

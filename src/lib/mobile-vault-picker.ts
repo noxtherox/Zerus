@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 
 export interface MobileVaultLocation {
   url: string;
   name: string;
+  persisted?: boolean;
+  bookmarkWarning?: string;
 }
 
 interface MobileVaultLocationResponse {
@@ -19,17 +22,40 @@ interface MobilePickedFilesResponse {
 }
 
 export async function pickMobileVaultFolder(): Promise<MobileVaultLocation | null> {
-  const response = await invoke<MobileVaultLocationResponse>(
-    "plugin:mobile-vault|pick_vault_folder",
-  );
-  return response.vault;
+  mobileDiagnostic("picker.invoke.started");
+  try {
+    const response = await invoke<MobileVaultLocationResponse>(
+      "plugin:mobile-vault|pick_vault_folder",
+    );
+    mobileDiagnostic("picker.invoke.resolved", {
+      selected: response.vault !== null,
+      name: response.vault?.name,
+      scheme: response.vault ? new URL(response.vault.url).protocol : undefined,
+      persisted: response.vault?.persisted,
+      bookmarkWarning: response.vault?.bookmarkWarning,
+    });
+    return response.vault;
+  } catch (error) {
+    mobileDiagnostic("picker.invoke.failed", { error });
+    throw error;
+  }
 }
 
 export async function restoreMobileVaultFolder(): Promise<MobileVaultLocation | null> {
-  const response = await invoke<MobileVaultLocationResponse>(
-    "plugin:mobile-vault|restore_vault_folder",
-  );
-  return response.vault;
+  mobileDiagnostic("bookmark.restore.started");
+  try {
+    const response = await invoke<MobileVaultLocationResponse>(
+      "plugin:mobile-vault|restore_vault_folder",
+    );
+    mobileDiagnostic("bookmark.restore.resolved", {
+      found: response.vault !== null,
+      name: response.vault?.name,
+    });
+    return response.vault;
+  } catch (error) {
+    mobileDiagnostic("bookmark.restore.failed", { error });
+    throw error;
+  }
 }
 
 export async function clearMobileVaultFolder(): Promise<void> {
@@ -50,6 +76,16 @@ export async function pickMobileFiles(): Promise<MobilePickedFile[]> {
   return response.files;
 }
 
-export async function openMobileFile(path: string): Promise<void> {
-  await invoke("plugin:mobile-vault|open_file", { request: { path } });
+export async function pickMobileFileLocationFolder(): Promise<MobilePickedFile | null> {
+  const response = await invoke<MobilePickedFilesResponse>(
+    "plugin:mobile-vault|pick_external_folder",
+  );
+  return response.files[0] ?? null;
+}
+
+export async function openMobileFile(
+  path: string,
+  mode: "preview" | "refresh" = "preview",
+): Promise<void> {
+  await invoke("plugin:mobile-vault|open_file", { request: { path, mode } });
 }

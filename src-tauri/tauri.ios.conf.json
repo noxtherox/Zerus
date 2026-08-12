@@ -9,14 +9,15 @@
       {
         "label": "main",
         "title": "Grimoire",
-        "url": "/mobile"
+        "url": "/mobile",
+        "disableInputAccessoryView": true
       }
     ]
   },
   "bundle": {
     "resources": [],
     "iOS": {
-      "minimumSystemVersion": "16.0"
+      "minimumSystemVersion": "17.0"
     }
   }
 }

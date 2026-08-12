@@ -52,10 +52,10 @@ import {
 } from "@/lib/properties";
 import {
   type TypeIcons,
-  isEmojiValue,
+  isTypeIconValue,
   suggestIconForType,
 } from "@/lib/type-icons";
-import type { VaultBackend } from "@/lib/vault/backend";
+import type { VaultBackend, VaultFile, VaultFileEntry } from "@/lib/vault/backend";
 import { BrowserVault } from "@/lib/vault/browser";
 import { DesktopVault } from "@/lib/vault/desktop";
 import { MobileFolderVault, MobileVault } from "@/lib/vault/mobile";
@@ -64,10 +64,12 @@ import {
   openMobileFile,
   pickMobileExternalNotes,
   pickMobileFiles,
+  pickMobileFileLocationFolder,
   pickMobileVaultFolder,
   restoreMobileVaultFolder,
 } from "@/lib/mobile-vault-picker";
 import { showError } from "@/utils/toast";
+import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import { loadDefaultNoteType } from "@/lib/note-preferences";
 import {
   fileNameFromPath,
@@ -92,6 +94,7 @@ const FILE_LOCATION_MAPPINGS_KEY = "grimoire.fileLocationMappings.v1";
 const FILE_HUB_MAPPINGS_KEY = "grimoire.fileHubMappings.v1";
 const STARTUP_CACHE_KEY_PREFIX = "grimoire.startupCache.v1.";
 const FLUSH_DELAY_MS = 500;
+const MOBILE_NOTE_PAGE_SIZE = 30;
 
 export interface VaultState {
   status: "booting" | "pick-vault" | "loading" | "ready" | "error";
@@ -99,11 +102,18 @@ export interface VaultState {
   location: string | null;
   isDesktop: boolean;
   notes: Note[];
+  /** Total non-trashed vault notes, including notes whose bodies are not loaded yet. */
+  totalNoteCount: number;
+  /** Direct note totals keyed by exact type path. */
+  typeNoteCounts: Readonly<Record<string, number>>;
+  isNotePaginationEnabled: boolean;
+  hasMoreNotes: boolean;
+  isLoadingMoreNotes: boolean;
   /** Types that exist as folders even without notes in them (empty types). */
   extraTypes: string[][];
   /** Property definitions, keyed by top-level type key ("work"). */
   schemas: PropertySchemas;
-  /** Custom lucide icon per type, keyed by full type key ("work/projects"). */
+  /** Custom Tabler icon per type, keyed by full type key ("work/projects"). */
   typeIcons: TypeIcons;
   /** Synced names/IDs for portable base folders. Absolute roots stay local. */
   fileLocations: FileLocationDefinition[];
@@ -131,6 +141,11 @@ let state: VaultState = {
   location: null,
   isDesktop: false,
   notes: [],
+  totalNoteCount: 0,
+  typeNoteCounts: {},
+  isNotePaginationEnabled: false,
+  hasMoreNotes: false,
+  isLoadingMoreNotes: false,
   extraTypes: [],
   schemas: {},
   typeIcons: {},
@@ -143,6 +158,8 @@ let state: VaultState = {
 };
 
 let backend: VaultBackend | null = null;
+let mobileNoteEntries: VaultFileEntry[] = [];
+let mobileNoteLoad: Promise<void> | null = null;
 let initialized = false;
 const listeners = new Set<() => void>();
 const pendingFlush = new Map<string, ReturnType<typeof setTimeout>>();
@@ -227,6 +244,11 @@ export function prioritizeNoteLoad(id: string): Promise<void> {
     });
   pendingStartupNoteLoads.set(id, operation);
   return operation;
+}
+
+/** Active vault access for vault-local feature metadata such as chat history. */
+export function getVaultBackend(): VaultBackend | null {
+  return backend;
 }
 
 function loadStringMap(key: string): Record<string, string> {
@@ -448,10 +470,10 @@ async function loadTypeIcons(fromBackend: VaultBackend): Promise<TypeIcons> {
     const raw = await fromBackend.readText(TYPE_ICONS_PATH);
     const parsed = JSON.parse(raw) as TypeIcons;
     if (!parsed || typeof parsed !== "object") return {};
-    // keep only emoji values — drops entries from the short-lived lucide format
+    // Keep current Tabler values and legacy emoji; drop obsolete Lucide names.
     const typeIcons: TypeIcons = {};
     for (const [key, value] of Object.entries(parsed)) {
-      if (isEmojiValue(value)) typeIcons[key] = value;
+      if (isTypeIconValue(value)) typeIcons[key] = value;
     }
     return typeIcons;
   } catch {
@@ -580,8 +602,76 @@ function noteFromVaultFile(
   };
 }
 
+function summarizeMobileEntries(entries: VaultFileEntry[]) {
+  const typeNoteCounts: Record<string, number> = {};
+  let totalNoteCount = 0;
+  for (const entry of entries) {
+    if (
+      entry.path.startsWith(`${TRASH_DIR}/`) ||
+      entry.path === "assets" ||
+      entry.path.startsWith("assets/")
+    ) {
+      continue;
+    }
+    totalNoteCount += 1;
+    const key = entry.path
+      .split("/")
+      .slice(0, -1)
+      .slice(0, MAX_TYPE_DEPTH)
+      .join("/");
+    if (key) typeNoteCounts[key] = (typeNoteCounts[key] ?? 0) + 1;
+  }
+  return { totalNoteCount, typeNoteCounts };
+}
+
+function isPageableMobileEntry(entry: VaultFileEntry): boolean {
+  return (
+    !entry.path.startsWith(`${TRASH_DIR}/`) &&
+    entry.path !== "assets" &&
+    !entry.path.startsWith("assets/")
+  );
+}
+
+function sortMobileEntries() {
+  mobileNoteEntries.sort(
+    (a, b) =>
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime() ||
+      a.path.localeCompare(b.path),
+  );
+}
+
+function updateMobileEntry(previousPath: string, nextPath: string, updatedAt: string) {
+  if (!state.isNotePaginationEnabled) return;
+  const entry = mobileNoteEntries.find((candidate) => candidate.path === previousPath);
+  if (entry) {
+    entry.path = nextPath;
+    entry.updatedAt = updatedAt;
+  } else if (isPageableMobileEntry({ path: nextPath, updatedAt })) {
+    mobileNoteEntries.push({ path: nextPath, updatedAt });
+  }
+  mobileNoteEntries = mobileNoteEntries.filter(isPageableMobileEntry);
+  sortMobileEntries();
+}
+
+function removeMobileEntry(path: string) {
+  if (!state.isNotePaginationEnabled) return;
+  mobileNoteEntries = mobileNoteEntries.filter((entry) => entry.path !== path);
+}
+
+function loadedMobilePaths(): Set<string> {
+  return new Set(
+    state.notes.filter((note) => !isExternalNote(note)).map((note) => note.path),
+  );
+}
+
 async function loadVault(nextBackend: VaultBackend) {
+  mobileDiagnostic("store.vault.load.started", {
+    kind: nextBackend.kind,
+    location: nextBackend.location,
+  });
   backend = nextBackend;
+  mobileNoteEntries = [];
+  mobileNoteLoad = null;
   clearImageUrlCache();
   pendingStartupNoteLoads.clear();
   startupEditedNoteIds.clear();
@@ -590,6 +680,11 @@ async function loadVault(nextBackend: VaultBackend) {
     location: nextBackend.location,
     isDesktop: nextBackend.kind === "desktop",
     notes: [],
+    totalNoteCount: 0,
+    typeNoteCounts: {},
+    isNotePaginationEnabled: false,
+    hasMoreNotes: false,
+    isLoadingMoreNotes: false,
     extraTypes: [],
     schemas: {},
     typeIcons: {},
@@ -659,8 +754,14 @@ async function loadVault(nextBackend: VaultBackend) {
           !note.archived && !note.path.startsWith(`${TRASH_DIR}/`),
       )
       .map((note) => note.path);
-    const [files, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
-      nextBackend instanceof DesktopVault
+    const canPage =
+      nextBackend.kind === "mobile" &&
+      nextBackend.listNoteEntries !== undefined &&
+      nextBackend.loadFiles !== undefined;
+    const [noteSource, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
+      canPage
+        ? nextBackend.listNoteEntries!()
+        : nextBackend instanceof DesktopVault
         ? nextBackend.loadAll({
             priorityPaths,
             onPriorityLoaded: applyPriorityFiles,
@@ -671,6 +772,14 @@ async function loadVault(nextBackend: VaultBackend) {
       loadTypeIcons(nextBackend),
       loadFileLocations(nextBackend),
     ]);
+    if (canPage) {
+      mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
+    }
+    const files = canPage
+      ? await nextBackend.loadFiles!(
+          mobileNoteEntries.slice(0, MOBILE_NOTE_PAGE_SIZE).map((entry) => entry.path),
+        )
+      : (noteSource as VaultFile[]);
     const vaultNotes: Note[] = files.map((file) => {
       const edited = state.notes.find(
         (note) =>
@@ -717,6 +826,9 @@ async function loadVault(nextBackend: VaultBackend) {
       .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
     const loadedNotes = [...externalNotes, ...vaultNotes];
+    const mobileSummary = canPage
+      ? summarizeMobileEntries(mobileNoteEntries)
+      : { totalNoteCount: vaultNotes.filter((note) => !isTrashed(note)).length, typeNoteCounts: {} };
     diskSnapshots.clear();
     for (const note of loadedNotes) {
       if (startupEditedNoteIds.has(note.id)) {
@@ -732,6 +844,11 @@ async function loadVault(nextBackend: VaultBackend) {
     setState({
       status: "ready",
       notes: loadedNotes,
+      totalNoteCount: mobileSummary.totalNoteCount,
+      typeNoteCounts: mobileSummary.typeNoteCounts,
+      isNotePaginationEnabled: canPage,
+      hasMoreNotes: canPage && files.length < mobileNoteEntries.length,
+      isLoadingMoreNotes: false,
       extraTypes,
       schemas,
       typeIcons,
@@ -759,8 +876,13 @@ async function loadVault(nextBackend: VaultBackend) {
         vaultPath: nextBackend.location,
       }).catch((error) => reportError("register vault with CLI", error));
     }
+    mobileDiagnostic("store.vault.load.resolved", {
+      notes: loadedNotes.length,
+      directories: dirs.length,
+    });
     void drainDesktopOpenPaths();
   } catch (error) {
+    mobileDiagnostic("store.vault.load.failed", { error });
     setState({
       status: "error",
       loadingNoteIds: new Set(),
@@ -768,6 +890,66 @@ async function loadVault(nextBackend: VaultBackend) {
       error: String(error),
     });
   }
+}
+
+async function loadNextMobileNoteBatch(limit = MOBILE_NOTE_PAGE_SIZE): Promise<void> {
+  if (
+    !backend?.loadFiles ||
+    backend.kind !== "mobile" ||
+    state.status !== "ready"
+  ) return;
+  if (mobileNoteLoad) return mobileNoteLoad;
+  const loadedPaths = loadedMobilePaths();
+  const paths = mobileNoteEntries
+    .filter((entry) => !loadedPaths.has(entry.path))
+    .slice(0, limit)
+    .map((entry) => entry.path);
+  if (!paths.length) {
+    setState({ hasMoreNotes: false, isLoadingMoreNotes: false });
+    return;
+  }
+  setState({ isLoadingMoreNotes: true });
+  mobileNoteLoad = (async () => {
+    try {
+      const files = await backend!.loadFiles!(paths);
+      const pinned = loadPinnedPaths();
+      const archived = loadArchivedPaths();
+      const existingPaths = loadedMobilePaths();
+      const added = files
+        .filter((file) => !existingPaths.has(file.path))
+        .map((file) => noteFromVaultFile(file, pinned, archived));
+      for (const note of added) diskSnapshots.set(note.id, note.content);
+      const notes = [...state.notes, ...added].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+      const afterPaths = new Set(notes.map((note) => note.path));
+      setState({
+        notes,
+        hasMoreNotes: mobileNoteEntries.some((entry) => !afterPaths.has(entry.path)),
+        isLoadingMoreNotes: false,
+      });
+    } catch (error) {
+      setState({ isLoadingMoreNotes: false });
+      reportError("load more notes", error);
+    } finally {
+      mobileNoteLoad = null;
+    }
+  })();
+  return mobileNoteLoad;
+}
+
+export async function loadMoreNotes(): Promise<void> {
+  await loadNextMobileNoteBatch();
+}
+
+/** Loads remaining mobile note bodies so content search and local retrieval are complete. */
+export async function loadAllNotes(): Promise<boolean> {
+  while (state.hasMoreNotes) {
+    const loadedBefore = loadedMobilePaths().size;
+    await loadNextMobileNoteBatch(MOBILE_NOTE_PAGE_SIZE);
+    if (loadedMobilePaths().size === loadedBefore) break;
+  }
+  return !state.hasMoreNotes;
 }
 
 export function initStore() {
@@ -820,13 +1002,26 @@ async function canChangeMobileVault(): Promise<boolean> {
 
 export async function locateMobileVault(): Promise<boolean> {
   if (!isIOSRuntime()) return false;
+  mobileDiagnostic("store.locate.started");
   if (!(await canChangeMobileVault())) return false;
   try {
     const selected = await pickMobileVaultFolder();
-    if (!selected) return false;
+    if (!selected) {
+      mobileDiagnostic("store.locate.cancelled");
+      return false;
+    }
+    mobileDiagnostic("store.locate.selection-received", { name: selected.name });
     const vault = await MobileFolderVault.locate(selected.url, selected.name);
-    if (!vault) return false;
+    if (!vault) {
+      await clearMobileVaultFolder();
+      setState({
+        status: backend ? state.status : "pick-vault",
+        error: "Could not open that vault.",
+      });
+      return false;
+    }
     await loadVault(vault);
+    mobileDiagnostic("store.locate.completed", { status: state.status });
     return state.status === "ready";
   } catch (error) {
     setState({
@@ -1155,11 +1350,15 @@ export async function synchronizeDesktopFiles() {
 // ---- path helpers ----------------------------------------------------------
 
 function takenPaths(exceptId?: string): Set<string> {
-  return new Set(
+  const paths = new Set(
     state.notes
       .filter((note) => note.id !== exceptId && !isExternalNote(note))
       .map((note) => note.path.toLowerCase()),
   );
+  if (state.isNotePaginationEnabled) {
+    mobileNoteEntries.forEach((entry) => paths.add(entry.path.toLowerCase()));
+  }
+  return paths;
 }
 
 function uniquePath(dir: string, stem: string, exceptId?: string): string {
@@ -1211,10 +1410,23 @@ function isSafeTypePath(typePath: string[]): boolean {
 }
 
 function updateNote(id: string, patch: Partial<Note>) {
+  const previous = state.notes.find((note) => note.id === id);
+  const notes = state.notes.map((note) =>
+    note.id === id ? { ...note, ...patch } : note,
+  );
+  if (previous && patch.path && patch.path !== previous.path) {
+    updateMobileEntry(previous.path, patch.path, patch.updatedAt ?? previous.updatedAt);
+  }
+  const summary = state.isNotePaginationEnabled
+    ? summarizeMobileEntries(mobileNoteEntries)
+    : {
+        totalNoteCount: notes.filter(
+          (note) => !isExternalNote(note) && !isTrashed(note),
+        ).length,
+      };
   setState({
-    notes: state.notes.map((note) =>
-      note.id === id ? { ...note, ...patch } : note,
-    ),
+    notes,
+    ...summary,
   });
 }
 
@@ -1976,12 +2188,15 @@ export async function locateFileHub(id: string): Promise<boolean> {
   return true;
 }
 
-export async function openFileHub(id: string): Promise<void> {
+export async function openFileHub(
+  id: string,
+  mode: "preview" | "refresh" = "preview",
+): Promise<void> {
   const note = state.notes.find((candidate) => candidate.id === id);
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) return;
   try {
-    if (isIOSRuntime()) await openMobileFile(path);
+    if (isIOSRuntime()) await openMobileFile(path, mode);
     else await openPath(path);
   } catch (error) {
     reportError("open document", error);
@@ -2016,7 +2231,9 @@ function saveFileLocations(locations: FileLocationDefinition[]) {
 
 export async function addFileLocation(name: string): Promise<boolean> {
   if (!isTauri()) return false;
-  const root = await openDialog({ directory: true, title: `Choose the ${name} folder` });
+  const root = isIOSRuntime()
+    ? (await pickMobileFileLocationFolder())?.path ?? null
+    : await openDialog({ directory: true, title: `Choose the ${name} folder` });
   if (typeof root !== "string" || !root) return false;
   const location = { id: crypto.randomUUID(), name: name.trim() };
   if (!location.name) return false;
@@ -2038,7 +2255,9 @@ export function renameFileLocation(id: string, name: string) {
 export async function mapFileLocation(id: string): Promise<boolean> {
   const location = state.fileLocations.find((candidate) => candidate.id === id);
   if (!location || !isTauri()) return false;
-  const root = await openDialog({ directory: true, title: `Locate ${location.name}` });
+  const root = isIOSRuntime()
+    ? (await pickMobileFileLocationFolder())?.path ?? null
+    : await openDialog({ directory: true, title: `Locate ${location.name}` });
   if (typeof root !== "string" || !root) return false;
   setFileLocationMapping(id, await canonicalizeFsPath(root));
   return true;
@@ -2279,7 +2498,7 @@ function saveTypeIcons(typeIcons: TypeIcons) {
     .catch((error) => reportError("save type icons", error));
 }
 
-/** Sets (or with `null`, resets to the default folder) a type's emoji. */
+/** Sets (or with `null`, resets to the default folder) a type's icon. */
 export function setTypeIcon(typePath: string[], icon: string | null) {
   const key = typeKey(typePath);
   if (!key) return;
@@ -2290,7 +2509,7 @@ export function setTypeIcon(typePath: string[], icon: string | null) {
 }
 
 /**
- * Guesses emoji for type levels that didn't exist before (e.g. creating
+ * Guesses icons for type levels that didn't exist before (e.g. creating
  * "work/recipes" suggests for both "work" and "work/recipes" if both are new).
  * Never touches types that already existed or already have an icon.
  */
@@ -2496,7 +2715,14 @@ export async function createNote(
   try {
     await backend.write(path, persistedContent);
     diskSnapshots.set(note.id, persistedContent);
-    setState({ notes: [note, ...state.notes] });
+    if (state.isNotePaginationEnabled) {
+      mobileNoteEntries.push({ path, updatedAt: note.updatedAt });
+      sortMobileEntries();
+    }
+    const summary = state.isNotePaginationEnabled
+      ? summarizeMobileEntries(mobileNoteEntries)
+      : { totalNoteCount: state.totalNoteCount + 1 };
+    setState({ notes: [note, ...state.notes], ...summary });
   } catch (error) {
     reportError("create note", error);
     return null;
@@ -2647,7 +2873,21 @@ export async function deleteNoteForever(id: string) {
     await backend.removeFile(note.path);
     diskSnapshots.delete(id);
     clearNoteConflict(id);
-    setState({ notes: state.notes.filter((candidate) => candidate.id !== id) });
+    removeMobileEntry(note.path);
+    const summary = state.isNotePaginationEnabled
+      ? summarizeMobileEntries(mobileNoteEntries)
+      : {
+          totalNoteCount: state.notes.filter(
+            (candidate) =>
+              candidate.id !== id &&
+              !isExternalNote(candidate) &&
+              !isTrashed(candidate),
+          ).length,
+        };
+    setState({
+      notes: state.notes.filter((candidate) => candidate.id !== id),
+      ...summary,
+    });
   } catch (error) {
     reportError("delete note", error);
   }

@@ -1,28 +1,39 @@
-import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   ArrowDown,
   ArrowUp,
   ChevronRight,
   Cloud,
+  Copy,
   ExternalLink,
   File,
   FilePlus2,
   FileText,
   Folder,
+  FolderCog,
+  FolderOpen,
   FolderSearch,
   Loader2,
   Link2,
+  Link2Off,
+  MapPin,
   Menu,
   MoreHorizontal,
   Pencil,
+  Pin,
   Plus,
+  RefreshCw,
   Search,
   Settings,
   Smile,
+  Sparkles,
   Smartphone,
   FolderPlus,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -46,16 +57,20 @@ import {
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { PropertiesSection } from "@/components/notes/PropertiesSection";
-import { EmojiPickerDialog } from "@/components/notes/EmojiPickerDialog";
+import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
+import { PersistentLocalAIChat } from "@/components/mobile/LocalAIChat";
 import { cn } from "@/lib/utils";
 import { noteBody } from "@/lib/frontmatter";
 import {
   DEFAULT_TYPE,
   MAX_TYPE_DEPTH,
   buildTypeTree,
+  buildTypeTreeFromCounts,
+  isArchived,
   isExternalNote,
+  isTrashed,
   noteSnippet,
   noteTitle,
   noteTypePath,
@@ -73,21 +88,43 @@ import {
   saveDefaultNoteType,
   saveNoteTypeOrder,
 } from "@/lib/note-preferences";
-import { isEmojiValue } from "@/lib/type-icons";
+import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
+import {
+  readMobileNavigationEntry,
+  withMobileNavigationEntry,
+  type MobileNavigationEntry,
+} from "@/lib/mobile-navigation";
 import {
   createFileNote,
   createNote,
   createMobileVaultAtLocation,
   createMobileVaultOnDevice,
   initStore,
+  loadAllNotes,
+  loadMoreNotes,
   locateMobileVault,
   openExternalNotes,
   openFileHub,
   createType,
   deleteType,
+  detachFileHub,
   emptyTrash,
+  getFileHubStatus,
+  attachFileToNote,
+  chooseDocumentFile,
+  locateFileHub,
+  addFileLocation,
+  fileLocationUsages,
+  getFileLocationMappings,
+  mapFileLocation,
+  removeFileLocation,
+  renameFileLocation,
   renameType,
+  restoreNote,
   setTypeIcon,
+  toggleNoteArchived,
+  toggleNotePinned,
+  trashNote,
   updateNoteBody,
   useVault,
 } from "@/store/notes-store";
@@ -99,7 +136,7 @@ interface MobileNote {
   body: string;
   type: string;
   kind: "note" | "external" | "file";
-  emoji: string | null;
+  icon: string | null;
   fileName?: string;
   updated: string;
   pinned?: boolean;
@@ -139,7 +176,7 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
     body: editorBody(note),
     type,
     kind: file ? "file" : isExternalNote(note) ? "external" : "note",
-    emoji: configuredIcon && isEmojiValue(configuredIcon) ? configuredIcon : null,
+    icon: configuredIcon ?? null,
     fileName: file?.name,
     updated: formatUpdated(note.updatedAt),
     pinned: note.pinned,
@@ -172,8 +209,8 @@ interface NoteCardProps {
 }
 
 function NoteCard({ note, onOpen }: NoteCardProps) {
-  const icon = note.emoji ? (
-    <span className="text-[17px]">{note.emoji}</span>
+  const icon = note.icon ? (
+    <TypeIcon icon={note.icon} size={18} />
   ) : note.kind === "external" ? (
     <ExternalLink className="h-[18px] w-[18px]" />
   ) : note.kind === "file" ? (
@@ -208,10 +245,11 @@ interface BottomSearchProps {
   query: string;
   onQueryChange: (query: string) => void;
   onCreate?: () => void;
+  onChat: () => void;
   createLabel?: string;
 }
 
-function BottomSearch({ query, onQueryChange, onCreate, createLabel = "Create a new note" }: BottomSearchProps) {
+function BottomSearch({ query, onQueryChange, onCreate, onChat, createLabel = "Create a new note" }: BottomSearchProps) {
   return (
     <div className="mobile-bottom-search pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-2.5 bg-gradient-to-t from-[#1c1d1e] via-[#1c1d1e]/95 to-transparent px-5 pb-7 pt-8">
       <label className="pointer-events-auto relative min-w-0 flex-1">
@@ -229,6 +267,9 @@ function BottomSearch({ query, onQueryChange, onCreate, createLabel = "Create a 
           </button>
         )}
       </label>
+      <button type="button" onClick={onChat} className="pointer-events-auto flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-[#343536] text-[#ef6b62] shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition active:scale-95" aria-label="Open voice chat">
+        <Sparkles className="h-6 w-6" />
+      </button>
       {onCreate && <button type="button" onClick={onCreate} className="pointer-events-auto flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-[#df5149] text-white shadow-[0_8px_24px_rgba(223,81,73,0.34)] transition active:scale-95" aria-label={createLabel}>
         <Plus className="h-7 w-7" strokeWidth={2} />
       </button>}
@@ -276,6 +317,66 @@ function flattenTypeKeys(nodes: TypeNode[]): string[] {
 }
 
 function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreateType, onOpenTypeActions }: LibraryDrawerProps) {
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const touchStart = useRef<{ x: number; y: number; startedAt: number; axis: "horizontal" | "vertical" | null } | null>(null);
+  const suppressClick = useRef(false);
+
+  useEffect(() => {
+    if (!isClosing) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const timer = window.setTimeout(onClose, reduceMotion ? 0 : 260);
+    return () => window.clearTimeout(timer);
+  }, [isClosing, onClose]);
+
+  const closeWithAnimation = () => {
+    touchStart.current = null;
+    setIsDragging(false);
+    setIsClosing(true);
+    setSwipeOffset(-window.innerWidth);
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch || isClosing) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY, startedAt: performance.now(), axis: null };
+    suppressClick.current = false;
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const touch = event.touches[0];
+    if (!start || !touch || isClosing) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (!start.axis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
+      start.axis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      if (start.axis === "horizontal") setIsDragging(true);
+    }
+    if (start.axis !== "horizontal") return;
+    event.preventDefault();
+    const nextOffset = Math.min(0, deltaX);
+    if (nextOffset < -8) suppressClick.current = true;
+    setSwipeOffset(nextOffset);
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>, cancelled = false) => {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch || start.axis !== "horizontal") return;
+    const deltaX = touch.clientX - start.x;
+    const velocity = deltaX / Math.max(performance.now() - start.startedAt, 1);
+    const closeDistance = Math.min(window.innerWidth * 0.22, 96);
+    if (!cancelled && (deltaX <= -closeDistance || (deltaX <= -24 && velocity <= -0.5))) {
+      closeWithAnimation();
+      return;
+    }
+    setIsDragging(false);
+    setSwipeOffset(0);
+  };
+
   const scopeRow = (
     label: string,
     count: number,
@@ -290,10 +391,26 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
     </button>
   );
   return (
-    <div className="mobile-library-enter absolute inset-0 z-40 flex min-h-0 flex-col bg-[#1c1c1e]" role="dialog" aria-modal="true" aria-label="Grimoire navigation">
+    <div
+      className={cn("mobile-library-drawer absolute inset-0 z-40 flex min-h-0 flex-col bg-[#1c1c1e]", !isClosing && "mobile-library-enter", isDragging && "mobile-library-dragging")}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Grimoire navigation"
+      style={swipeOffset !== 0 || isClosing ? { transform: `translate3d(${swipeOffset}px, 0, 0)` } : undefined}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={(event) => handleTouchEnd(event)}
+      onTouchCancel={(event) => handleTouchEnd(event, true)}
+      onClickCapture={(event) => {
+        if (!suppressClick.current) return;
+        suppressClick.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
       <header className="z-10 flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#1c1c1e]/95 px-5 pb-4 pt-[max(2.75rem,env(safe-area-inset-top))] backdrop-blur-xl">
         <h2 className="text-[30px] font-bold tracking-[-0.04em]">Grimoire</h2>
-        <Button variant="ghost" size="icon" onClick={onClose} className="h-10 w-10 rounded-full bg-white/[0.08] text-[#f5f5f7] hover:bg-white/[0.12]" aria-label="Close Grimoire navigation"><X className="h-5 w-5" /></Button>
+        <Button variant="ghost" size="icon" onClick={closeWithAnimation} className="h-10 w-10 rounded-full bg-white/[0.08] text-[#f5f5f7] hover:bg-white/[0.12]" aria-label="Close Grimoire navigation"><X className="h-5 w-5" /></Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-5 touch-pan-y" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
         <div className="rounded-[18px] bg-[#2c2c2e] p-1">
@@ -366,13 +483,100 @@ function TypeActionSheet({ target, onClose, onMoveUp, onMoveDown, onChangeIcon, 
   );
 }
 
+interface NoteActionSheetProps {
+  note: Note;
+  fileExists: boolean | null;
+  onClose: () => void;
+  onShowProperties: () => void;
+  onOpenFile: () => void;
+  onRefreshFile: () => void;
+  onCopyFileIntoVault: () => void;
+  onLocateFile: () => void;
+  onReplaceFile: () => void;
+  onDetachFile: () => void;
+  onMoveToTrash: () => void;
+}
+
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash }: NoteActionSheetProps) {
+  const archived = isArchived(note);
+  const trashed = isTrashed(note);
+  const external = isExternalNote(note);
+  const file = getFileHubReference(note);
+  const action = (
+    label: string,
+    icon: ReactNode,
+    run: () => void,
+    destructive = false,
+  ) => (
+    <button
+      type="button"
+      onClick={() => { onClose(); run(); }}
+      className={cn(
+        "flex min-h-[56px] w-full items-center gap-3 border-b border-white/[0.08] px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05]",
+        destructive && "text-[#ff6961]",
+      )}
+    >
+      <span className="flex h-8 w-8 items-center justify-center">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+
+  return (
+    <div
+      className="absolute inset-0 z-[70] flex items-end bg-black/55"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Note actions"
+      onClick={onClose}
+      onTouchStart={(event) => event.stopPropagation()}
+      onTouchMove={(event) => event.stopPropagation()}
+      onTouchEnd={(event) => event.stopPropagation()}
+    >
+      <section
+        className="w-full rounded-t-[26px] bg-[#242426] px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
+        <h3 className="truncate px-2 pb-3 pt-4 text-center text-[15px] font-semibold text-[#a6a6ab]">{noteTitle(note)}</h3>
+        <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+          {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
+        </div>
+        {file && !trashed && (
+          <>
+            <p className="px-2 pb-2 pt-4 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7f7f85]">File actions</p>
+            <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+              {action(`Preview ${file.name}`, <ExternalLink className="h-5 w-5" />, onOpenFile)}
+              {action("Refresh from Drive", <RefreshCw className="h-5 w-5" />, onRefreshFile)}
+              {fileExists === false && action("Locate file", <MapPin className="h-5 w-5" />, onLocateFile)}
+              {!file.managed && file.kind !== "vault" && fileExists === true
+                && action("Copy into Vault", <Copy className="h-5 w-5" />, onCopyFileIntoVault)}
+              {action("Replace linked file", <RefreshCw className="h-5 w-5" />, onReplaceFile)}
+              {action("Detach file from note", <Link2Off className="h-5 w-5" />, onDetachFile, true)}
+            </div>
+          </>
+        )}
+        {!external && (
+          <div className="mt-3 overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+            {!trashed && action(archived ? "Unarchive" : "Archive", archived ? <ArchiveRestore className="h-5 w-5" /> : <Archive className="h-5 w-5" />, () => toggleNoteArchived(note.id))}
+            {!trashed && action(note.pinned ? "Unpin" : "Pin", <Pin className={cn("h-5 w-5", note.pinned && "fill-current")} />, () => toggleNotePinned(note.id))}
+            {trashed
+              ? action("Restore", <Undo2 className="h-5 w-5" />, () => { void restoreNote(note.id); })
+              : action("Move to trash", <Trash2 className="h-5 w-5" />, onMoveToTrash, true)}
+          </div>
+        )}
+        <button type="button" onClick={onClose} className="mt-3 h-[52px] w-full rounded-[16px] bg-[#2c2c2e] text-[16px] font-semibold active:bg-[#363638]">Cancel</button>
+      </section>
+    </div>
+  );
+}
+
 interface NoteViewProps {
   note: Note;
   allNotes: Note[];
   onBack: () => void;
   onBodyChange: (body: string) => void;
   onOpenNote: (id: string) => void;
-  onOpenFile: (id: string) => void;
+  onOpenFile: (id: string, mode?: "preview" | "refresh") => void;
 }
 
 function NoteView({
@@ -385,26 +589,150 @@ function NoteView({
 }: NoteViewProps) {
   const presentedNote = presentNote(note);
   const file = getFileHubReference(note);
+  const hasFile = file !== null;
   const [draft, setDraft] = useState(presentedNote.body);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
+  const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
+  const [fileExists, setFileExists] = useState<boolean | null>(null);
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isSettling, setIsSettling] = useState(false);
+  const touchStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
+  const settleTimer = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!hasFile) {
+      setFileExists(null);
+      return;
+    }
+    void getFileHubStatus(note.id).then((status) => {
+      if (!cancelled) setFileExists(status?.exists ?? false);
+    });
+    return () => { cancelled = true; };
+  }, [hasFile, note.id]);
+
+  const replaceLinkedFile = async () => {
+    const path = await chooseDocumentFile();
+    if (!path) return;
+    const result = await attachFileToNote(note.id, path, "auto");
+    if (result.status === "duplicate") {
+      onOpenNote(result.noteId);
+    } else if (result.status === "needs-choice") {
+      setPendingAttachPath(result.path);
+    } else if (result.status === "attached") {
+      setFileExists(true);
+    }
+  };
+
+  const copyFileIntoVault = async () => {
+    const status = await getFileHubStatus(note.id);
+    const path = status?.resolved.absolutePath;
+    if (!path || !status.exists) return;
+    const result = await attachFileToNote(note.id, path, "copy");
+    if (result.status === "attached") setFileExists(true);
+  };
+
+  const settle = (target: number, complete: () => void) => {
+    setIsDragging(false);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setDragX(0);
+      complete();
+      return;
+    }
+    setIsSettling(true);
+    setDragX(target);
+    settleTimer.current = window.setTimeout(() => {
+      setIsSettling(false);
+      setDragX(0);
+      complete();
+    }, 240);
+  };
+
+  const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (isSettling) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
+  };
+
+  const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const touch = event.touches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (!start.axis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
+      start.axis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      if (start.axis === "horizontal") setIsDragging(true);
+    }
+    if (start.axis !== "horizontal") return;
+    event.preventDefault();
+    setDragX(propertiesOpen && deltaX < 0 ? deltaX * 0.12 : deltaX);
+  };
+
+  const handleTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const touch = event.changedTouches[0];
+    touchStart.current = null;
+    if (!start || !touch || start.axis !== "horizontal") {
+      setIsDragging(false);
+      setDragX(0);
+      return;
+    }
+    const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY });
+    if (direction === "right" && propertiesOpen) {
+      settle(window.innerWidth, () => setPropertiesOpen(false));
+    } else if (direction === "right") {
+      settle(window.innerWidth, onBack);
+    } else if (direction === "left" && !propertiesOpen) {
+      setPropertiesOpen(true);
+      setIsDragging(false);
+      setIsSettling(true);
+      requestAnimationFrame(() => {
+        setDragX(0);
+        settleTimer.current = window.setTimeout(() => setIsSettling(false), 240);
+      });
+    } else {
+      setIsDragging(false);
+      setDragX(0);
+    }
+  };
+
+  const propertiesVisible = propertiesOpen || (isDragging && dragX < 0);
+  const transition = isDragging ? "none" : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)";
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col bg-[#1c1d1e]">
+    <div
+      className="mobile-note-page-enter relative flex min-h-0 flex-1 flex-col overflow-hidden bg-[#1c1d1e]"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={() => { touchStart.current = null; setIsDragging(false); setDragX(0); }}
+    >
+      <div className="flex min-h-0 flex-1 flex-col" style={{ transform: `translate3d(${propertiesOpen ? 0 : Math.max(0, dragX)}px, 0, 0)`, transition }}>
       <header className="relative z-20 grid h-[60px] shrink-0 grid-cols-[44px_1fr_44px] items-center px-4 pb-3 pt-1">
-        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={onBack} aria-label="Back to notes"><ArrowLeft className="h-5 w-5" /></Button>
+        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => settle(window.innerWidth, onBack)} aria-label="Back to notes"><ArrowLeft className="h-5 w-5" /></Button>
         <span className="flex min-w-0 max-w-full items-center justify-center gap-1.5 justify-self-center text-[14px] font-medium leading-none text-[#99958f] dark:text-[#8b8883]">
-          <TypeIcon icon={presentedNote.emoji ?? undefined} size={16} className="shrink-0" />
+          <TypeIcon icon={presentedNote.icon ?? undefined} size={16} className="shrink-0" />
           <span className="truncate">{presentedNote.type}</span>
         </span>
-        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => setPropertiesOpen(true)} aria-label="View properties"><Link2 className="h-[18px] w-[18px]" /></Button>
+        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => setActionsOpen(true)} aria-label="Note actions"><MoreHorizontal className="h-[20px] w-[20px]" /></Button>
       </header>
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
         <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
         <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
-        {file && <button type="button" onClick={() => onOpenFile(note.id)} className="mt-5 flex items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
-          <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
-          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Open with an app on this device</span></span>
-          <ExternalLink className="h-4 w-4 text-[#77777d]" />
+        {file && <button type="button" onClick={() => onOpenFile(note.id, "preview")} className="mt-5 flex w-full min-w-0 select-none items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
+            <ExternalLink className="h-4 w-4 shrink-0 text-[#77777d]" />
         </button>}
         <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden [&_[role=toolbar]]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-28 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
           <MarkdownEditor
@@ -423,10 +751,24 @@ function NoteView({
           />
         </div>
       </main>
-      {propertiesOpen && (
-        <div className="absolute inset-0 z-40 flex flex-col bg-[#1c1d1e]" role="dialog" aria-modal="true" aria-label="Note properties">
+      </div>
+      {propertiesVisible && (
+        <div
+          className="mobile-properties-panel absolute inset-0 z-40 flex flex-col bg-[#1c1d1e]"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Note properties"
+          inert={!propertiesOpen && !isDragging}
+          style={{
+            transform: propertiesOpen
+              ? `translate3d(${Math.max(0, dragX)}px, 0, 0)`
+              : `translate3d(calc(100% + ${dragX}px), 0, 0)`,
+            transition,
+            touchAction: "pan-y",
+          }}
+        >
           <header className="flex h-12 shrink-0 items-center justify-end border-b border-white/[0.07] px-3">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-white/[0.08] text-[#f5f3ef] hover:bg-white/[0.12]" onClick={() => setPropertiesOpen(false)} aria-label="Close properties"><X className="h-5 w-5" /></Button>
+            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-white/[0.08] text-[#f5f3ef] hover:bg-white/[0.12]" onClick={() => settle(window.innerWidth, () => setPropertiesOpen(false))} aria-label="Close properties"><X className="h-5 w-5" /></Button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <PropertiesSection
@@ -441,6 +783,88 @@ function NoteView({
           </div>
         </div>
       )}
+      {actionsOpen && (
+        <NoteActionSheet
+          note={note}
+          fileExists={fileExists}
+          onClose={() => setActionsOpen(false)}
+          onShowProperties={() => setPropertiesOpen(true)}
+          onOpenFile={() => onOpenFile(note.id)}
+          onRefreshFile={() => onOpenFile(note.id, "refresh")}
+          onCopyFileIntoVault={() => { void copyFileIntoVault(); }}
+          onLocateFile={() => { void locateFileHub(note.id).then((located) => { if (located) setFileExists(true); }); }}
+          onReplaceFile={() => { void replaceLinkedFile(); }}
+          onDetachFile={() => setDetachConfirmOpen(true)}
+          onMoveToTrash={() => setTrashConfirmOpen(true)}
+        />
+      )}
+      <AlertDialog open={detachConfirmOpen} onOpenChange={setDetachConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Detach “{file?.name ?? "this file"}” from this note?</AlertDialogTitle>
+            <AlertDialogDescription>This removes the file link and preview from the note. The file itself will not be deleted or moved.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => detachFileHub(note.id)}>Detach file</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <Dialog open={pendingAttachPath !== null} onOpenChange={(open) => { if (!open) setPendingAttachPath(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>How should this file be attached?</DialogTitle>
+          </DialogHeader>
+          <p className="break-all text-sm text-muted-foreground">{pendingAttachPath}</p>
+          <p className="text-sm text-muted-foreground">A local link stays on this device. A vault copy is portable and will move and trash together with this note.</p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (pendingAttachPath) {
+                  void attachFileToNote(note.id, pendingAttachPath, "local").then((result) => {
+                    if (result.status === "attached") setFileExists(true);
+                    if (result.status === "duplicate") onOpenNote(result.noteId);
+                  });
+                }
+                setPendingAttachPath(null);
+              }}
+            >
+              Link Locally
+            </Button>
+            <Button
+              onClick={() => {
+                if (pendingAttachPath) {
+                  void attachFileToNote(note.id, pendingAttachPath, "copy").then((result) => {
+                    if (result.status === "attached") setFileExists(true);
+                    if (result.status === "duplicate") onOpenNote(result.noteId);
+                  });
+                }
+                setPendingAttachPath(null);
+              }}
+            >
+              Copy into Vault
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <AlertDialog open={trashConfirmOpen} onOpenChange={setTrashConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move this note to trash?</AlertDialogTitle>
+            <AlertDialogDescription>You can restore it later from Recently Deleted.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => { void trashNote(note.id).then(onBack); }}
+            >
+              Move to trash
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -497,9 +921,44 @@ function MobileSettings({
   onClose,
   onChangeVault,
 }: MobileSettingsProps) {
+  const { fileLocations } = useVault();
+  const locationMappings = getFileLocationMappings();
+  const [locationDraft, setLocationDraft] = useState("");
+  const [busyLocation, setBusyLocation] = useState<string | null>(null);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+
+  const mapLocation = async (id: string) => {
+    setBusyLocation(id);
+    setLocationMessage(null);
+    try {
+      const mapped = await mapFileLocation(id);
+      if (!mapped) setLocationMessage("No folder was selected.");
+    } catch (error) {
+      setLocationMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyLocation(null);
+    }
+  };
+
+  const addLocation = async () => {
+    const name = locationDraft.trim();
+    if (!name) return;
+    setBusyLocation("new");
+    setLocationMessage(null);
+    try {
+      const added = await addFileLocation(name);
+      if (added) setLocationDraft("");
+      else setLocationMessage("No folder was selected.");
+    } catch (error) {
+      setLocationMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setBusyLocation(null);
+    }
+  };
+
   return (
     <div className="absolute inset-0 z-50 flex items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Mobile settings">
-      <section className="w-full rounded-t-[28px] bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 shadow-2xl">
+      <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 shadow-2xl">
         <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
         <header className="flex items-center justify-between py-4">
           <div>
@@ -516,6 +975,76 @@ function MobileSettings({
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Grimoire"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
           </div>
           <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-white/[0.07] text-sm font-semibold text-[#ef6b62] hover:bg-white/[0.1] hover:text-[#ef6b62]">Change vault</Button>
+        </div>
+
+        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">File locations</p>
+        <div className="rounded-[16px] bg-[#292a2b] p-3">
+          <p className="px-1 pb-3 text-xs leading-4 text-[#8e8e93]">
+            Map each synced location to its folder on this device. For Google Drive, select “My Drive”; saved relative paths such as “Documentos” resolve beneath it.
+          </p>
+          <div className="space-y-2">
+            {fileLocations.map((fileLocation) => {
+              const mapped = locationMappings[fileLocation.id];
+              const usages = fileLocationUsages(fileLocation.id);
+              const busy = busyLocation === fileLocation.id;
+              return (
+                <div key={fileLocation.id} className="rounded-[13px] bg-white/[0.06] p-3">
+                  <div className="flex items-center gap-2">
+                    <FolderCog className="h-5 w-5 shrink-0 text-[#ef6b62]" />
+                    <Input
+                      defaultValue={fileLocation.name}
+                      aria-label="File location name"
+                      className="h-9 min-w-0 flex-1 border-white/[0.08] bg-transparent text-sm"
+                      onBlur={(event) => renameFileLocation(fileLocation.id, event.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busyLocation !== null}
+                      onClick={() => void mapLocation(fileLocation.id)}
+                      className="h-9 shrink-0 rounded-[10px] bg-white/[0.08] px-3 text-xs font-semibold text-[#ef6b62] hover:bg-white/[0.12] hover:text-[#ef6b62]"
+                    >
+                      {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <MapPin className="mr-1 h-3.5 w-3.5" />}
+                      {mapped ? "Remap" : "Map"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={usages.length > 0 || busyLocation !== null}
+                      onClick={() => removeFileLocation(fileLocation.id)}
+                      className="h-9 w-9 shrink-0 rounded-[10px] text-[#ff6961] disabled:text-[#66666b]"
+                      aria-label={`Remove ${fileLocation.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <p className="mt-1 truncate pl-7 text-[11px] text-[#77777d]">
+                    {mapped ?? "Not configured on this device"}
+                    {usages.length > 0 && ` · ${usages.length} file${usages.length === 1 ? "" : "s"}`}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <Input
+              value={locationDraft}
+              onChange={(event) => setLocationDraft(event.target.value)}
+              placeholder="Company OneDrive"
+              className="h-10 min-w-0 flex-1 border-white/[0.08] bg-white/[0.04] text-sm"
+            />
+            <Button
+              type="button"
+              disabled={!locationDraft.trim() || busyLocation !== null}
+              onClick={() => void addLocation()}
+              className="h-10 shrink-0 rounded-[11px] bg-[#df5149] px-3 text-xs font-semibold text-white"
+            >
+              {busyLocation === "new" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1 h-4 w-4" />}
+              Add
+            </Button>
+          </div>
+          {locationMessage && <p className="mt-3 rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{locationMessage}</p>}
         </div>
       </section>
     </div>
@@ -597,6 +1126,10 @@ export function MobileGrimoire() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat">("notes");
+  const [notesPreparationError, setNotesPreparationError] = useState<string | null>(null);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
   const [vaultSetupOpen, setVaultSetupOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -610,6 +1143,7 @@ export function MobileGrimoire() {
   const [renameDraft, setRenameDraft] = useState("");
   const [iconTarget, setIconTarget] = useState<TypeNode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<TypeNode | null>(null);
+  const notesSwipeStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
 
   useLayoutEffect(() => {
     if (!isNativeApp) return;
@@ -645,6 +1179,42 @@ export function MobileGrimoire() {
   }, []);
 
   useEffect(() => {
+    if (readMobileNavigationEntry(window.history.state)) return;
+    window.history.replaceState(
+      withMobileNavigationEntry(window.history.state, { view: "notes" }),
+      "",
+    );
+  }, []);
+
+  useEffect(() => {
+    const restoreNavigation = (entry: MobileNavigationEntry | null) => {
+      if (!entry || entry.view === "notes") {
+        setSelectedNoteId(null);
+        setChatOpen(false);
+        setChatHistoryOpen(false);
+        return;
+      }
+      if (entry.view === "chat" || entry.view === "chat-history") {
+        setSelectedNoteId(null);
+        setChatOpen(true);
+        setChatHistoryOpen(entry.view === "chat-history");
+        return;
+      }
+      setNoteOrigin(entry.origin);
+      setSelectedNoteId(entry.noteId);
+      setChatOpen(entry.origin === "chat");
+      setChatHistoryOpen(false);
+    };
+    const onPopState = (event: PopStateEvent) => restoreNavigation(readMobileNavigationEntry(event.state));
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    if (query.trim() && vault.hasMoreNotes) void loadAllNotes();
+  }, [query, vault.hasMoreNotes]);
+
+  useEffect(() => {
     setTypeOrder(loadNoteTypeOrder(vault.location));
     setDefaultNoteTypeState(loadDefaultNoteType(vault.location));
   }, [vault.location]);
@@ -653,10 +1223,12 @@ export function MobileGrimoire() {
   const selectedNote = selectedSourceNote
     ? presentNote(selectedSourceNote, vault.typeIcons)
     : null;
-  const typeTree = useMemo(
-    () => buildTypeTree(vault.notes, vault.extraTypes, typeOrder),
-    [typeOrder, vault.extraTypes, vault.notes],
-  );
+  const typeTree = useMemo(() => {
+    if (vault.isNotePaginationEnabled) {
+      return buildTypeTreeFromCounts(vault.typeNoteCounts, vault.extraTypes);
+    }
+    return buildTypeTree(vault.notes, vault.extraTypes, typeOrder);
+  }, [typeOrder, vault.extraTypes, vault.isNotePaginationEnabled, vault.notes, vault.typeNoteCounts]);
   const creationType = useMemo(
     () => scope.kind === "type" ? scope.path : defaultNoteType,
     [defaultNoteType, scope],
@@ -676,18 +1248,72 @@ export function MobileGrimoire() {
     );
   }, [query, scope, vault.notes, vault.typeIcons]);
   const libraryCounts = useMemo(() => ({
-    all: filterNotes(vault.notes, { kind: "all" }, "").length,
+    all: vault.isNotePaginationEnabled ? vault.totalNoteCount : filterNotes(vault.notes, { kind: "all" }, "").length,
     external: filterNotes(vault.notes, { kind: "external" }, "").length,
     files: filterNotes(vault.notes, { kind: "files" }, "").length,
     trash: filterNotes(vault.notes, { kind: "trash" }, "").length,
-  }), [vault.notes]);
+  }), [vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount]);
+
+  const pushNavigation = (entry: MobileNavigationEntry) => {
+    window.history.pushState(withMobileNavigationEntry(window.history.state, entry), "");
+  };
+
+  const openNote = (noteId: string, origin: "notes" | "chat" = "notes") => {
+    setNoteOrigin(origin);
+    setSelectedNoteId(noteId);
+    pushNavigation({ view: "note", noteId, origin });
+  };
+
+  const prepareAllNotes = async () => {
+    setNotesPreparationError(null);
+    try {
+      await loadAllNotes();
+    } catch (error) {
+      setNotesPreparationError(String(error));
+    }
+  };
+
+  const openChat = () => {
+    setChatOpen(true);
+    setChatHistoryOpen(false);
+    pushNavigation({ view: "chat" });
+    if (vault.hasMoreNotes) void prepareAllNotes();
+  };
+
+  const handleNotesTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch || libraryOpen) return;
+    notesSwipeStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
+  };
+
+  const handleNotesTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = notesSwipeStart.current;
+    const touch = event.touches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (!start.axis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
+      start.axis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+    }
+    if (start.axis === "horizontal" && deltaX > 0) event.preventDefault();
+  };
+
+  const handleNotesTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const start = notesSwipeStart.current;
+    const touch = event.changedTouches[0];
+    notesSwipeStart.current = null;
+    if (!start || !touch || start.axis !== "horizontal") return;
+    if (horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY }) === "right") {
+      setLibraryOpen(true);
+    }
+  };
 
   const saveQuickNote = async (title: string, body: string) => {
     const content = `# ${title}\n\n${body.trim()}`;
     const note = await createNote(creationType, content);
     if (!note) return;
     setComposerOpen(false);
-    setSelectedNoteId(note.id);
+    openNote(note.id);
   };
 
   const pinnedNotes = filteredNotes.filter((note) => note.pinned);
@@ -821,12 +1447,12 @@ export function MobileGrimoire() {
   const createForScope = async () => {
     if (scope.kind === "external") {
       const ids = await openExternalNotes();
-      if (ids[0]) setSelectedNoteId(ids[0]);
+      if (ids[0]) openNote(ids[0]);
       return;
     }
     if (scope.kind === "files") {
       const note = await createFileNote(creationType);
-      if (note) setSelectedNoteId(note.id);
+      if (note) openNote(note.id);
       return;
     }
     setComposerOpen(true);
@@ -872,15 +1498,21 @@ export function MobileGrimoire() {
             key={selectedSourceNote.id}
             note={selectedSourceNote}
             allNotes={vault.notes}
-            onBack={() => setSelectedNoteId(null)}
+            onBack={() => window.history.back()}
             onBodyChange={(body) =>
               updateNoteBody(selectedNote.id, `# ${selectedNote.title}\n\n${body}`)
             }
-            onOpenNote={setSelectedNoteId}
-            onOpenFile={(id) => void openFileHub(id)}
+            onOpenNote={(id) => openNote(id, noteOrigin)}
+            onOpenFile={(id, mode) => void openFileHub(id, mode)}
           />
         ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto pb-28">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto pb-28"
+            onTouchStart={handleNotesTouchStart}
+            onTouchMove={handleNotesTouchMove}
+            onTouchEnd={handleNotesTouchEnd}
+            onTouchCancel={() => { notesSwipeStart.current = null; }}
+          >
             <header className="sticky top-0 z-20 grid grid-cols-[44px_1fr_auto] items-center border-b border-white/[0.07] bg-[#1c1d1e]/90 px-4 pb-3 pt-1 backdrop-blur-xl">
               <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-[#2c2c2e] text-[#f5f5f7] hover:bg-[#363638]" aria-label="Open Grimoire navigation"><Menu className="h-[21px] w-[21px]" /></Button>
               <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{filteredNotes.length} {scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
@@ -892,22 +1524,23 @@ export function MobileGrimoire() {
             </header>
             <main className="px-4 pb-8 pt-6">
               {query ? (
-                <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div> : <div className="rounded-[18px] bg-[#222324] px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-[#65625f]" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-[#8e8a85]">Try a different search.</p></div>}</section>
+                <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div> : <div className="rounded-[18px] bg-[#222324] px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-[#65625f]" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-[#8e8a85]">Try a different search.</p></div>}</section>
               ) : (
                 <div className="space-y-7">
-                  {pinnedNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Pinned</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div></section>}
-                  {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div></section>}
+                  {pinnedNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Pinned</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
+                  {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
                   {filteredNotes.length === 0 && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
                     {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
                     <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
                     <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Grimoire will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
                   </section>}
+                  {vault.hasMoreNotes && <Button type="button" variant="ghost" disabled={vault.isLoadingMoreNotes} onClick={() => void loadMoreNotes()} className="mx-auto flex rounded-full bg-white/[0.06] px-5 text-sm text-[#aaa6a0] hover:bg-white/[0.1]">{vault.isLoadingMoreNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Load more notes</Button>}
                 </div>
               )}
             </main>
           </div>
         )}
-        {vault.status === "ready" && !selectedNote && <BottomSearch query={query} onQueryChange={setQuery} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        {vault.status === "ready" && !selectedNote && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={openChat} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
         {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet
@@ -929,9 +1562,10 @@ export function MobileGrimoire() {
           onOpenChange={(open) => { if (!open) closeTypeCreation(); }}
           onSubmit={(name) => void submitNewType(name)}
         />
-        <EmojiPickerDialog
+        <IconPickerDialog
           open={iconTarget !== null}
           typeName={iconTarget?.name ?? ""}
+          value={iconTarget ? typeIcons[typeKey(iconTarget.path)] : undefined}
           onOpenChange={(open) => { if (!open) setIconTarget(null); }}
           onPick={(icon) => { if (iconTarget) setTypeIcon(iconTarget.path, icon); }}
         />
@@ -978,6 +1612,21 @@ export function MobileGrimoire() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <PersistentLocalAIChat
+          notes={vault.notes}
+          notesReady={!vault.hasMoreNotes}
+          notesPreparationError={notesPreparationError}
+          onRetryNotesPreparation={() => void prepareAllNotes()}
+          visible={chatOpen && !selectedNote}
+          historyVisible={chatHistoryOpen}
+          onClose={() => window.history.back()}
+          onOpenHistory={() => {
+            setChatHistoryOpen(true);
+            pushNavigation({ view: "chat-history" });
+          }}
+          onCloseHistory={() => window.history.back()}
+          onOpenNote={(noteId) => openNote(noteId, "chat")}
+        />
         {settingsOpen && <MobileSettings location={vault.location} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
         {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
         {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} />}

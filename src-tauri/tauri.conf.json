@@ -102,7 +102,8 @@
       "debugApplicationIdSuffix": ".debug"
     },
     "iOS": {
-      "minimumSystemVersion": "16.0",
+      "minimumSystemVersion": "17.0",
+      "bundleVersion": "31",
       "infoPlist": "Info.ios.plist"
     }
   },

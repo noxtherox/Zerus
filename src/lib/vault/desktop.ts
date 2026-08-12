@@ -177,6 +177,21 @@ export class DesktopVault implements VaultBackend {
     return readTextFile(this.abs(path));
   }
 
+  async listFiles(path: string): Promise<string[]> {
+    const files: string[] = [];
+    const walk = async (relativeDir: string): Promise<void> => {
+      const absoluteDir = relativeDir ? this.abs(relativeDir) : this.root;
+      if (!(await exists(absoluteDir))) return;
+      for (const entry of await readDir(absoluteDir)) {
+        const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+        if (entry.isDirectory) await walk(relativePath);
+        else if (entry.isFile) files.push(relativePath);
+      }
+    };
+    await walk(path.replace(/\/$/, ""));
+    return files.sort();
+  }
+
   async write(path: string, content: string): Promise<void> {
     await this.ensureParentDir(path);
     await writeTextFile(this.abs(path), content);

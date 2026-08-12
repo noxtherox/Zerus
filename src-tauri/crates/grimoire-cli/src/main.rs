@@ -588,9 +588,7 @@ fn save_schemas(root: &Path, schemas: &serde_json::Map<String, Value>) -> Result
 const MAX_SCHEMA_TYPE_DEPTH: usize = 3;
 
 fn normalize_schema_type_path(input: &str) -> Result<String, CliError> {
-    let normalized = input
-        .trim()
-        .replace('\\', "/");
+    let normalized = input.trim().replace('\\', "/");
     grimoire_core::validate_portable_relative_path(&normalized)
         .map_err(|error| CliError::new("schema_invalid", error.to_string(), 3))?;
     if normalized.split('/').count() > MAX_SCHEMA_TYPE_DEPTH {

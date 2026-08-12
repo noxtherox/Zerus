@@ -7,16 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		039ECFF1A4B0E3DBD9A0B8D0 /* mlx.metallib in Resources */ = {isa = PBXBuildFile; fileRef = C079B13D6F3AA4A458288BD7 /* mlx.metallib */; };
 		299814393FFBF154FAD94CA8 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F3673D372C5ABDD1AD6E7067 /* QuartzCore.framework */; };
 		3036F7131E55779ABF15BD58 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 02B7F8347F94B067E6B27396 /* LaunchScreen.storyboard */; };
 		31585529C029A01BE249A285 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E81BD6B453D87B7F7B1597B /* CoreGraphics.framework */; };
 		324A1E9A4258E7911D4DAC39 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FACFFCB6E3743955F72464C /* Security.framework */; };
-		36C1893A7382FCD5A6A74845 /* libapp.a in Resources */ = {isa = PBXBuildFile; fileRef = CF674524E34966183631754E /* libapp.a */; };
 		53CDD0ACFBE8BDF1550B2E53 /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 682535EEFE1DA20BE07B123C /* main.mm */; };
 		5C516481BCA83A182C2BCC94 /* assets in Resources */ = {isa = PBXBuildFile; fileRef = 3842AE2A64FB9933D0400EA4 /* assets */; };
 		618672DC8A5E0605441C9935 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E2B15F176E4B041AE33EEEA /* UIKit.framework */; };
 		836D84C5F07860664DAF79C8 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D8F57162F5CC7AEDD55F173D /* WebKit.framework */; };
+		8546119624042ABC153640C7 /* Accelerate.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 344A8C5E1C137CD493D646B0 /* Accelerate.framework */; };
 		9D59FB167BB4E699DA17D1E9 /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 04B56F58E2E44DDE1D67E7B7 /* MetalKit.framework */; };
+		BED1EBF00F6F3ABD942F3881 /* swift-crypto_Crypto.bundle in Resources */ = {isa = PBXBuildFile; fileRef = F699A1C9893E0D0B6E5CB675 /* swift-crypto_Crypto.bundle */; };
+		C4522BFD7CC4735A18AE180B /* swift-transformers_Hub.bundle in Resources */ = {isa = PBXBuildFile; fileRef = 0DAC37773F2D3570D81A9FEB /* swift-transformers_Hub.bundle */; };
 		C6BD59C055C986EA4A77FDA2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF1DE57E7D9CF13BB2E0E038 /* Assets.xcassets */; };
 		C869023DDFE275D42F3FBF29 /* libapp.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 39EEC6A55698228E08917A52 /* libapp.a */; };
 		E68F6CFDAED6503ABB4044A5 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CE1209BFDECB28E00189B168 /* Metal.framework */; };
@@ -26,21 +29,24 @@
 		007E478DB8BC37A788C4730F /* app_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = app_iOS.entitlements; sourceTree = "<group>"; };
 		02B7F8347F94B067E6B27396 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		04B56F58E2E44DDE1D67E7B7 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
+		0DAC37773F2D3570D81A9FEB /* swift-transformers_Hub.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = "swift-transformers_Hub.bundle"; sourceTree = "<group>"; };
 		0E2B15F176E4B041AE33EEEA /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		1631E4CFBB715FFDBF919C8C /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
 		17B52554D60D361AFE791C3E /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
 		1E81BD6B453D87B7F7B1597B /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		306B9C1792E7B1C53FA262A6 /* bindings.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bindings.h; sourceTree = "<group>"; };
+		344A8C5E1C137CD493D646B0 /* Accelerate.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Accelerate.framework; path = System/Library/Frameworks/Accelerate.framework; sourceTree = SDKROOT; };
 		3842AE2A64FB9933D0400EA4 /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		39EEC6A55698228E08917A52 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		682535EEFE1DA20BE07B123C /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
 		81E326B61ED92E1D1EECF952 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		9FACFFCB6E3743955F72464C /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		AF1DE57E7D9CF13BB2E0E038 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		C079B13D6F3AA4A458288BD7 /* mlx.metallib */ = {isa = PBXFileReference; lastKnownFileType = "archive.metal-library"; path = mlx.metallib; sourceTree = "<group>"; };
 		CE1209BFDECB28E00189B168 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
-		CF674524E34966183631754E /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		D8F57162F5CC7AEDD55F173D /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		F3673D372C5ABDD1AD6E7067 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
+		F699A1C9893E0D0B6E5CB675 /* swift-crypto_Crypto.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = "swift-crypto_Crypto.bundle"; sourceTree = "<group>"; };
 		FBC720DFA1D01F55B0A32344 /* Grimoire.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Grimoire.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -51,6 +57,7 @@
 			files = (
 				C869023DDFE275D42F3FBF29 /* libapp.a in Frameworks */,
 				31585529C029A01BE249A285 /* CoreGraphics.framework in Frameworks */,
+				8546119624042ABC153640C7 /* Accelerate.framework in Frameworks */,
 				E68F6CFDAED6503ABB4044A5 /* Metal.framework in Frameworks */,
 				9D59FB167BB4E699DA17D1E9 /* MetalKit.framework in Frameworks */,
 				299814393FFBF154FAD94CA8 /* QuartzCore.framework in Frameworks */,
@@ -66,6 +73,7 @@
 		1BBF8C620E54F8C028CA130C /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				344A8C5E1C137CD493D646B0 /* Accelerate.framework */,
 				1E81BD6B453D87B7F7B1597B /* CoreGraphics.framework */,
 				39EEC6A55698228E08917A52 /* libapp.a */,
 				CE1209BFDECB28E00189B168 /* Metal.framework */,
@@ -95,22 +103,6 @@
 			path = bindings;
 			sourceTree = "<group>";
 		};
-		5F72359403FB561BE1489F63 /* debug */ = {
-			isa = PBXGroup;
-			children = (
-				CF674524E34966183631754E /* libapp.a */,
-			);
-			path = debug;
-			sourceTree = "<group>";
-		};
-		70DD658F1D4B0FED51A79854 /* arm64 */ = {
-			isa = PBXGroup;
-			children = (
-				5F72359403FB561BE1489F63 /* debug */,
-			);
-			path = arm64;
-			sourceTree = "<group>";
-		};
 		78CBE3E5873199C0066F12DF /* Sources */ = {
 			isa = PBXGroup;
 			children = (
@@ -135,21 +127,15 @@
 				3842AE2A64FB9933D0400EA4 /* assets */,
 				AF1DE57E7D9CF13BB2E0E038 /* Assets.xcassets */,
 				02B7F8347F94B067E6B27396 /* LaunchScreen.storyboard */,
+				C079B13D6F3AA4A458288BD7 /* mlx.metallib */,
+				F699A1C9893E0D0B6E5CB675 /* swift-crypto_Crypto.bundle */,
+				0DAC37773F2D3570D81A9FEB /* swift-transformers_Hub.bundle */,
 				2867E55E70187711EE923EBD /* app_iOS */,
-				BAFB695BB8415511FEC74542 /* Externals */,
 				78CBE3E5873199C0066F12DF /* Sources */,
 				855775165ACE55D883F89EB3 /* src */,
 				1BBF8C620E54F8C028CA130C /* Frameworks */,
 				EE72B6AC647386A11F795E44 /* Products */,
 			);
-			sourceTree = "<group>";
-		};
-		BAFB695BB8415511FEC74542 /* Externals */ = {
-			isa = PBXGroup;
-			children = (
-				70DD658F1D4B0FED51A79854 /* arm64 */,
-			);
-			path = Externals;
 			sourceTree = "<group>";
 		};
 		EE72B6AC647386A11F795E44 /* Products */ = {
@@ -200,6 +186,11 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					E86255CB8A1836C0BF0C0E14 = {
+						DevelopmentTeam = TX9RYY52XR;
+					};
+				};
 			};
 			buildConfigurationList = B302E784349268C93E6F0A36 /* Build configuration list for PBXProject "app" */;
 			developmentRegion = en;
@@ -228,7 +219,9 @@
 				C6BD59C055C986EA4A77FDA2 /* Assets.xcassets in Resources */,
 				3036F7131E55779ABF15BD58 /* LaunchScreen.storyboard in Resources */,
 				5C516481BCA83A182C2BCC94 /* assets in Resources */,
-				36C1893A7382FCD5A6A74845 /* libapp.a in Resources */,
+				039ECFF1A4B0E3DBD9A0B8D0 /* mlx.metallib in Resources */,
+				BED1EBF00F6F3ABD942F3881 /* swift-crypto_Crypto.bundle in Resources */,
+				C4522BFD7CC4735A18AE180B /* swift-transformers_Hub.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,7 +247,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"/opt/homebrew/bin:$HOME/.cargo/bin:$PATH\"; pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "../../../scripts/tauri-ios-build-phase.sh";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -275,8 +268,10 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = app_iOS/app_iOS.entitlements;
-				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_IDENTITY = "Apple Distribution";
+				CODE_SIGN_STYLE = Manual;
 				ENABLE_BITCODE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -301,8 +296,14 @@
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
 				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Accelerate,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.grimoire.notes;
 				PRODUCT_NAME = "Grimoire";
+				PROVISIONING_PROFILE_SPECIFIER = "Grimoire App Store";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -347,7 +348,7 @@
 				DEVELOPMENT_TEAM = TX9RYY52XR;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -356,7 +357,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -374,7 +375,9 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = app_iOS/app_iOS.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				ENABLE_BITCODE = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -398,6 +401,11 @@
 					"$(SDKROOT)/usr/lib/swift",
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/$(PLATFORM_NAME)",
 					"$(DEVELOPER_DIR)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					Accelerate,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.grimoire.notes;
 				PRODUCT_NAME = "Grimoire";
@@ -445,7 +453,7 @@
 				DEVELOPMENT_TEAM = TX9RYY52XR;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -460,7 +468,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

@@ -167,6 +167,14 @@ export class BrowserVault implements VaultBackend {
     return file.content;
   }
 
+  async listFiles(path: string): Promise<string[]> {
+    const prefix = path ? `${path.replace(/\/$/, "")}/` : "";
+    return [
+      ...Object.keys(this.files),
+      ...Object.keys(this.assets),
+    ].filter((candidate) => candidate.startsWith(prefix)).sort();
+  }
+
   async write(path: string, content: string): Promise<void> {
     this.files[path] = { content, updatedAt: new Date().toISOString() };
     this.persist();

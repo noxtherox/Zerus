@@ -55,9 +55,111 @@ impl<R: Runtime> MobileVault<R> {
             .map_err(Into::into)
     }
 
+    pub fn pick_external_folder(&self) -> crate::Result<PickedFilesResponse> {
+        self.0
+            .run_mobile_plugin("pickExternalFolder", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
     pub fn open_file(&self, request: OpenFileRequest) -> crate::Result<()> {
         self.0
             .run_mobile_plugin("openFile", request)
+            .map_err(Into::into)
+    }
+
+    pub fn local_ai_status(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("localAIStatus", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn download_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("downloadLocalAI", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn cancel_local_ai_download(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("cancelLocalAIDownload", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn load_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("loadLocalAI", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn generate_local_ai(
+        &self,
+        request: LocalAiGenerateRequest,
+    ) -> crate::Result<LocalAiGenerateResponse> {
+        self.0
+            .run_mobile_plugin("generateLocalAI", request)
+            .map_err(Into::into)
+    }
+
+    pub fn delete_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("deleteLocalAI", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn cloud_ai_status(&self) -> crate::Result<CloudAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("cloudAIStatus", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn configure_cloud_ai(
+        &self,
+        request: CloudAiConfigureRequest,
+    ) -> crate::Result<CloudAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("configureCloudAI", request)
+            .map_err(Into::into)
+    }
+
+    pub fn generate_cloud_ai(
+        &self,
+        request: CloudAiGenerateRequest,
+    ) -> crate::Result<CloudAiGenerateResponse> {
+        self.0
+            .run_mobile_plugin("generateCloudAI", request)
+            .map_err(Into::into)
+    }
+
+    pub fn start_speech_recognition(
+        &self,
+        request: SpeechRecognitionStartRequest,
+    ) -> crate::Result<SpeechRecognitionStatusResponse> {
+        self.0
+            .run_mobile_plugin("startSpeechRecognition", request)
+            .map_err(Into::into)
+    }
+
+    pub fn speech_recognition_progress(&self) -> crate::Result<SpeechRecognitionProgressResponse> {
+        self.0
+            .run_mobile_plugin("speechRecognitionProgress", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn stop_speech_recognition(&self) -> crate::Result<SpeechRecognitionResponse> {
+        self.0
+            .run_mobile_plugin("stopSpeechRecognition", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn cancel_speech_recognition(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("cancelSpeechRecognition", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn device_name(&self) -> crate::Result<DeviceNameResponse> {
+        self.0
+            .run_mobile_plugin("deviceName", EmptyRequest::default())
             .map_err(Into::into)
     }
 }
