@@ -2,6 +2,11 @@
 members = [".", "crates/zerus-core", "crates/zerus-cli", "plugins/mobile-vault"]
 resolver = "2"
 
+[patch.crates-io]
+# swift-rs 1.0.7 only forwards the iOS target to swiftc. SwiftPM 6.4 / Xcode 27
+# then resolves the package itself for macOS and appends a conflicting macOS SDK.
+swift-rs = { path = "vendor/swift-rs" }
+
 [package]
 name = "app"
 version = "0.3.1"

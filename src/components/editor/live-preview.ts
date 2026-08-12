@@ -528,15 +528,20 @@ const livePreviewTheme = EditorView.theme({
     cursor: "pointer",
   },
   ".cm-markdown-table-wrapper": {
-    position: "relative",
     boxSizing: "border-box",
     width: "100%",
-    margin: "20px 0 10px",
+    // CodeMirror measures block widgets without their CSS margins. Keeping the
+    // vertical spacing inside the measured box prevents pointer/selection
+    // coordinates below a table from drifting away from the rendered text.
+    padding: "20px 0 10px",
+    cursor: "text",
+  },
+  ".cm-markdown-table-card": {
+    position: "relative",
     border: "1px solid rgb(var(--grim-text) / 0.14)",
     borderRadius: "10px",
     backgroundColor: "rgb(var(--grim-editor-bg))",
     boxShadow: "0 1px 2px rgb(0 0 0 / 0.08)",
-    cursor: "text",
   },
   ".cm-markdown-table-scroll": {
     overflowX: "auto",
@@ -623,11 +628,24 @@ const livePreviewTheme = EditorView.theme({
     boxShadow: `inset 0 0 0 2px ${ACCENT}`,
   },
   ".cm-markdown-table th.cm-markdown-table-cell-selected, .cm-markdown-table td.cm-markdown-table-cell-selected": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.18)",
-    boxShadow: `inset 0 0 0 1px ${ACCENT}`,
+    backgroundColor: "rgb(var(--grim-accent) / 0.13) !important",
+    backgroundImage: `linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT})`,
+    backgroundPosition: "top, right, bottom, left",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "100% var(--cm-table-selection-top, 0), var(--cm-table-selection-right, 0) 100%, 100% var(--cm-table-selection-bottom, 0), var(--cm-table-selection-left, 0) 100%",
+    boxShadow: "none",
   },
-  ".cm-markdown-table th.cm-markdown-table-cell-selected:focus, .cm-markdown-table td.cm-markdown-table-cell-selected:focus": {
-    boxShadow: `inset 0 0 0 2px ${ACCENT}`,
+  ".cm-markdown-table-selection-top": {
+    "--cm-table-selection-top": "2px",
+  },
+  ".cm-markdown-table-selection-right": {
+    "--cm-table-selection-right": "2px",
+  },
+  ".cm-markdown-table-selection-bottom": {
+    "--cm-table-selection-bottom": "2px",
+  },
+  ".cm-markdown-table-selection-left": {
+    "--cm-table-selection-left": "2px",
   },
   ".cm-markdown-table tr:last-child td": { borderBottom: "0" },
   ".cm-markdown-table th:last-child, .cm-markdown-table td:last-child": {

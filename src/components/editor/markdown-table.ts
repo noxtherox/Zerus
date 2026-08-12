@@ -358,14 +358,37 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
   const columns = () => table.tHead?.rows[0]?.cells.length ?? 1;
   const clearNativeSelection = () => window.getSelection()?.removeAllRanges();
   const renderCellSelection = () => {
+    const columnCount = columns();
+    const range =
+      selectionAnchor == null || selectionFocus == null
+        ? null
+        : tableCellRange(selectionAnchor, selectionFocus, columnCount);
     const selected = new Set(
       selectionAnchor == null || selectionFocus == null
         ? []
-        : tableCellRangeIndices(selectionAnchor, selectionFocus, columns()),
+        : tableCellRangeIndices(selectionAnchor, selectionFocus, columnCount),
     );
     tableCells(table).forEach((cell, index) => {
       const isSelected = selected.has(index);
+      const row = Math.floor(index / columnCount);
+      const column = index % columnCount;
       cell.classList.toggle("cm-markdown-table-cell-selected", isSelected);
+      cell.classList.toggle(
+        "cm-markdown-table-selection-top",
+        isSelected && row === range?.top,
+      );
+      cell.classList.toggle(
+        "cm-markdown-table-selection-right",
+        isSelected && column === range?.right,
+      );
+      cell.classList.toggle(
+        "cm-markdown-table-selection-bottom",
+        isSelected && row === range?.bottom,
+      );
+      cell.classList.toggle(
+        "cm-markdown-table-selection-left",
+        isSelected && column === range?.left,
+      );
       if (isSelected) cell.setAttribute("aria-selected", "true");
       else cell.removeAttribute("aria-selected");
     });
@@ -587,8 +610,11 @@ export class MarkdownTableWidget extends WidgetType {
     const scrollArea = document.createElement("div");
     scrollArea.className = "cm-markdown-table-scroll";
     scrollArea.appendChild(table);
-    wrapper.appendChild(scrollArea);
-    wrapper.appendChild(createTableToolbar(wrapper, view, data, this.readOnly));
+    const card = document.createElement("div");
+    card.className = "cm-markdown-table-card";
+    card.appendChild(scrollArea);
+    card.appendChild(createTableToolbar(wrapper, view, data, this.readOnly));
+    wrapper.appendChild(card);
     installTableInteractions(wrapper, view);
     return wrapper;
   }
