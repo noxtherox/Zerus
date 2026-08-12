@@ -25,16 +25,44 @@ describe("AI provider configuration", () => {
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "anthropic/claude-sonnet-4",
+      favoriteModels: ["anthropic/claude-sonnet-4", "openai/gpt-5"],
     });
 
     expect(readAiProviderConfig()).toEqual({
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",
       model: "anthropic/claude-sonnet-4",
+      favoriteModels: ["anthropic/claude-sonnet-4", "openai/gpt-5"],
     });
     expect(localStorage.getItem("zerus.ai.provider.v1")).not.toContain(
       "apiKey",
     );
+  });
+
+  it("migrates older provider settings without a favourites list", () => {
+    localStorage.setItem("zerus.ai.provider.v1", JSON.stringify({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "anthropic/claude-sonnet-4",
+    }));
+
+    expect(readAiProviderConfig()).toEqual({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "anthropic/claude-sonnet-4",
+      favoriteModels: [],
+    });
+  });
+
+  it("normalizes favourite model IDs before saving", () => {
+    saveAiProviderConfig({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-5",
+      favoriteModels: [" openai/gpt-5 ", "openai/gpt-5", ""],
+    });
+
+    expect(readAiProviderConfig().favoriteModels).toEqual(["openai/gpt-5"]);
   });
 
   it("falls back safely when stored data is invalid", () => {

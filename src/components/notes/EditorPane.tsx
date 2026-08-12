@@ -17,6 +17,7 @@ import {
   Minimize,
   Pin,
   RefreshCw,
+  Search,
   SquareTerminal,
   Sparkles,
   Trash2,
@@ -278,6 +279,7 @@ export function EditorPane({
   const [closeExternalConfirmOpen, setCloseExternalConfirmOpen] =
     useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [findRequest, setFindRequest] = useState(0);
   const [conflictReviewOpen, setConflictReviewOpen] = useState(false);
   const [overwriteDiskConfirmOpen, setOverwriteDiskConfirmOpen] =
     useState(false);
@@ -456,6 +458,7 @@ export function EditorPane({
           onToggleFullHeight={
             pdfHub ? () => toggleExpandedSection("markdown") : undefined
           }
+          findRequest={findRequest}
         />
       </div>
       {!external && showBacklinks && (
@@ -553,6 +556,13 @@ export function EditorPane({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  onSelect={() => setFindRequest((request) => request + 1)}
+                >
+                  <Search className="mr-2" size={14} />
+                  Find in note
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={() => void revealNoteInDesktop(note.id)}
                 >

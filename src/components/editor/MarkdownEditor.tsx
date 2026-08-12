@@ -58,6 +58,7 @@ interface MarkdownEditorProps {
   firstLineIsTitle?: boolean;
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
+  findRequest?: number;
 }
 
 function toggleInlineMarkup(
@@ -208,6 +209,7 @@ export function MarkdownEditor({
   firstLineIsTitle = true,
   isFullHeight = false,
   onToggleFullHeight,
+  findRequest = 0,
 }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -378,6 +380,15 @@ export function MarkdownEditor({
     window.addEventListener("keydown", handleFindShortcut);
     return () => window.removeEventListener("keydown", handleFindShortcut);
   }, []);
+
+  useEffect(() => {
+    if (findRequest === 0) return;
+    const frame = requestAnimationFrame(() => {
+      const view = viewRef.current;
+      if (view) openFindInNote(view);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [findRequest]);
 
   const handleInsertTable = (columns: number, rows: number) => {
     const view = viewRef.current;

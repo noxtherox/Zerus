@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw } from "@/lib/icons";
+import { Loader2, Plus, RefreshCw, X } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -50,6 +50,8 @@ export function AiProviderDialog({
   const [provider, setProvider] = useState<AiProvider>(config.provider);
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
   const [model, setModel] = useState(config.model);
+  const [favoriteModels, setFavoriteModels] = useState(config.favoriteModels);
+  const [newModel, setNewModel] = useState("");
   const [apiKey, setApiKey] = useState("");
 
   useEffect(() => {
@@ -60,6 +62,8 @@ export function AiProviderDialog({
     setProvider(config.provider);
     setBaseUrl(config.provider === "openrouter" ? OPENROUTER_URL : config.baseUrl);
     setModel(config.model);
+    setFavoriteModels(config.favoriteModels);
+    setNewModel("");
     setApiKey("");
   }, [config, open]);
 
@@ -68,17 +72,35 @@ export function AiProviderDialog({
     if (value === "local") {
       setBaseUrl("");
       setModel(LOCAL_AI_CONFIG.model);
+      setFavoriteModels([]);
     } else if (value === "openrouter") {
       setBaseUrl(OPENROUTER_URL);
-      if (config.provider !== "openrouter") setModel("");
+      if (config.provider !== "openrouter") {
+        setModel("");
+        setFavoriteModels([]);
+      }
     } else if (config.provider !== "compatible") {
       setBaseUrl("");
       setModel("");
+      setFavoriteModels([]);
     }
   };
 
   const canSave = provider === "local" || Boolean(baseUrl.trim() && model.trim());
   const providerModels = baseUrl.trim() === modelsBaseUrl ? models : [];
+  const modelOptions = [
+    ...favoriteModels.map((id) => ({ id, name: id })),
+    ...providerModels,
+    ...(model ? [{ id: model, name: model }] : []),
+  ].filter((item, index, items) => items.findIndex(({ id }) => id === item.id) === index);
+
+  const addFavoriteModel = () => {
+    const nextModel = newModel.trim();
+    if (!nextModel || nextModel.length > 200) return;
+    setFavoriteModels((current) => current.includes(nextModel) ? current : [...current, nextModel]);
+    setModel(nextModel);
+    setNewModel("");
+  };
 
   return (
     <Dialog
@@ -88,7 +110,7 @@ export function AiProviderDialog({
         onOpenChange(nextOpen);
       }}
     >
-      <DialogContent>
+      <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Configure AI chat</DialogTitle>
           <DialogDescription>
@@ -155,12 +177,22 @@ export function AiProviderDialog({
                     Load models
                   </Button>
                 </div>
-                {providerModels.length > 0 ? (
-                  <Select value={model || undefined} onValueChange={setModel}>
+                {modelOptions.length > 0 ? (
+                  <Select
+                    value={model || undefined}
+                    onValueChange={(nextModel) => {
+                      setModel(nextModel);
+                      setFavoriteModels((current) => current.includes(nextModel)
+                        ? current
+                        : [...current, nextModel]);
+                    }}
+                  >
                     <SelectTrigger id="ai-provider-model"><SelectValue placeholder="Choose a model" /></SelectTrigger>
                     <SelectContent>
-                      {providerModels.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>{item.name} · {item.id}</SelectItem>
+                      {modelOptions.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name === item.id ? item.id : `${item.name} · ${item.id}`}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -174,6 +206,67 @@ export function AiProviderDialog({
                     autoCorrect="off"
                   />
                 )}
+                <div className="space-y-2 pt-1">
+                  <Label htmlFor="ai-provider-new-model">Favourite models</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="ai-provider-new-model"
+                      value={newModel}
+                      onChange={(event) => setNewModel(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          addFavoriteModel();
+                        }
+                      }}
+                      placeholder="Enter a model ID"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0 gap-1.5"
+                      disabled={!newModel.trim() || newModel.trim().length > 200}
+                      onClick={addFavoriteModel}
+                    >
+                      <Plus size={14} /> Add
+                    </Button>
+                  </div>
+                  {favoriteModels.length > 0 && (
+                    <div className="max-h-32 space-y-1.5 overflow-y-auto pr-1">
+                      {favoriteModels.map((favorite) => (
+                        <div
+                          key={favorite}
+                          className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/25 px-2.5 py-1.5 text-xs"
+                        >
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate text-left hover:text-foreground"
+                            onClick={() => setModel(favorite)}
+                            title={`Use ${favorite}`}
+                          >
+                            {favorite}
+                          </button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() => setFavoriteModels((current) => current.filter((item) => item !== favorite))}
+                            aria-label={`Remove ${favorite} from favourites`}
+                            title="Remove from favourites"
+                          >
+                            <X size={13} />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Saved favourites stay available in the AI panel’s model switcher.
+                  </p>
+                </div>
               </div>
               <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
                 Cloud requests send the current note and folder context to the selected provider and may incur usage charges.
@@ -196,7 +289,12 @@ export function AiProviderDialog({
             disabled={!canSave}
             onClick={() => {
               onSave(
-                { provider, baseUrl: baseUrl.trim(), model: model.trim() },
+                {
+                  provider,
+                  baseUrl: baseUrl.trim(),
+                  model: model.trim(),
+                  favoriteModels,
+                },
                 apiKey,
               );
             }}

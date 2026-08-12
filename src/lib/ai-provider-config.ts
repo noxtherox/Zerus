@@ -4,6 +4,7 @@ export interface AiProviderConfig {
   provider: AiProvider;
   baseUrl: string;
   model: string;
+  favoriteModels: string[];
 }
 
 export interface CloudAiModel {
@@ -15,6 +16,7 @@ export const LOCAL_AI_CONFIG: AiProviderConfig = {
   provider: "local",
   baseUrl: "",
   model: "Qwen3-1.7B-4bit",
+  favoriteModels: [],
 };
 
 const CONFIG_STORAGE_KEY = "zerus.ai.provider.v1";
@@ -34,7 +36,19 @@ export function readAiProviderConfig(): AiProviderConfig {
     ) {
       return value.provider === "local"
         ? LOCAL_AI_CONFIG
-        : (value as AiProviderConfig);
+        : {
+            provider: value.provider,
+            baseUrl: value.baseUrl,
+            model: value.model,
+            favoriteModels: Array.isArray(value.favoriteModels)
+              ? [...new Set(
+                  value.favoriteModels
+                    .filter((model): model is string => typeof model === "string")
+                    .map((model) => model.trim())
+                    .filter((model) => model.length > 0 && model.length <= 200),
+                )]
+              : [],
+          };
     }
   } catch {
     // Fall back to local AI when an older configuration cannot be read.
@@ -43,5 +57,15 @@ export function readAiProviderConfig(): AiProviderConfig {
 }
 
 export function saveAiProviderConfig(config: AiProviderConfig) {
-  localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config));
+  localStorage.setItem(
+    CONFIG_STORAGE_KEY,
+    JSON.stringify({
+      ...config,
+      favoriteModels: [...new Set(
+        config.favoriteModels
+          .map((model) => model.trim())
+          .filter((model) => model.length > 0 && model.length <= 200),
+      )],
+    }),
+  );
 }

@@ -553,11 +553,17 @@ export function AiPanel({
   const activeCloudModels = providerConfig.baseUrl === cloudModelsBaseUrl
     ? cloudModels
     : [];
-  const availableCloudModels = activeCloudModels.some((model) => model.id === providerConfig.model)
-    ? activeCloudModels
-    : providerConfig.model
-      ? [{ id: providerConfig.model, name: providerConfig.model }, ...activeCloudModels]
-      : activeCloudModels;
+  const availableCloudModels = [
+    ...providerConfig.favoriteModels.map((id) => ({
+      id,
+      name: activeCloudModels.find((model) => model.id === id)?.name ?? id,
+    })),
+    ...(providerConfig.model ? [{
+      id: providerConfig.model,
+      name: activeCloudModels.find((model) => model.id === providerConfig.model)?.name ?? providerConfig.model,
+    }] : []),
+    ...activeCloudModels,
+  ].filter((model, index, models) => models.findIndex(({ id }) => id === model.id) === index);
 
   return (
     <>
@@ -576,64 +582,70 @@ export function AiPanel({
         aria-label="Resize AI panel"
       />
       <div className="flex h-full min-w-0 flex-col">
-        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
-          <Sparkles className="shrink-0 text-grim-accent" size={17} />
-          <div className="min-w-0 flex-1">
-            {providerConfig.provider === "local" ? (
-              <div className="truncate text-xs font-medium">Qwen3 1.7B · MLX</div>
-            ) : (
-              <Select
-                value={providerConfig.model}
-                onValueChange={(model) => {
-                  const next = { ...providerConfig, model };
-                  saveAiProviderConfig(next);
-                  setProviderConfig(next);
-                  newSession();
-                }}
-              >
-                <SelectTrigger className="h-6 max-w-[220px] border-0 bg-transparent px-0 text-xs font-medium shadow-none focus:ring-0">
-                  <SelectValue placeholder="Choose a model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableCloudModels.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <div className="truncate text-[10px] text-muted-foreground">
-              {context?.noteTitle ?? "Folder context"} · {providerConfig.provider === "local" ? "Local" : providerConfig.provider === "openrouter" ? "OpenRouter" : "Cloud API"} · temperature 0.2
+        <header className="flex h-14 shrink-0 items-center border-b border-border/60 px-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-grim-accent/10 text-grim-accent">
+              <Sparkles size={15} />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+              {providerConfig.provider === "local" ? (
+                <div className="truncate text-xs font-medium leading-4">Qwen3 1.7B · MLX</div>
+              ) : (
+                <Select
+                  value={providerConfig.model}
+                  onValueChange={(model) => {
+                    const next = { ...providerConfig, model };
+                    saveAiProviderConfig(next);
+                    setProviderConfig(next);
+                    newSession();
+                  }}
+                >
+                  <SelectTrigger className="h-4 w-fit max-w-full gap-1 border-0 bg-transparent p-0 text-xs font-medium leading-4 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
+                    <SelectValue placeholder="Choose a model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableCloudModels.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="truncate text-[10px] leading-3 text-muted-foreground">
+                {context?.noteTitle ?? "Folder context"} · {providerConfig.provider === "local" ? "Local" : providerConfig.provider === "openrouter" ? "OpenRouter" : "Cloud API"} · temperature 0.2
+              </div>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setProviderDialogOpen(true)}
-            title="Configure AI chat"
-            aria-label="Configure AI chat"
-          >
-            <Settings size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={newSession}
-            title="New AI session"
-            aria-label="New AI session"
-          >
-            <RefreshCw size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onOpenChange(false)}
-            aria-label="Close AI chat"
-          >
-            <X size={15} />
-          </Button>
+          <div className="ml-2 flex shrink-0 items-center gap-0.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-md"
+              onClick={() => setProviderDialogOpen(true)}
+              title="Configure AI chat"
+              aria-label="Configure AI chat"
+            >
+              <Settings size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-md"
+              onClick={newSession}
+              title="New AI session"
+              aria-label="New AI session"
+            >
+              <RefreshCw size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 rounded-md"
+              onClick={() => onOpenChange(false)}
+              aria-label="Close AI chat"
+            >
+              <X size={15} />
+            </Button>
+          </div>
         </header>
 
         {providerConfig.provider === "local" && status && !status.modelDownloaded && (
