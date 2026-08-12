@@ -130,6 +130,86 @@ function tableCells(table: HTMLTableElement): HTMLTableCellElement[] {
   return Array.from(table.querySelectorAll<HTMLTableCellElement>("th, td"));
 }
 
+interface TableCellRange {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+function tableCellRange(
+  anchorIndex: number,
+  focusIndex: number,
+  columns: number,
+): TableCellRange | null {
+  if (columns < 1 || anchorIndex < 0 || focusIndex < 0) return null;
+  const anchorRow = Math.floor(anchorIndex / columns);
+  const anchorColumn = anchorIndex % columns;
+  const focusRow = Math.floor(focusIndex / columns);
+  const focusColumn = focusIndex % columns;
+  return {
+    top: Math.min(anchorRow, focusRow),
+    right: Math.max(anchorColumn, focusColumn),
+    bottom: Math.max(anchorRow, focusRow),
+    left: Math.min(anchorColumn, focusColumn),
+  };
+}
+
+export function tableCellRangeIndices(
+  anchorIndex: number,
+  focusIndex: number,
+  columns: number,
+): number[] {
+  const range = tableCellRange(anchorIndex, focusIndex, columns);
+  if (!range) return [];
+  const indices: number[] = [];
+  for (let row = range.top; row <= range.bottom; row += 1) {
+    for (let column = range.left; column <= range.right; column += 1) {
+      indices.push(row * columns + column);
+    }
+  }
+  return indices;
+}
+
+export function serializeTableCellRange(
+  values: string[],
+  anchorIndex: number,
+  focusIndex: number,
+  columns: number,
+): string {
+  const range = tableCellRange(anchorIndex, focusIndex, columns);
+  if (!range) return "";
+  const rows: string[] = [];
+  for (let row = range.top; row <= range.bottom; row += 1) {
+    const valuesInRow: string[] = [];
+    for (let column = range.left; column <= range.right; column += 1) {
+      valuesInRow.push(values[row * columns + column] ?? "");
+    }
+    rows.push(valuesInRow.join("\t"));
+  }
+  return rows.join("\n");
+}
+
+function tableCellRangeHtml(
+  values: string[],
+  anchorIndex: number,
+  focusIndex: number,
+  columns: number,
+): string {
+  const range = tableCellRange(anchorIndex, focusIndex, columns);
+  if (!range) return "";
+  const table = document.createElement("table");
+  const body = table.createTBody();
+  for (let row = range.top; row <= range.bottom; row += 1) {
+    const tableRow = body.insertRow();
+    for (let column = range.left; column <= range.right; column += 1) {
+      const cell = tableRow.insertCell();
+      cell.textContent = values[row * columns + column] ?? "";
+    }
+  }
+  return table.outerHTML;
+}
+
 function dataFromTable(
   table: HTMLTableElement,
   alignments: TableAlignment[],
@@ -269,6 +349,131 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
   const table = wrapper.querySelector<HTMLTableElement>("table");
   if (!table) return;
 
+  let selectionAnchor: number | null = null;
+  let selectionFocus: number | null = null;
+  let activePointerId: number | null = null;
+  let draggedAcrossCells = false;
+  let suppressNextClick = false;
+
+  const columns = () => table.tHead?.rows[0]?.cells.length ?? 1;
+  const clearNativeSelection = () => window.getSelection()?.removeAllRanges();
+  const renderCellSelection = () => {
+    const selected = new Set(
+      selectionAnchor == null || selectionFocus == null
+        ? []
+        : tableCellRangeIndices(selectionAnchor, selectionFocus, columns()),
+    );
+    tableCells(table).forEach((cell, index) => {
+      const isSelected = selected.has(index);
+      cell.classList.toggle("cm-markdown-table-cell-selected", isSelected);
+      if (isSelected) cell.setAttribute("aria-selected", "true");
+      else cell.removeAttribute("aria-selected");
+    });
+  };
+  const clearCellSelection = () => {
+    selectionAnchor = null;
+    selectionFocus = null;
+    renderCellSelection();
+  };
+  const cellAtPoint = (clientX: number, clientY: number) =>
+    document
+      .elementFromPoint(clientX, clientY)
+      ?.closest<HTMLTableCellElement>(".cm-markdown-table th, .cm-markdown-table td") ??
+    null;
+  const focusWithoutTextSelection = (cell: HTMLTableCellElement) => {
+    if (cell.tabIndex >= 0) cell.focus({ preventScroll: true });
+    else wrapper.focus({ preventScroll: true });
+    clearNativeSelection();
+  };
+
+  wrapper.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || !(event.target instanceof HTMLTableCellElement)) return;
+    const cells = tableCells(table);
+    const index = cells.indexOf(event.target);
+    if (index < 0) return;
+
+    if (event.shiftKey && selectionAnchor != null) {
+      event.preventDefault();
+      selectionFocus = index;
+      suppressNextClick = true;
+      renderCellSelection();
+      focusWithoutTextSelection(event.target);
+      return;
+    }
+
+    clearCellSelection();
+    selectionAnchor = index;
+    selectionFocus = index;
+    activePointerId = event.pointerId;
+    draggedAcrossCells = false;
+  });
+
+  wrapper.addEventListener("pointermove", (event) => {
+    if (activePointerId !== event.pointerId || !(event.buttons & 1)) return;
+    const cell = cellAtPoint(event.clientX, event.clientY);
+    if (!cell || !table.contains(cell)) return;
+    const index = tableCells(table).indexOf(cell);
+    if (index < 0 || index === selectionFocus) return;
+    event.preventDefault();
+    if (!wrapper.hasPointerCapture(event.pointerId)) {
+      wrapper.setPointerCapture(event.pointerId);
+    }
+    selectionFocus = index;
+    draggedAcrossCells = selectionFocus !== selectionAnchor;
+    renderCellSelection();
+    clearNativeSelection();
+  });
+
+  const finishPointerSelection = (event: PointerEvent) => {
+    if (activePointerId !== event.pointerId) return;
+    if (wrapper.hasPointerCapture(event.pointerId)) {
+      wrapper.releasePointerCapture(event.pointerId);
+    }
+    activePointerId = null;
+    if (!draggedAcrossCells) {
+      // Keep the last clicked cell as the Shift-click anchor without styling it
+      // as a range or overriding ordinary single-cell text selection.
+      selectionFocus = null;
+      renderCellSelection();
+      return;
+    }
+    event.preventDefault();
+    suppressNextClick = true;
+    const cells = tableCells(table);
+    const focusCellIndex = selectionFocus ?? -1;
+    if (cells[focusCellIndex]) focusWithoutTextSelection(cells[focusCellIndex]);
+  };
+  wrapper.addEventListener("pointerup", finishPointerSelection);
+  wrapper.addEventListener("pointercancel", finishPointerSelection);
+
+  wrapper.addEventListener("click", (event) => {
+    if (!suppressNextClick) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextClick = false;
+  });
+
+  wrapper.addEventListener("copy", (event) => {
+    if (
+      selectionAnchor == null ||
+      selectionFocus == null ||
+      selectionAnchor === selectionFocus ||
+      !event.clipboardData
+    ) {
+      return;
+    }
+    const values = tableCells(table).map((cell) => cell.textContent ?? "");
+    event.clipboardData.setData(
+      "text/plain",
+      serializeTableCellRange(values, selectionAnchor, selectionFocus, columns()),
+    );
+    event.clipboardData.setData(
+      "text/html",
+      tableCellRangeHtml(values, selectionAnchor, selectionFocus, columns()),
+    );
+    event.preventDefault();
+  });
+
   wrapper.addEventListener("input", (event) => {
     if (!(event.target instanceof HTMLTableCellElement)) return;
     const from = Number(wrapper.dataset.sourceFrom);
@@ -287,17 +492,17 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
     const cells = tableCells(table);
     const index = cells.indexOf(event.target);
     if (index < 0) return;
-    const columns = table.tHead?.rows[0]?.cells.length ?? 1;
+    const columnCount = columns();
     let nextIndex: number | null = null;
 
     if (event.key === "Tab") {
       nextIndex = (index + (event.shiftKey ? -1 : 1) + cells.length) % cells.length;
     } else if (event.key === "Enter") {
-      nextIndex = Math.min(cells.length - 1, index + columns);
-    } else if (event.key === "ArrowUp" && index >= columns) {
-      nextIndex = index - columns;
-    } else if (event.key === "ArrowDown" && index + columns < cells.length) {
-      nextIndex = index + columns;
+      nextIndex = Math.min(cells.length - 1, index + columnCount);
+    } else if (event.key === "ArrowUp" && index >= columnCount) {
+      nextIndex = index - columnCount;
+    } else if (event.key === "ArrowDown" && index + columnCount < cells.length) {
+      nextIndex = index + columnCount;
     } else if (event.key === "ArrowLeft" && caretOffset(event.target) === 0 && index > 0) {
       nextIndex = index - 1;
     } else if (
@@ -307,6 +512,11 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
     ) {
       nextIndex = index + 1;
     } else if (event.key === "Escape") {
+      if (selectionAnchor != null && selectionFocus != null) {
+        event.preventDefault();
+        clearCellSelection();
+        return;
+      }
       event.preventDefault();
       const sourceTo = Number(wrapper.dataset.sourceTo);
       view.dispatch({ selection: EditorSelection.cursor(sourceTo) });
@@ -316,6 +526,7 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
 
     if (nextIndex == null || nextIndex === index) return;
     event.preventDefault();
+    clearCellSelection();
     focusCell(cells[nextIndex]);
   });
 }
@@ -340,6 +551,7 @@ export class MarkdownTableWidget extends WidgetType {
   override toDOM(view: EditorView): HTMLElement {
     const wrapper = document.createElement("div");
     wrapper.className = "cm-markdown-table-wrapper";
+    wrapper.tabIndex = -1;
     wrapper.dataset.sourceFrom = String(this.sourcePosition);
     wrapper.dataset.sourceTo = String(this.sourcePosition + this.markdown.length);
 

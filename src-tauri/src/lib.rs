@@ -403,6 +403,7 @@ const LOCAL_AI_MODEL_SIZE: u64 = 3_659_530_240;
 const LOCAL_AI_MODEL_SHA256: &str =
     "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0";
 const LOCAL_AI_MODEL_URL: &str = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true";
+const CLOUD_AI_KEYRING_SERVICE: &str = "com.zerus.notes.cloud-ai";
 static LOCAL_AI_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Serialize)]
@@ -568,6 +569,80 @@ fn cloud_ai_error(payload: &serde_json::Value, fallback: &str) -> String {
         .to_string()
 }
 
+fn cloud_ai_keyring_account(base_url: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(base_url.as_bytes());
+    format!("provider-{:x}", hasher.finalize())
+}
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+))]
+fn save_cloud_ai_key(base_url: &str, api_key: &str) -> Result<(), String> {
+    let entry = keyring::Entry::new(
+        CLOUD_AI_KEYRING_SERVICE,
+        &cloud_ai_keyring_account(base_url),
+    )
+    .map_err(|error| format!("Could not open the system credential store: {error}"))?;
+    entry
+        .set_password(api_key)
+        .map_err(|error| format!("Could not save the API key securely: {error}"))
+}
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+))]
+fn load_cloud_ai_key(base_url: &str) -> Result<Option<String>, String> {
+    let entry = keyring::Entry::new(
+        CLOUD_AI_KEYRING_SERVICE,
+        &cloud_ai_keyring_account(base_url),
+    )
+    .map_err(|error| format!("Could not open the system credential store: {error}"))?;
+    match entry.get_password() {
+        Ok(api_key) if !api_key.trim().is_empty() => Ok(Some(api_key)),
+        Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(format!("Could not read the saved API key: {error}")),
+    }
+}
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
+fn save_cloud_ai_key(_base_url: &str, _api_key: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "ios",
+    target_os = "windows",
+    target_os = "linux"
+)))]
+fn load_cloud_ai_key(_base_url: &str) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+fn remember_cloud_ai_credentials(
+    state: &CloudAiState,
+    credentials: CloudAiCredentials,
+) -> Result<CloudAiCredentials, String> {
+    let mut stored = state
+        .0
+        .lock()
+        .map_err(|_| "The cloud AI configuration is unavailable")?;
+    *stored = Some(credentials.clone());
+    Ok(credentials)
+}
+
 fn cloud_ai_credentials(
     state: &CloudAiState,
     base_url: &str,
@@ -575,31 +650,38 @@ fn cloud_ai_credentials(
 ) -> Result<CloudAiCredentials, String> {
     let base_url = normalized_cloud_ai_base_url(base_url)?;
     let supplied_key = api_key.unwrap_or_default().trim().to_string();
-    let mut stored = state
-        .0
-        .lock()
-        .map_err(|_| "The cloud AI configuration is unavailable")?;
     if !supplied_key.is_empty() {
-        let credentials = CloudAiCredentials {
-            base_url,
-            api_key: supplied_key,
-        };
-        *stored = Some(credentials.clone());
-        return Ok(credentials);
+        return remember_cloud_ai_credentials(
+            state,
+            CloudAiCredentials {
+                base_url,
+                api_key: supplied_key,
+            },
+        );
     }
-    if let Some(credentials) = stored.as_ref().filter(|value| value.base_url == base_url) {
-        return Ok(credentials.clone());
+    {
+        let stored = state
+            .0
+            .lock()
+            .map_err(|_| "The cloud AI configuration is unavailable")?;
+        if let Some(credentials) = stored.as_ref().filter(|value| value.base_url == base_url) {
+            return Ok(credentials.clone());
+        }
     }
     if base_url == "https://openrouter.ai/api/v1" {
         if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
             if !api_key.trim().is_empty() {
-                let credentials = CloudAiCredentials { base_url, api_key };
-                *stored = Some(credentials.clone());
-                return Ok(credentials);
+                return remember_cloud_ai_credentials(
+                    state,
+                    CloudAiCredentials { base_url, api_key },
+                );
             }
         }
     }
-    Err("Enter an API key. Zerus keeps it in memory for this app session only".to_string())
+    if let Some(api_key) = load_cloud_ai_key(&base_url)? {
+        return remember_cloud_ai_credentials(state, CloudAiCredentials { base_url, api_key });
+    }
+    Err("Enter an API key. Zerus will save it in your system credential store".to_string())
 }
 
 #[tauri::command]
@@ -608,7 +690,20 @@ fn cloud_ai_configure(
     base_url: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    cloud_ai_credentials(&state, &base_url, api_key).map(|_| ())
+    let base_url = normalized_cloud_ai_base_url(&base_url)?;
+    let supplied_key = api_key.unwrap_or_default().trim().to_string();
+    if supplied_key.is_empty() {
+        return cloud_ai_credentials(&state, &base_url, None).map(|_| ());
+    }
+    save_cloud_ai_key(&base_url, &supplied_key)?;
+    remember_cloud_ai_credentials(
+        &state,
+        CloudAiCredentials {
+            base_url,
+            api_key: supplied_key,
+        },
+    )
+    .map(|_| ())
 }
 
 fn validated_ai_image_path(path: &str) -> Result<String, String> {
@@ -1709,9 +1804,10 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     use super::LOCAL_AI_MODEL_SIZE;
     use super::{
-        cli_export_skill, cloud_ai_request_body, copy_file_into_vault, desktop_open_paths,
-        local_ai_model_downloaded, local_ai_request_body, normalized_cloud_ai_base_url,
-        sync_opened_vault_record, write_new_vault_file_impl, LocalAiChatRequest, LocalAiMessage,
+        cli_export_skill, cloud_ai_keyring_account, cloud_ai_request_body, copy_file_into_vault,
+        desktop_open_paths, local_ai_model_downloaded, local_ai_request_body,
+        normalized_cloud_ai_base_url, sync_opened_vault_record, write_new_vault_file_impl,
+        LocalAiChatRequest, LocalAiMessage,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1790,6 +1886,20 @@ mod tests {
         );
         assert!(normalized_cloud_ai_base_url("http://openrouter.ai/api/v1").is_err());
         assert!(normalized_cloud_ai_base_url("http://127.0.0.1:11434/v1").is_ok());
+    }
+
+    #[test]
+    fn cloud_ai_keyring_accounts_are_stable_and_provider_specific() {
+        let openrouter = cloud_ai_keyring_account("https://openrouter.ai/api/v1");
+        assert_eq!(openrouter.len(), "provider-".len() + 64);
+        assert_eq!(
+            openrouter,
+            cloud_ai_keyring_account("https://openrouter.ai/api/v1")
+        );
+        assert_ne!(
+            openrouter,
+            cloud_ai_keyring_account("https://api.openai.com/v1")
+        );
     }
 
     #[test]

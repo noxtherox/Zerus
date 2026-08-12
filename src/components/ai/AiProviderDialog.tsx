@@ -134,11 +134,11 @@ export function AiProviderDialog({
                   type="password"
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
-                  placeholder="Enter a key, or leave blank to reuse this session"
+                  placeholder="Enter a key, or leave blank to use the saved key"
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  The key is kept in memory for this app session only and is never saved in your vault.
+                  Saved in this device’s secure credential store when supported. It is never put in your vault or browser storage.
                 </p>
               </div>
               <div className="space-y-2">

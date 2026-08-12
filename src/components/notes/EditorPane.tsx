@@ -3,6 +3,8 @@ import {
   Archive,
   ArchiveRestore,
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
   Copy,
   Ellipsis,
   FileUp,
@@ -120,6 +122,51 @@ interface EditorPaneProps {
   aiOpen: boolean;
   onToggleAi: () => void;
   conflict: NoteConflict | null;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}
+
+interface NavigationControlsProps {
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}
+
+function NavigationControls({
+  canNavigateBack,
+  canNavigateForward,
+  onNavigateBack,
+  onNavigateForward,
+}: NavigationControlsProps) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5" aria-label="Navigation history">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        title="Go back"
+        aria-label="Go back"
+        disabled={!canNavigateBack}
+        onClick={onNavigateBack}
+      >
+        <ArrowLeft size={15} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        title="Go forward"
+        aria-label="Go forward"
+        disabled={!canNavigateForward}
+        onClick={onNavigateForward}
+      >
+        <ArrowRight size={15} />
+      </Button>
+    </div>
+  );
 }
 
 interface EditorContextControlsProps {
@@ -220,6 +267,10 @@ export function EditorPane({
   aiOpen,
   onToggleAi,
   conflict,
+  canNavigateBack,
+  canNavigateForward,
+  onNavigateBack,
+  onNavigateForward,
 }: EditorPaneProps) {
   const [showBacklinks, setShowBacklinks] = useState(false);
   const [expandBacklinks, setExpandBacklinks] = useState(false);
@@ -261,6 +312,12 @@ export function EditorPane({
     return (
       <div className="flex h-full flex-col bg-grim-editor">
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+          <NavigationControls
+            canNavigateBack={canNavigateBack}
+            canNavigateForward={canNavigateForward}
+            onNavigateBack={onNavigateBack}
+            onNavigateForward={onNavigateForward}
+          />
           <div className="flex-1" />
           <EditorContextControls
             isDesktop={isDesktop}
@@ -291,6 +348,12 @@ export function EditorPane({
     return (
       <div className="flex h-full flex-col bg-grim-editor">
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+          <NavigationControls
+            canNavigateBack={canNavigateBack}
+            canNavigateForward={canNavigateForward}
+            onNavigateBack={onNavigateBack}
+            onNavigateForward={onNavigateForward}
+          />
           <div className="flex-1" />
           <EditorContextControls
             isDesktop={isDesktop}
@@ -416,6 +479,12 @@ export function EditorPane({
           isRefreshing && "pointer-events-none opacity-70",
         )}
       >
+        <NavigationControls
+          canNavigateBack={canNavigateBack}
+          canNavigateForward={canNavigateForward}
+          onNavigateBack={onNavigateBack}
+          onNavigateForward={onNavigateForward}
+        />
         {external ? (
           <>
             <TypePicker

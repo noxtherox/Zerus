@@ -622,6 +622,13 @@ const livePreviewTheme = EditorView.theme({
     backgroundColor: "rgb(var(--grim-accent) / 0.08)",
     boxShadow: `inset 0 0 0 2px ${ACCENT}`,
   },
+  ".cm-markdown-table th.cm-markdown-table-cell-selected, .cm-markdown-table td.cm-markdown-table-cell-selected": {
+    backgroundColor: "rgb(var(--grim-accent) / 0.18)",
+    boxShadow: `inset 0 0 0 1px ${ACCENT}`,
+  },
+  ".cm-markdown-table th.cm-markdown-table-cell-selected:focus, .cm-markdown-table td.cm-markdown-table-cell-selected:focus": {
+    boxShadow: `inset 0 0 0 2px ${ACCENT}`,
+  },
   ".cm-markdown-table tr:last-child td": { borderBottom: "0" },
   ".cm-markdown-table th:last-child, .cm-markdown-table td:last-child": {
     borderRight: "0",

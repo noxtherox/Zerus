@@ -158,6 +158,22 @@ export function AiPanel({
   }, [open]);
 
   useEffect(() => {
+    if (!open || providerConfig.provider === "local") return;
+    let disposed = false;
+    void invoke("cloud_ai_configure", {
+      baseUrl: providerConfig.baseUrl,
+      apiKey: null,
+    }).then(() => {
+      if (!disposed) setCloudReady(true);
+    }).catch(() => {
+      if (!disposed) setCloudReady(false);
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [open, providerConfig.baseUrl, providerConfig.provider]);
+
+  useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<LocalAiDownloadProgress>("local-ai-download-progress", (event) => {
@@ -674,7 +690,7 @@ export function AiPanel({
         {providerConfig.provider !== "local" && !cloudReady && (
           <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
             <span className="min-w-0 flex-1 text-muted-foreground">
-              Enter your provider API key to enable cloud chat for this session.
+              Enter your provider API key to enable cloud chat.
             </span>
             <Button variant="outline" size="sm" className="h-7" onClick={() => setProviderDialogOpen(true)}>
               Configure
