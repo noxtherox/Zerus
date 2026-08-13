@@ -121,6 +121,7 @@ import {
 } from "./notes-store";
 import { isExternalNote, noteTypePath } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
 
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
@@ -536,5 +537,22 @@ describe("external note store workflow", () => {
 
     await synchronizeDesktopFiles();
     expect(getNotes().find((note) => note.id === ids[0])).toBeDefined();
+  });
+
+  it("does not duplicate a legacy typed link during repeated desktop syncs", async () => {
+    const url = "https://example.com/legacy-link";
+    const path = join(vault, "inbox", "Legacy link.md");
+    await writeFile(
+      path,
+      setLinkHubReference("# Legacy link\n", { id: "legacy-link", url }),
+      "utf8",
+    );
+
+    await synchronizeDesktopFiles();
+    await synchronizeDesktopFiles();
+
+    expect(
+      getNotes().filter((note) => getLinkHubReference(note)?.url === url),
+    ).toHaveLength(1);
   });
 });

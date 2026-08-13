@@ -104,6 +104,10 @@ const SAVED_LINKS_DIR = ".zerus/links";
 const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
 const FLUSH_DELAY_MS = 500;
 
+function isManagedSavedLink(note: Note): boolean {
+  return isSavedLinkNote(note) && note.path.startsWith(`${SAVED_LINKS_DIR}/`);
+}
+
 export interface VaultState {
   status: "booting" | "pick-vault" | "loading" | "ready" | "error";
   /** Where notes are stored — absolute folder path on desktop. */
@@ -440,10 +444,15 @@ async function loadSavedLinkPaths(fromBackend: VaultBackend): Promise<string[]> 
       await fromBackend.readText(SAVED_LINKS_INDEX_PATH),
     );
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (path): path is string =>
-        typeof path === "string" && path.startsWith(`${SAVED_LINKS_DIR}/`),
-    );
+    return [
+      ...new Set(
+        parsed.filter(
+          (path): path is string =>
+            typeof path === "string" &&
+            path.startsWith(`${SAVED_LINKS_DIR}/`),
+        ),
+      ),
+    ];
   } catch {
     return [];
   }
@@ -934,11 +943,11 @@ export async function refreshVaultFromDisk() {
   const files = await backend.loadAll();
   const existingByPath = new Map(
     state.notes
-      .filter((note) => !isExternalNote(note) && !isSavedLinkNote(note))
+      .filter((note) => !isExternalNote(note) && !isManagedSavedLink(note))
       .map((note) => [note.path, note]),
   );
   const external = state.notes.filter(isExternalNote);
-  const savedLinks = state.notes.filter(isSavedLinkNote);
+  const savedLinks = state.notes.filter(isManagedSavedLink);
   const refreshed = files.map((file) => {
     const previous = existingByPath.get(file.path);
     const metadata = readZerusMetadata(file.content);
@@ -1070,7 +1079,7 @@ export async function synchronizeDesktopFiles() {
     const unmatchedFiles = new Set(files.map((file) => relativePathKey(file.path)));
     for (let index = 0; index < latestNotes.length; index += 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note) || isSavedLinkNote(note)) continue;
+      if (isExternalNote(note) || isManagedSavedLink(note)) continue;
       const key = relativePathKey(note.path);
       if (filesByPath.has(key)) {
         unmatchedFiles.delete(key);
@@ -1100,7 +1109,7 @@ export async function synchronizeDesktopFiles() {
 
     for (let index = latestNotes.length - 1; index >= 0; index -= 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note) || isSavedLinkNote(note)) continue;
+      if (isExternalNote(note) || isManagedSavedLink(note)) continue;
       const key = relativePathKey(note.path);
       const file = filesByPath.get(key);
       if (file) {
@@ -1194,9 +1203,20 @@ export async function synchronizeDesktopFiles() {
       JSON.stringify(nextConflicts) !== JSON.stringify(state.conflicts);
     const locationsChanged =
       JSON.stringify(fileLocations) !== JSON.stringify(state.fileLocations);
+    const uniqueNotes = [
+      ...new Map(
+        latestNotes.map((note) => [
+          isExternalNote(note)
+            ? `external:${note.externalPath}`
+            : `path:${note.path}`,
+          note,
+        ]),
+      ).values(),
+    ];
+    if (uniqueNotes.length !== latestNotes.length) notesChanged = true;
     if (notesChanged || typesChanged || conflictsChanged || locationsChanged) {
       setState({
-        notes: latestNotes,
+        notes: uniqueNotes,
         extraTypes: typesChanged ? extraTypes : state.extraTypes,
         conflicts: nextConflicts,
         fileLocations: locationsChanged ? fileLocations : state.fileLocations,

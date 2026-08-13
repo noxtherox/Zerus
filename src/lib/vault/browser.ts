@@ -153,7 +153,7 @@ export class BrowserVault implements VaultBackend {
     // only .md files are notes — config files (.zerus/…) also live in
     // `files` via write(), and must not show up as notes
     return Object.entries(this.files)
-      .filter(([path]) => /\.md$/i.test(path))
+      .filter(([path]) => /\.md$/i.test(path) && !path.startsWith(".zerus/"))
       .map(([path, file]) => ({
         path,
         content: file.content,
