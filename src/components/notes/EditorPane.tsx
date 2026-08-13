@@ -52,6 +52,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { FileHubPanel } from "./FileHubPanel";
+import { LinkHubPanel } from "./LinkHubPanel";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -74,6 +75,7 @@ import {
 } from "@/lib/note-utils";
 import { noteBody } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 import type { PropertySchemas } from "@/lib/properties";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
@@ -414,6 +416,7 @@ export function EditorPane({
   };
 
   const fileHub = getFileHubReference(note);
+  const linkHub = getLinkHubReference(note);
   const linkedFileType = fileHub
     ? fileExtension(fileHub.name).toUpperCase() || "FILE"
     : "FILE";
@@ -749,6 +752,11 @@ export function EditorPane({
             {editorContent}
           </div>
         )
+      ) : linkHub ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <LinkHubPanel note={note} />
+          {editorContent}
+        </div>
       ) : (
         editorContent
       )}

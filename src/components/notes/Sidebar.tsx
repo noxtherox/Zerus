@@ -25,6 +25,7 @@ import {
   Files,
   FolderPlus,
   GripVertical,
+  Link2,
   Notebook,
   Pencil,
   Plus,
@@ -86,6 +87,7 @@ import { TypeIcon } from "./TypeIcon";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 
 interface SidebarProps {
   notes: Note[];
@@ -409,6 +411,12 @@ export function Sidebar({
       !isTrashed(note) &&
       getFileHubReference(note) !== null,
   ).length;
+  const linkCount = notes.filter(
+    (note) =>
+      !isExternalNote(note) &&
+      !isTrashed(note) &&
+      getLinkHubReference(note) !== null,
+  ).length;
   const trashCount = notes.filter((note) => isTrashed(note)).length;
   const typeSensors = useSensors(
     useSensor(PointerSensor, {
@@ -631,6 +639,13 @@ export function Sidebar({
               icon={<FileStack size={15} />}
               label="Files"
               count={fileCount}
+            />
+            <SidebarRow
+              active={filter.kind === "links"}
+              onClick={() => onFilterChange({ kind: "links" })}
+              icon={<Link2 size={15} />}
+              label="Links"
+              count={linkCount}
             />
           </>
         )}

@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { PropertiesSection } from "@/components/notes/PropertiesSection";
+import { AddLinkDialog } from "@/components/notes/AddLinkDialog";
 import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
@@ -74,6 +75,8 @@ import {
   type TypeNode,
 } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
+import { openExternalUrl } from "@/lib/external-links";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
 import {
   loadDefaultNoteType,
@@ -85,6 +88,7 @@ import { isTypeIconValue } from "@/lib/type-icons";
 import { mobileNoteSwipeAction } from "./mobile-gestures";
 import {
   createFileNote,
+  createLinkNote,
   createNote,
   createMobileVaultAtLocation,
   createMobileVaultOnDevice,
@@ -107,9 +111,10 @@ interface MobileNote {
   preview: string;
   body: string;
   type: string;
-  kind: "note" | "external" | "file";
+  kind: "note" | "external" | "file" | "link";
   icon: string | null;
   fileName?: string;
+  url?: string;
   updated: string;
   pinned?: boolean;
 }
@@ -135,6 +140,7 @@ function formatUpdated(updatedAt: string): string {
 
 function presentNote(note: Note, typeIcons: Record<string, string> = {}): MobileNote {
   const file = getFileHubReference(note);
+  const link = getLinkHubReference(note);
   const typePath = noteTypePath(note);
   const typeKey = typePath.join("/");
   const configuredIcon = typeIcons[typeKey] ?? typeIcons[typePath[0] ?? ""];
@@ -144,12 +150,19 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
   return {
     id: note.id,
     title: noteTitle(note),
-    preview: file?.name ?? (noteSnippet(note) || "Empty note"),
+    preview: file?.name ?? link?.url ?? (noteSnippet(note) || "Empty note"),
     body: editorBody(note),
     type,
-    kind: file ? "file" : isExternalNote(note) ? "external" : "note",
+    kind: file
+      ? "file"
+      : link
+        ? "link"
+        : isExternalNote(note)
+          ? "external"
+          : "note",
     icon: configuredIcon && isTypeIconValue(configuredIcon) ? configuredIcon : null,
     fileName: file?.name,
+    url: link?.url,
     updated: formatUpdated(note.updatedAt),
     pinned: note.pinned,
   };
@@ -187,6 +200,8 @@ function NoteCard({ note, onOpen }: NoteCardProps) {
     <ExternalLink className="h-[18px] w-[18px]" />
   ) : note.kind === "file" ? (
     <File className="h-[18px] w-[18px]" />
+  ) : note.kind === "link" ? (
+    <Link2 className="h-[18px] w-[18px]" />
   ) : (
     <FileText className="h-[18px] w-[18px]" />
   );
@@ -246,7 +261,7 @@ function BottomSearch({ query, onQueryChange, onCreate, createLabel = "Create a 
 }
 
 interface LibraryDrawerProps {
-  counts: { all: number; external: number; files: number; trash: number };
+  counts: { all: number; external: number; files: number; links: number; trash: number };
   typeTree: TypeNode[];
   typeIcons: Record<string, string>;
   onClose: () => void;
@@ -400,6 +415,7 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
           {scopeRow("All Notes", counts.all, <FileText className="h-[18px] w-[18px]" />, { kind: "all" })}
           {scopeRow("External Notes", counts.external, <ExternalLink className="h-[18px] w-[18px]" />, { kind: "external" })}
           {scopeRow("Files", counts.files, <File className="h-[18px] w-[18px]" />, { kind: "files" })}
+          {scopeRow("Links", counts.links, <Link2 className="h-[18px] w-[18px]" />, { kind: "links" })}
         </div>
         <div className="mb-2 mt-7 flex items-center justify-between px-1">
           <p className="text-[13px] font-semibold text-[#98989f]">Types</p>
@@ -485,6 +501,7 @@ function NoteView({
 }: NoteViewProps) {
   const presentedNote = presentNote(note);
   const file = getFileHubReference(note);
+  const link = getLinkHubReference(note);
   const [draft, setDraft] = useState(presentedNote.body);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [dragX, setDragX] = useState(0);
@@ -599,11 +616,16 @@ function NoteView({
         <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => setPropertiesOpen(true)} aria-label="View properties"><Link2 className="h-[18px] w-[18px]" /></Button>
       </header>
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
-        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
+        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : presentedNote.kind === "link" ? <Link2 className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
         <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
         {file && <button type="button" onClick={() => onOpenFile(note.id)} className="mt-5 flex items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
           <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
           <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Open with an app on this device</span></span>
+          <ExternalLink className="h-4 w-4 text-[#77777d]" />
+        </button>}
+        {link && <button type="button" onClick={() => void openExternalUrl(link.url)} className="mt-5 flex items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
+          <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><Link2 className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{link.url}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Open in your browser</span></span>
           <ExternalLink className="h-4 w-4 text-[#77777d]" />
         </button>}
         <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden [&_[role=toolbar]]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-28 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
@@ -809,6 +831,7 @@ export function MobileZerus() {
   const vault = useVault();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
@@ -881,6 +904,8 @@ export function MobileZerus() {
       ? "External Notes"
       : scope.kind === "files"
         ? "Files"
+        : scope.kind === "links"
+          ? "Links"
         : scope.kind === "trash"
           ? "Recently Deleted"
           : scope.path.join(" / ");
@@ -893,6 +918,7 @@ export function MobileZerus() {
     all: filterNotes(vault.notes, { kind: "all" }, "").length,
     external: filterNotes(vault.notes, { kind: "external" }, "").length,
     files: filterNotes(vault.notes, { kind: "files" }, "").length,
+    links: filterNotes(vault.notes, { kind: "links" }, "").length,
     trash: filterNotes(vault.notes, { kind: "trash" }, "").length,
   }), [vault.notes]);
 
@@ -1043,6 +1069,10 @@ export function MobileZerus() {
       if (note) setSelectedNoteId(note.id);
       return;
     }
+    if (scope.kind === "links") {
+      setAddLinkOpen(true);
+      return;
+    }
     setComposerOpen(true);
   };
 
@@ -1097,7 +1127,7 @@ export function MobileZerus() {
           <div className="min-h-0 flex-1 overflow-y-auto pb-28">
             <header className="sticky top-0 z-20 grid grid-cols-[44px_1fr_auto] items-center border-b border-white/[0.07] bg-[#1c1d1e]/90 px-4 pb-3 pt-1 backdrop-blur-xl">
               <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-[#2c2c2e] text-[#f5f5f7] hover:bg-[#363638]" aria-label="Open Zerus navigation"><Menu className="h-[21px] w-[21px]" /></Button>
-              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{filteredNotes.length} {scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
+              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{filteredNotes.length} {scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : scope.kind === "links" ? (filteredNotes.length === 1 ? "Link" : "Links") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
               {scope.kind === "trash" && libraryCounts.trash > 0 ? (
                 <Button variant="ghost" onClick={() => setEmptyTrashConfirmOpen(true)} className="h-11 rounded-full px-3 text-[14px] font-semibold text-[#ff6961] hover:bg-[#363638] hover:text-[#ff6961]">Empty</Button>
               ) : (
@@ -1110,18 +1140,18 @@ export function MobileZerus() {
               ) : (
                 <div className="space-y-7">
                   {pinnedNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Pinned</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div></section>}
-                  {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div></section>}
+                  {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "links" ? "Saved Links" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => setSelectedNoteId(openedNote.id)} />)}</div></section>}
                   {filteredNotes.length === 0 && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
-                    {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
-                    <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
-                    <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
+                    {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "links" ? <Link2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
+                    <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "links" ? "No saved links" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
+                    <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "links" ? "Add a URL and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
                   </section>}
                 </div>
               )}
             </main>
           </div>
         )}
-        {vault.status === "ready" && !selectedNote && <BottomSearch query={query} onQueryChange={setQuery} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        {vault.status === "ready" && !selectedNote && <BottomSearch query={query} onQueryChange={setQuery} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : scope.kind === "links" ? "Add a link" : "Create a new note"} />}
         {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet
@@ -1196,6 +1226,14 @@ export function MobileZerus() {
         {settingsOpen && <MobileSettings location={vault.location} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
         {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
         {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} />}
+        <AddLinkDialog
+          open={addLinkOpen}
+          onOpenChange={setAddLinkOpen}
+          onAdd={async (url) => {
+            const note = await createLinkNote(creationType, url);
+            if (note) setSelectedNoteId(note.id);
+          }}
+        />
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
       </section>
       <div className="pointer-events-none fixed bottom-5 right-6 hidden items-center gap-2 rounded-full bg-[#232323]/90 px-3 py-2 text-xs font-medium text-[#aaa6a0] shadow-sm backdrop-blur sm:flex"><FileText className="h-3.5 w-3.5" />Interactive iOS prototype</div>

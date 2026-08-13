@@ -6,6 +6,7 @@ import {
   FolderSearch,
   FileText,
   FilePlus2,
+  Link2,
   Pin,
   Plus,
   Search,
@@ -61,6 +62,8 @@ import {
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
+import { AddLinkDialog } from "./AddLinkDialog";
 import {
   fileManagerName,
   primaryModifierLabel,
@@ -89,6 +92,7 @@ interface NoteListProps {
   onSelectNote: (id: string) => void;
   onCreateNote: () => void;
   onCreateFile: () => void;
+  onCreateLink: (url: string) => Promise<void>;
   onOpenExternalNotes: () => void;
 }
 
@@ -105,6 +109,7 @@ export function NoteList({
   onSelectNote,
   onCreateNote,
   onCreateFile,
+  onCreateLink,
   onOpenExternalNotes,
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
@@ -113,11 +118,13 @@ export function NoteList({
     null,
   );
   const [visibleNoteCount, setVisibleNoteCount] = useState(INITIAL_NOTE_COUNT);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const inTrash = filter.kind === "trash";
   const inExternal = filter.kind === "external";
   const inFiles = filter.kind === "files";
+  const inLinks = filter.kind === "links";
   const filterKey =
     filter.kind === "type" ? `type:${filter.path.join("/")}` : filter.kind;
   const listFilterKey = JSON.stringify(listFilters);
@@ -135,7 +142,9 @@ export function NoteList({
           ? "External Notes"
           : filter.kind === "files"
             ? "Files"
-          : "Trash";
+            : filter.kind === "links"
+              ? "Links"
+              : "Trash";
 
   useEffect(() => {
     setVisibleNoteCount(INITIAL_NOTE_COUNT);
@@ -189,6 +198,7 @@ export function NoteList({
             title={undefined}
             onClick={() => {
               if (inFiles) onCreateFile();
+              else if (inLinks) setAddLinkOpen(true);
               else if (inExternal) onOpenExternalNotes();
               else onCreateNote();
             }}
@@ -196,12 +206,20 @@ export function NoteList({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="flex items-center">
-                  {inFiles ? <FilePlus2 size={16} /> : <Plus size={16} />}
+                  {inFiles ? (
+                    <FilePlus2 size={16} />
+                  ) : inLinks ? (
+                    <Link2 size={16} />
+                  ) : (
+                    <Plus size={16} />
+                  )}
                 </span>
               </TooltipTrigger>
               <TooltipContent>
                 {inFiles
                   ? "Add a file to Files"
+                  : inLinks
+                    ? "Add a URL to Links"
                   : inExternal
                     ? "Open markdown file(s)"
                     : `New note (${primaryModifierLabel}N)`}
@@ -224,7 +242,9 @@ export function NoteList({
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={inFiles ? "Search files…" : "Search notes…"}
+            placeholder={
+              inFiles ? "Search files…" : inLinks ? "Search links…" : "Search notes…"
+            }
             className="h-8 bg-grim-editor pl-8 text-sm"
           />
         </div>
@@ -253,6 +273,8 @@ export function NoteList({
                 ? "Open markdown files from anywhere on your computer."
                 : inFiles
                   ? "Files attached to notes will appear here."
+                  : inLinks
+                    ? "URLs added to Links will appear here."
                 : "No notes here yet."}
           </p>
         )}
@@ -261,8 +283,13 @@ export function NoteList({
           const external = isExternalNote(note);
           const archived = isArchived(note);
           const fileHub = getFileHubReference(note);
+          const linkHub = getLinkHubReference(note);
           const title = inFiles && fileHub ? fileHub.name : noteName;
-          const snippet = inFiles ? noteName : noteSnippet(note);
+          const snippet = inFiles
+            ? noteName
+            : inLinks && linkHub
+              ? linkHub.url
+              : noteSnippet(note);
           const type = typeKey(noteTypePath(note));
           return (
             <ContextMenu key={note.id}>
@@ -279,6 +306,9 @@ export function NoteList({
                   <div className="flex items-center gap-1.5">
                     {fileHub && (
                       <FileText size={12} className="shrink-0 text-grim-accent" />
+                    )}
+                    {linkHub && (
+                      <Link2 size={12} className="shrink-0 text-grim-accent" />
                     )}
                     {note.pinned && (
                       <Pin size={12} className="shrink-0 text-grim-accent" />
@@ -306,6 +336,8 @@ export function NoteList({
                       <span className="truncate">
                         {fileHub
                           ? `${fileExtension(fileHub.name).toUpperCase()} · ${type || "unfiled"}`
+                          : linkHub
+                            ? `LINK · ${type || "unfiled"}`
                           : external
                             ? "external"
                             : type || "unfiled"}
@@ -468,6 +500,11 @@ export function NoteList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AddLinkDialog
+        open={addLinkOpen}
+        onOpenChange={setAddLinkOpen}
+        onAdd={onCreateLink}
+      />
     </div>
   );
 }

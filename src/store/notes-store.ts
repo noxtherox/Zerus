@@ -85,6 +85,12 @@ import {
   type FileLocationDefinition,
   type ResolvedFileHub,
 } from "@/lib/file-hubs";
+import {
+  getLinkHubReference,
+  linkDisplayName,
+  setLinkHubReference,
+} from "@/lib/link-hubs";
+import { normalizeExternalUrl } from "@/lib/external-links";
 
 const VAULT_PATH_KEY = "zerus.vaultPath";
 const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
@@ -1787,6 +1793,26 @@ export async function createFileNote(
   const picked = await chooseDocumentFile();
   if (!picked) return null;
   return createUnmanagedFileHubNote(typePath, picked);
+}
+
+/** Creates a note-backed web link selected from the Links section. */
+export async function createLinkNote(
+  typePath: string[],
+  rawUrl: string,
+): Promise<Note | null> {
+  const url = normalizeExternalUrl(rawUrl);
+  if (!url) return null;
+  const existing = state.notes.find(
+    (note) => getLinkHubReference(note)?.url === url,
+  );
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  const title = linkDisplayName(url) || "Link";
+  return createNote(
+    typePath,
+    setLinkHubReference(`# ${title}\n\n`, { id, url }),
+  );
 }
 
 async function findHubForAbsolutePath(

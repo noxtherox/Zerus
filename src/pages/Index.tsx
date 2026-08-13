@@ -20,6 +20,7 @@ import { AiPanel } from "@/components/ai/AiPanel";
 import {
   chooseVaultFolder,
   createFileNote,
+  createLinkNote,
   createNote,
   initStore,
   moveExternalNoteToVault,
@@ -101,7 +102,13 @@ function filterTerminalDirectory(
   const root = vaultLocation.replace(/[\\/]$/, "");
   if (filter.kind === "type") return `${root}/${filter.path.join("/")}`;
   if (filter.kind === "trash") return `${root}/.trash`;
-  if (filter.kind === "all" || filter.kind === "files") return root;
+  if (
+    filter.kind === "all" ||
+    filter.kind === "files" ||
+    filter.kind === "links"
+  ) {
+    return root;
+  }
   return null;
 }
 
@@ -270,7 +277,8 @@ const Index = () => {
       filter:
         filter.kind === "trash" ||
         filter.kind === "external" ||
-        filter.kind === "files"
+        filter.kind === "files" ||
+        filter.kind === "links"
           ? { kind: "all" }
           : filter,
       selectedNoteId: note.id,
@@ -284,6 +292,15 @@ const Index = () => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     navigate({ filter: { kind: "files" }, selectedNoteId: note.id });
+  };
+
+  const handleCreateLink = async (url: string) => {
+    if (vault.isRefreshing) return;
+    const note = await createLinkNote(defaultNoteType, url);
+    if (!note) return;
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    navigate({ filter: { kind: "links" }, selectedNoteId: note.id });
   };
 
   useEffect(() => {
@@ -543,6 +560,7 @@ const Index = () => {
             onSelectNote={handleSelectNote}
             onCreateNote={() => void handleCreateNote()}
             onCreateFile={() => void handleCreateFile()}
+            onCreateLink={handleCreateLink}
             onOpenExternalNotes={() => void handleOpenExternalNotes()}
           />
         </ResizablePanel>
