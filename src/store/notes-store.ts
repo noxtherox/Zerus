@@ -19,6 +19,7 @@ import {
   fileStem,
   getAllTypePaths,
   isExternalNote,
+  isSavedLinkNote,
   isRemoteUrl,
   isTrashed,
   logicalPath,
@@ -88,7 +89,9 @@ import {
 import {
   getLinkHubReference,
   linkDisplayName,
+  removeLinkHubReference,
   setLinkHubReference,
+  withLinkMarkdown,
 } from "@/lib/link-hubs";
 import { normalizeExternalUrl } from "@/lib/external-links";
 
@@ -97,6 +100,8 @@ const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
 const FILE_LOCATION_MAPPINGS_KEY = "zerus.fileLocationMappings.v1";
 const FILE_HUB_MAPPINGS_KEY = "zerus.fileHubMappings.v1";
 const STARTUP_CACHE_KEY_PREFIX = "zerus.startupCache.v1.";
+const SAVED_LINKS_DIR = ".zerus/links";
+const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
 const FLUSH_DELAY_MS = 500;
 
 export interface VaultState {
@@ -429,6 +434,50 @@ async function loadExternalNotes(): Promise<Note[]> {
   return loaded.filter((note): note is Note => note !== null);
 }
 
+async function loadSavedLinkPaths(fromBackend: VaultBackend): Promise<string[]> {
+  try {
+    const parsed: unknown = JSON.parse(
+      await fromBackend.readText(SAVED_LINKS_INDEX_PATH),
+    );
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (path): path is string =>
+        typeof path === "string" && path.startsWith(`${SAVED_LINKS_DIR}/`),
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function saveSavedLinkPaths(paths: string[]): Promise<void> {
+  if (!backend) return;
+  await backend.write(SAVED_LINKS_INDEX_PATH, JSON.stringify(paths, null, 2));
+}
+
+async function loadSavedLinkNotes(fromBackend: VaultBackend): Promise<Note[]> {
+  const paths = await loadSavedLinkPaths(fromBackend);
+  const loaded = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const content = await fromBackend.readText(path);
+        if (!getLinkHubReference(content)) return null;
+        return noteFromVaultFile(
+          { path, content, updatedAt: new Date().toISOString() },
+          new Set(),
+          new Set(),
+        );
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const notes = loaded.filter((note): note is Note => note !== null);
+  if (notes.length !== paths.length) {
+    await saveSavedLinkPaths(notes.map((note) => note.path));
+  }
+  return notes;
+}
+
 // ---- vault lifecycle -------------------------------------------------------
 
 const SCHEMAS_PATH = ".zerus/properties.json";
@@ -665,13 +714,14 @@ async function loadVault(nextBackend: VaultBackend) {
           !note.archived && !note.path.startsWith(`${TRASH_DIR}/`),
       )
       .map((note) => note.path);
-    const [files, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
+    const [files, savedLinkNotes, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
       nextBackend instanceof DesktopVault
         ? nextBackend.loadAll({
             priorityPaths,
             onPriorityLoaded: applyPriorityFiles,
           })
         : nextBackend.loadAll(),
+      loadSavedLinkNotes(nextBackend),
       loadSchemas(nextBackend),
       nextBackend.listDirs(),
       loadTypeIcons(nextBackend),
@@ -722,7 +772,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const extraTypes = dirs
       .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
-    const loadedNotes = [...externalNotes, ...vaultNotes];
+    const loadedNotes = [...externalNotes, ...savedLinkNotes, ...vaultNotes];
     diskSnapshots.clear();
     for (const note of loadedNotes) {
       if (startupEditedNoteIds.has(note.id)) {
@@ -883,9 +933,12 @@ export async function refreshVaultFromDisk() {
   await flushAll();
   const files = await backend.loadAll();
   const existingByPath = new Map(
-    state.notes.filter((note) => !isExternalNote(note)).map((note) => [note.path, note]),
+    state.notes
+      .filter((note) => !isExternalNote(note) && !isSavedLinkNote(note))
+      .map((note) => [note.path, note]),
   );
   const external = state.notes.filter(isExternalNote);
+  const savedLinks = state.notes.filter(isSavedLinkNote);
   const refreshed = files.map((file) => {
     const previous = existingByPath.get(file.path);
     const metadata = readZerusMetadata(file.content);
@@ -900,7 +953,7 @@ export async function refreshVaultFromDisk() {
     diskSnapshots.set(note.id, file.content);
     return note;
   });
-  const next = [...refreshed, ...external];
+  const next = [...refreshed, ...savedLinks, ...external];
   if (JSON.stringify(next) !== JSON.stringify(state.notes)) setState({ notes: next });
 }
 
@@ -1017,7 +1070,7 @@ export async function synchronizeDesktopFiles() {
     const unmatchedFiles = new Set(files.map((file) => relativePathKey(file.path)));
     for (let index = 0; index < latestNotes.length; index += 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note)) continue;
+      if (isExternalNote(note) || isSavedLinkNote(note)) continue;
       const key = relativePathKey(note.path);
       if (filesByPath.has(key)) {
         unmatchedFiles.delete(key);
@@ -1047,7 +1100,7 @@ export async function synchronizeDesktopFiles() {
 
     for (let index = latestNotes.length - 1; index >= 0; index -= 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note)) continue;
+      if (isExternalNote(note) || isSavedLinkNote(note)) continue;
       const key = relativePathKey(note.path);
       const file = filesByPath.get(key);
       if (file) {
@@ -1344,6 +1397,11 @@ async function persistNote(
       return true;
     }
     if (!backend) return false;
+    if (isSavedLinkNote(note)) {
+      await backend.write(note.path, note.content);
+      diskSnapshots.set(id, note.content);
+      return true;
+    }
     let path = note.path;
     const desiredStem = sanitizeFileStem(noteTitle(note));
     if (
@@ -1795,9 +1853,8 @@ export async function createFileNote(
   return createUnmanagedFileHubNote(typePath, picked);
 }
 
-/** Creates a note-backed web link selected from the Links section. */
+/** Creates an app-managed web link outside the vault's note/type hierarchy. */
 export async function createLinkNote(
-  typePath: string[],
   rawUrl: string,
 ): Promise<Note | null> {
   const url = normalizeExternalUrl(rawUrl);
@@ -1809,10 +1866,85 @@ export async function createLinkNote(
 
   const id = crypto.randomUUID();
   const title = linkDisplayName(url) || "Link";
-  return createNote(
-    typePath,
-    setLinkHubReference(`# ${title}\n\n`, { id, url }),
+  const path = `${SAVED_LINKS_DIR}/${id}.md`;
+  const content = setZerusState(
+    setLinkHubReference(withLinkMarkdown(`# ${title}\n`, url), { id, url }),
+    { id },
   );
+  const note: Note = {
+    id,
+    path,
+    content,
+    pinned: false,
+    archived: false,
+    updatedAt: new Date().toISOString(),
+  };
+  if (!backend) return null;
+  try {
+    await backend.writeNew(path, content);
+    const paths = state.notes
+      .filter(isSavedLinkNote)
+      .map((candidate) => candidate.path);
+    await saveSavedLinkPaths([...paths, path]);
+    diskSnapshots.set(id, content);
+    setState({ notes: [note, ...state.notes] });
+    return note;
+  } catch (error) {
+    await backend.removeFile(path).catch(() => {});
+    reportError("create link", error);
+    return null;
+  }
+}
+
+/** Converts an app-managed saved link into an ordinary typed Markdown note. */
+export async function moveSavedLinkToVault(
+  id: string,
+  typePath: string[],
+): Promise<boolean> {
+  if (!backend || !isSafeTypePath(typePath) || state.busyNoteIds.has(id)) {
+    return false;
+  }
+  const initial = state.notes.find((note) => note.id === id);
+  if (!initial || !isSavedLinkNote(initial)) return false;
+  setNoteBusy(id, true);
+  try {
+    if (!(await flushUntilIdle(id))) return false;
+    const note = state.notes.find((candidate) => candidate.id === id);
+    if (!note || !isSavedLinkNote(note)) return false;
+    const existedKeys = existingTypeKeys();
+    const content = removeLinkHubReference(note.content);
+    const target = uniquePath(typeKey(typePath), sanitizeFileStem(noteTitle(note)), id);
+    await backend.write(target, content);
+    const managedSavedLink = note.path.startsWith(`${SAVED_LINKS_DIR}/`);
+    const previousSavedLinkPaths = state.notes
+      .filter(isSavedLinkNote)
+      .map((candidate) => candidate.path);
+    const nextSavedLinkPaths = previousSavedLinkPaths.filter(
+      (path) => path !== note.path,
+    );
+    if (managedSavedLink) await saveSavedLinkPaths(nextSavedLinkPaths);
+    if (target !== note.path) {
+      try {
+        await backend.removeFile(note.path);
+      } catch (error) {
+        if (managedSavedLink) {
+          await saveSavedLinkPaths(previousSavedLinkPaths).catch(() => {});
+        }
+        await backend.removeFile(target).catch(() => {});
+        throw error;
+      }
+    }
+    updateNote(id, { path: target, content });
+    diskSnapshots.set(id, content);
+    saveNoteDisplayState();
+    await suggestIconsForNewType(typePath, existedKeys);
+    return true;
+  } catch (error) {
+    reportError("move link to vault", error);
+    return false;
+  } finally {
+    setNoteBusy(id, false);
+  }
 }
 
 async function findHubForAbsolutePath(

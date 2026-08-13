@@ -43,10 +43,36 @@ export function setLinkHubReference(
   return next;
 }
 
+export function removeLinkHubReference(content: string): string {
+  let next = setContentProperty(content, LINK_HUB_KEYS.id, null);
+  next = setContentProperty(next, LINK_HUB_KEYS.url, null);
+  return next;
+}
+
 export function linkDisplayName(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./i, "") || url;
   } catch {
     return url;
   }
+}
+
+/** Markdown body shown beneath a saved link's editable note title. */
+export function linkMarkdown(url: string): string {
+  return `<${url}>`;
+}
+
+/** Keep the saved URL directly beneath the editable first-line note title. */
+export function withLinkMarkdown(body: string, url: string): string {
+  if (body.includes(url)) return body;
+  const lines = body.split("\n");
+  const titleIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (titleIndex < 0) return `${linkMarkdown(url)}\n`;
+  const title = lines.slice(0, titleIndex + 1).join("\n");
+  const remainder = lines
+    .slice(titleIndex + 1)
+    .join("\n")
+    .replace(/^\n+/, "")
+    .replace(/\n+$/, "");
+  return `${title}\n\n${linkMarkdown(url)}${remainder ? `\n\n${remainder}` : ""}\n`;
 }

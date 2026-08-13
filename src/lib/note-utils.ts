@@ -35,6 +35,15 @@ export function isExternalNote(note: Note): boolean {
   return !!note.externalPath;
 }
 
+/** A saved web link is app-managed until it is explicitly moved into a type. */
+export function isSavedLinkNote(note: Note): boolean {
+  const properties = getNoteProperties(note.content);
+  return (
+    typeof properties["zerus-link-id"] === "string" &&
+    typeof properties["zerus-link-url"] === "string"
+  );
+}
+
 /** Normalizes separators and Windows casing for reliable path comparisons. */
 export function normalizeFsPath(path: string): string {
   const withSlashes = path.replace(/\\/g, "/");
@@ -120,7 +129,8 @@ export function typeKey(typePath: string[]): string {
 /** Non-trashed notes of the given type, including its sub-types. */
 export function notesOfTypeKey(notes: Note[], ownerKey: string): Note[] {
   return notes.filter((note) => {
-    if (isExternalNote(note) || isTrashed(note)) return false;
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+      return false;
     const key = typeKey(noteTypePath(note));
     return key === ownerKey || key.startsWith(`${ownerKey}/`);
   });
@@ -172,6 +182,7 @@ export function findNoteByTitle(
   return notes.find(
     (note) =>
       !isExternalNote(note) &&
+      !isSavedLinkNote(note) &&
       !isTrashed(note) &&
       noteTitle(note).toLowerCase() === needle,
   );
@@ -219,7 +230,8 @@ export function buildTypeTree(
     addPath(typePath.slice(0, MAX_TYPE_DEPTH), 0);
   }
   for (const note of notes) {
-    if (isExternalNote(note) || isTrashed(note)) continue;
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+      continue;
     addPath(noteTypePath(note), 1);
   }
   if (typeOrder.length) {
@@ -287,7 +299,8 @@ export function getAllTypePaths(
   };
   for (const typePath of extraTypePaths) add(typePath);
   for (const note of notes) {
-    if (!isExternalNote(note) && !isTrashed(note)) add(noteTypePath(note));
+    if (!isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note))
+      add(noteTypePath(note));
   }
   return [...seen.values()].sort((a, b) =>
     typeKey(a).localeCompare(typeKey(b)),

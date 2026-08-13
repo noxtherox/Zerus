@@ -43,6 +43,7 @@ import {
   buildTypeTree,
   getAllTypePaths,
   isExternalNote,
+  isSavedLinkNote,
   isTrashed,
   parseTypePath,
   reorderTypeTree,
@@ -402,7 +403,8 @@ export function Sidebar({
 }: SidebarProps) {
   const tree = buildTypeTree(notes, extraTypes, typeOrder);
   const activeCount = notes.filter(
-    (note) => !isExternalNote(note) && !isTrashed(note),
+    (note) =>
+      !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note),
   ).length;
   const externalCount = notes.filter(isExternalNote).length;
   const fileCount = notes.filter(

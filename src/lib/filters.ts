@@ -2,6 +2,7 @@ import {
   type Note,
   isArchived,
   isExternalNote,
+  isSavedLinkNote,
   isTrashed,
   noteMatchesSearch,
   noteTypePath,
@@ -116,6 +117,7 @@ export function filterNotes(
       );
     }
     if (isExternalNote(note)) return false;
+    if (isSavedLinkNote(note)) return false;
     if (isTrashed(note)) return false;
     if (filter.kind === "type") {
       const prefix = typeKey(filter.path);

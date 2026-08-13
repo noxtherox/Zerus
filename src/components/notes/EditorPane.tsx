@@ -75,7 +75,7 @@ import {
 } from "@/lib/note-utils";
 import { noteBody } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
-import { getLinkHubReference } from "@/lib/link-hubs";
+import { getLinkHubReference, withLinkMarkdown } from "@/lib/link-hubs";
 import type { PropertySchemas } from "@/lib/properties";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
@@ -114,6 +114,7 @@ interface EditorPaneProps {
   vaultLocation: string | null;
   onOpenNote: (id: string) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
+  onMoveSavedLinkToVault: (id: string, typePath: string[]) => void;
   isBusy: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -259,6 +260,7 @@ export function EditorPane({
   vaultLocation,
   onOpenNote,
   onMoveExternalToVault,
+  onMoveSavedLinkToVault,
   isBusy,
   isLoading,
   isRefreshing,
@@ -380,8 +382,9 @@ export function EditorPane({
   }
 
   const external = isExternalNote(note);
+  const linkHub = getLinkHubReference(note);
   const absolutePath = noteAbsolutePath(note, vaultLocation);
-  const backlinkCount = external
+  const backlinkCount = external || linkHub
     ? 0
     : [...getBacklinksGroupedByType(note, allNotes, schemas).values()].reduce(
         (sum, group) => sum + group.length,
@@ -416,7 +419,6 @@ export function EditorPane({
   };
 
   const fileHub = getFileHubReference(note);
-  const linkHub = getLinkHubReference(note);
   const linkedFileType = fileHub
     ? fileExtension(fileHub.name).toUpperCase() || "FILE"
     : "FILE";
@@ -442,7 +444,11 @@ export function EditorPane({
       >
         <MarkdownEditor
           noteId={note.id}
-          initialContent={noteBody(note.content)}
+          initialContent={
+            linkHub
+              ? withLinkMarkdown(noteBody(note.content), linkHub.url)
+              : noteBody(note.content)
+          }
           getLinkableTitles={() =>
             getNotes()
               .filter(
@@ -464,7 +470,7 @@ export function EditorPane({
           findRequest={findRequest}
         />
       </div>
-      {!external && showBacklinks && (
+      {!external && !linkHub && showBacklinks && (
         <BacklinksPanel
           note={note}
           allNotes={allNotes}
@@ -536,6 +542,21 @@ export function EditorPane({
             >
               <X size={14} /> Close
             </Button>
+          </>
+        ) : linkHub ? (
+          <>
+            <TypePicker
+              value={[]}
+              existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
+              typeIcons={typeIcons}
+              label="Move to vault…"
+              title="Convert this saved link into a vault note and assign its type"
+              onChange={(typePath) =>
+                onMoveSavedLinkToVault(note.id, typePath)
+              }
+              disabled={isBusy}
+            />
+            <div className="flex-1" />
           </>
         ) : (
           <>

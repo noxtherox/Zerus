@@ -24,6 +24,7 @@ import {
   createNote,
   initStore,
   moveExternalNoteToVault,
+  moveSavedLinkToVault,
   onDesktopNotesOpened,
   openExternalNotes,
   prioritizeNoteLoad,
@@ -296,7 +297,7 @@ const Index = () => {
 
   const handleCreateLink = async (url: string) => {
     if (vault.isRefreshing) return;
-    const note = await createLinkNote(defaultNoteType, url);
+    const note = await createLinkNote(url);
     if (!note) return;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
@@ -589,6 +590,17 @@ const Index = () => {
                 onOpenNote={handleOpenNote}
                 onMoveExternalToVault={(id, typePath) =>
                   void handleMoveExternalToVault(id, typePath)
+                }
+                onMoveSavedLinkToVault={(id, typePath) =>
+                  void (async () => {
+                    if (!(await moveSavedLinkToVault(id, typePath))) return;
+                    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+                    setSearch("");
+                    navigate({
+                      filter: { kind: "type", path: typePath },
+                      selectedNoteId: id,
+                    });
+                  })()
                 }
                 isFocusMode={isFocusMode}
                 onToggleFocusMode={handleToggleFocusMode}

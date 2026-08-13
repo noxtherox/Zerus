@@ -337,7 +337,7 @@ export function NoteList({
                         {fileHub
                           ? `${fileExtension(fileHub.name).toUpperCase()} · ${type || "unfiled"}`
                           : linkHub
-                            ? `LINK · ${type || "unfiled"}`
+                            ? "LINK"
                           : external
                             ? "external"
                             : type || "unfiled"}

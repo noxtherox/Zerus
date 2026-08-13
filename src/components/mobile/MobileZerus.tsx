@@ -75,7 +75,7 @@ import {
   type TypeNode,
 } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
-import { getLinkHubReference } from "@/lib/link-hubs";
+import { getLinkHubReference, withLinkMarkdown } from "@/lib/link-hubs";
 import { openExternalUrl } from "@/lib/external-links";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
 import {
@@ -120,7 +120,11 @@ interface MobileNote {
 }
 
 function editorBody(note: Note): string {
-  const lines = noteBody(note.content).split("\n");
+  const link = getLinkHubReference(note);
+  const body = link
+    ? withLinkMarkdown(noteBody(note.content), link.url)
+    : noteBody(note.content);
+  const lines = body.split("\n");
   const titleIndex = lines.findIndex((line) => line.trim().length > 0);
   if (titleIndex < 0) return "";
   return lines
@@ -144,7 +148,9 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
   const typePath = noteTypePath(note);
   const typeKey = typePath.join("/");
   const configuredIcon = typeIcons[typeKey] ?? typeIcons[typePath[0] ?? ""];
-  const type = isExternalNote(note)
+  const type = link
+    ? "Saved Link"
+    : isExternalNote(note)
     ? "External Note"
     : typePath.join(" / ") || "Inbox";
   return {
@@ -1230,7 +1236,7 @@ export function MobileZerus() {
           open={addLinkOpen}
           onOpenChange={setAddLinkOpen}
           onAdd={async (url) => {
-            const note = await createLinkNote(creationType, url);
+            const note = await createLinkNote(url);
             if (note) setSelectedNoteId(note.id);
           }}
         />
