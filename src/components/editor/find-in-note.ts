@@ -1,4 +1,4 @@
-import { type Extension } from "@codemirror/state";
+import { type EditorState, type Extension } from "@codemirror/state";
 import {
   EditorView,
   keymap,
@@ -32,6 +32,31 @@ function createButton(label: string, content: string, onClick: () => void) {
   return button;
 }
 
+export function searchMatchSummary(
+  state: EditorState,
+  query: SearchQuery,
+): { current: number | null; total: number; label: string } {
+  if (!query.valid) return { current: null, total: 0, label: "0 matches" };
+
+  const selection = state.selection.main;
+  const cursor = query.getCursor(state);
+  let total = 0;
+  let current: number | null = null;
+
+  for (let next = cursor.next(); !next.done; next = cursor.next()) {
+    total += 1;
+    if (next.value.from === selection.from && next.value.to === selection.to) {
+      current = total;
+    }
+  }
+
+  const label =
+    current == null
+      ? `${total} ${total === 1 ? "match" : "matches"}`
+      : `${current} of ${total}`;
+  return { current, total, label };
+}
+
 function createFindPanel(view: EditorView): Panel {
   const dom = document.createElement("div");
   dom.className = "cm-find-in-note";
@@ -47,6 +72,18 @@ function createFindPanel(view: EditorView): Panel {
   input.name = "find";
   input.autocomplete = "off";
   input.spellcheck = false;
+
+  const matchCount = document.createElement("span");
+  matchCount.className = "cm-find-match-count";
+  matchCount.setAttribute("role", "status");
+  matchCount.setAttribute("aria-live", "polite");
+  const updateMatchCount = () => {
+    matchCount.textContent = searchMatchSummary(
+      view.state,
+      getSearchQuery(view.state),
+    ).label;
+  };
+  updateMatchCount();
 
   const replaceInput = document.createElement("input");
   replaceInput.type = "text";
@@ -102,6 +139,7 @@ function createFindPanel(view: EditorView): Panel {
 
   dom.append(
     input,
+    matchCount,
     createButton("Previous match", "↑", () => findPrevious(view)),
     createButton("Next match", "↓", () => findNext(view)),
     replaceInput,
@@ -121,6 +159,7 @@ function createFindPanel(view: EditorView): Panel {
       if (query !== input.value) input.value = query;
       const replacement = getSearchQuery(update.state).replace;
       if (replacement !== replaceInput.value) replaceInput.value = replacement;
+      updateMatchCount();
     },
   };
 }
@@ -242,6 +281,14 @@ const findPanelTheme = EditorView.baseTheme({
   ".cm-find-in-note input:focus": {
     borderColor: "rgb(var(--grim-accent) / 0.7)",
     boxShadow: "0 0 0 2px rgb(var(--grim-accent) / 0.12)",
+  },
+  ".cm-find-match-count": {
+    minWidth: "58px",
+    color: "rgb(var(--grim-text) / 0.58)",
+    fontSize: "12px",
+    fontVariantNumeric: "tabular-nums",
+    textAlign: "center",
+    whiteSpace: "nowrap",
   },
   ".cm-find-in-note button": {
     border: "0",

@@ -66,4 +66,25 @@ describe("AI conversations", () => {
     expect(messages[0].content).toBe("6");
     expect(messages[63].content).toBe("69");
   });
+
+  it("persists bounded tool-call activity with the assistant message", () => {
+    const key = aiConversationKey("/Vault", "alpha.md", null);
+    saveAiConversation(key, [{
+      role: "assistant",
+      content: "I found it.",
+      toolCalls: [{
+        name: "search",
+        arguments: '{"query":"alpha"}',
+        result: '{"ok":true,"matches":1}',
+        status: "complete",
+      }],
+    }]);
+
+    expect(readAiConversation(key)[0].toolCalls).toEqual([{
+      name: "search",
+      arguments: '{"query":"alpha"}',
+      result: '{"ok":true,"matches":1}',
+      status: "complete",
+    }]);
+  });
 });

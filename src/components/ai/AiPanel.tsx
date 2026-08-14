@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
   Check,
+  Code2,
   Download,
   Loader2,
   RefreshCw,
@@ -46,6 +47,7 @@ import {
   readAiConversation,
   saveAiConversation,
   type StoredAiMessage,
+  type StoredAiToolCall,
 } from "@/lib/ai-conversations";
 import type { Note } from "@/lib/note-utils";
 import {
@@ -61,6 +63,7 @@ import {
 import {
   parseLocalAiToolResponse,
   runLocalAiTool,
+  type LocalAiToolCall,
 } from "@/lib/local-ai-tools";
 import { noteBody } from "@/lib/frontmatter";
 import { getNotes, updateNoteBody } from "@/store/notes-store";
@@ -76,6 +79,11 @@ type ChatMessage = StoredAiMessage;
 interface LocalAiChatResponse {
   content: string;
   reasoning: string | null;
+}
+
+interface AiChatReasoningEvent {
+  streamId: string;
+  reasoning: string;
 }
 
 interface LocalAiStatus {
@@ -100,6 +108,87 @@ interface AiPanelProps {
   onOpenChange: (open: boolean) => void;
 }
 
+const MAX_TOOL_CALLS_PER_REQUEST = 12;
+const MAX_TOOL_DETAIL_LENGTH = 6_000;
+const FINAL_ANSWER_INSTRUCTION = [
+  "You have reached the tool-call budget for this request.",
+  "Do not call another tool. Answer the user's request now using the tool results already provided.",
+  "If the available results are insufficient, clearly say what information is still missing.",
+].join(" ");
+
+function formatToolDetail(value: unknown): string {
+  let detail: string;
+  try {
+    detail = JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    detail = String(value);
+  }
+  return detail.length > MAX_TOOL_DETAIL_LENGTH
+    ? `${detail.slice(0, MAX_TOOL_DETAIL_LENGTH)}\n…truncated`
+    : detail;
+}
+
+function toolCallActivity(
+  call: LocalAiToolCall,
+  status: StoredAiToolCall["status"],
+  result = "",
+): StoredAiToolCall {
+  return {
+    name: call.name,
+    arguments: formatToolDetail(call.arguments),
+    result,
+    status,
+  };
+}
+
+function ToolCallList({ toolCalls }: { toolCalls: StoredAiToolCall[] }) {
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-current/15 pt-2 text-xs">
+      {toolCalls.map((toolCall, index) => (
+        <details
+          key={`${toolCall.name}-${index}`}
+          className="rounded-md border border-current/10 bg-background/25 px-2 py-1.5"
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium [&::-webkit-details-marker]:hidden">
+            {toolCall.status === "running" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : toolCall.status === "complete" ? (
+              <Check className="h-3.5 w-3.5 text-emerald-500" />
+            ) : (
+              <X className="h-3.5 w-3.5 text-destructive" />
+            )}
+            <Code2 className="h-3.5 w-3.5" />
+            <span className="font-mono">{toolCall.name}</span>
+            <span className="ml-auto font-normal opacity-70">
+              {toolCall.status === "running"
+                ? "Running"
+                : toolCall.status === "complete"
+                  ? "Completed"
+                  : "Failed"}
+            </span>
+          </summary>
+          <div className="mt-2 space-y-2">
+            <div>
+              <div className="mb-1 opacity-60">Arguments</div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-background/40 p-2 font-mono text-[11px]">
+                {toolCall.arguments}
+              </pre>
+            </div>
+            {toolCall.result && (
+              <div>
+                <div className="mb-1 opacity-60">Result</div>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-background/40 p-2 font-mono text-[11px]">
+                  {toolCall.result}
+                </pre>
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  );
+}
+
 function storedWidth(): number {
   const value = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
   return Number.isFinite(value) && value >= MIN_WIDTH ? value : DEFAULT_WIDTH;
@@ -115,6 +204,7 @@ export function AiPanel({
 }: AiPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
+  const activeStreamIdRef = useRef<string | null>(null);
   const contextRef = useRef<LocalAiContext | null>(null);
   const skipConversationSaveRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -132,6 +222,8 @@ export function AiPanel({
   const [cloudModelsBaseUrl, setCloudModelsBaseUrl] = useState("");
   const [loadingModels, setLoadingModels] = useState(false);
   const [cloudReady, setCloudReady] = useState(false);
+  const [streamingReasoning, setStreamingReasoning] = useState("");
+  const [streamingToolCalls, setStreamingToolCalls] = useState<StoredAiToolCall[]>([]);
 
   const context = useMemo(
     () => buildLocalAiContext(note, notes, targetDirectory, vaultLocation),
@@ -178,6 +270,23 @@ export function AiPanel({
     let unlisten: (() => void) | undefined;
     void listen<LocalAiDownloadProgress>("local-ai-download-progress", (event) => {
       setDownloadProgress(event.payload);
+    }).then((stopListening) => {
+      if (disposed) stopListening();
+      else unlisten = stopListening;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<AiChatReasoningEvent>("ai-chat-reasoning", (event) => {
+      if (event.payload.streamId === activeStreamIdRef.current) {
+        setStreamingReasoning(event.payload.reasoning);
+      }
     }).then((stopListening) => {
       if (disposed) stopListening();
       else unlisten = stopListening;
@@ -254,6 +363,8 @@ export function AiPanel({
     setMessages(history);
     setDraft("");
     setSending(true);
+    setStreamingReasoning("");
+    setStreamingToolCalls([]);
 
     const directAction = directLocalAiNoteAction(content);
     if (directAction && currentContext.noteId) {
@@ -289,21 +400,41 @@ export function AiPanel({
       let editApplied = false;
       let finalContent = "";
       let finalReasoning: string | null = null;
+      let completedToolCalls: StoredAiToolCall[] = [];
 
-      for (let toolRound = 0; toolRound < 3; toolRound += 1) {
+      for (
+        let toolRound = 0;
+        toolRound <= MAX_TOOL_CALLS_PER_REQUEST;
+        toolRound += 1
+      ) {
+        const isFinalAnswerTurn = toolRound === MAX_TOOL_CALLS_PER_REQUEST;
+        const streamId = `${requestId}-${toolRound}`;
+        activeStreamIdRef.current = streamId;
+        setStreamingReasoning("");
+        const requestMessages = injectLocalAiSessionContext(
+          currentContext,
+          modelMessages,
+        );
+        if (isFinalAnswerTurn) {
+          requestMessages.push({
+            role: "user",
+            content: FINAL_ANSWER_INSTRUCTION,
+            imagePaths: [],
+          });
+        }
         const response = await invoke<LocalAiChatResponse>(
           providerConfig.provider === "local" ? "local_ai_chat" : "cloud_ai_chat",
           {
-            ...(providerConfig.provider === "local" ? {} : {
-              baseUrl: providerConfig.baseUrl,
-              model: providerConfig.model,
-            }),
-          request: {
-            systemPrompt: currentContext.systemPrompt,
-            messages: injectLocalAiSessionContext(
-              currentContext,
-              modelMessages,
-            ),
+            streamId,
+            ...(providerConfig.provider === "local"
+              ? {}
+              : {
+                  baseUrl: providerConfig.baseUrl,
+                  model: providerConfig.model,
+                }),
+            request: {
+              systemPrompt: currentContext.systemPrompt,
+              messages: requestMessages,
             },
           },
         );
@@ -356,7 +487,29 @@ export function AiPanel({
           break;
         }
 
+        if (isFinalAnswerTurn) {
+          completedToolCalls = [
+            ...completedToolCalls,
+            toolCallActivity(
+              parsedTool.toolCall,
+              "error",
+              "The tool-call budget was reached, so this call was not run.",
+            ),
+          ];
+          setStreamingToolCalls(completedToolCalls);
+          finalContent =
+            parsedTool.content ||
+            "I couldn't answer from the information gathered so far.";
+          break;
+        }
+
         const signature = JSON.stringify(parsedTool.toolCall);
+        setStreamingToolCalls([
+          ...completedToolCalls,
+          toolCallActivity(parsedTool.toolCall, "running"),
+        ]);
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        if (requestIdRef.current !== requestId) return;
         let toolResult = executedToolCalls.has(signature)
           ? { ok: false, result: { error: "This tool call already ran." } }
           : runLocalAiTool(
@@ -406,6 +559,16 @@ export function AiPanel({
           }
         }
 
+        completedToolCalls = [
+          ...completedToolCalls,
+          toolCallActivity(
+            parsedTool.toolCall,
+            toolResult.ok ? "complete" : "error",
+            formatToolDetail({ ok: toolResult.ok, result: toolResult.result }),
+          ),
+        ];
+        setStreamingToolCalls(completedToolCalls);
+
         modelMessages.push(
           {
             role: "assistant",
@@ -422,12 +585,6 @@ export function AiPanel({
             imagePaths: [],
           },
         );
-
-        if (toolRound === 2) {
-          finalContent = editApplied
-            ? "The note was updated."
-            : "I reached the tool-call limit before finishing.";
-        }
       }
 
       setMessages((current) => [
@@ -439,6 +596,7 @@ export function AiPanel({
             (editApplied ? "Updated the note." : "I couldn't finish that request."),
           reasoning: finalReasoning,
           editApplied,
+          toolCalls: completedToolCalls,
         },
       ]);
       if (providerConfig.provider === "local") {
@@ -452,15 +610,23 @@ export function AiPanel({
       }
       showError(`${providerConfig.provider === "local" ? "Local" : "Cloud"} AI failed: ${message}`);
     } finally {
-      if (requestIdRef.current === requestId) setSending(false);
+      if (requestIdRef.current === requestId) {
+        activeStreamIdRef.current = null;
+        setStreamingReasoning("");
+        setStreamingToolCalls([]);
+        setSending(false);
+      }
     }
   };
 
   const newSession = () => {
     requestIdRef.current += 1;
+    activeStreamIdRef.current = null;
     clearAiConversation(conversationKey);
     setMessages([]);
     setDraft("");
+    setStreamingReasoning("");
+    setStreamingToolCalls([]);
     setSending(false);
   };
 
@@ -737,6 +903,9 @@ export function AiPanel({
                     <div className="mt-1 whitespace-pre-wrap">{message.reasoning}</div>
                   </details>
                 )}
+                {message.toolCalls && message.toolCalls.length > 0 && (
+                  <ToolCallList toolCalls={message.toolCalls} />
+                )}
                 {message.editApplied && (
                   <div className="mt-2 flex items-center gap-1.5 border-t border-current/15 pt-2 text-xs text-emerald-500">
                     <Check size={13} />
@@ -747,10 +916,28 @@ export function AiPanel({
             ))
           )}
           {sending && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {providerConfig.provider === "local" ? "Qwen" : "Cloud AI"} is thinking…
-            </div>
+            <>
+              {streamingToolCalls.length > 0 && (
+                <div className="max-w-[92%] rounded-xl border border-border/70 bg-muted/35 px-3 py-2 text-muted-foreground">
+                  <div className="text-xs font-medium">Tool calls</div>
+                  <ToolCallList toolCalls={streamingToolCalls} />
+                </div>
+              )}
+              {streamingReasoning ? (
+                <div className="max-w-[92%] rounded-xl border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
+                  <div className="mb-1 flex items-center gap-2 font-medium">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Reasoning
+                  </div>
+                  <div className="whitespace-pre-wrap">{streamingReasoning}</div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  {providerConfig.provider === "local" ? "Qwen" : "Cloud AI"} is thinking…
+                </div>
+              )}
+            </>
           )}
         </div>
 

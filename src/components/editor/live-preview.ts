@@ -45,6 +45,18 @@ function trimLinkPunctuation(value: string): string {
   return value.replace(/[.,!?;:]+$/g, "");
 }
 
+/** A bare domain in the first Markdown heading is title text, not an implicit URL. */
+function isTitleHeadingLine(
+  state: EditorState,
+  lineFrom: number,
+  lineText: string,
+): boolean {
+  return (
+    state.sliceDoc(0, lineFrom).trim().length === 0 &&
+    /^#{1,6}(?:\s|$)/.test(lineText)
+  );
+}
+
 /** Resolve a rendered Markdown link or a pasted web address at a document position. */
 export function externalLinkAt(
   state: EditorState,
@@ -69,6 +81,7 @@ export function externalLinkAt(
   }
 
   const line = state.doc.lineAt(pos);
+  if (isTitleHeadingLine(state, line.from, line.text)) return null;
   for (const match of line.text.matchAll(BARE_LINK_REGEX)) {
     const raw = trimLinkPunctuation(match[0]);
     const from = line.from + (match.index ?? 0);
@@ -235,6 +248,8 @@ function buildDecorations(view: EditorView): DecorationSet {
     for (const match of state.sliceDoc(from, to).matchAll(BARE_LINK_REGEX)) {
       const raw = trimLinkPunctuation(match[0]);
       const start = from + (match.index ?? 0);
+      const line = state.doc.lineAt(start);
+      if (isTitleHeadingLine(state, line.from, line.text)) continue;
       if (!raw || !normalizeExternalUrl(raw)) continue;
       decos.push(
         Decoration.mark({

@@ -484,6 +484,13 @@ struct LocalAiChatResponse {
     reasoning: Option<String>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiChatReasoningEvent {
+    stream_id: String,
+    reasoning: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CloudAiModel {
@@ -556,7 +563,7 @@ fn cloud_ai_request_body(
         "messages": messages,
         "temperature": LOCAL_AI_TEMPERATURE,
         "max_tokens": 2048,
-        "stream": false,
+        "stream": true,
     }))
 }
 
@@ -776,7 +783,7 @@ fn local_ai_request_body(request: LocalAiChatRequest) -> Result<serde_json::Valu
         "messages": messages,
         "temperature": LOCAL_AI_TEMPERATURE,
         "max_tokens": 2048,
-        "stream": false,
+        "stream": true,
         "reasoning_effort": "medium",
     }))
 }
@@ -795,6 +802,91 @@ fn response_text(value: Option<&serde_json::Value>) -> Option<String> {
         }
         _ => None,
     }
+}
+
+fn response_reasoning(value: &serde_json::Value) -> Option<String> {
+    response_text(value.get("reasoning_content"))
+        .or_else(|| response_text(value.get("reasoning")))
+        .or_else(|| {
+            let details = value.get("reasoning_details")?.as_array()?;
+            let reasoning = details
+                .iter()
+                .filter_map(|detail| {
+                    detail
+                        .get("text")
+                        .or_else(|| detail.get("delta"))
+                        .and_then(|text| text.as_str())
+                })
+                .collect::<Vec<_>>()
+                .join("");
+            (!reasoning.is_empty()).then_some(reasoning)
+        })
+}
+
+fn chat_stream_delta(payload: &serde_json::Value) -> (Option<String>, Option<String>) {
+    let Some(delta) = payload.pointer("/choices/0/delta") else {
+        return (None, None);
+    };
+    (
+        response_text(delta.get("content")),
+        response_reasoning(delta),
+    )
+}
+
+async fn collect_chat_stream(
+    mut response: reqwest::Response,
+    app: &tauri::AppHandle,
+    stream_id: &str,
+    source: &str,
+) -> Result<LocalAiChatResponse, String> {
+    let mut pending = Vec::<u8>::new();
+    let mut content = String::new();
+    let mut reasoning = String::new();
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("The {source} stream stopped unexpectedly: {error}"))?
+    {
+        pending.extend_from_slice(&chunk);
+        while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
+            let line = pending.drain(..=newline).collect::<Vec<_>>();
+            let line = std::str::from_utf8(&line)
+                .map_err(|error| format!("The {source} stream returned invalid text: {error}"))?
+                .trim();
+            let Some(data) = line.strip_prefix("data:").map(str::trim) else {
+                continue;
+            };
+            if data.is_empty() || data == "[DONE]" {
+                continue;
+            }
+            let payload = serde_json::from_str::<serde_json::Value>(data)
+                .map_err(|error| format!("The {source} stream returned invalid JSON: {error}"))?;
+            let (content_delta, reasoning_delta) = chat_stream_delta(&payload);
+            if let Some(delta) = content_delta {
+                content.push_str(&delta);
+            }
+            if let Some(delta) = reasoning_delta {
+                reasoning.push_str(&delta);
+                app.emit(
+                    "ai-chat-reasoning",
+                    AiChatReasoningEvent {
+                        stream_id: stream_id.to_string(),
+                        reasoning: reasoning.clone(),
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            }
+        }
+    }
+
+    if content.trim().is_empty() {
+        return Err(format!("The {source} response contained no text"));
+    }
+    Ok(LocalAiChatResponse {
+        content,
+        reasoning: (!reasoning.is_empty()).then_some(reasoning),
+    })
 }
 
 async fn local_ai_runtime_ready(app: &tauri::AppHandle) -> bool {
@@ -1082,10 +1174,12 @@ fn local_ai_native_response(
 async fn local_ai_chat(
     app: tauri::AppHandle,
     runtime: tauri::State<'_, LocalAiRuntimeState>,
+    stream_id: String,
     request: LocalAiChatRequest,
 ) -> Result<LocalAiChatResponse, String> {
     #[cfg(target_os = "macos")]
     {
+        let _ = &stream_id;
         return local_ai_native_response(&app, &runtime, request);
     }
 
@@ -1105,26 +1199,20 @@ async fn local_ai_chat(
                 format!("Could not reach the local Gemma runtime at {LOCAL_AI_BASE_URL}: {error}")
             })?;
         let status = response.status();
-        let payload = response
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|error| format!("The local Gemma runtime returned invalid JSON: {error}"))?;
         if !status.is_success() {
+            let payload = response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|error| {
+                    format!("The local Gemma runtime returned invalid JSON: {error}")
+                })?;
             let detail = payload
                 .pointer("/error/message")
                 .and_then(|value| value.as_str())
                 .unwrap_or("Unknown local runtime error");
             return Err(format!("Gemma request failed ({status}): {detail}"));
         }
-
-        let message = payload
-            .pointer("/choices/0/message")
-            .ok_or_else(|| "The local Gemma runtime returned no message".to_string())?;
-        let content = response_text(message.get("content"))
-            .ok_or_else(|| "The local Gemma response contained no text".to_string())?;
-        let reasoning = response_text(message.get("reasoning_content"))
-            .or_else(|| response_text(message.get("reasoning")));
-        Ok(LocalAiChatResponse { content, reasoning })
+        collect_chat_stream(response, &app, &stream_id, "local AI").await
     }
 }
 
@@ -1188,9 +1276,11 @@ async fn cloud_ai_models(
 
 #[tauri::command]
 async fn cloud_ai_chat(
+    app: tauri::AppHandle,
     state: tauri::State<'_, CloudAiState>,
     base_url: String,
     model: String,
+    stream_id: String,
     request: LocalAiChatRequest,
 ) -> Result<LocalAiChatResponse, String> {
     let credentials = cloud_ai_credentials(&state, &base_url, None)?;
@@ -1213,24 +1303,17 @@ async fn cloud_ai_chat(
         .await
         .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
     let status = response.status();
-    let payload = response
-        .json::<serde_json::Value>()
-        .await
-        .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
     if !status.is_success() {
+        let payload = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
         return Err(format!(
             "Cloud AI request failed ({status}): {}",
             cloud_ai_error(&payload, "Unknown provider error")
         ));
     }
-    let message = payload
-        .pointer("/choices/0/message")
-        .ok_or_else(|| "The cloud AI provider returned no message".to_string())?;
-    let content = response_text(message.get("content"))
-        .ok_or_else(|| "The cloud AI response contained no text".to_string())?;
-    let reasoning = response_text(message.get("reasoning_content"))
-        .or_else(|| response_text(message.get("reasoning")));
-    Ok(LocalAiChatResponse { content, reasoning })
+    collect_chat_stream(response, &app, &stream_id, "cloud AI provider").await
 }
 
 #[derive(Clone, Default)]
@@ -1804,8 +1887,8 @@ mod tests {
     #[cfg(not(target_os = "macos"))]
     use super::LOCAL_AI_MODEL_SIZE;
     use super::{
-        cli_export_skill, cloud_ai_keyring_account, cloud_ai_request_body, copy_file_into_vault,
-        desktop_open_paths, local_ai_model_downloaded, local_ai_request_body,
+        chat_stream_delta, cli_export_skill, cloud_ai_keyring_account, cloud_ai_request_body,
+        copy_file_into_vault, desktop_open_paths, local_ai_model_downloaded, local_ai_request_body,
         normalized_cloud_ai_base_url, sync_opened_vault_record, write_new_vault_file_impl,
         LocalAiChatRequest, LocalAiMessage,
     };
@@ -1855,6 +1938,7 @@ mod tests {
 
         assert_eq!(body["temperature"], serde_json::json!(0.2));
         assert_eq!(body["reasoning_effort"], "medium");
+        assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["role"], "system");
     }
 
@@ -1874,8 +1958,43 @@ mod tests {
         .expect("build cloud AI request");
 
         assert_eq!(body["model"], "anthropic/claude-sonnet-4");
+        assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["role"], "system");
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn chat_stream_delta_extracts_content_and_reasoning_variants() {
+        let payload = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "content": "Answer",
+                    "reasoning_content": "Working it out"
+                }
+            }]
+        });
+        assert_eq!(
+            chat_stream_delta(&payload),
+            (
+                Some("Answer".to_string()),
+                Some("Working it out".to_string())
+            )
+        );
+
+        let details_payload = serde_json::json!({
+            "choices": [{
+                "delta": {
+                    "reasoning_details": [
+                        { "type": "reasoning.text", "text": "First " },
+                        { "type": "reasoning.text", "delta": "second" }
+                    ]
+                }
+            }]
+        });
+        assert_eq!(
+            chat_stream_delta(&details_payload).1,
+            Some("First second".to_string())
+        );
     }
 
     #[test]

@@ -1,8 +1,16 @@
+export interface StoredAiToolCall {
+  name: string;
+  arguments: string;
+  result: string;
+  status: "running" | "complete" | "error";
+}
+
 export interface StoredAiMessage {
   role: "user" | "assistant";
   content: string;
   reasoning?: string | null;
   editApplied?: boolean;
+  toolCalls?: StoredAiToolCall[];
 }
 
 interface StoredAiConversation {
@@ -54,7 +62,26 @@ function isStoredMessage(value: unknown): value is StoredAiMessage {
       candidate.reasoning === null ||
       typeof candidate.reasoning === "string") &&
     (candidate.editApplied === undefined ||
-      typeof candidate.editApplied === "boolean")
+      typeof candidate.editApplied === "boolean") &&
+    (candidate.toolCalls === undefined ||
+      (Array.isArray(candidate.toolCalls) &&
+        candidate.toolCalls.length <= 13 &&
+        candidate.toolCalls.every(isStoredToolCall)))
+  );
+}
+
+function isStoredToolCall(value: unknown): value is StoredAiToolCall {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<StoredAiToolCall>;
+  return (
+    typeof candidate.name === "string" &&
+    candidate.name.length > 0 &&
+    candidate.name.length <= 100 &&
+    typeof candidate.arguments === "string" &&
+    typeof candidate.result === "string" &&
+    (candidate.status === "running" ||
+      candidate.status === "complete" ||
+      candidate.status === "error")
   );
 }
 
