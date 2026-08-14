@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
-if (process.platform !== "darwin" || process.arch !== "arm64") process.exit(0);
+if (process.platform !== "darwin") process.exit(0);
 
 const root = process.cwd();
 const packageDir = path.join(root, "src-mlx");
