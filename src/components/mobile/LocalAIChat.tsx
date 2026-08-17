@@ -224,7 +224,8 @@ function PersistedChatImage({ attachment }: { attachment: ChatImageAttachment })
     if (!backend) return;
     void backend.readBinary(attachment.path).then((bytes) => {
       if (!active) return;
-      objectUrl = URL.createObjectURL(new Blob([bytes], { type: attachment.mimeType }));
+      const ownedBytes = new Uint8Array(bytes);
+      objectUrl = URL.createObjectURL(new Blob([ownedBytes], { type: attachment.mimeType }));
       setUrl(objectUrl);
     }).catch(() => {
       if (active) setUrl(null);

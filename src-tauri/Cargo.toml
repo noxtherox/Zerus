@@ -5,10 +5,10 @@ resolver = "2"
 [package]
 name = "app"
 version = "0.3.1"
-description = "A Tauri App"
-authors = ["you"]
-license = ""
-repository = ""
+description = "Grimoire local-first Markdown notes desktop and mobile app"
+authors = ["Grimoire contributors"]
+license = "MIT"
+repository = "https://github.com/noxtherox/grimoire"
 edition = "2021"
 rust-version = "1.77.2"
 

@@ -1621,7 +1621,7 @@ export function MobileGrimoire() {
         <IconPickerDialog
           open={iconTarget !== null}
           typeName={iconTarget?.name ?? ""}
-          value={iconTarget ? typeIcons[typeKey(iconTarget.path)] : undefined}
+          value={iconTarget ? vault.typeIcons[typeKey(iconTarget.path)] : undefined}
           onOpenChange={(open) => { if (!open) setIconTarget(null); }}
           onPick={(icon) => { if (iconTarget) setTypeIcon(iconTarget.path, icon); }}
         />

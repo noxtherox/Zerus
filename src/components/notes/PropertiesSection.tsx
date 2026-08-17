@@ -328,7 +328,6 @@ function RelationChip({
           size={10}
           className="shrink-0 opacity-70"
           aria-label="Linked both ways"
-          title="Linked both ways"
         />
       )}
       <button

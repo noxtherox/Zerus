@@ -18,6 +18,7 @@ import { GrimoireLogo } from "@/components/GrimoireLogo";
 import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import {
   chooseVaultFolder,
+  copyExternalNoteToVault,
   createFileNote,
   createNote,
   initStore,
@@ -251,6 +252,15 @@ const Index = () => {
     setSelectedNoteId(id);
   };
 
+  const handleCopyExternalToVault = async (id: string, typePath: string[]) => {
+    const copied = await copyExternalNoteToVault(id, typePath);
+    if (!copied) return;
+    setFilter({ kind: "type", path: typePath });
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    setSelectedNoteId(copied.id);
+  };
+
   const handleToggleFocusMode = () => {
     const panelGroup = panelGroupRef.current;
     if (!panelGroup) return;
@@ -448,6 +458,9 @@ const Index = () => {
                 }
                 isRefreshing={vault.isRefreshing}
                 onOpenNote={handleOpenNote}
+                onCopyExternalToVault={(id, typePath) =>
+                  void handleCopyExternalToVault(id, typePath)
+                }
                 onMoveExternalToVault={(id, typePath) =>
                   void handleMoveExternalToVault(id, typePath)
                 }

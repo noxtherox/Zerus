@@ -102,6 +102,7 @@ vi.mock("@/utils/toast", () => ({ showError: vi.fn() }));
 import {
   attachFileToNote,
   closeExternalNote,
+  copyExternalNoteToVault,
   createNote,
   deleteNoteForever,
   getNotes,
@@ -390,6 +391,19 @@ describe("external note store workflow", () => {
     await expect(readFile(secondPath, "utf8")).resolves.toContain(
       "Unsaved edit.",
     );
+
+    const copied = await copyExternalNoteToVault(ids[0], ["copies"]);
+    expect(copied).not.toBeNull();
+    expect(copied?.id).not.toBe(ids[0]);
+    expect(copied?.externalPath).toBeUndefined();
+    expect(copied && noteTypePath(copied)).toEqual(["copies"]);
+    expect(getNotes().find((note) => note.id === ids[0])?.externalPath).toBe(
+      firstPath,
+    );
+    await expect(nodeStat(firstPath)).resolves.toBeDefined();
+    await expect(
+      readFile(join(vault, "copies", "First external.md"), "utf8"),
+    ).resolves.toContain("Simultaneous change from disk.");
 
     await expect(
       moveExternalNoteToVault(ids[0], ["..", "outside"]),

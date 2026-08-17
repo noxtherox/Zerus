@@ -1,6 +1,10 @@
 [package]
 name = "grimoire-cli"
 version = "0.1.0"
+description = "Command-line tools for Grimoire Markdown vaults"
+authors = ["Grimoire contributors"]
+license = "MIT"
+repository = "https://github.com/noxtherox/grimoire"
 edition = "2021"
 rust-version = "1.77.2"
 

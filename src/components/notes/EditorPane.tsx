@@ -102,6 +102,7 @@ interface EditorPaneProps {
   typeIcons: TypeIcons;
   vaultLocation: string | null;
   onOpenNote: (id: string) => void;
+  onCopyExternalToVault: (id: string, typePath: string[]) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
   isBusy: boolean;
   isLoading: boolean;
@@ -124,6 +125,7 @@ export function EditorPane({
   typeIcons,
   vaultLocation,
   onOpenNote,
+  onCopyExternalToVault,
   onMoveExternalToVault,
   isBusy,
   isLoading,
@@ -297,6 +299,15 @@ export function EditorPane({
       >
         {external ? (
           <>
+            <TypePicker
+              value={[]}
+              existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
+              typeIcons={typeIcons}
+              label="Copy to vault…"
+              title="Copy this file into the vault and assign its type"
+              onChange={(typePath) => onCopyExternalToVault(note.id, typePath)}
+              disabled={isBusy}
+            />
             <TypePicker
               value={[]}
               existingTypePaths={getAllTypePaths(allNotes, extraTypes)}

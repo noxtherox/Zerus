@@ -50,7 +50,7 @@ export function externalLinkAt(
   state: EditorState,
   pos: number,
 ): ExternalLinkMatch | null {
-  for (const bias of [-1, 1]) {
+  for (const bias of [-1, 1] as const) {
     let node = syntaxTree(state).resolveInner(pos, bias);
     for (; node; node = node.parent) {
       if (node.name === "Image") break;
@@ -115,7 +115,7 @@ export function moveCursorPastClosingMarkup(
     const pos = range.head;
     let target = pos;
 
-    for (const bias of [1, -1]) {
+    for (const bias of [1, -1] as const) {
       let node = syntaxTree(state).resolveInner(pos, bias);
       for (; node; node = node.parent) {
         const markName = INLINE_MARKS[node.name];

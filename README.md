@@ -60,7 +60,7 @@ vault-wide property definitions and display metadata live under `.grimoire/`.
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) and [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/) 22.13 or newer and [pnpm](https://pnpm.io/)
 - [Rust](https://www.rust-lang.org/tools/install) and the
   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for desktop
   development
@@ -150,3 +150,7 @@ an OpenAI account or API key.
 Grimoire is under active development. The browser build is useful for previewing
 the interface, but its vault is stored in browser local storage; use the desktop
 app when you want Grimoire to work directly with files on disk.
+
+## License
+
+Grimoire is available under the [MIT License](LICENSE).

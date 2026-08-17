@@ -1862,6 +1862,58 @@ export async function closeExternalNote(id: string): Promise<void> {
   }
 }
 
+/** Copies an external file into the selected vault type, preserving the source. */
+export async function copyExternalNoteToVault(
+  id: string,
+  typePath: string[],
+): Promise<Note | null> {
+  if (!backend || !isSafeTypePath(typePath) || state.busyNoteIds.has(id)) {
+    return null;
+  }
+  const initial = state.notes.find((candidate) => candidate.id === id);
+  if (!initial?.externalPath) return null;
+  setNoteBusy(id, true);
+  try {
+    if (!(await flushUntilIdle(id))) return null;
+    const source = state.notes.find((candidate) => candidate.id === id);
+    if (!source?.externalPath) return null;
+    const existedKeys = existingTypeKeys();
+    try {
+      const copiedId = crypto.randomUUID();
+      const content = setGrimoireState(source.content, { id: copiedId });
+      const path = await writeUniquePathOnDisk(
+        typeKey(typePath),
+        fileStem(source.externalPath),
+        content,
+      );
+      const copied: Note = {
+        id: copiedId,
+        path,
+        content,
+        pinned: false,
+        archived: false,
+        updatedAt: new Date().toISOString(),
+      };
+      diskSnapshots.set(copied.id, content);
+      if (state.isNotePaginationEnabled) {
+        mobileNoteEntries.push({ path, updatedAt: copied.updatedAt });
+        sortMobileEntries();
+      }
+      const summary = state.isNotePaginationEnabled
+        ? summarizeMobileEntries(mobileNoteEntries)
+        : { totalNoteCount: state.totalNoteCount + 1 };
+      setState({ notes: [copied, ...state.notes], ...summary });
+      suggestIconsForNewType(typePath, existedKeys);
+      return copied;
+    } catch (error) {
+      reportError("copy external note to vault", error);
+      return null;
+    }
+  } finally {
+    setNoteBusy(id, false);
+  }
+}
+
 /** Moves an external file into the selected vault type and removes the source. */
 export async function moveExternalNoteToVault(
   id: string,

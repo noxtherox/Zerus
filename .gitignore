@@ -12,6 +12,7 @@ dist
 dist-ssr
 artifacts/
 .worktrees/
+grimoire/
 *.local
 
 # Editor directories and files

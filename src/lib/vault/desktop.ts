@@ -129,7 +129,7 @@ export class DesktopVault implements VaultBackend {
     };
   }
 
-  private loadFiles(
+  loadFiles(
     paths: string[],
     onFileLoaded?: (file: VaultFile) => void,
   ): Promise<VaultFile[]> {
