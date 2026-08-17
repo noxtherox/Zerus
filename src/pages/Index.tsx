@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { FolderOpen, Loader2 } from "lucide-react";
 import type {
   ImperativePanelGroupHandle,
@@ -15,7 +23,6 @@ import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
 import { EditorPane } from "@/components/notes/EditorPane";
 import { GrimoireLogo } from "@/components/GrimoireLogo";
-import { TerminalPanel } from "@/components/terminal/TerminalPanel";
 import {
   chooseVaultFolder,
   copyExternalNoteToVault,
@@ -48,6 +55,12 @@ import { cn } from "@/lib/utils";
 import { showError } from "@/utils/toast";
 import { AutoUpdater } from "@/lib/auto-updater";
 
+const TerminalPanel = lazy(() =>
+  import("@/components/terminal/TerminalPanel").then((module) => ({
+    default: module.TerminalPanel,
+  })),
+);
+
 const SIDEBAR_DEFAULT_SIZE = 15;
 const NOTE_LIST_DEFAULT_SIZE = 18;
 const EDITOR_DEFAULT_SIZE = 67;
@@ -66,6 +79,7 @@ const Index = () => {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalLoaded, setTerminalLoaded] = useState(false);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
@@ -153,6 +167,15 @@ const Index = () => {
     saveHideSubtypeNotes(vault.location, hidden);
   };
 
+  const handleTerminalOpenChange = useCallback((open: boolean) => {
+    if (open) setTerminalLoaded(true);
+    setTerminalOpen(open);
+  }, []);
+
+  const handleToggleTerminal = useCallback(() => {
+    handleTerminalOpenChange(!terminalOpen);
+  }, [handleTerminalOpenChange, terminalOpen]);
+
   const handleCreateNote = async () => {
     if (vault.isRefreshing) return;
     const typePath =
@@ -215,11 +238,11 @@ const Index = () => {
         showError("Select a note to open its terminal.");
         return;
       }
-      setTerminalOpen((current) => !current);
+      handleToggleTerminal();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedNote, vault.isDesktop, vault.isRefreshing]);
+  }, [handleToggleTerminal, selectedNote, vault.isDesktop, vault.isRefreshing]);
 
   const handleOpenNote = (id: string) => {
     setFilter({ kind: "all" });
@@ -468,9 +491,7 @@ const Index = () => {
                 onToggleFocusMode={handleToggleFocusMode}
                 isDesktop={vault.isDesktop}
                 terminalOpen={terminalOpen}
-                onToggleTerminal={() =>
-                  setTerminalOpen((current) => !current)
-                }
+                onToggleTerminal={handleToggleTerminal}
                 conflict={
                   selectedNote
                     ? (vault.conflicts[selectedNote.id] ?? null)
@@ -478,13 +499,15 @@ const Index = () => {
                 }
               />
             </div>
-            {vault.isDesktop && (
-              <TerminalPanel
-                open={terminalOpen}
-                note={selectedNote}
-                vaultLocation={vault.location}
-                onOpenChange={setTerminalOpen}
-              />
+            {vault.isDesktop && terminalLoaded && (
+              <Suspense fallback={null}>
+                <TerminalPanel
+                  open={terminalOpen}
+                  note={selectedNote}
+                  vaultLocation={vault.location}
+                  onOpenChange={handleTerminalOpenChange}
+                />
+              </Suspense>
             )}
           </div>
         </ResizablePanel>

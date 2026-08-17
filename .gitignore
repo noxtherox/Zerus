@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 artifacts/
+demo-output/
+outputs/
+mobile-preview*.png
+*.tsbuildinfo
 .worktrees/
 grimoire/
 *.local

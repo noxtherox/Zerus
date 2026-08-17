@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   ExternalLink,
   File,
@@ -7,7 +7,6 @@ import {
   MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PdfViewer } from "@/components/notes/PdfViewer";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import type { Note } from "@/lib/note-utils";
 import {
@@ -18,6 +17,12 @@ import {
   revealFileHub,
   type FileHubStatus,
 } from "@/store/notes-store";
+
+const PdfViewer = lazy(() =>
+  import("@/components/notes/PdfViewer").then((module) => ({
+    default: module.PdfViewer,
+  })),
+);
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return "Unknown size";
@@ -102,12 +107,20 @@ export function FileHubPanel({
       </div>
       {showPdf && status?.exists && (
         <div className="min-h-0 flex-1">
-          <PdfViewer
-            loadBytes={loadBytes}
-            version={version}
-            isFullHeight={isPdfFullHeight}
-            onToggleFullHeight={onTogglePdfFullHeight}
-          />
+          <Suspense
+            fallback={
+              <div className="flex h-full min-h-36 items-center justify-center text-sm text-muted-foreground">
+                Loading PDF preview…
+              </div>
+            }
+          >
+            <PdfViewer
+              loadBytes={loadBytes}
+              version={version}
+              isFullHeight={isPdfFullHeight}
+              onToggleFullHeight={onTogglePdfFullHeight}
+            />
+          </Suspense>
         </div>
       )}
       {showPdf && status && !status.exists && (
