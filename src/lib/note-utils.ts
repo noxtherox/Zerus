@@ -150,10 +150,17 @@ export function noteSnippet(note: Note): string {
     .slice(firstIdx + 1)
     .filter((line) => line.length > 0)
     .join(" ")
+    .replace(IMAGE_MD_REGEX, "")
     .replace(WIKILINK_REGEX, "$1")
     .replace(/[#*_`>]/g, "")
     .trim();
   return rest.slice(0, 120);
+}
+
+/** First image embedded in the note body, used by note-card previews. */
+export function firstNoteImagePath(note: Note): string | null {
+  const match = new RegExp(IMAGE_MD_REGEX).exec(noteBody(note.content));
+  return match?.[2] ?? null;
 }
 
 export function getOutgoingLinkTitles(content: string): string[] {

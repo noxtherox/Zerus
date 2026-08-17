@@ -68,6 +68,8 @@ import {
   MAX_TYPE_DEPTH,
   buildTypeTree,
   buildTypeTreeFromCounts,
+  findNoteByTitle,
+  firstNoteImagePath,
   isArchived,
   isExternalNote,
   isTrashed,
@@ -110,6 +112,7 @@ import {
   detachFileHub,
   emptyTrash,
   getFileHubStatus,
+  getNotes,
   attachFileToNote,
   chooseDocumentFile,
   locateFileHub,
@@ -127,12 +130,14 @@ import {
   trashNote,
   updateNoteBody,
   useVault,
+  getImageUrl,
 } from "@/store/notes-store";
 
 interface MobileNote {
   id: string;
   title: string;
   preview: string;
+  imagePath: string | null;
   body: string;
   type: string;
   kind: "note" | "external" | "file";
@@ -173,6 +178,7 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
     id: note.id,
     title: noteTitle(note),
     preview: file?.name ?? (noteSnippet(note) || "Empty note"),
+    imagePath: firstNoteImagePath(note),
     body: editorBody(note),
     type,
     kind: file ? "file" : isExternalNote(note) ? "external" : "note",
@@ -208,6 +214,35 @@ interface NoteCardProps {
   onOpen: (note: MobileNote) => void;
 }
 
+function NoteCardImage({ path }: { path: string }) {
+  const [url, setUrl] = useState<string | null | undefined>();
+
+  useEffect(() => {
+    let active = true;
+    setUrl(undefined);
+    void getImageUrl(path).then((resolved) => {
+      if (active) setUrl(resolved);
+    });
+    return () => {
+      active = false;
+    };
+  }, [path]);
+
+  if (url === null) return null;
+  return (
+    <span className="h-[76px] w-[76px] shrink-0 overflow-hidden rounded-[12px] bg-white/[0.06]" aria-hidden="true">
+      {url && (
+        <img
+          src={url}
+          alt=""
+          className="h-full w-full object-cover"
+          onError={() => setUrl(null)}
+        />
+      )}
+    </span>
+  );
+}
+
 function NoteCard({ note, onOpen }: NoteCardProps) {
   const icon = note.icon ? (
     <TypeIcon icon={note.icon} size={18} />
@@ -236,6 +271,7 @@ function NoteCard({ note, onOpen }: NoteCardProps) {
             <span className="flex items-center gap-1 text-[#ef6b62]"><Folder className="h-3 w-3" />{note.type}</span><span>·</span><span>{note.updated}</span>
           </div>
         </div>
+        {note.imagePath && <NoteCardImage path={note.imagePath} />}
       </div>
     </button>
   );
@@ -540,13 +576,14 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
         <h3 className="truncate px-2 pb-3 pt-4 text-center text-[15px] font-semibold text-[#a6a6ab]">{noteTitle(note)}</h3>
         <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
           {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
+          {!file && !external && !trashed && action("Attach file to note", <FilePlus2 className="h-5 w-5" />, onReplaceFile)}
         </div>
         {file && !trashed && (
           <>
             <p className="px-2 pb-2 pt-4 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7f7f85]">File actions</p>
             <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
               {action(`Preview ${file.name}`, <ExternalLink className="h-5 w-5" />, onOpenFile)}
-              {action("Refresh from Drive", <RefreshCw className="h-5 w-5" />, onRefreshFile)}
+              {action("Refresh file access", <RefreshCw className="h-5 w-5" />, onRefreshFile)}
               {fileExists === false && action("Locate file", <MapPin className="h-5 w-5" />, onLocateFile)}
               {!file.managed && file.kind !== "vault" && fileExists === true
                 && action("Copy into Vault", <Copy className="h-5 w-5" />, onCopyFileIntoVault)}
@@ -708,6 +745,21 @@ function NoteView({
 
   const propertiesVisible = propertiesOpen || (isDragging && dragX < 0);
   const transition = isDragging ? "none" : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const linkableNotes = () => getNotes().filter(
+    (candidate) =>
+      !isExternalNote(candidate) &&
+      !isTrashed(candidate) &&
+      candidate.id !== note.id,
+  );
+  const followNoteLink = async (title: string) => {
+    const existing = findNoteByTitle(title, getNotes());
+    if (existing) {
+      onOpenNote(existing.id);
+      return;
+    }
+    const created = await createNote(noteTypePath(note), `# ${title}\n\n`);
+    if (created) onOpenNote(created.id);
+  };
 
   return (
     <div
@@ -738,16 +790,17 @@ function NoteView({
           <MarkdownEditor
             noteId={`mobile-${presentedNote.id}`}
             initialContent={draft}
-            getLinkableTitles={() => []}
-            isTitleResolved={() => false}
+            getLinkableTitles={() => linkableNotes().map((candidate) => noteTitle(candidate))}
+            isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
             onChange={(body) => {
               setDraft(body);
               onBodyChange(body);
             }}
-            onFollowLink={() => undefined}
+            onFollowLink={(title) => void followNoteLink(title)}
             autoFocus={false}
             placeholderText="Start writing…"
             firstLineIsTitle={false}
+            followLinksOnClick
           />
         </div>
       </main>
@@ -873,9 +926,10 @@ interface ComposerProps {
   onClose: () => void;
   onSave: (title: string, body: string) => void;
   typePath: string[];
+  allNotes: Note[];
 }
 
-function Composer({ onClose, onSave, typePath }: ComposerProps) {
+function Composer({ onClose, onSave, typePath, allNotes }: ComposerProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
@@ -894,8 +948,10 @@ function Composer({ onClose, onSave, typePath }: ComposerProps) {
             <MarkdownEditor
               noteId="mobile-new-note"
               initialContent={body}
-              getLinkableTitles={() => []}
-              isTitleResolved={() => false}
+              getLinkableTitles={() => allNotes
+                .filter((note) => !isExternalNote(note) && !isTrashed(note))
+                .map((note) => noteTitle(note))}
+              isTitleResolved={(linkTitle) => !!findNoteByTitle(linkTitle, allNotes)}
               onChange={setBody}
               onFollowLink={() => undefined}
               autoFocus={false}
@@ -1629,7 +1685,7 @@ export function MobileGrimoire() {
         />
         {settingsOpen && <MobileSettings location={vault.location} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
         {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
-        {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} />}
+        {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} allNotes={vault.notes} />}
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
       </section>
       <div className="pointer-events-none fixed bottom-5 right-6 hidden items-center gap-2 rounded-full bg-[#232323]/90 px-3 py-2 text-xs font-medium text-[#aaa6a0] shadow-sm backdrop-blur sm:flex"><FileText className="h-3.5 w-3.5" />Interactive iOS prototype</div>

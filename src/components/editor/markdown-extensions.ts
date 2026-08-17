@@ -164,10 +164,19 @@ export const markdownHighlighting = syntaxHighlighting(
   ]),
 );
 
-/** Styles [[wikilinks]], marking unresolved ones, and handles Cmd/Ctrl+Click. */
+export function shouldFollowWikilink(
+  event: Pick<MouseEvent, "metaKey" | "ctrlKey" | "button">,
+  followOnClick = false,
+): boolean {
+  return event.button === 0 && (followOnClick || event.metaKey || event.ctrlKey);
+}
+
+/** Styles [[wikilinks]], marks unresolved ones, and handles link activation. */
 export function wikilinkExtension(options: {
   isResolved: (title: string) => boolean;
   onFollow: (title: string) => void;
+  /** Mobile has no modifier keys, so a normal tap follows the link. */
+  followOnClick?: boolean;
 }) {
   const decorator = new MatchDecorator({
     regexp: new RegExp(WIKILINK_REGEX.source, "g"),
@@ -176,7 +185,9 @@ export function wikilinkExtension(options: {
         class: options.isResolved(match[1].trim())
           ? "cm-wikilink"
           : "cm-wikilink cm-wikilink-unresolved",
-        attributes: { title: "⌘/Ctrl+Click to open" },
+        attributes: {
+          title: options.followOnClick ? "Tap to open" : "⌘/Ctrl+Click to open",
+        },
       }),
   });
 
@@ -198,7 +209,7 @@ export function wikilinkExtension(options: {
 
   const clickHandler = EditorView.domEventHandlers({
     mousedown: (event, view) => {
-      if (!event.metaKey && !event.ctrlKey) return false;
+      if (!shouldFollowWikilink(event, options.followOnClick)) return false;
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos == null) return false;
       const line = view.state.doc.lineAt(pos);

@@ -1,3 +1,4 @@
+import { chatContentRevision } from "@/lib/mobile-chat-history";
 import { getNoteProperties, noteBody, type PropertyValue } from "@/lib/frontmatter";
 import { noteTitle, noteTypePath, type Note } from "@/lib/note-utils";
 
@@ -22,6 +23,7 @@ export type NoteContextKind = "matches" | "recent" | "similar" | "choices";
 
 export interface RetrievedNote {
   id: string;
+  revision: string;
   title: string;
   type: string;
   excerpt: string;
@@ -243,7 +245,14 @@ function excerptFor(note: Note, phrase: string, terms: string[], includeAllPrope
 }
 
 function retrievedNote(note: Note, score: number, excerpt: string): RetrievedNote {
-  return { id: note.id, title: noteTitle(note), type: typeLabel(note), excerpt, score };
+  return {
+    id: note.id,
+    revision: chatContentRevision(note.content),
+    title: noteTitle(note),
+    type: typeLabel(note),
+    excerpt,
+    score,
+  };
 }
 
 function exactTitleMatches(notes: Note[], question: string): Note[] {

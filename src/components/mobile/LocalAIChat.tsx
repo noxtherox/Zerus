@@ -65,6 +65,11 @@ import {
   type MobileAIEngine,
 } from "@/lib/mobile-ai-engine";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
+import {
+  executeMobileAIActions,
+  parseMobileAIActions,
+  questionRequestsNoteMutation,
+} from "@/lib/mobile-ai-actions";
 import { buildNotesPrompt, cleanNotesAnswer } from "@/lib/mobile-ai-response";
 import { prepareChatImage, questionReferencesImage, type PreparedChatImage } from "@/lib/mobile-chat-image";
 import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
@@ -80,7 +85,7 @@ import {
 } from "@/lib/mobile-speech-recognition";
 import type { Note } from "@/lib/note-utils";
 import type { VaultBackend } from "@/lib/vault/backend";
-import { getVaultBackend } from "@/store/notes-store";
+import { createNote, getNotes, getVaultBackend, updateNoteBody } from "@/store/notes-store";
 
 type HistoryFilter = "all" | "device" | "other" | "archived" | "deleted";
 
@@ -557,7 +562,11 @@ export function PersistentLocalAIChat({
       bytes: await backend.readBinary(attachment.path),
       mimeType: attachment.mimeType,
     } : undefined;
-    const directAnswer = image ? null : retrieval.directAnswer;
+    const mutationRequested = questionRequestsNoteMutation(
+      question,
+      retrieval.notes.map((note) => note.title),
+    );
+    const directAnswer = image || mutationRequested ? null : retrieval.directAnswer;
     const prompt = directAnswer ? null : buildNotesPrompt(
       retrieval, previousMessages, question, conversation.summary?.text ?? null, Boolean(image),
     );
@@ -570,9 +579,28 @@ export function PersistentLocalAIChat({
       promptChars: prompt?.length ?? 0,
     });
     const generated = directAnswer ?? await generateWithSelectedEngine(prompt!, image);
-    const answer = directAnswer
-      ? generated
-      : cleanNotesAnswer(generated, prompt!, retrieval, Boolean(image));
+    let answer = generated;
+    let changedNoteIds: string[] = [];
+    if (!directAnswer) {
+      const parsed = parseMobileAIActions(generated);
+      if (parsed.malformed) {
+        throw new Error("The AI returned a note change that was not safe to apply. Please try again.");
+      }
+      if (parsed.actions.length) {
+        if (!mutationRequested) {
+          throw new Error("The AI tried to change a note without an explicit note-editing request. Nothing was changed.");
+        }
+        const result = await executeMobileAIActions(parsed.actions, {
+          getNotes,
+          createNote,
+          updateNoteBody,
+        });
+        changedNoteIds = result.changedNoteIds;
+        answer = result.message;
+      } else {
+        answer = cleanNotesAnswer(parsed.visibleText, prompt!, retrieval, Boolean(image));
+      }
+    }
     await appendAssistantMessage(backend, conversation, localDevice, {
       turnId,
       text: answer,
@@ -581,7 +609,12 @@ export function PersistentLocalAIChat({
     });
     const loaded = await refreshHistory(false, conversation.id);
     const updated = loaded.find((candidate) => candidate.id === conversation.id);
-    mobileDiagnostic("mobile-ai.answer", { engine, direct: Boolean(directAnswer), image: Boolean(image) });
+    mobileDiagnostic("mobile-ai.answer", {
+      engine,
+      direct: Boolean(directAnswer),
+      image: Boolean(image),
+      changedNoteIds,
+    });
     if (updated) void updateMemory(updated, backend, localDevice);
   };
 

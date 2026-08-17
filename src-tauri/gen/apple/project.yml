@@ -62,7 +62,7 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.3.1
-        CFBundleVersion: "31"
+        CFBundleVersion: "32"
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: app_iOS/app_iOS.entitlements

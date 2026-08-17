@@ -58,8 +58,8 @@
 			</array>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.rtf</string>
 				<string>public.plain-text</string>
+				<string>public.rtf</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>Office document</string>
@@ -98,7 +98,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>0.3.1</string>
 	<key>CFBundleVersion</key>
-	<string>31</string>
+	<string>32</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>

@@ -54,6 +54,8 @@ interface MarkdownEditorProps {
   autoFocus?: boolean;
   placeholderText?: string;
   firstLineIsTitle?: boolean;
+  /** Follow wikilinks with a normal click/tap instead of requiring Cmd/Ctrl. */
+  followLinksOnClick?: boolean;
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
 }
@@ -204,6 +206,7 @@ export function MarkdownEditor({
   autoFocus = true,
   placeholderText = "Start writing… the first line becomes the title.",
   firstLineIsTitle = true,
+  followLinksOnClick = false,
   isFullHeight = false,
   onToggleFullHeight,
 }: MarkdownEditorProps) {
@@ -282,6 +285,7 @@ export function MarkdownEditor({
         wikilinkExtension({
           isResolved: (title) => callbacksRef.current.isTitleResolved(title),
           onFollow: (title) => callbacksRef.current.onFollowLink(title),
+          followOnClick: followLinksOnClick,
         }),
         wikilinkAutocomplete(() => callbacksRef.current.getLinkableTitles()),
         imagePreviewExtension(getImageUrl),

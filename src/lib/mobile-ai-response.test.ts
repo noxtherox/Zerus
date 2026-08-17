@@ -9,6 +9,7 @@ const retrieval: NoteRetrievalResult = {
   contextKind: "matches",
   notes: [{
     id: "navsea",
+    revision: "rev-navsea",
     title: "NAVSEA TechPub 248 Industry Codes",
     type: "Epics",
     excerpt: "# NAVSEA\n\nNAVSEA manages the Navy's ship and weapons systems.\n\nRelevant properties:\nstatus: Backlog",
@@ -17,12 +18,16 @@ const retrieval: NoteRetrievalResult = {
 };
 
 describe("mobile AI answers", () => {
-  it("asks for prose without exposing note IDs or raw frontmatter", () => {
+  it("keeps note handles out of the visible-answer instructions", () => {
     const prompt = buildNotesPrompt(retrieval, [], "What is NAVSEA?");
 
     expect(prompt).toContain("Start immediately with a natural-language answer");
-    expect(prompt).not.toContain("[NOTE id=");
+    expect(prompt).toContain("Editable note handle: navsea");
+    expect(prompt).toContain("Current revision: rev-navsea");
     expect(prompt).not.toContain("grimoire-id");
+    expect(prompt).toContain("create_note");
+    expect(prompt).toContain("CURRENT user message explicitly asks");
+    expect(prompt).not.toContain("<grimoire-action>");
   });
 
   it("removes an echoed prompt and keeps the generated prose", () => {

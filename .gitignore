@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 artifacts/
+.worktrees/
 *.local
 
 # Editor directories and files
