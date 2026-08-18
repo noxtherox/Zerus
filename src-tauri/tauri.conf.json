@@ -30,8 +30,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": [
-      "binaries/*",
-      "vendor/mlx/**/*"
+      "binaries/*"
     ],
     "macOS": {
       "signingIdentity": "-",
