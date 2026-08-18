@@ -31,3 +31,6 @@ zerus/
 *.sw?
 .dyad/
 .vercel
+
+# Generated SwiftPM/Xcode artifacts for the desktop MLX helper
+/src-mlx/
