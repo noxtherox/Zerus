@@ -21,6 +21,8 @@ import {
 import { Sidebar } from "@/components/notes/Sidebar";
 import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
+import { TypeViewWorkspace } from "@/components/notes/TypeViewWorkspace";
+import { NoteTabs } from "@/components/notes/NoteTabs";
 import { EditorPane } from "@/components/notes/EditorPane";
 import { ZerusLogo } from "@/components/ZerusLogo";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -37,6 +39,8 @@ import {
   openExternalNotes,
   prioritizeNoteLoad,
   refreshVaultFromDisk,
+  setNoteProperty,
+  updateTypeView,
   useVault,
 } from "@/store/notes-store";
 import {
@@ -49,7 +53,9 @@ import {
   DEFAULT_TYPE,
   noteContainingFolder,
   normalizeFsPath,
+  typeKey,
 } from "@/lib/note-utils";
+import { typeViewConfigFor } from "@/lib/note-views";
 import {
   loadDefaultNoteType,
   loadHideSubtypeNotes,
@@ -67,20 +73,42 @@ import {
   goForwardInNavigationHistory,
   pushNavigationHistory,
 } from "@/lib/navigation-history";
-
 const TerminalPanel = lazy(() =>
   import("@/components/terminal/TerminalPanel").then((module) => ({
     default: module.TerminalPanel,
   })),
 );
+import {
+  INITIAL_NOTE_TABS_STATE,
+  activeWorkspaceTab,
+  activateNoteTab,
+  clearActiveTab,
+  closeNoteTab,
+  openNoteInActiveTab,
+  openNoteInNewTab,
+  openTypeInActiveTab,
+  openTypeInNewTab,
+  replaceActiveTabNote,
+  toggleNoteTabPinned,
+  updateActiveTypeTab,
+  type WorkspaceTab,
+  type WorkspaceTabSeed,
+} from "@/lib/note-tabs";
 
 const SIDEBAR_DEFAULT_SIZE = 15;
 const NOTE_LIST_DEFAULT_SIZE = 18;
 const EDITOR_DEFAULT_SIZE = 67;
+const WORKSPACE_DEFAULT_SIZE = NOTE_LIST_DEFAULT_SIZE + EDITOR_DEFAULT_SIZE;
+const NOTE_LIST_WORKSPACE_SIZE =
+  (NOTE_LIST_DEFAULT_SIZE / WORKSPACE_DEFAULT_SIZE) * 100;
+const EDITOR_WORKSPACE_SIZE = 100 - NOTE_LIST_WORKSPACE_SIZE;
 const DEFAULT_PANEL_LAYOUT = [
   SIDEBAR_DEFAULT_SIZE,
-  NOTE_LIST_DEFAULT_SIZE,
-  EDITOR_DEFAULT_SIZE,
+  WORKSPACE_DEFAULT_SIZE,
+];
+const DEFAULT_WORKSPACE_LAYOUT = [
+  NOTE_LIST_WORKSPACE_SIZE,
+  EDITOR_WORKSPACE_SIZE,
 ];
 
 interface AppNavigationEntry {
@@ -144,15 +172,28 @@ const Index = () => {
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
+  const [expandedEditorOpen, setExpandedEditorOpen] = useState(false);
+  const [noteTabs, setNoteTabs] = useState(INITIAL_NOTE_TABS_STATE);
   const panelGroupRef = useRef<ImperativePanelGroupHandle>(null);
+  const workspacePanelGroupRef = useRef<ImperativePanelGroupHandle>(null);
   const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const expandedPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
-  const previousPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
+  const workspacePanelLayoutRef = useRef([...DEFAULT_WORKSPACE_LAYOUT]);
+  const focusRestoreLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
+  const focusRestoreWorkspaceLayoutRef = useRef([
+    ...DEFAULT_WORKSPACE_LAYOUT,
+  ]);
+  const wasFocusModeRef = useRef(false);
+  const leavingFocusRef = useRef(false);
+  const sidebarCollapsedBeforeFocusRef = useRef(false);
   const terminalNoteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const refresh = () => void refreshVaultFromDisk();
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshVaultFromDisk();
+    };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
@@ -172,25 +213,41 @@ const Index = () => {
     terminalNoteIdRef.current = null;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setNavigation(goBackInNavigationHistory);
+    setNavigation((history) => {
+      const next = goBackInNavigationHistory(history);
+      setNoteTabs((tabs) =>
+        replaceActiveTabNote(tabs, next.current.selectedNoteId),
+      );
+      return next;
+    });
   };
 
   const navigateForward = () => {
     terminalNoteIdRef.current = null;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setNavigation(goForwardInNavigationHistory);
+    setNavigation((history) => {
+      const next = goForwardInNavigationHistory(history);
+      setNoteTabs((tabs) =>
+        replaceActiveTabNote(tabs, next.current.selectedNoteId),
+      );
+      return next;
+    });
   };
 
   useEffect(() => {
     const stopListening = onDesktopNotesOpened(
       (ids, firstNoteIsExternal, firstNoteIsFileHub) => {
+        const openedFilter: NoteFilter = firstNoteIsFileHub
+          ? { kind: "files" }
+          : firstNoteIsExternal
+            ? { kind: "external" }
+            : { kind: "all" };
+        setNoteTabs((tabs) =>
+          openNoteInActiveTab(tabs, ids[0], openedFilter),
+        );
         navigate({
-          filter: firstNoteIsFileHub
-            ? { kind: "files" }
-            : firstNoteIsExternal
-              ? { kind: "external" }
-              : { kind: "all" },
+          filter: openedFilter,
           selectedNoteId: ids[0],
         });
         setListFilters(EMPTY_NOTE_LIST_FILTERS);
@@ -219,9 +276,72 @@ const Index = () => {
     () => filterNotes(notes, effectiveFilter, search, listFilters),
     [notes, effectiveFilter, search, listFilters],
   );
+  const activeTypeKey = filter.kind === "type" ? typeKey(filter.path) : null;
+  const activeTypeView = activeTypeKey
+    ? typeViewConfigFor(vault.typeViews, activeTypeKey)
+    : null;
+  const structuredTypeViewOpen =
+    filter.kind === "type" && activeTypeView?.mode !== "list";
+
+  const currentWorkspaceSeed = (): WorkspaceTabSeed | null => {
+    const active = activeWorkspaceTab(noteTabs);
+    if (active) {
+      return active.kind === "type"
+        ? {
+            kind: "type",
+            typePath: active.typePath,
+            selectedNoteId: active.selectedNoteId,
+            editorOpen: active.editorOpen,
+          }
+        : {
+            kind: "note",
+            noteId: active.noteId,
+            filter: active.filter,
+          };
+    }
+    if (filter.kind === "type") {
+      return {
+        kind: "type",
+        typePath: filter.path,
+        selectedNoteId,
+        editorOpen: expandedEditorOpen,
+      };
+    }
+    return selectedNoteId
+      ? { kind: "note", noteId: selectedNoteId, filter }
+      : null;
+  };
+
+  const showWorkspaceTab = (tab: WorkspaceTab) => {
+    if (tab.kind === "type") {
+      navigate({
+        filter: { kind: "type", path: tab.typePath },
+        selectedNoteId: tab.selectedNoteId,
+      });
+      setExpandedEditorOpen(tab.editorOpen);
+      return;
+    }
+    navigate({ filter: tab.filter, selectedNoteId: tab.noteId });
+    const sourceView =
+      tab.filter.kind === "type"
+        ? typeViewConfigFor(vault.typeViews, typeKey(tab.filter.path))
+        : null;
+    setExpandedEditorOpen(
+      tab.filter.kind === "type" && sourceView?.mode !== "list",
+    );
+  };
 
   const handleFilterChange = (nextFilter: NoteFilter) => {
-    navigate({ filter: nextFilter, selectedNoteId: null });
+    if (nextFilter.kind === "type" && noteTabs.enabled) {
+      const nextTabs = openTypeInActiveTab(noteTabs, nextFilter.path);
+      setNoteTabs(nextTabs);
+      const nextTab = activeWorkspaceTab(nextTabs);
+      if (nextTab) showWorkspaceTab(nextTab);
+    } else {
+      setNoteTabs((tabs) => clearActiveTab(tabs));
+      navigate({ filter: nextFilter, selectedNoteId: null });
+      setExpandedEditorOpen(false);
+    }
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     terminalNoteIdRef.current = null;
     const directory = filterTerminalDirectory(nextFilter, vault.location);
@@ -289,6 +409,20 @@ const Index = () => {
     handleTerminalOpenChange(!terminalOpen);
   }, [handleTerminalOpenChange, terminalOpen]);
 
+  const selectNoteInCurrentWorkspace = (
+    id: string,
+    editorOpen: boolean,
+  ) => {
+    const active = activeWorkspaceTab(noteTabs);
+    if (active?.kind === "type") {
+      setNoteTabs((tabs) =>
+        updateActiveTypeTab(tabs, { selectedNoteId: id, editorOpen }),
+      );
+      return;
+    }
+    setNoteTabs((tabs) => openNoteInActiveTab(tabs, id, filter));
+  };
+
   const handleCreateNote = async () => {
     if (vault.isRefreshing) return;
     const typePath =
@@ -311,6 +445,8 @@ const Index = () => {
           : filter,
       selectedNoteId: note.id,
     });
+    selectNoteInCurrentWorkspace(note.id, structuredTypeViewOpen);
+    if (structuredTypeViewOpen) setExpandedEditorOpen(true);
   };
 
   const handleCreateFile = async () => {
@@ -320,6 +456,9 @@ const Index = () => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     navigate({ filter: { kind: "files" }, selectedNoteId: note.id });
+    setNoteTabs((tabs) =>
+      openNoteInActiveTab(tabs, note.id, { kind: "files" }),
+    );
   };
 
   const handleCreateLink = async (url: string) => {
@@ -329,6 +468,9 @@ const Index = () => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     navigate({ filter: { kind: "links" }, selectedNoteId: note.id });
+    setNoteTabs((tabs) =>
+      openNoteInActiveTab(tabs, note.id, { kind: "links" }),
+    );
   };
 
   useEffect(() => {
@@ -371,6 +513,9 @@ const Index = () => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     navigate({ filter: { kind: "all" }, selectedNoteId: id });
+    setNoteTabs((tabs) =>
+      openNoteInActiveTab(tabs, id, { kind: "all" }),
+    );
     const openedNote = notes.find((note) => note.id === id);
     const directory = openedNote
       ? noteContainingFolder(openedNote, vault.location)
@@ -382,6 +527,7 @@ const Index = () => {
 
   const handleSelectNote = (id: string) => {
     navigate({ filter, selectedNoteId: id });
+    selectNoteInCurrentWorkspace(id, false);
     const openedNote = notes.find((note) => note.id === id);
     const directory = openedNote
       ? noteContainingFolder(openedNote, vault.location)
@@ -391,12 +537,131 @@ const Index = () => {
     void prioritizeNoteLoad(id);
   };
 
+  const handleOpenStructuredNote = (id: string) => {
+    navigate({ filter, selectedNoteId: id });
+    selectNoteInCurrentWorkspace(id, true);
+    void prioritizeNoteLoad(id);
+    setExpandedEditorOpen(true);
+  };
+
+  const handleTypeViewChange = (
+    patch: Parameters<typeof updateTypeView>[1],
+  ) => {
+    if (!activeTypeKey) return;
+    updateTypeView(activeTypeKey, patch);
+    if (patch.mode) {
+      const active = activeWorkspaceTab(noteTabs);
+      const noteTabStaysExpanded =
+        active?.kind === "note" && patch.mode !== "list";
+      setExpandedEditorOpen(noteTabStaysExpanded);
+      if (active?.kind === "type") {
+        setNoteTabs((tabs) =>
+          updateActiveTypeTab(tabs, { editorOpen: false }),
+        );
+      }
+      setIsFocusMode(false);
+    }
+  };
+
+  const handleOpenNoteInNewTab = (id: string) => {
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    const nextTabs = openNoteInNewTab(
+      noteTabs,
+      currentWorkspaceSeed(),
+      id,
+      filter,
+    );
+    setNoteTabs(nextTabs);
+    navigate({ filter, selectedNoteId: id });
+    if (structuredTypeViewOpen) setExpandedEditorOpen(true);
+    const openedNote = notes.find((note) => note.id === id);
+    const directory = openedNote
+      ? noteContainingFolder(openedNote, vault.location)
+      : null;
+    if (directory) setTerminalDirectory(directory);
+    terminalNoteIdRef.current = id;
+    void prioritizeNoteLoad(id);
+  };
+
+  const handleActivateTab = (tabId: string) => {
+    const tab = noteTabs.tabs.find((candidate) => candidate.id === tabId);
+    if (!tab) return;
+    setNoteTabs((tabs) => activateNoteTab(tabs, tabId));
+    showWorkspaceTab(tab);
+    const noteId =
+      tab.kind === "note" ? tab.noteId : tab.selectedNoteId;
+    if (noteId) void prioritizeNoteLoad(noteId);
+  };
+
+  const handleCloseTab = (tabId: string) => {
+    const next = closeNoteTab(noteTabs, tabId);
+    setNoteTabs(next);
+    if (noteTabs.activeTabId !== tabId) return;
+    const nextTab = activeWorkspaceTab(next);
+    if (!nextTab) {
+      navigate({ filter: { kind: "all" }, selectedNoteId: null });
+      setExpandedEditorOpen(false);
+      return;
+    }
+    showWorkspaceTab(nextTab);
+    const noteId =
+      nextTab.kind === "note" ? nextTab.noteId : nextTab.selectedNoteId;
+    if (noteId) void prioritizeNoteLoad(noteId);
+  };
+
+  const handleOpenTypeInNewTab = (typePath: string[]) => {
+    const nextTabs = openTypeInNewTab(
+      noteTabs,
+      currentWorkspaceSeed(),
+      typePath,
+    );
+    setNoteTabs(nextTabs);
+    const nextTab = activeWorkspaceTab(nextTabs);
+    if (nextTab) showWorkspaceTab(nextTab);
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+  };
+
+  const handleCloseExpandedEditor = () => {
+    const active = activeWorkspaceTab(noteTabs);
+    if (active?.kind === "type") {
+      setNoteTabs((tabs) => updateActiveTypeTab(tabs, { editorOpen: false }));
+      setExpandedEditorOpen(false);
+      return;
+    }
+    if (active?.kind === "note" && active.filter.kind === "type") {
+      const activeTypePath = active.filter.path;
+      const sourceTypeTab = noteTabs.tabs.find(
+        (tab) =>
+          tab.kind === "type" &&
+          typeKey(tab.typePath) === typeKey(activeTypePath),
+      );
+      if (sourceTypeTab) {
+        setNoteTabs((tabs) => activateNoteTab(tabs, sourceTypeTab.id));
+        showWorkspaceTab(sourceTypeTab);
+        return;
+      }
+      setNoteTabs((tabs) => clearActiveTab(tabs));
+    }
+    setExpandedEditorOpen(false);
+  };
+  const handleEditorNavigateBack = () => {
+    if (structuredTypeViewOpen && expandedEditorOpen) {
+      handleCloseExpandedEditor();
+      return;
+    }
+    navigateBack();
+  };
   const handleOpenExternalNotes = async () => {
     const ids = await openExternalNotes();
     if (!ids.length) return;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
     navigate({ filter: { kind: "external" }, selectedNoteId: ids[0] });
+    setNoteTabs((tabs) =>
+      openNoteInActiveTab(tabs, ids[0], { kind: "external" }),
+    );
   };
 
   const handleMoveExternalToVault = async (id: string, typePath: string[]) => {
@@ -434,7 +699,12 @@ const Index = () => {
     if (!panelGroup) return;
 
     if (!isFocusMode) {
-      previousPanelLayoutRef.current = panelGroup.getLayout();
+      focusRestoreLayoutRef.current = panelGroup.getLayout();
+      const workspaceGroup = workspacePanelGroupRef.current;
+      if (workspaceGroup) {
+        focusRestoreWorkspaceLayoutRef.current = workspaceGroup.getLayout();
+      }
+      sidebarCollapsedBeforeFocusRef.current = isSidebarCollapsed;
     }
     setIsFocusMode((focused) => !focused);
   };
@@ -442,25 +712,52 @@ const Index = () => {
   useEffect(() => {
     const panelGroup = panelGroupRef.current;
     if (!panelGroup) return;
+    const leavingFocus = wasFocusModeRef.current && !isFocusMode;
+    leavingFocusRef.current = leavingFocus;
+    const focusRestore = focusRestoreLayoutRef.current;
     panelGroup.setLayout(
-      isFocusMode ? [0, 0, 100] : previousPanelLayoutRef.current,
+      isFocusMode
+        ? [0, 100]
+        : leavingFocus && focusRestore.length === 2
+          ? focusRestore
+          : expandedPanelLayoutRef.current,
     );
-  }, [isFocusMode]);
+    const workspaceGroup = workspacePanelGroupRef.current;
+    if (workspaceGroup && !structuredTypeViewOpen) {
+      workspaceGroup.setLayout(
+        isFocusMode
+          ? [0, 100]
+          : leavingFocus && focusRestoreWorkspaceLayoutRef.current.length === 2
+            ? focusRestoreWorkspaceLayoutRef.current
+            : workspacePanelLayoutRef.current,
+      );
+    }
+    if (leavingFocus) {
+      setIsSidebarCollapsed(sidebarCollapsedBeforeFocusRef.current);
+      queueMicrotask(() => {
+        leavingFocusRef.current = false;
+      });
+    }
+    wasFocusModeRef.current = isFocusMode;
+  }, [isFocusMode, structuredTypeViewOpen]);
 
   useEffect(() => {
-    if (!isSidebarCollapsed || isFocusMode) return;
+    if (!isSidebarCollapsed || isFocusMode || leavingFocusRef.current) return;
 
     const panelGroup = panelGroupRef.current;
     if (!panelGroup) return;
 
-    const noteListSize = expandedPanelLayoutRef.current[1];
-    panelGroup.setLayout([0, noteListSize, 100 - noteListSize]);
-  }, [isFocusMode, isSidebarCollapsed]);
+    panelGroup.setLayout([0, 100]);
+  }, [isFocusMode, isSidebarCollapsed, structuredTypeViewOpen]);
 
   const handlePanelLayout = (layout: number[]) => {
     if (!isFocusMode && layout[0] > 0) {
       expandedPanelLayoutRef.current = layout;
     }
+  };
+
+  const handleWorkspacePanelLayout = (layout: number[]) => {
+    if (!isFocusMode && layout[0] > 0) workspacePanelLayoutRef.current = layout;
   };
 
   const handleRestoreSidebar = () => {
@@ -504,6 +801,91 @@ const Index = () => {
     );
   }
 
+  const editorWorkspace = (
+    <div className="flex h-full min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1">
+          <EditorPane
+            note={selectedNote}
+            allNotes={notes}
+            extraTypes={vault.extraTypes}
+            schemas={vault.schemas}
+            typeIcons={vault.typeIcons}
+            vaultLocation={vault.location}
+            isBusy={
+              selectedNote ? vault.busyNoteIds.has(selectedNote.id) : false
+            }
+            isLoading={
+              selectedNote ? vault.loadingNoteIds.has(selectedNote.id) : false
+            }
+            isRefreshing={vault.isRefreshing}
+            onOpenNote={handleOpenNote}
+            onCopyExternalToVault={(id, typePath) =>
+              void handleCopyExternalToVault(id, typePath)
+            }
+            onMoveExternalToVault={(id, typePath) =>
+              void handleMoveExternalToVault(id, typePath)
+            }
+            onMoveSavedLinkToVault={(id, typePath) =>
+              void (async () => {
+                if (!(await moveSavedLinkToVault(id, typePath))) return;
+                setListFilters(EMPTY_NOTE_LIST_FILTERS);
+                setSearch("");
+                navigate({
+                  filter: { kind: "type", path: typePath },
+                  selectedNoteId: id,
+                });
+              })()
+            }
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={handleToggleFocusMode}
+            isDesktop={vault.isDesktop}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={handleToggleTerminal}
+            aiOpen={aiOpen}
+            onToggleAi={() =>
+              setAiOpen((current) => {
+                if (!current) handleTerminalOpenChange(false);
+                return !current;
+              })
+            }
+            conflict={
+              selectedNote ? (vault.conflicts[selectedNote.id] ?? null) : null
+            }
+            canNavigateBack={
+              (structuredTypeViewOpen && expandedEditorOpen) ||
+              navigation.back.length > 0
+            }
+            canNavigateForward={navigation.forward.length > 0}
+            onNavigateBack={handleEditorNavigateBack}
+            onNavigateForward={navigateForward}
+          />
+        </div>
+      </div>
+      {vault.isDesktop && (
+        <AiPanel
+          open={aiOpen}
+          note={selectedNote}
+          notes={notes}
+          targetDirectory={terminalTargetDirectory}
+          vaultLocation={vault.location}
+          onOpenChange={setAiOpen}
+        />
+      )}
+      {vault.isDesktop && terminalLoaded && (
+        <Suspense fallback={null}>
+          <TerminalPanel
+            open={terminalOpen}
+            note={selectedNote}
+            targetDirectory={terminalTargetDirectory}
+            vaultLocation={vault.location}
+            onOpenChange={handleTerminalOpenChange}
+          />
+        </Suspense>
+      )}
+    </div>
+  );
+
   return (
     <>
       <AutoUpdater />
@@ -543,6 +925,8 @@ const Index = () => {
           onLayout={handlePanelLayout}
         >
         <ResizablePanel
+          id="sidebar"
+          order={1}
           ref={sidebarPanelRef}
           defaultSize={SIDEBAR_DEFAULT_SIZE}
           minSize={12}
@@ -573,6 +957,7 @@ const Index = () => {
               onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
               onTypeOrderChange={handleTypeOrderChange}
               onFilterChange={handleFilterChange}
+              onOpenTypeInNewTab={handleOpenTypeInNewTab}
               onCollapse={() => sidebarPanelRef.current?.collapse()}
             />
           </div>
@@ -581,113 +966,89 @@ const Index = () => {
           className={isFocusMode ? "hidden" : "w-px bg-transparent"}
         />
         <ResizablePanel
-          defaultSize={NOTE_LIST_DEFAULT_SIZE}
-          minSize={isFocusMode ? 0 : 18}
-          maxSize={40}
-          collapsible={isFocusMode}
-          className={isFocusMode ? "invisible" : undefined}
+          id="workspace"
+          order={2}
+          defaultSize={WORKSPACE_DEFAULT_SIZE}
+          minSize={55}
         >
-          <NoteList
-            notes={visibleNotes}
-            filterOptions={filterOptions}
-            filter={filter}
-            listFilters={listFilters}
-            selectedNoteId={selectedNoteId}
-            search={search}
-            isRefreshing={vault.isRefreshing}
-            onSearchChange={setSearch}
-            onListFiltersChange={setListFilters}
-            onSelectNote={handleSelectNote}
-            onCreateNote={() => void handleCreateNote()}
-            onCreateFile={() => void handleCreateFile()}
-            onCreateLink={handleCreateLink}
-            onOpenExternalNotes={() => void handleOpenExternalNotes()}
-          />
-        </ResizablePanel>
-        <ResizableHandle
-          className={isFocusMode ? "hidden" : "w-px bg-border/60"}
-        />
-        <ResizablePanel defaultSize={EDITOR_DEFAULT_SIZE} minSize={30}>
-          <div className="flex h-full min-w-0">
-            <div className="min-w-0 flex-1">
-              <EditorPane
-                note={selectedNote}
-                allNotes={notes}
-                extraTypes={vault.extraTypes}
-                schemas={vault.schemas}
-                typeIcons={vault.typeIcons}
-                vaultLocation={vault.location}
-                isBusy={
-                  selectedNote ? vault.busyNoteIds.has(selectedNote.id) : false
-                }
-                isLoading={
-                  selectedNote
-                    ? vault.loadingNoteIds.has(selectedNote.id)
-                    : false
-                }
-                isRefreshing={vault.isRefreshing}
-                onOpenNote={handleOpenNote}
-                onCopyExternalToVault={(id, typePath) =>
-                  void handleCopyExternalToVault(id, typePath)
-                }
-                onMoveExternalToVault={(id, typePath) =>
-                  void handleMoveExternalToVault(id, typePath)
-                }
-                onMoveSavedLinkToVault={(id, typePath) =>
-                  void (async () => {
-                    if (!(await moveSavedLinkToVault(id, typePath))) return;
-                    setListFilters(EMPTY_NOTE_LIST_FILTERS);
-                    setSearch("");
-                    navigate({
-                      filter: { kind: "type", path: typePath },
-                      selectedNoteId: id,
-                    });
-                  })()
-                }
-                isFocusMode={isFocusMode}
-                onToggleFocusMode={handleToggleFocusMode}
-                isDesktop={vault.isDesktop}
-                terminalOpen={terminalOpen}
-                onToggleTerminal={handleToggleTerminal}
-                aiOpen={aiOpen}
-                onToggleAi={() =>
-                  setAiOpen((current) => {
-                    if (!current) handleTerminalOpenChange(false);
-                    return !current;
-                  })
-                }
-                conflict={
-                  selectedNote
-                    ? (vault.conflicts[selectedNote.id] ?? null)
-                    : null
-                }
-                canNavigateBack={navigation.back.length > 0}
-                canNavigateForward={navigation.forward.length > 0}
-                onNavigateBack={navigateBack}
-                onNavigateForward={navigateForward}
-              />
-            </div>
-            {vault.isDesktop && (
-              <AiPanel
-                open={aiOpen}
-                note={selectedNote}
+          <div className="flex h-full min-w-0 flex-col">
+            {noteTabs.enabled && (
+              <NoteTabs
+                tabs={noteTabs.tabs}
+                activeTabId={noteTabs.activeTabId}
                 notes={notes}
-                targetDirectory={terminalTargetDirectory}
-                vaultLocation={vault.location}
-                onOpenChange={setAiOpen}
+                typeIcons={vault.typeIcons}
+                onActivate={handleActivateTab}
+                onTogglePinned={(tabId) =>
+                  setNoteTabs((tabs) => toggleNoteTabPinned(tabs, tabId))
+                }
+                onClose={handleCloseTab}
               />
             )}
-            {vault.isDesktop && terminalLoaded && (
-              <Suspense fallback={null}>
-                <TerminalPanel
-                  open={terminalOpen}
-                  note={selectedNote}
-                  targetDirectory={terminalTargetDirectory}
-                  vaultLocation={vault.location}
-                  onOpenChange={handleTerminalOpenChange}
+            <div className="min-h-0 min-w-0 flex-1">
+              {structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (
+                <TypeViewWorkspace
+                  typePath={filter.path}
+                  notes={notes}
+                  schemas={vault.schemas}
+                  config={activeTypeView}
+                  isRefreshing={vault.isRefreshing}
+                  editorOpen={expandedEditorOpen}
+                  editor={editorWorkspace}
+                  onOpenNote={handleOpenStructuredNote}
+                  onCreateNote={() => void handleCreateNote()}
+                  onConfigChange={handleTypeViewChange}
+                  onSetProperty={setNoteProperty}
                 />
-              </Suspense>
-            )}
+              ) : (
+                <ResizablePanelGroup
+                  ref={workspacePanelGroupRef}
+                  direction="horizontal"
+                  onLayout={handleWorkspacePanelLayout}
+                >
+                  <ResizablePanel
+                    id="note-list"
+                    order={1}
+                    defaultSize={NOTE_LIST_WORKSPACE_SIZE}
+                    minSize={isFocusMode ? 0 : NOTE_LIST_WORKSPACE_SIZE}
+                    maxSize={48}
+                    collapsible={isFocusMode}
+                    className={isFocusMode ? "invisible" : undefined}
+                  >
+                    <NoteList
+                      notes={visibleNotes}
+                      filterOptions={filterOptions}
+                      filter={filter}
+                      listFilters={listFilters}
+                      selectedNoteId={selectedNoteId}
+                      search={search}
+                      isRefreshing={vault.isRefreshing}
+                      onSearchChange={setSearch}
+                      onListFiltersChange={setListFilters}
+                      onSelectNote={handleSelectNote}
+                      onOpenNoteInNewTab={handleOpenNoteInNewTab}
+                      onCreateNote={() => void handleCreateNote()}
+                      onCreateFile={() => void handleCreateFile()}
+                      onCreateLink={handleCreateLink}
+                      onOpenExternalNotes={() => void handleOpenExternalNotes()}
+                      viewMode={activeTypeView?.mode}
+                      onViewModeChange={(mode) => handleTypeViewChange({ mode })}
+                    />
+                  </ResizablePanel>
+                  <ResizableHandle
+                    className={isFocusMode ? "hidden" : "w-px bg-border/60"}
+                  />
+                  <ResizablePanel
+                    id="editor"
+                    order={2}
+                    defaultSize={EDITOR_WORKSPACE_SIZE}
+                    minSize={30}
+                  >
+                    {editorWorkspace}
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              )}
+            </div>
           </div>
         </ResizablePanel>
         </ResizablePanelGroup>

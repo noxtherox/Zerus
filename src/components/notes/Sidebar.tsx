@@ -22,6 +22,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   FileStack,
+  FilePlus2,
   Files,
   FolderPlus,
   GripVertical,
@@ -107,6 +108,7 @@ interface SidebarProps {
   onHideSubtypeNotesChange: (hidden: boolean) => void;
   onTypeOrderChange: (order: string[]) => void;
   onFilterChange: (filter: NoteFilter) => void;
+  onOpenTypeInNewTab: (typePath: string[]) => void;
   onCollapse: () => void;
 }
 
@@ -185,6 +187,7 @@ function TypeTreeRows({
   expanded,
   typeIcons,
   onFilterChange,
+  onOpenTypeInNewTab,
   onToggle,
   onRenameType,
   onAddSubtype,
@@ -198,6 +201,7 @@ function TypeTreeRows({
   expanded: Set<string>;
   typeIcons: TypeIcons;
   onFilterChange: (filter: NoteFilter) => void;
+  onOpenTypeInNewTab: (typePath: string[]) => void;
   onToggle: (key: string) => void;
   onRenameType: (node: TypeNode) => void;
   onAddSubtype: (node: TypeNode) => void;
@@ -229,6 +233,7 @@ function TypeTreeRows({
               canMoveUp={index > 0}
               canMoveDown={index < nodes.length - 1}
               onFilterChange={onFilterChange}
+              onOpenTypeInNewTab={onOpenTypeInNewTab}
               onToggle={onToggle}
               onRenameType={onRenameType}
               onAddSubtype={onAddSubtype}
@@ -249,6 +254,7 @@ function TypeTreeRows({
                 expanded={expanded}
                 typeIcons={typeIcons}
                 onFilterChange={onFilterChange}
+                onOpenTypeInNewTab={onOpenTypeInNewTab}
                 onToggle={onToggle}
                 onRenameType={onRenameType}
                 onAddSubtype={onAddSubtype}
@@ -273,6 +279,7 @@ function SortableTypeRow({
   canMoveUp,
   canMoveDown,
   onFilterChange,
+  onOpenTypeInNewTab,
   onToggle,
   onRenameType,
   onAddSubtype,
@@ -289,6 +296,7 @@ function SortableTypeRow({
   canMoveUp: boolean;
   canMoveDown: boolean;
   onFilterChange: (filter: NoteFilter) => void;
+  onOpenTypeInNewTab: (typePath: string[]) => void;
   onToggle: (key: string) => void;
   onRenameType: (node: TypeNode) => void;
   onAddSubtype: (node: TypeNode) => void;
@@ -355,6 +363,9 @@ function SortableTypeRow({
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent>
+          <ContextMenuItem onClick={() => onOpenTypeInNewTab(node.path)}>
+            <FilePlus2 size={14} className="mr-2" /> Open in new tab
+          </ContextMenuItem>
           <ContextMenuItem disabled={!canMoveUp} onClick={onMoveUp}>
             <ArrowUp size={14} className="mr-2" /> Move up
           </ContextMenuItem>
@@ -399,6 +410,7 @@ export function Sidebar({
   onHideSubtypeNotesChange,
   onTypeOrderChange,
   onFilterChange,
+  onOpenTypeInNewTab,
   onCollapse,
 }: SidebarProps) {
   const tree = buildTypeTree(notes, extraTypes, typeOrder);
@@ -452,6 +464,8 @@ export function Sidebar({
     const order = reorderTypeTree(tree, sourceKey, targetKey, placement);
     if (order) onTypeOrderChange(order);
   };
+
+  const allTypePaths = getAllTypePaths(notes, extraTypes);
 
   const handleTypeDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over) return;
@@ -675,6 +689,7 @@ export function Sidebar({
             expanded={expanded}
             typeIcons={typeIcons}
             onFilterChange={onFilterChange}
+            onOpenTypeInNewTab={onOpenTypeInNewTab}
             onToggle={toggle}
             onRenameType={startRename}
             onAddSubtype={(node) => startTypeCreation(node.path)}

@@ -60,6 +60,8 @@ export {
   IconLink as Link2,
   IconLinkOff as Link2Off,
   IconList as List,
+  IconLayoutGrid as LayoutGrid,
+  IconLayoutKanban as LayoutKanban,
   IconListNumbers as ListOrdered,
   IconLoader2 as Loader2,
   IconMapPin as MapPin,

@@ -112,6 +112,7 @@ import {
   openDocumentPathsFromDesktop,
   openExternalNotes,
   prioritizeNoteLoad,
+  refreshVaultFromDisk,
   revealNoteInDesktop,
   resolveNoteConflict,
   restoreNote,
@@ -316,6 +317,21 @@ describe("external note store workflow", () => {
     expect(getNoteConflict(vaultNote!.id)).toBeNull();
     expect(getNotes().find((note) => note.id === vaultNote!.id)?.content).toContain(
       "Written in Zerus",
+    );
+
+    updateNoteBody(
+      vaultNote!.id,
+      "# Welcome\n\nStill editing while Zerus regains focus.\n",
+    );
+    await refreshVaultFromDisk();
+    expect(getNoteConflict(vaultNote!.id)).toBeNull();
+    expect(getNotes().find((note) => note.id === vaultNote!.id)?.content).toContain(
+      "Still editing while Zerus regains focus.",
+    );
+    await waitFor(async () =>
+      (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
+        "Still editing while Zerus regains focus.",
+      ),
     );
 
     await revealNoteInDesktop(vaultNote!.id);

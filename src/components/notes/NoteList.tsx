@@ -31,6 +31,7 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -61,6 +62,8 @@ import {
   trashNote,
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
+import { TypeViewSwitcher } from "./TypeViewWorkspace";
+import type { NoteViewMode } from "@/lib/note-views";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import { AddLinkDialog } from "./AddLinkDialog";
@@ -90,10 +93,13 @@ interface NoteListProps {
   onSearchChange: (value: string) => void;
   onListFiltersChange: (filters: NoteListFilterState) => void;
   onSelectNote: (id: string) => void;
+  onOpenNoteInNewTab: (id: string) => void;
   onCreateNote: () => void;
   onCreateFile: () => void;
   onCreateLink: (url: string) => Promise<void>;
   onOpenExternalNotes: () => void;
+  viewMode?: NoteViewMode;
+  onViewModeChange?: (mode: NoteViewMode) => void;
 }
 
 export function NoteList({
@@ -107,10 +113,13 @@ export function NoteList({
   onSearchChange,
   onListFiltersChange,
   onSelectNote,
+  onOpenNoteInNewTab,
   onCreateNote,
   onCreateFile,
   onCreateLink,
   onOpenExternalNotes,
+  viewMode,
+  onViewModeChange,
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
@@ -179,6 +188,13 @@ export function NoteList({
         )}
       >
         <span className="flex-1 truncate text-sm font-semibold">{heading}</span>
+        {filter.kind === "type" && viewMode && onViewModeChange && (
+          <TypeViewSwitcher
+            typeName={heading}
+            mode={viewMode}
+            onChange={onViewModeChange}
+          />
+        )}
         {inTrash ? (
           notes.length > 0 && (
             <Button
@@ -296,6 +312,11 @@ export function NoteList({
               <ContextMenuTrigger asChild disabled={isRefreshing}>
                 <button
                   onClick={() => onSelectNote(note.id)}
+                  onAuxClick={(event) => {
+                    if (event.button !== 1) return;
+                    event.preventDefault();
+                    onOpenNoteInNewTab(note.id);
+                  }}
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     note.id === selectedNoteId
@@ -350,6 +371,10 @@ export function NoteList({
                 </button>
               </ContextMenuTrigger>
               <ContextMenuContent>
+                <ContextMenuItem onClick={() => onOpenNoteInNewTab(note.id)}>
+                  <FilePlus2 size={14} className="mr-2" /> Open in new tab
+                </ContextMenuItem>
+                <ContextMenuSeparator />
                 <ContextMenuItem
                   onClick={() => void revealNoteInDesktop(note.id)}
                 >

@@ -22,13 +22,13 @@ export function ZerusLogo({
         {...props}
         src={getLogoSrc("graphite")}
         alt=""
-        className="brand-logo-light h-full w-full"
+        className="zerus-logo-light h-full w-full"
       />
       <img
         {...props}
         src={getLogoSrc("white")}
         alt=""
-        className="brand-logo-dark h-full w-full"
+        className="zerus-logo-dark h-full w-full"
       />
     </span>
   );

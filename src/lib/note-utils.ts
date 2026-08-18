@@ -102,6 +102,17 @@ export function formatImageMarkdown(
   return `![${width ? `${alt}|${width}` : alt}](${path})`;
 }
 
+/** The first Markdown image in the note body, for compact note previews. */
+export function firstNoteImage(content: string): {
+  path: string;
+  alt: string;
+} | null {
+  for (const match of noteBody(content).matchAll(IMAGE_MD_REGEX)) {
+    return { path: match[2], alt: parseImageAlt(match[1]).alt };
+  }
+  return null;
+}
+
 export function isTrashed(note: Note): boolean {
   return !isExternalNote(note) && note.path.startsWith(`${TRASH_DIR}/`);
 }
