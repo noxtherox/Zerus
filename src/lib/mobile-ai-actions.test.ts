@@ -20,7 +20,7 @@ function note(content = "# Project Atlas\n\nOriginal text\n"): Note {
 describe("mobile AI note actions", () => {
   it("extracts actions without exposing protocol markup", () => {
     const parsed = parseMobileAIActions(
-      'I can do that.\n<grimoire-action>{"action":"create_note","title":"Trip","body":"Pack light."}</grimoire-action>',
+      'I can do that.\n<zerus-action>{"action":"create_note","title":"Trip","body":"Pack light."}</zerus-action>',
     );
     expect(parsed.actions).toEqual([{ action: "create_note", title: "Trip", body: "Pack light.", type: undefined }]);
     expect(parsed.visibleText).toBe("I can do that.");
@@ -29,7 +29,7 @@ describe("mobile AI note actions", () => {
 
   it("rejects malformed and unsafe type paths", () => {
     const parsed = parseMobileAIActions(
-      '<grimoire-action>{"action":"create_note","title":"Oops","body":"x","type":["../outside"]}</grimoire-action>',
+      '<zerus-action>{"action":"create_note","title":"Oops","body":"x","type":["../outside"]}</zerus-action>',
     );
     expect(parsed.actions).toEqual([]);
     expect(parsed.malformed).toBe(true);

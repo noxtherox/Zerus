@@ -20,7 +20,7 @@ import { WIKILINK_REGEX } from "@/lib/note-utils";
 import { normalizeExternalUrl } from "@/lib/external-links";
 import { tableDecoration } from "./markdown-table";
 
-const ACCENT = "rgb(var(--grim-accent))";
+const ACCENT = "rgb(var(--zerus-accent))";
 
 const toggleEffect = StateEffect.define<boolean>();
 
@@ -515,11 +515,11 @@ const livePreviewTheme = EditorView.theme({
     textIndent: "calc(-1 * var(--cm-list-indent))",
   },
   ".cm-blockquote-line": {
-    borderLeft: "3px solid rgb(var(--grim-text) / 0.22)",
+    borderLeft: "3px solid rgb(var(--zerus-text) / 0.22)",
     paddingLeft: "12px",
   },
   ".cm-codeblock-line": {
-    backgroundColor: "rgb(var(--grim-text) / 0.05)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.05)",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "0.9em",
     padding: "0 10px",
@@ -532,7 +532,7 @@ const livePreviewTheme = EditorView.theme({
     display: "inline-block",
     width: "100%",
     verticalAlign: "middle",
-    borderTop: "1px solid rgb(var(--grim-text) / 0.2)",
+    borderTop: "1px solid rgb(var(--zerus-text) / 0.2)",
   },
   ".cm-task-checkbox": {
     accentColor: ACCENT,
@@ -553,9 +553,9 @@ const livePreviewTheme = EditorView.theme({
   },
   ".cm-markdown-table-card": {
     position: "relative",
-    border: "1px solid rgb(var(--grim-text) / 0.14)",
+    border: "1px solid rgb(var(--zerus-text) / 0.14)",
     borderRadius: "10px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
     boxShadow: "0 1px 2px rgb(0 0 0 / 0.08)",
   },
   ".cm-markdown-table-scroll": {
@@ -570,9 +570,9 @@ const livePreviewTheme = EditorView.theme({
     display: "flex",
     gap: "3px",
     padding: "3px",
-    border: "1px solid rgb(var(--grim-text) / 0.14)",
+    border: "1px solid rgb(var(--zerus-text) / 0.14)",
     borderRadius: "7px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
     boxShadow: "0 4px 12px rgb(0 0 0 / 0.12)",
     opacity: "0",
     transform: "translateY(2px)",
@@ -592,7 +592,7 @@ const livePreviewTheme = EditorView.theme({
     border: "0",
     borderRadius: "5px",
     padding: "4px 8px",
-    color: "rgb(var(--grim-text) / 0.72)",
+    color: "rgb(var(--zerus-text) / 0.72)",
     backgroundColor: "transparent",
     fontFamily: "inherit",
     fontSize: "11px",
@@ -602,7 +602,7 @@ const livePreviewTheme = EditorView.theme({
   },
   ".cm-markdown-table-action:hover:not(:disabled), .cm-markdown-table-action:focus-visible": {
     color: ACCENT,
-    backgroundColor: "rgb(var(--grim-accent) / 0.1)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.1)",
     outline: "none",
   },
   ".cm-markdown-table-action:disabled": {
@@ -618,8 +618,8 @@ const livePreviewTheme = EditorView.theme({
   ".cm-markdown-table th, .cm-markdown-table td": {
     minWidth: "7rem",
     padding: "10px 14px",
-    borderRight: "1px solid rgb(var(--grim-text) / 0.12)",
-    borderBottom: "1px solid rgb(var(--grim-text) / 0.12)",
+    borderRight: "1px solid rgb(var(--zerus-text) / 0.12)",
+    borderBottom: "1px solid rgb(var(--zerus-text) / 0.12)",
     textAlign: "left",
     verticalAlign: "top",
     outline: "none",
@@ -627,23 +627,23 @@ const livePreviewTheme = EditorView.theme({
     transition: "background-color 100ms ease, box-shadow 100ms ease",
   },
   ".cm-markdown-table th": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.09)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.09)",
     fontWeight: "650",
-    color: "rgb(var(--grim-text))",
+    color: "rgb(var(--zerus-text))",
   },
   ".cm-markdown-table tbody tr:nth-child(even) td": {
-    backgroundColor: "rgb(var(--grim-text) / 0.025)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.025)",
   },
   ".cm-markdown-table tbody tr:hover td": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.055)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.055)",
   },
   ".cm-markdown-table th[contenteditable]:focus, .cm-markdown-table td[contenteditable]:focus": {
     position: "relative",
-    backgroundColor: "rgb(var(--grim-accent) / 0.08)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.08)",
     boxShadow: `inset 0 0 0 2px ${ACCENT}`,
   },
   ".cm-markdown-table th.cm-markdown-table-cell-selected, .cm-markdown-table td.cm-markdown-table-cell-selected": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.13) !important",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.13) !important",
     backgroundImage: `linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT})`,
     backgroundPosition: "top, right, bottom, left",
     backgroundRepeat: "no-repeat",

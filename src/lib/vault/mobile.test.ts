@@ -66,13 +66,13 @@ describe("MobileFolderVault discovery", () => {
   });
 
   it("indexes every note while loading content only for the requested page", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grimoire-mobile-page-"));
+    const root = await mkdtemp(join(tmpdir(), "zerus-mobile-page-"));
     await mkdir(join(root, "Ideas"), { recursive: true });
     await writeFile(join(root, "Ideas", "Older.md"), "# Older\n", "utf8");
     await new Promise((resolve) => setTimeout(resolve, 5));
     await writeFile(join(root, "Ideas", "Newest.md"), "# Newest\n", "utf8");
 
-    const vault = new MobileFolderVault(pathToFileURL(root).href, "Grimoire");
+    const vault = new MobileFolderVault(pathToFileURL(root).href, "Zerus");
     const entries = await vault.listNoteEntries();
 
     expect(entries.map((entry) => entry.path).sort()).toEqual([

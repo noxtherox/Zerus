@@ -97,7 +97,7 @@ describe("note width preference", () => {
 
     expect(loadNoteWidth()).toBe(85);
     expect(
-      document.documentElement.style.getPropertyValue("--grim-note-width"),
+      document.documentElement.style.getPropertyValue("--zerus-note-width"),
     ).toBe("85%");
   });
 
@@ -106,7 +106,7 @@ describe("note width preference", () => {
 
     expect(values.has("zerus.noteWidth")).toBe(false);
     expect(
-      document.documentElement.style.getPropertyValue("--grim-note-width"),
+      document.documentElement.style.getPropertyValue("--zerus-note-width"),
     ).toBe("60%");
   });
 });
@@ -124,7 +124,7 @@ describe("note alignment preference", () => {
     expect(loadNoteAlignment()).toBe("left");
     expect(
       document.documentElement.style.getPropertyValue(
-        "--grim-note-margin-inline",
+        "--zerus-note-margin-inline",
       ),
     ).toBe("0 auto");
   });
@@ -135,7 +135,7 @@ describe("note alignment preference", () => {
     expect(values.has("zerus.noteAlignment")).toBe(false);
     expect(
       document.documentElement.style.getPropertyValue(
-        "--grim-note-margin-inline",
+        "--zerus-note-margin-inline",
       ),
     ).toBe("auto");
   });

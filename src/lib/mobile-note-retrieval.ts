@@ -74,7 +74,7 @@ function queryTerms(question: string): string[] {
 
 function propertyEntries(note: Note): Array<[string, PropertyValue]> {
   return Object.entries(getNoteProperties(note.content))
-    .filter(([key]) => !key.toLowerCase().startsWith("grimoire-"));
+    .filter(([key]) => !key.toLowerCase().startsWith("zerus-"));
 }
 
 function propertyText(note: Note): string {

@@ -33,6 +33,7 @@ export default defineConfig(() => ({
     },
   },
   test: {
+    include: ["src/**/*.test.{ts,tsx}"],
     exclude: [...configDefaults.exclude, "**/.worktrees/**"],
   },
 }));

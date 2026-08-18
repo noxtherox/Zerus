@@ -146,7 +146,7 @@ export function NoteListFilters({
           >
             <Filter size={14} />
             {activeCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-grim-accent px-1 text-[9px] font-semibold text-white">
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-zerus-accent px-1 text-[9px] font-semibold text-white">
                 {activeCount}
               </span>
             )}

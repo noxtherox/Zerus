@@ -50,18 +50,18 @@
 
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    /* Grimoire theme tokens — "R G B" triplets, overridden at runtime by the
+    /* Zerus theme tokens — "R G B" triplets, overridden at runtime by the
        theme settings (src/lib/theme.ts). Keep defaults in sync with
        DEFAULT_THEME there. */
-    --grim-accent: 216 75 64;
-    --grim-link: 11 106 205;
-    --grim-text: 2 8 23;
-    --grim-editor-bg: 255 255 255;
-    --grim-surface: 249 248 246;
-    --grim-sidebar-bg: 31 31 35;
-    --grim-sidebar-fg: 228 228 231;
-    --grim-note-width: 75%;
-    --grim-note-margin-inline: auto;
+    --zerus-accent: 216 75 64;
+    --zerus-link: 11 106 205;
+    --zerus-text: 2 8 23;
+    --zerus-editor-bg: 255 255 255;
+    --zerus-surface: 249 248 246;
+    --zerus-sidebar-bg: 31 31 35;
+    --zerus-sidebar-fg: 228 228 231;
+    --zerus-note-width: 75%;
+    --zerus-note-margin-inline: auto;
   }
 
   .dark {
@@ -104,15 +104,15 @@
 }
 
 @layer components {
-  .grimoire-logo-dark {
+  .zerus-logo-dark {
     display: none;
   }
 
-  :root[data-grim-sidebar-tone="dark"] .grimoire-logo-light {
+  :root[data-zerus-sidebar-tone="dark"] .zerus-logo-light {
     display: none;
   }
 
-  :root[data-grim-sidebar-tone="dark"] .grimoire-logo-dark {
+  :root[data-zerus-sidebar-tone="dark"] .zerus-logo-dark {
     display: block;
   }
 }
@@ -124,12 +124,12 @@
 
   body {
     @apply bg-background;
-    color: rgb(var(--grim-text));
+    color: rgb(var(--zerus-text));
   }
 
-  html.mobile-grimoire-page,
-  html.mobile-grimoire-page body,
-  html.mobile-grimoire-page #root {
+  html.mobile-zerus-page,
+  html.mobile-zerus-page body,
+  html.mobile-zerus-page #root {
     background-color: #1c1d1e;
     color-scheme: dark;
     height: 100%;
@@ -137,20 +137,20 @@
     overscroll-behavior: none;
   }
 
-  html.mobile-grimoire-page body {
+  html.mobile-zerus-page body {
     position: fixed;
     inset: 0;
     width: 100%;
   }
 
-  .mobile-grimoire-dark {
-    --grim-accent: 239 104 96;
-    --grim-link: 124 175 255;
-    --grim-text: 238 237 234;
-    --grim-editor-bg: 24 24 24;
-    --grim-surface: 24 24 24;
-    --grim-sidebar-bg: 15 15 15;
-    --grim-sidebar-fg: 238 237 234;
+  .mobile-zerus-dark {
+    --zerus-accent: 239 104 96;
+    --zerus-link: 124 175 255;
+    --zerus-text: 238 237 234;
+    --zerus-editor-bg: 24 24 24;
+    --zerus-surface: 24 24 24;
+    --zerus-sidebar-bg: 15 15 15;
+    --zerus-sidebar-fg: 238 237 234;
   }
 
   .mobile-native-shell {

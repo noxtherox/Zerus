@@ -54,13 +54,13 @@ export function CollapsedSidebar({
     cn(
       "flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors",
       active
-        ? "bg-grim-sidebar-fg/15 text-grim-sidebar-fg"
-        : "text-grim-sidebar-fg/60 hover:bg-grim-sidebar-fg/10 hover:text-grim-sidebar-fg/90",
+        ? "bg-zerus-sidebar-fg/15 text-zerus-sidebar-fg"
+        : "text-zerus-sidebar-fg/60 hover:bg-zerus-sidebar-fg/10 hover:text-zerus-sidebar-fg/90",
     );
 
   return (
     <nav
-      className="flex h-full w-12 flex-col items-center bg-grim-sidebar py-3"
+      className="flex h-full w-12 flex-col items-center bg-zerus-sidebar py-3"
       aria-label="Collapsed navigation sidebar"
     >
       <button
@@ -68,7 +68,7 @@ export function CollapsedSidebar({
         onClick={onRestore}
         title="Expand navigation sidebar"
         aria-label="Expand navigation sidebar to default width"
-        className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-grim-sidebar-fg/10"
+        className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-zerus-sidebar-fg/10"
       >
         <ZerusLogo
           alt=""
@@ -119,7 +119,7 @@ export function CollapsedSidebar({
           </>
         )}
 
-        <div className="my-2 h-px w-7 shrink-0 bg-grim-sidebar-fg/15" />
+        <div className="my-2 h-px w-7 shrink-0 bg-zerus-sidebar-fg/15" />
 
         <div className="flex w-full flex-col items-center gap-0.5">
           {types.map((node) => {
@@ -146,7 +146,7 @@ export function CollapsedSidebar({
         </div>
       </div>
 
-      <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-grim-sidebar-fg/15 pt-2">
+      <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-zerus-sidebar-fg/15 pt-2">
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}

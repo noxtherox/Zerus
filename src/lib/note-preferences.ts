@@ -45,7 +45,7 @@ export function loadNoteWidth(): NoteWidth {
 
 /** Applies a note width immediately to every editor. */
 export function applyNoteWidth(width: NoteWidth): void {
-  document.documentElement.style.setProperty("--grim-note-width", `${width}%`);
+  document.documentElement.style.setProperty("--zerus-note-width", `${width}%`);
 }
 
 /** Saves and applies the app-wide note width. */
@@ -76,7 +76,7 @@ export function loadNoteAlignment(): NoteAlignment {
 /** Applies a note alignment immediately to every editor. */
 export function applyNoteAlignment(alignment: NoteAlignment): void {
   document.documentElement.style.setProperty(
-    "--grim-note-margin-inline",
+    "--zerus-note-margin-inline",
     alignment === "center" ? "auto" : "0 auto",
   );
 }

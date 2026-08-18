@@ -39,13 +39,13 @@ describe("mobile note retrieval", () => {
   it("does not include unrelated or internal frontmatter in the model excerpt", () => {
     const note = makeNote(
       "navsea",
-      "---\ngrimoire-id: secret\nstatus: Backlog\nJIRA Key: DS-286\n---\n# NAVSEA\n\nNAVSEA supports the naval systems command.",
+      "---\nzerus-id: secret\nstatus: Backlog\nJIRA Key: DS-286\n---\n# NAVSEA\n\nNAVSEA supports the naval systems command.",
     );
 
     const result = retrieveNotes([note], "What is NAVSEA?");
 
     expect(result.notes[0].excerpt).toContain("NAVSEA supports the naval systems command.");
-    expect(result.notes[0].excerpt).not.toContain("grimoire-id");
+    expect(result.notes[0].excerpt).not.toContain("zerus-id");
     expect(result.notes[0].excerpt).toContain("status: Backlog");
     expect(result.notes[0].excerpt).toContain("JIRA Key: DS-286");
   });

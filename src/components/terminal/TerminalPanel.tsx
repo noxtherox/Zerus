@@ -106,9 +106,9 @@ function terminalTheme() {
     return value ? `rgb(${value.split(/\s+/).join(", ")})` : fallback;
   };
   return {
-    background: rgb("--grim-editor-bg", "#ffffff"),
-    foreground: rgb("--grim-text", "#020817"),
-    cursor: rgb("--grim-accent", "#d84b40"),
+    background: rgb("--zerus-editor-bg", "#ffffff"),
+    foreground: rgb("--zerus-text", "#020817"),
+    cursor: rgb("--zerus-accent", "#d84b40"),
     selectionBackground: "rgba(128, 128, 128, 0.28)",
   };
 }
@@ -484,7 +484,7 @@ export function TerminalPanel({
     <div
       ref={panelRef}
       className={cn(
-        "relative h-full shrink-0 border-l border-border/70 bg-grim-editor",
+        "relative h-full shrink-0 border-l border-border/70 bg-zerus-editor",
         !open && "hidden",
       )}
       style={{
@@ -500,7 +500,7 @@ export function TerminalPanel({
       />
       <div className="flex h-full min-w-0 flex-col">
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-          <SquareTerminal className="mx-1 shrink-0 text-grim-accent" size={16} />
+          <SquareTerminal className="mx-1 shrink-0 text-zerus-accent" size={16} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 truncate text-xs font-medium">
               <span>Terminal</span>

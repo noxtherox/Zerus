@@ -16,7 +16,7 @@ describe("applyLogoForSidebar", () => {
 
     applyLogoForSidebar("#1f1f23");
 
-    expect(dataset.grimSidebarTone).toBe("dark");
+    expect(dataset.zerusSidebarTone).toBe("dark");
     expect(querySelector).not.toHaveBeenCalled();
   });
 });

@@ -4,14 +4,14 @@
   "description": "A local-first Markdown notes app built around folders, links, and files you own.",
   "private": true,
   "license": "MIT",
-  "author": "Grimoire contributors",
+  "author": "Zerus contributors",
   "repository": {
     "type": "git",
-    "url": "https://github.com/noxtherox/grimoire.git"
+    "url": "https://github.com/noxtherox/zerus.git"
   },
-  "homepage": "https://github.com/noxtherox/grimoire#readme",
+  "homepage": "https://github.com/noxtherox/zerus#readme",
   "bugs": {
-    "url": "https://github.com/noxtherox/grimoire/issues"
+    "url": "https://github.com/noxtherox/zerus/issues"
   },
   "type": "module",
   "engines": {

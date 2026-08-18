@@ -248,7 +248,7 @@ function UrlValueEditor({
       <div className="flex min-h-6 min-w-0 items-center gap-1 px-1.5 text-xs">
         <button
           type="button"
-          className="flex min-w-0 items-center gap-1 text-left text-grim-link hover:underline"
+          className="flex min-w-0 items-center gap-1 text-left text-zerus-link hover:underline"
           title={`Open ${normalized}`}
           onClick={() => void openExternalUrl(normalized)}
         >
@@ -305,7 +305,7 @@ function RelationChip({
       className={cn(
         "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs",
         note
-          ? "border-grim-link/30 text-grim-link hover:bg-grim-link/10"
+          ? "border-zerus-link/30 text-zerus-link hover:bg-zerus-link/10"
           : "border-dashed border-muted-foreground/40 text-muted-foreground",
       )}
     >

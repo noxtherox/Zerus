@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Zerus",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "identifier": "com.zerus.notes",
   "build": {
     "frontendDist": "../dist",
@@ -105,7 +105,7 @@
     },
     "iOS": {
       "minimumSystemVersion": "17.0",
-      "bundleVersion": "32",
+      "bundleVersion": "33",
       "infoPlist": "Info.ios.plist"
     }
   },

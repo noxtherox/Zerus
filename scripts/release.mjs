@@ -34,6 +34,8 @@ if (output("git", ["tag", "--list", tag])) {
 const configPath = "src-tauri/tauri.conf.json";
 const cargoPath = "src-tauri/Cargo.toml";
 const lockPath = "src-tauri/Cargo.lock";
+const appleProjectPath = "src-tauri/gen/apple/project.yml";
+const appleInfoPath = "src-tauri/gen/apple/app_iOS/Info.plist";
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const currentVersion = config.version;
 const currentParts = currentVersion.split(".").map(Number);
@@ -64,7 +66,24 @@ const nextLock = lock.replace(
   `$1${version}$2`,
 );
 
-if (nextCargo === cargo || nextLock === lock) {
+const appleProject = readFileSync(appleProjectPath, "utf8");
+const nextAppleProject = appleProject.replace(
+  /(CFBundleShortVersionString:\s*)\d+\.\d+\.\d+/,
+  `$1${version}`,
+);
+
+const appleInfo = readFileSync(appleInfoPath, "utf8");
+const nextAppleInfo = appleInfo.replace(
+  /(<key>CFBundleShortVersionString<\/key>\s*<string>)\d+\.\d+\.\d+(<\/string>)/,
+  `$1${version}$2`,
+);
+
+if (
+  nextCargo === cargo ||
+  nextLock === lock ||
+  nextAppleProject === appleProject ||
+  nextAppleInfo === appleInfo
+) {
   throw new Error("Could not locate every version field; no release was created.");
 }
 
@@ -72,9 +91,18 @@ config.version = version;
 writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 writeFileSync(cargoPath, nextCargo);
 writeFileSync(lockPath, nextLock);
+writeFileSync(appleProjectPath, nextAppleProject);
+writeFileSync(appleInfoPath, nextAppleInfo);
 
 run("cargo", ["check", "--manifest-path", cargoPath, "-p", "app"]);
-run("git", ["add", configPath, cargoPath, lockPath]);
+run("git", [
+  "add",
+  configPath,
+  cargoPath,
+  lockPath,
+  appleProjectPath,
+  appleInfoPath,
+]);
 run("git", ["commit", "-m", `Release ${tag}`]);
 run("git", ["tag", "-a", tag, "-m", `Zerus ${tag}`]);
 run("git", ["push", "--atomic", "origin", "main", `refs/tags/${tag}`]);

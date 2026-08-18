@@ -77,10 +77,10 @@ export function FileHubPanel({
       : reference.path ?? "Missing path";
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-grim-editor">
+    <div className="flex h-full min-h-0 flex-col bg-zerus-editor">
       <div className="shrink-0 border-b border-border/60 bg-background/70 p-3">
         <div className="flex items-start gap-3">
-          <div className="mt-0.5 rounded-md bg-muted p-2 text-grim-accent">
+          <div className="mt-0.5 rounded-md bg-muted p-2 text-zerus-accent">
             {showPdf ? <FileSearch size={20} /> : <File size={20} />}
           </div>
           <div className="min-w-0 flex-1">

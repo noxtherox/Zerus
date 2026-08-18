@@ -141,8 +141,8 @@ function SidebarRow({
       className={cn(
         "flex w-full items-center rounded-md text-sm transition-colors",
         active
-          ? "bg-grim-sidebar-fg/15 text-grim-sidebar-fg"
-          : "text-grim-sidebar-fg/70 hover:bg-grim-sidebar-fg/5 hover:text-grim-sidebar-fg/90",
+          ? "bg-zerus-sidebar-fg/15 text-zerus-sidebar-fg"
+          : "text-zerus-sidebar-fg/70 hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/90",
       )}
       style={{ paddingLeft: `${depth * 14}px` }}
     >
@@ -153,7 +153,7 @@ function SidebarRow({
         <span className="shrink-0 opacity-80">{icon}</span>
         <span className="flex-1 truncate">{label}</span>
         {count !== undefined && (
-          <span className="text-xs tabular-nums text-grim-sidebar-fg/50">
+          <span className="text-xs tabular-nums text-zerus-sidebar-fg/50">
             {count}
           </span>
         )}
@@ -164,7 +164,7 @@ function SidebarRow({
             event.stopPropagation();
             onToggle?.();
           }}
-          className="flex h-6 w-5 shrink-0 items-center justify-center text-grim-sidebar-fg/50 hover:text-grim-sidebar-fg/90"
+          className="flex h-6 w-5 shrink-0 items-center justify-center text-zerus-sidebar-fg/50 hover:text-zerus-sidebar-fg/90"
           tabIndex={-1}
         >
           {chevron === "open" ? (
@@ -344,7 +344,7 @@ function SortableTypeRow({
                 event.stopPropagation();
               }}
               className={cn(
-                "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-grim-sidebar-fg/35 opacity-0 transition-opacity hover:text-grim-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
+                "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-zerus-sidebar-fg/35 opacity-0 transition-opacity hover:text-zerus-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
                 node.children.length ? "right-5" : "right-0",
               )}
               {...attributes}
@@ -599,9 +599,9 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col bg-grim-sidebar pt-4">
+    <div className="flex h-full flex-col bg-zerus-sidebar pt-4">
       <div className="flex items-center justify-between px-4 pb-3">
-        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-grim-sidebar-fg/90">
+        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-zerus-sidebar-fg/90">
           <ZerusLogo
             alt=""
             className="h-6 w-6 shrink-0 rounded-sm"
@@ -613,7 +613,7 @@ export function Sidebar({
           onClick={onCollapse}
           title="Collapse navigation sidebar"
           aria-label="Collapse navigation sidebar"
-          className="text-grim-sidebar-fg/50 transition-colors hover:text-grim-sidebar-fg/90"
+          className="text-zerus-sidebar-fg/50 transition-colors hover:text-zerus-sidebar-fg/90"
         >
           <ChevronsLeft size={15} />
         </button>
@@ -652,13 +652,13 @@ export function Sidebar({
           </>
         )}
         <div className="flex items-center justify-between pb-1 pl-3 pr-2 pt-4">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-grim-sidebar-fg/40">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-zerus-sidebar-fg/40">
             Types
           </span>
           <button
             onClick={() => startTypeCreation()}
             title="New type — it can stay empty until you add notes"
-            className="text-grim-sidebar-fg/40 transition-colors hover:text-grim-sidebar-fg/90"
+            className="text-zerus-sidebar-fg/40 transition-colors hover:text-zerus-sidebar-fg/90"
           >
             <Plus size={13} />
           </button>
@@ -684,7 +684,7 @@ export function Sidebar({
           />
         </DndContext>
       </nav>
-      <div className="space-y-0.5 border-t border-grim-sidebar-fg/10 p-2">
+      <div className="space-y-0.5 border-t border-zerus-sidebar-fg/10 p-2">
         <SidebarRow
           active={settingsOpen}
           onClick={() => setSettingsOpen(true)}
@@ -702,7 +702,7 @@ export function Sidebar({
           <button
             onClick={() => void chooseVaultFolder()}
             title={vaultLocation ?? undefined}
-            className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-grim-sidebar-fg/40 transition-colors hover:bg-grim-sidebar-fg/5 hover:text-grim-sidebar-fg/70"
+            className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-zerus-sidebar-fg/40 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/70"
           >
             Vault: {vaultName ?? "choose folder…"}
           </button>

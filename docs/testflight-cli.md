@@ -62,7 +62,7 @@ Upload a particular archive or retry a particular IPA:
 
 ```sh
 pnpm testflight -- --archive path/to/App.xcarchive
-pnpm testflight -- --ipa artifacts/testflight/0.3.1-19/Grimoire.ipa
+pnpm testflight -- --ipa artifacts/testflight/0.3.3-33/Zerus.ipa
 ```
 
 Run `pnpm testflight -- --help` for all options.

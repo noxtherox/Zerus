@@ -58,7 +58,7 @@ export function AiMarkdown({ children, inverted = false }: AiMarkdownProps) {
             title={title}
             className={cn(
               "font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current",
-              !inverted && "text-grim-link",
+              !inverted && "text-zerus-link",
             )}
             onClick={(event) => handleLinkClick(event, href)}
             rel="noreferrer"

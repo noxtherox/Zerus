@@ -40,7 +40,7 @@ export function BacklinksPanel({
   return (
     <aside
       className={cn(
-        "flex flex-col overflow-y-auto border-l border-border/60 bg-grim-surface",
+        "flex flex-col overflow-y-auto border-l border-border/60 bg-zerus-surface",
         expanded ? "min-w-0 flex-1" : "w-72 shrink-0",
       )}
     >
@@ -97,7 +97,7 @@ export function BacklinksPanel({
           <div className="space-y-4">
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>
-                <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-grim-accent">
+                <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
                   <Folder size={12} />
                   {type ? type.split("/").join(" / ") : "unfiled"}
                   <span className="text-muted-foreground">
@@ -115,9 +115,9 @@ export function BacklinksPanel({
                     <li key={linkingNote.id}>
                       <button
                         onClick={() => onOpenNote(linkingNote.id)}
-                        className="block h-full w-full rounded-md border border-border/50 bg-grim-editor px-3 py-2 text-left transition-colors hover:border-grim-accent/40 hover:bg-grim-accent/5"
+                        className="block h-full w-full rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
                       >
-                        <span className="block truncate text-sm font-medium text-grim-link">
+                        <span className="block truncate text-sm font-medium text-zerus-link">
                           {noteTitle(linkingNote)}
                         </span>
                         {noteSnippet(linkingNote) && (

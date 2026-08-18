@@ -736,7 +736,7 @@ export function AiPanel({
     <div
       ref={panelRef}
       className={cn(
-        "relative h-full shrink-0 border-l border-border/70 bg-grim-editor",
+        "relative h-full shrink-0 border-l border-border/70 bg-zerus-editor",
         !open && "hidden",
       )}
       style={{ width: `min(${width}px, 65vw)`, maxWidth: "calc(100% - 240px)" }}
@@ -750,7 +750,7 @@ export function AiPanel({
       <div className="flex h-full min-w-0 flex-col">
         <header className="flex h-14 shrink-0 items-center border-b border-border/60 px-3">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-grim-accent/10 text-grim-accent">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zerus-accent/10 text-zerus-accent">
               <Sparkles size={15} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
@@ -828,7 +828,7 @@ export function AiPanel({
                 </div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-border/70">
                   <div
-                    className="h-full bg-grim-accent transition-[width]"
+                    className="h-full bg-zerus-accent transition-[width]"
                     style={{ width: `${downloadPercent}%` }}
                   />
                 </div>
@@ -890,7 +890,7 @@ export function AiPanel({
                 className={cn(
                   "max-w-[92%] rounded-xl px-3 py-2 text-sm",
                   message.role === "user"
-                    ? "ml-auto bg-grim-accent text-white"
+                    ? "ml-auto bg-zerus-accent text-white"
                     : "border border-border/70 bg-muted/35",
                 )}
               >

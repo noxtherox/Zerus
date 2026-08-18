@@ -94,11 +94,11 @@ To publish a new Apple Silicon version, start from a clean, up-to-date `main`
 branch and run:
 
 ```sh
-pnpm release 0.3.1
+pnpm release 0.3.3
 ```
 
 The release command verifies the build and tests, keeps the Tauri and Rust
-versions in sync, commits the version bump, creates the matching `v0.3.1` tag,
+versions in sync, commits the version bump, creates the matching `v0.3.3` tag,
 and pushes both atomically. GitHub Actions then builds the DMG and signed updater
 bundle, publishes the GitHub Release, and generates `latest.json`. Installed
 desktop copies check that file on launch and every six hours. When an update is

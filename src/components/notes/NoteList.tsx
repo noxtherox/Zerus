@@ -171,7 +171,7 @@ export function NoteList({
   }, [hasMoreNotes, notes.length]);
 
   return (
-    <div className="flex h-full flex-col bg-grim-surface">
+    <div className="flex h-full flex-col bg-zerus-surface">
       <div
         className={cn(
           "flex items-center gap-2 border-b border-border/60 px-3 py-2.5",
@@ -245,7 +245,7 @@ export function NoteList({
             placeholder={
               inFiles ? "Search files…" : inLinks ? "Search links…" : "Search notes…"
             }
-            className="h-8 bg-grim-editor pl-8 text-sm"
+            className="h-8 bg-zerus-editor pl-8 text-sm"
           />
         </div>
         <NoteListFilters
@@ -299,19 +299,19 @@ export function NoteList({
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     note.id === selectedNoteId
-                      ? "bg-grim-accent/10"
-                      : "hover:bg-grim-text/[0.03]",
+                      ? "bg-zerus-accent/10"
+                      : "hover:bg-zerus-text/[0.03]",
                   )}
                 >
                   <div className="flex items-center gap-1.5">
                     {fileHub && (
-                      <FileText size={12} className="shrink-0 text-grim-accent" />
+                      <FileText size={12} className="shrink-0 text-zerus-accent" />
                     )}
                     {linkHub && (
-                      <Link2 size={12} className="shrink-0 text-grim-accent" />
+                      <Link2 size={12} className="shrink-0 text-zerus-accent" />
                     )}
                     {note.pinned && (
-                      <Pin size={12} className="shrink-0 text-grim-accent" />
+                      <Pin size={12} className="shrink-0 text-zerus-accent" />
                     )}
                     {archived && (
                       <Archive

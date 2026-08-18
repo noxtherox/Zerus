@@ -469,7 +469,7 @@ const Index = () => {
 
   if (vault.status === "pick-vault" || vault.status === "error") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-grim-surface">
+      <div className="flex h-screen w-screen items-center justify-center bg-zerus-surface">
         <div className="max-w-sm text-center">
           <ZerusLogo
             alt="Zerus"
@@ -498,7 +498,7 @@ const Index = () => {
 
   if (vault.status !== "ready") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-grim-surface">
+      <div className="flex h-screen w-screen items-center justify-center bg-zerus-surface">
         <Loader2 className="animate-spin text-muted-foreground" />
       </div>
     );

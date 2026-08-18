@@ -61,8 +61,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.3.1
-        CFBundleVersion: "32"
+        CFBundleShortVersionString: 0.3.3
+        CFBundleVersion: "33"
         ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: app_iOS/app_iOS.entitlements
@@ -91,7 +91,7 @@ targets:
           CODE_SIGN_IDENTITY: Apple Distribution
           CODE_SIGN_STYLE: Manual
           DEVELOPMENT_TEAM: TX9RYY52XR
-          PROVISIONING_PROFILE_SPECIFIER: Grimoire App Store
+          PROVISIONING_PROFILE_SPECIFIER: Zerus App Store
       groups: [app]
     dependencies:
       - framework: libapp.a

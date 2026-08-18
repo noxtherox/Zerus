@@ -2,8 +2,8 @@ import { applyLogoForSidebar } from "@/lib/branding";
 
 /**
  * App-wide color theme. Every distinctive Zerus color lives behind a
- * `--grim-*` CSS variable (an "R G B" triplet so Tailwind opacity modifiers
- * like `bg-grim-accent/10` keep working). This module owns loading, saving
+ * `--zerus-*` CSS variable (an "R G B" triplet so Tailwind opacity modifiers
+ * like `bg-zerus-accent/10` keep working). This module owns loading, saving
  * and applying those variables; defaults live in globals.css.
  */
 
@@ -182,13 +182,13 @@ const SAVED_THEMES_STORAGE_KEY = "zerus-saved-themes";
 export const MAX_SAVED_THEME_NAME_LENGTH = 40;
 
 const CSS_VARS: Record<keyof ZerusTheme, string> = {
-  accent: "--grim-accent",
-  link: "--grim-link",
-  text: "--grim-text",
-  editorBg: "--grim-editor-bg",
-  surface: "--grim-surface",
-  sidebarBg: "--grim-sidebar-bg",
-  sidebarFg: "--grim-sidebar-fg",
+  accent: "--zerus-accent",
+  link: "--zerus-link",
+  text: "--zerus-text",
+  editorBg: "--zerus-editor-bg",
+  surface: "--zerus-surface",
+  sidebarBg: "--zerus-sidebar-bg",
+  sidebarFg: "--zerus-sidebar-fg",
 };
 
 export function isValidHex(value: string): boolean {

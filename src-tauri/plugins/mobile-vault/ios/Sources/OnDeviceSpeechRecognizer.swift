@@ -37,7 +37,7 @@ final class OnDeviceSpeechRecognizer {
     request.requiresOnDeviceRecognition = true
     request.shouldReportPartialResults = true
     request.taskHint = .dictation
-    request.contextualStrings = ["Grimoire"]
+    request.contextualStrings = ["Zerus"]
     recognitionRequest = request
 
     let session = AVAudioSession.sharedInstance()

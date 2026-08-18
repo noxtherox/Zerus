@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ChatDevice } from "@/lib/mobile-chat-history";
 
-const DEVICE_ID_KEY = "grimoire.chat.deviceId.v1";
-const CUSTOM_DEVICE_NAME_KEY = "grimoire.chat.deviceName.v1";
+const DEVICE_ID_KEY = "zerus.chat.deviceId.v1";
+const CUSTOM_DEVICE_NAME_KEY = "zerus.chat.deviceName.v1";
 
 function randomId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();

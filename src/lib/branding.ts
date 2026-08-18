@@ -30,6 +30,6 @@ function relativeLuminance(hex: string): number {
 export function applyLogoForSidebar(sidebarBackground: string): void {
   const style: LogoStyle =
     relativeLuminance(sidebarBackground) < 0.4 ? "white" : "graphite";
-  document.documentElement.dataset.grimSidebarTone =
+  document.documentElement.dataset.zerusSidebarTone =
     style === "white" ? "dark" : "light";
 }

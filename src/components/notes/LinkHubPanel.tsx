@@ -21,7 +21,7 @@ export function LinkHubPanel({ note }: { note: Note }) {
   return (
     <div className="shrink-0 border-b border-border/60 bg-background/70 p-3">
       <div className="flex items-start gap-3">
-        <div className="mt-0.5 rounded-md bg-muted p-2 text-grim-accent">
+        <div className="mt-0.5 rounded-md bg-muted p-2 text-zerus-accent">
           <Link2 size={20} />
         </div>
         <div className="min-w-0 flex-1">

@@ -257,7 +257,7 @@ const renderedTableSearchHighlights = ViewPlugin.fromClass(
 
 const findPanelTheme = EditorView.baseTheme({
   ".cm-panels-top": {
-    borderBottom: "1px solid rgb(var(--grim-text) / 0.12)",
+    borderBottom: "1px solid rgb(var(--zerus-text) / 0.12)",
   },
   ".cm-find-in-note": {
     display: "flex",
@@ -265,26 +265,26 @@ const findPanelTheme = EditorView.baseTheme({
     alignItems: "center",
     gap: "6px",
     padding: "7px 12px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
-    color: "rgb(var(--grim-text))",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
+    color: "rgb(var(--zerus-text))",
   },
   ".cm-find-in-note input": {
     minWidth: "120px",
     flex: "1 1 220px",
-    border: "1px solid rgb(var(--grim-text) / 0.16)",
+    border: "1px solid rgb(var(--zerus-text) / 0.16)",
     borderRadius: "6px",
     padding: "4px 8px",
-    backgroundColor: "rgb(var(--grim-text) / 0.05)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.05)",
     color: "inherit",
     outline: "none",
   },
   ".cm-find-in-note input:focus": {
-    borderColor: "rgb(var(--grim-accent) / 0.7)",
-    boxShadow: "0 0 0 2px rgb(var(--grim-accent) / 0.12)",
+    borderColor: "rgb(var(--zerus-accent) / 0.7)",
+    boxShadow: "0 0 0 2px rgb(var(--zerus-accent) / 0.12)",
   },
   ".cm-find-match-count": {
     minWidth: "58px",
-    color: "rgb(var(--grim-text) / 0.58)",
+    color: "rgb(var(--zerus-text) / 0.58)",
     fontSize: "12px",
     fontVariantNumeric: "tabular-nums",
     textAlign: "center",
@@ -297,7 +297,7 @@ const findPanelTheme = EditorView.baseTheme({
     height: "28px",
     padding: "0",
     backgroundColor: "transparent",
-    color: "rgb(var(--grim-text) / 0.7)",
+    color: "rgb(var(--zerus-text) / 0.7)",
     cursor: "pointer",
   },
   ".cm-find-in-note button[aria-label='Replace'], .cm-find-in-note button[aria-label='Replace all']": {
@@ -305,19 +305,19 @@ const findPanelTheme = EditorView.baseTheme({
     padding: "0 9px",
   },
   ".cm-find-in-note button:hover": {
-    backgroundColor: "rgb(var(--grim-text) / 0.08)",
-    color: "rgb(var(--grim-text))",
+    backgroundColor: "rgb(var(--zerus-text) / 0.08)",
+    color: "rgb(var(--zerus-text))",
   },
   ".cm-searchMatch": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.22)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.22)",
     borderRadius: "2px",
   },
   ".cm-searchMatch.cm-searchMatch-selected": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.42)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.42)",
   },
   ".cm-rendered-table-search-match": {
     borderRadius: "2px",
-    backgroundColor: "rgb(var(--grim-accent) / 0.34)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.34)",
     color: "inherit",
     pointerEvents: "none",
   },

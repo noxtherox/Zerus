@@ -26,6 +26,10 @@ import {
 } from "@/lib/icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -201,7 +205,7 @@ function EditorContextControls({
           size="sm"
           className={cn(
             "h-7 shrink-0 gap-1 px-2 text-xs",
-            aiOpen && "bg-muted text-grim-accent",
+            aiOpen && "bg-muted text-zerus-accent",
           )}
           title={aiOpen ? "Hide AI chat" : "Open AI chat"}
           aria-label={aiOpen ? "Hide AI chat" : "Open AI chat"}
@@ -218,7 +222,7 @@ function EditorContextControls({
           size="icon"
           className={cn(
             "h-7 w-7 shrink-0",
-            terminalOpen && "bg-muted text-grim-accent",
+            terminalOpen && "bg-muted text-zerus-accent",
           )}
           title={
             terminalOpen
@@ -237,7 +241,7 @@ function EditorContextControls({
         size="icon"
         className={cn(
           "h-7 w-7 shrink-0",
-          isFocusMode && "bg-muted text-grim-accent",
+          isFocusMode && "bg-muted text-zerus-accent",
         )}
         title={isFocusMode ? "Collapse note" : "Expand note"}
         aria-label={isFocusMode ? "Collapse note" : "Expand note"}
@@ -251,6 +255,7 @@ function EditorContextControls({
 }
 
 type ExpandedFileHubSection = "pdf" | "markdown";
+type ExternalImportMode = "copy" | "move";
 
 export function EditorPane({
   note,
@@ -280,6 +285,8 @@ export function EditorPane({
   onNavigateForward,
 }: EditorPaneProps) {
   const [showBacklinks, setShowBacklinks] = useState(false);
+  const [externalImportMode, setExternalImportMode] =
+    useState<ExternalImportMode>("copy");
   const [expandBacklinks, setExpandBacklinks] = useState(false);
   const [pathOpen, setPathOpen] = useState(false);
   const [closeExternalConfirmOpen, setCloseExternalConfirmOpen] =
@@ -296,6 +303,10 @@ export function EditorPane({
     noteId: string;
     section: ExpandedFileHubSection;
   } | null>(null);
+
+  useEffect(() => {
+    setExternalImportMode("copy");
+  }, [note?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,7 +329,7 @@ export function EditorPane({
 
   if (!note) {
     return (
-      <div className="flex h-full flex-col bg-grim-editor">
+      <div className="flex h-full flex-col bg-zerus-editor">
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
           <NavigationControls
             canNavigateBack={canNavigateBack}
@@ -354,7 +365,7 @@ export function EditorPane({
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col bg-grim-editor">
+      <div className="flex h-full flex-col bg-zerus-editor">
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
           <NavigationControls
             canNavigateBack={canNavigateBack}
@@ -486,7 +497,7 @@ export function EditorPane({
   );
 
   return (
-    <div className="flex h-full flex-col bg-grim-editor">
+    <div className="flex h-full flex-col bg-zerus-editor">
       <div
         className={cn(
           "flex items-center gap-2 border-b border-border/60 px-4 py-2",
@@ -501,22 +512,42 @@ export function EditorPane({
         />
         {external ? (
           <>
-            <TypePicker
-              value={[]}
-              existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
-              typeIcons={typeIcons}
-              label="Copy to vault…"
-              title="Copy this file into the vault and assign its type"
-              onChange={(typePath) => onCopyExternalToVault(note.id, typePath)}
+            <ToggleGroup
+              type="single"
+              value={externalImportMode}
+              onValueChange={(mode: ExternalImportMode) =>
+                mode && setExternalImportMode(mode)
+              }
               disabled={isBusy}
-            />
+              aria-label="Choose whether to copy or move the external note"
+              className="gap-0"
+            >
+              <ToggleGroupItem
+                value="copy"
+                aria-label="Copy external note"
+                className="h-7 rounded-r-none border border-zerus-accent/35 px-2 text-xs data-[state=on]:bg-zerus-accent/10 data-[state=on]:text-zerus-accent"
+              >
+                Copy
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="move"
+                aria-label="Move external note"
+                className="h-7 rounded-l-none border border-l-0 border-zerus-accent/35 px-2 text-xs data-[state=on]:bg-zerus-accent/10 data-[state=on]:text-zerus-accent"
+              >
+                Move
+              </ToggleGroupItem>
+            </ToggleGroup>
             <TypePicker
               value={[]}
               existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
               typeIcons={typeIcons}
-              label="Move to vault…"
-              title="Move this file into the vault and assign its type"
-              onChange={(typePath) => onMoveExternalToVault(note.id, typePath)}
+              label="Choose type…"
+              title={`${externalImportMode === "copy" ? "Copy" : "Move"} this file into the vault and assign its type`}
+              onChange={(typePath) =>
+                externalImportMode === "copy"
+                  ? onCopyExternalToVault(note.id, typePath)
+                  : onMoveExternalToVault(note.id, typePath)
+              }
               disabled={isBusy}
             />
             <div
@@ -666,7 +697,7 @@ export function EditorPane({
                       <Pin
                         className={cn(
                           "mr-2",
-                          note.pinned && "text-grim-accent",
+                          note.pinned && "text-zerus-accent",
                         )}
                         size={14}
                       />
@@ -689,14 +720,14 @@ export function EditorPane({
               size="icon"
               className={cn(
                 "relative h-7 w-7",
-                showBacklinks && "bg-muted text-grim-accent",
+                showBacklinks && "bg-muted text-zerus-accent",
               )}
               title="properties and backlinks"
               onClick={() => setShowBacklinks((open) => !open)}
             >
               <Link2 size={15} />
               {backlinkCount > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-grim-accent px-0.5 text-[9px] font-semibold leading-none text-white tabular-nums">
+                <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-zerus-accent px-0.5 text-[9px] font-semibold leading-none text-white tabular-nums">
                   {backlinkCount}
                 </span>
               )}

@@ -1,10 +1,10 @@
 [package]
 name = "zerus-cli"
 version = "0.1.0"
-description = "Command-line tools for Grimoire Markdown vaults"
-authors = ["Grimoire contributors"]
+description = "Command-line tools for Zerus Markdown vaults"
+authors = ["Zerus contributors"]
 license = "MIT"
-repository = "https://github.com/noxtherox/grimoire"
+repository = "https://github.com/noxtherox/zerus"
 edition = "2021"
 rust-version = "1.77.2"
 

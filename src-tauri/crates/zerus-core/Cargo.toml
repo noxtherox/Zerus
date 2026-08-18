@@ -1,10 +1,10 @@
 [package]
 name = "zerus-core"
 version = "0.1.0"
-description = "Core Markdown vault operations for Grimoire"
-authors = ["Grimoire contributors"]
+description = "Core Markdown vault operations for Zerus"
+authors = ["Zerus contributors"]
 license = "MIT"
-repository = "https://github.com/noxtherox/grimoire"
+repository = "https://github.com/noxtherox/zerus"
 edition = "2021"
 rust-version = "1.77.2"
 

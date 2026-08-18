@@ -431,7 +431,7 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
       className={cn("mobile-library-drawer absolute inset-0 z-40 flex min-h-0 flex-col bg-[#1c1c1e]", !isClosing && "mobile-library-enter", isDragging && "mobile-library-dragging")}
       role="dialog"
       aria-modal="true"
-      aria-label="Grimoire navigation"
+      aria-label="Zerus navigation"
       style={swipeOffset !== 0 || isClosing ? { transform: `translate3d(${swipeOffset}px, 0, 0)` } : undefined}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -445,8 +445,8 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
       }}
     >
       <header className="z-10 flex shrink-0 items-center justify-between border-b border-white/[0.06] bg-[#1c1c1e]/95 px-5 pb-4 pt-[max(2.75rem,env(safe-area-inset-top))] backdrop-blur-xl">
-        <h2 className="text-[30px] font-bold tracking-[-0.04em]">Grimoire</h2>
-        <Button variant="ghost" size="icon" onClick={closeWithAnimation} className="h-10 w-10 rounded-full bg-white/[0.08] text-[#f5f5f7] hover:bg-white/[0.12]" aria-label="Close Grimoire navigation"><X className="h-5 w-5" /></Button>
+        <h2 className="text-[30px] font-bold tracking-[-0.04em]">Zerus</h2>
+        <Button variant="ghost" size="icon" onClick={closeWithAnimation} className="h-10 w-10 rounded-full bg-white/[0.08] text-[#f5f5f7] hover:bg-white/[0.12]" aria-label="Close Zerus navigation"><X className="h-5 w-5" /></Button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-5 touch-pan-y" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
         <div className="rounded-[18px] bg-[#2c2c2e] p-1">
@@ -1028,7 +1028,7 @@ function MobileSettings({
         <div className="rounded-[16px] bg-[#292a2b] px-4 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><Folder className="h-5 w-5" /></span>
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Grimoire"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
           </div>
           <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-white/[0.07] text-sm font-semibold text-[#ef6b62] hover:bg-white/[0.1] hover:text-[#ef6b62]">Change vault</Button>
         </div>
@@ -1153,19 +1153,19 @@ function VaultSetup({
       {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={busyAction !== null} className="ml-auto h-10 w-10 rounded-full bg-white/[0.08]" aria-label="Close vault setup"><X className="h-5 w-5" /></Button>}
       <div className={cn("mx-auto flex w-full max-w-sm flex-1 flex-col justify-center", onClose ? "pb-4" : "pb-10")}>
         <span className="flex h-14 w-14 items-center justify-center rounded-[17px] bg-[#df5149] text-white shadow-[0_10px_30px_rgba(223,81,73,0.24)]"><Folder className="h-7 w-7" /></span>
-        <h1 className="mt-6 text-[32px] font-bold leading-[1.05] tracking-[-0.045em]">Find your Grimoire</h1>
-        <p className="mt-3 text-[15px] leading-6 text-[#9a9691]">Open an existing vault, or create one if Grimoire cannot find it.</p>
+        <h1 className="mt-6 text-[32px] font-bold leading-[1.05] tracking-[-0.045em]">Find your Zerus</h1>
+        <p className="mt-3 text-[15px] leading-6 text-[#9a9691]">Open an existing vault, or create one if Zerus cannot find it.</p>
 
         <Button disabled={busyAction !== null || !nativeAvailable} onClick={() => void run("Locate existing vault", onLocate)} className="mt-7 h-[52px] rounded-[15px] bg-[#df5149] text-[15px] font-semibold text-white hover:bg-[#e15d54]">
           {busyAction === "Locate existing vault" ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderSearch className="mr-2 h-5 w-5" />}
           Locate existing vault
         </Button>
-        <p className="mt-2 text-center text-xs leading-4 text-[#77777d]">Select the vault itself or a folder containing “Grimoire.”</p>
+        <p className="mt-2 text-center text-xs leading-4 text-[#77777d]">Select the vault itself or a folder containing “Zerus.”</p>
 
         <div className="my-6 flex items-center gap-3"><span className="h-px flex-1 bg-white/[0.08]" /><span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#66666b]">Create a vault</span><span className="h-px flex-1 bg-white/[0.08]" /></div>
         <div className="overflow-hidden rounded-[17px] bg-[#292a2b]">
-          {actionRow("Choose a location", "Create a Grimoire folder wherever you choose", <Folder className="h-5 w-5" />, onCreateAtLocation)}
-          {actionRow("On this iPhone", "Let Grimoire choose a private local folder", <Smartphone className="h-5 w-5" />, onCreateOnDevice)}
+          {actionRow("Choose a location", "Create a Zerus folder wherever you choose", <Folder className="h-5 w-5" />, onCreateAtLocation)}
+          {actionRow("On this iPhone", "Let Zerus choose a private local folder", <Smartphone className="h-5 w-5" />, onCreateOnDevice)}
           {actionRow("iCloud Drive", "Choose where to create the vault in iCloud Drive", <Cloud className="h-5 w-5" />, onCreateAtLocation)}
         </div>
         {error && <p className="mt-4 rounded-[13px] bg-[#df5149]/10 px-4 py-3 text-sm leading-5 text-[#ef847d]">{error}</p>}
@@ -1226,8 +1226,8 @@ export function MobileZerus() {
   }, [isNativeApp]);
 
   useEffect(() => {
-    document.documentElement.classList.add("mobile-grimoire-page");
-    return () => document.documentElement.classList.remove("mobile-grimoire-page");
+    document.documentElement.classList.add("mobile-zerus-page");
+    return () => document.documentElement.classList.remove("mobile-zerus-page");
   }, []);
 
   useEffect(() => {
@@ -1527,7 +1527,7 @@ export function MobileZerus() {
 
   return (
     <div className="dark flex min-h-screen items-center justify-center bg-[#0d0d0d] p-0 sm:p-8">
-      <section className={cn("mobile-grimoire-dark relative flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-[#1c1d1e] text-[#f5f3ef] sm:h-[852px] sm:rounded-[42px] sm:border-[7px] sm:border-[#080808] sm:shadow-[0_28px_70px_rgba(0,0,0,0.6)]", isNativeApp && "mobile-native-shell")} aria-label="Grimoire iOS prototype">
+      <section className={cn("mobile-zerus-dark relative flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-[#1c1d1e] text-[#f5f3ef] sm:h-[852px] sm:rounded-[42px] sm:border-[7px] sm:border-[#080808] sm:shadow-[0_28px_70px_rgba(0,0,0,0.6)]", isNativeApp && "mobile-native-shell")} aria-label="Zerus iOS prototype">
         {!isNativeApp && <StatusBar />}
         {vault.status === "pick-vault" ? (
           <VaultSetup
@@ -1572,7 +1572,7 @@ export function MobileZerus() {
             onTouchCancel={() => { notesSwipeStart.current = null; }}
           >
             <header className="sticky top-0 z-20 grid grid-cols-[44px_1fr_auto] items-center border-b border-white/[0.07] bg-[#1c1d1e]/90 px-4 pb-3 pt-1 backdrop-blur-xl">
-              <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-[#2c2c2e] text-[#f5f5f7] hover:bg-[#363638]" aria-label="Open Grimoire navigation"><Menu className="h-[21px] w-[21px]" /></Button>
+              <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-[#2c2c2e] text-[#f5f5f7] hover:bg-[#363638]" aria-label="Open Zerus navigation"><Menu className="h-[21px] w-[21px]" /></Button>
               <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{filteredNotes.length} {scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
               {scope.kind === "trash" && libraryCounts.trash > 0 ? (
                 <Button variant="ghost" onClick={() => setEmptyTrashConfirmOpen(true)} className="h-11 rounded-full px-3 text-[14px] font-semibold text-[#ff6961] hover:bg-[#363638] hover:text-[#ff6961]">Empty</Button>
@@ -1590,7 +1590,7 @@ export function MobileZerus() {
                   {filteredNotes.length === 0 && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
                     {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
                     <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
-                    <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Grimoire will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
+                    <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
                   </section>}
                   {vault.hasMoreNotes && <Button type="button" variant="ghost" disabled={vault.isLoadingMoreNotes} onClick={() => void loadMoreNotes()} className="mx-auto flex rounded-full bg-white/[0.06] px-5 text-sm text-[#aaa6a0] hover:bg-white/[0.1]">{vault.isLoadingMoreNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Load more notes</Button>}
                 </div>

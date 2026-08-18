@@ -7,9 +7,9 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Grimoire uses the microphone to dictate messages to your private on-device notes chat.</string>
+	<string>Zerus uses the microphone to dictate messages to your private on-device notes chat.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Grimoire converts your speech to text on this device so you can talk to your notes chat.</string>
+	<string>Zerus converts your speech to text on this device so you can talk to your notes chat.</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 	<key>UIStatusBarStyle</key>
