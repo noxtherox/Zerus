@@ -1,0 +1,17 @@
+Welcome to Zerus: a focused, local-first workspace for notes, projects, products, people, and the knowledge that connects them.
+
+At its core, Zerus keeps your information in ordinary Markdown files inside a folder you choose. That means your writing stays portable, understandable, and under your control. The three-panel layout keeps the structure of your vault on the left, the current set of notes in the middle, and a distraction-free editor on the right.
+
+The library can be viewed as one collection, or organized through Note Types. Types map naturally to folders, so a product, person, project, document, or any custom category can have its own place without hiding the underlying files. Select a type and Zerus immediately narrows the note list while keeping the editor ready.
+
+Search is always close at hand. Start typing a title or phrase to reduce the current list, and use filters when you need more precise control. This makes a large vault feel quick to scan, whether you are looking for a meeting note, customer feedback, or product documentation.
+
+Open any note and write directly in Markdown with a live, readable editing experience. The first line becomes the note title, while the formatting toolbar gives quick access to headings, emphasis, lists, quotes, links, code, and tables. You can stay in the flow without memorizing every Markdown shortcut.
+
+Zerus also adds structure without turning your notes into a closed database. The properties and backlinks panel lets you attach text, numbers, lists, and relationships to other notes. Those relationships work in both directions, helping a product connect to its owner, a project to its documents, or a customer conversation to the work it influenced.
+
+When you want more room, expand the current note into focus mode. When you want the workspace to feel personal, open Settings and choose an appearance that fits your environment. Layout, editor controls, and themes are designed to stay out of the way until you need them.
+
+For power users, Zerus includes an embedded terminal beside the editor. It opens in the context of the current note, can insert that note's path safely, and gives command-line tools or AI coding agents direct access to the same portable files you are viewing.
+
+Zerus brings together the freedom of plain Markdown, the organization of typed notes, connected knowledge, and serious local tools. Point it at a folder, make the structure your own, and build a knowledge system that remains yours.

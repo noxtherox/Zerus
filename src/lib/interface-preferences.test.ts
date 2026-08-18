@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("interface zoom preference", () => {
   it("uses 100% when there is no valid saved preference", () => {
     expect(loadInterfaceZoom()).toBe(DEFAULT_INTERFACE_ZOOM);
-    values.set("grimoire.interfaceZoom", "115");
+    values.set("zerus.interfaceZoom", "115");
     expect(loadInterfaceZoom()).toBe(DEFAULT_INTERFACE_ZOOM);
   });
 
@@ -70,7 +70,7 @@ describe("interface zoom preference", () => {
   it("can apply zoom without persisting it", () => {
     applyInterfaceZoom(90);
 
-    expect(values.has("grimoire.interfaceZoom")).toBe(false);
+    expect(values.has("zerus.interfaceZoom")).toBe(false);
     expect(document.documentElement.style.fontSize).toBe("90%");
   });
 

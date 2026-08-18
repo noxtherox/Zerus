@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Minus, Plus, Table2 } from "lucide-react";
+import { Minus, Plus, Table2 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

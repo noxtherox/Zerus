@@ -6,12 +6,12 @@ import {
 import { normalizeFsPath, type Note } from "@/lib/note-utils";
 
 export const FILE_HUB_KEYS = {
-  id: "grimoire-file-id",
-  name: "grimoire-file-name",
-  kind: "grimoire-file-kind",
-  location: "grimoire-file-location",
-  path: "grimoire-file-path",
-  managed: "grimoire-file-managed",
+  id: "zerus-file-id",
+  name: "zerus-file-name",
+  kind: "zerus-file-kind",
+  location: "zerus-file-location",
+  path: "zerus-file-path",
+  managed: "zerus-file-managed",
 } as const;
 
 export const FILE_HUB_PROPERTY_KEYS = new Set<string>(
@@ -27,7 +27,7 @@ export interface FileHubReference {
   /** Vault- or base-location-relative path, always using forward slashes. */
   path?: string;
   locationId?: string;
-  /** True only for a file Grimoire explicitly copied into the vault. */
+  /** True only for a file Zerus explicitly copied into the vault. */
   managed: boolean;
 }
 

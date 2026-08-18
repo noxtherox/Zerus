@@ -1,7 +1,7 @@
 {
   "name": "tauri-plugin-mobile-vault-api",
   "version": "0.1.0",
-  "author": "Grimoire",
+  "author": "Zerus",
   "description": "",
   "type": "module",
   "types": "./dist-js/index.d.ts",

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { filterNotes, propertyValueKey, type NoteListFilters } from "./filters";
 import type { Note } from "./note-utils";
 import { setFileHubReference } from "./file-hubs";
+import { setLinkHubReference } from "./link-hubs";
 
 function note(id: string, path: string, properties: string, updatedAt: string): Note {
   return {
@@ -135,5 +136,28 @@ describe("note list filters", () => {
         { ...empty, fileExtensions: ["pptx"] },
       ).map((item) => item.id),
     ).toEqual(["two"]);
+  });
+
+  it("shows only active notes with URLs in the links section", () => {
+    const linkNote = {
+      ...notes[0],
+      content: setLinkHubReference(notes[0].content, {
+        id: "example-link",
+        url: "https://example.com/guide",
+      }),
+    };
+    const trashedLinkNote = {
+      ...linkNote,
+      id: "trashed-link",
+      path: ".trash/work/one.md",
+    };
+
+    expect(
+      filterNotes(
+        [linkNote, notes[1], trashedLinkNote],
+        { kind: "links" },
+        "",
+      ).map((item) => item.id),
+    ).toEqual(["one"]);
   });
 });

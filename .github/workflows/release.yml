@@ -42,6 +42,9 @@ jobs:
       - name: Test
         run: pnpm exec vitest run --exclude '.claude/**'
 
+      - name: Build MLX sidecar
+        run: node scripts/build-mlx-sidecar.mjs
+
       - name: Build and publish release
         uses: tauri-apps/tauri-action@v1
         env:
@@ -50,9 +53,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: v__VERSION__
-          releaseName: Grimoire v__VERSION__ for Apple Silicon
+          releaseName: Zerus v__VERSION__ for Apple Silicon
           releaseBody: |
-            Download the DMG to install Grimoire on an Apple Silicon Mac.
+            Download the DMG to install Zerus on an Apple Silicon Mac.
 
             Installed copies check for signed updates automatically.
           releaseDraft: false

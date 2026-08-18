@@ -2,7 +2,7 @@ import { chmod, copyFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
 const windows = process.platform === "win32";
-const executable = windows ? "grimoire.exe" : "grimoire";
+const executable = windows ? "zerus.exe" : "zerus";
 const source = join("src-tauri", "target", "release", executable);
 const directory = join("src-tauri", "binaries");
 const destination = join(directory, executable);

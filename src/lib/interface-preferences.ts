@@ -1,7 +1,7 @@
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
-const INTERFACE_ZOOM_STORAGE_KEY = "grimoire.interfaceZoom";
+const INTERFACE_ZOOM_STORAGE_KEY = "zerus.interfaceZoom";
 
 export const INTERFACE_ZOOM_OPTIONS = [80, 90, 100, 110, 125, 150] as const;
 export type InterfaceZoom = (typeof INTERFACE_ZOOM_OPTIONS)[number];

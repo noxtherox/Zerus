@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, ChevronDown, Plus } from "lucide-react";
+import { Check, ChevronDown, Plus } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Command,
@@ -64,7 +64,7 @@ export function TypePicker({
           variant="outline"
           size="sm"
           disabled={disabled}
-          className="h-7 gap-1 rounded-full border-grim-accent/35 bg-grim-accent/5 px-2.5 text-xs font-medium text-grim-accent hover:bg-grim-accent/10 hover:text-grim-accent"
+          className="h-7 gap-1 rounded-full border-zerus-accent/35 bg-zerus-accent/5 px-2.5 text-xs font-medium text-zerus-accent hover:bg-zerus-accent/10 hover:text-zerus-accent"
           title={
             title ??
             "Type — the folder this note lives in (type / sub-type / sub-sub-type)"

@@ -12,7 +12,7 @@ import {
   SlidersHorizontal,
   Type as TypeIcon,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -64,7 +64,7 @@ import {
 } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
 import { FILE_HUB_PROPERTY_KEYS } from "@/lib/file-hubs";
-import { isReservedGrimoireProperty } from "@/lib/grimoire-metadata";
+import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 import { hasRelationTo } from "@/lib/links";
 import {
   normalizeExternalUrl,
@@ -248,7 +248,7 @@ function UrlValueEditor({
       <div className="flex min-h-6 min-w-0 items-center gap-1 px-1.5 text-xs">
         <button
           type="button"
-          className="flex min-w-0 items-center gap-1 text-left text-grim-link hover:underline"
+          className="flex min-w-0 items-center gap-1 text-left text-zerus-link hover:underline"
           title={`Open ${normalized}`}
           onClick={() => void openExternalUrl(normalized)}
         >
@@ -305,7 +305,7 @@ function RelationChip({
       className={cn(
         "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs",
         note
-          ? "border-grim-link/30 text-grim-link hover:bg-grim-link/10"
+          ? "border-zerus-link/30 text-zerus-link hover:bg-zerus-link/10"
           : "border-dashed border-muted-foreground/40 text-muted-foreground",
       )}
     >
@@ -632,7 +632,7 @@ function DefForm({
   const clean = sanitizePropertyName(name);
   const canSubmit = Boolean(
     clean &&
-      !isReservedGrimoireProperty(clean) &&
+      !isReservedZerusProperty(clean) &&
       (type !== "list" || listOptions.length > 0),
   );
 
@@ -781,7 +781,7 @@ export function PropertiesSection({
   const effectiveEntries = effectivePropertyDefinitions(
     typePath,
     schemas,
-  ).filter(({ def }) => !isReservedGrimoireProperty(def.name));
+  ).filter(({ def }) => !isReservedZerusProperty(def.name));
   const effective = effectiveEntries.map(({ def }) => def);
   const values = getNoteProperties(note.content);
   const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
@@ -792,7 +792,7 @@ export function PropertiesSection({
     ([key]) =>
       !covered.has(key.toLowerCase()) &&
       !FILE_HUB_PROPERTY_KEYS.has(key.toLowerCase()) &&
-      !isReservedGrimoireProperty(key),
+      !isReservedZerusProperty(key),
   );
 
   const valueFor = (name: string): PropertyValue | undefined => {

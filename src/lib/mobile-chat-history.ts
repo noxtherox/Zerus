@@ -1,8 +1,8 @@
 import type { VaultBackend } from "@/lib/vault/backend";
 import type { NoteContextKind } from "@/lib/mobile-note-retrieval";
 
-export const CHAT_ROOT = ".grimoire/chats";
-export const CHAT_TOMBSTONE_ROOT = ".grimoire/chat-tombstones";
+export const CHAT_ROOT = ".zerus/chats";
+export const CHAT_TOMBSTONE_ROOT = ".zerus/chat-tombstones";
 export const CHAT_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 
 const immutableJsonCache = new WeakMap<VaultBackend, Map<string, unknown>>();

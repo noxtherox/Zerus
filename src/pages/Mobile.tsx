@@ -1,5 +1,5 @@
-import { MobileGrimoire } from "@/components/mobile/MobileGrimoire";
+import { MobileZerus } from "@/components/mobile/MobileZerus";
 
 export default function Mobile() {
-  return <MobileGrimoire />;
+  return <MobileZerus />;
 }

@@ -25,15 +25,16 @@ import {
   Files,
   FolderPlus,
   GripVertical,
+  Link2,
   Notebook,
   Pencil,
   Plus,
   Settings,
   Smile,
   Trash2,
-} from "lucide-react";
+} from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import {
   DEFAULT_TYPE,
   MAX_TYPE_DEPTH,
@@ -42,6 +43,7 @@ import {
   buildTypeTree,
   getAllTypePaths,
   isExternalNote,
+  isSavedLinkNote,
   isTrashed,
   parseTypePath,
   reorderTypeTree,
@@ -86,6 +88,7 @@ import { TypeIcon } from "./TypeIcon";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 
 interface SidebarProps {
   notes: Note[];
@@ -138,8 +141,8 @@ function SidebarRow({
       className={cn(
         "flex w-full items-center rounded-md text-sm transition-colors",
         active
-          ? "bg-grim-sidebar-fg/15 text-grim-sidebar-fg"
-          : "text-grim-sidebar-fg/70 hover:bg-grim-sidebar-fg/5 hover:text-grim-sidebar-fg/90",
+          ? "bg-zerus-sidebar-fg/15 text-zerus-sidebar-fg"
+          : "text-zerus-sidebar-fg/70 hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/90",
       )}
       style={{ paddingLeft: `${depth * 14}px` }}
     >
@@ -150,7 +153,7 @@ function SidebarRow({
         <span className="shrink-0 opacity-80">{icon}</span>
         <span className="flex-1 truncate">{label}</span>
         {count !== undefined && (
-          <span className="text-xs tabular-nums text-grim-sidebar-fg/50">
+          <span className="text-xs tabular-nums text-zerus-sidebar-fg/50">
             {count}
           </span>
         )}
@@ -161,7 +164,7 @@ function SidebarRow({
             event.stopPropagation();
             onToggle?.();
           }}
-          className="flex h-6 w-5 shrink-0 items-center justify-center text-grim-sidebar-fg/50 hover:text-grim-sidebar-fg/90"
+          className="flex h-6 w-5 shrink-0 items-center justify-center text-zerus-sidebar-fg/50 hover:text-zerus-sidebar-fg/90"
           tabIndex={-1}
         >
           {chevron === "open" ? (
@@ -341,7 +344,7 @@ function SortableTypeRow({
                 event.stopPropagation();
               }}
               className={cn(
-                "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-grim-sidebar-fg/35 opacity-0 transition-opacity hover:text-grim-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
+                "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-zerus-sidebar-fg/35 opacity-0 transition-opacity hover:text-zerus-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
                 node.children.length ? "right-5" : "right-0",
               )}
               {...attributes}
@@ -400,7 +403,8 @@ export function Sidebar({
 }: SidebarProps) {
   const tree = buildTypeTree(notes, extraTypes, typeOrder);
   const activeCount = notes.filter(
-    (note) => !isExternalNote(note) && !isTrashed(note),
+    (note) =>
+      !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note),
   ).length;
   const externalCount = notes.filter(isExternalNote).length;
   const fileCount = notes.filter(
@@ -408,6 +412,12 @@ export function Sidebar({
       !isExternalNote(note) &&
       !isTrashed(note) &&
       getFileHubReference(note) !== null,
+  ).length;
+  const linkCount = notes.filter(
+    (note) =>
+      !isExternalNote(note) &&
+      !isTrashed(note) &&
+      getLinkHubReference(note) !== null,
   ).length;
   const trashCount = notes.filter((note) => isTrashed(note)).length;
   const typeSensors = useSensors(
@@ -589,21 +599,21 @@ export function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col bg-grim-sidebar pt-4">
+    <div className="flex h-full flex-col bg-zerus-sidebar pt-4">
       <div className="flex items-center justify-between px-4 pb-3">
-        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-grim-sidebar-fg/90">
-          <GrimoireLogo
+        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-zerus-sidebar-fg/90">
+          <ZerusLogo
             alt=""
             className="h-6 w-6 shrink-0 rounded-sm"
           />
-          <span className="truncate">Grimoire</span>
+          <span className="truncate">Zerus</span>
         </h1>
         <button
           type="button"
           onClick={onCollapse}
           title="Collapse navigation sidebar"
           aria-label="Collapse navigation sidebar"
-          className="text-grim-sidebar-fg/50 transition-colors hover:text-grim-sidebar-fg/90"
+          className="text-zerus-sidebar-fg/50 transition-colors hover:text-zerus-sidebar-fg/90"
         >
           <ChevronsLeft size={15} />
         </button>
@@ -632,16 +642,23 @@ export function Sidebar({
               label="Files"
               count={fileCount}
             />
+            <SidebarRow
+              active={filter.kind === "links"}
+              onClick={() => onFilterChange({ kind: "links" })}
+              icon={<Link2 size={15} />}
+              label="Links"
+              count={linkCount}
+            />
           </>
         )}
         <div className="flex items-center justify-between pb-1 pl-3 pr-2 pt-4">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-grim-sidebar-fg/40">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-zerus-sidebar-fg/40">
             Types
           </span>
           <button
             onClick={() => startTypeCreation()}
             title="New type — it can stay empty until you add notes"
-            className="text-grim-sidebar-fg/40 transition-colors hover:text-grim-sidebar-fg/90"
+            className="text-zerus-sidebar-fg/40 transition-colors hover:text-zerus-sidebar-fg/90"
           >
             <Plus size={13} />
           </button>
@@ -667,7 +684,7 @@ export function Sidebar({
           />
         </DndContext>
       </nav>
-      <div className="space-y-0.5 border-t border-grim-sidebar-fg/10 p-2">
+      <div className="space-y-0.5 border-t border-zerus-sidebar-fg/10 p-2">
         <SidebarRow
           active={settingsOpen}
           onClick={() => setSettingsOpen(true)}
@@ -685,7 +702,7 @@ export function Sidebar({
           <button
             onClick={() => void chooseVaultFolder()}
             title={vaultLocation ?? undefined}
-            className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-grim-sidebar-fg/40 transition-colors hover:bg-grim-sidebar-fg/5 hover:text-grim-sidebar-fg/70"
+            className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-zerus-sidebar-fg/40 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/70"
           >
             Vault: {vaultName ?? "choose folder…"}
           </button>

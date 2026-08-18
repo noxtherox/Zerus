@@ -15,7 +15,7 @@ import {
 
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const REMIND_LATER_MS = 24 * 60 * 60 * 1000;
-const REMINDER_STORAGE_KEY = "grimoire-update-reminder";
+const REMINDER_STORAGE_KEY = "zerus-update-reminder";
 
 interface DeferredUpdate {
   version: string;
@@ -94,7 +94,7 @@ export function AutoUpdater() {
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (error) {
-      toast.error(`Grimoire ${update.version} could not be installed.`, {
+      toast.error(`Zerus ${update.version} could not be installed.`, {
         description: String(error),
       });
       setInstalling(false);
@@ -137,7 +137,7 @@ export function AutoUpdater() {
         setVersion(update.version);
         setNotes(update.body?.trim() || null);
       } catch (error) {
-        console.warn("Grimoire update check failed", error);
+        console.warn("Zerus update check failed", error);
       } finally {
         checkInProgress.current = false;
       }
@@ -172,15 +172,15 @@ export function AutoUpdater() {
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Grimoire {version} is available</AlertDialogTitle>
+          <AlertDialogTitle>Zerus {version} is available</AlertDialogTitle>
           <AlertDialogDescription>
             {installing
               ? progress === null
                 ? "Downloading the update…"
                 : progress < 100
                   ? `Downloading the update… ${progress}%`
-                  : "Installing the update. Grimoire will restart when it is ready…"
-              : "Would you like to download and install it now? Grimoire will restart after the update is installed."}
+                  : "Installing the update. Zerus will restart when it is ready…"
+              : "Would you like to download and install it now? Zerus will restart after the update is installed."}
           </AlertDialogDescription>
           {!installing && notes && (
             <p className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/60 p-3 text-xs text-muted-foreground">

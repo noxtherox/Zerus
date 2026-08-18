@@ -17,9 +17,9 @@ import {
 import { WIKILINK_REGEX } from "@/lib/note-utils";
 
 // Theme tokens from globals.css / src/lib/theme.ts (user-customizable)
-const ACCENT = "rgb(var(--grim-accent))";
-const LINK = "rgb(var(--grim-link))";
-const TEXT = "rgb(var(--grim-text))";
+const ACCENT = "rgb(var(--zerus-accent))";
+const LINK = "rgb(var(--zerus-link))";
+const TEXT = "rgb(var(--zerus-text))";
 
 export const editorTheme = EditorView.theme({
   "&": {
@@ -35,9 +35,9 @@ export const editorTheme = EditorView.theme({
     lineHeight: "1.65",
     caretColor: ACCENT,
     boxSizing: "border-box",
-    width: "var(--grim-note-width)",
-    maxWidth: "var(--grim-note-width)",
-    marginInline: "var(--grim-note-margin-inline)",
+    width: "var(--zerus-note-width)",
+    maxWidth: "var(--zerus-note-width)",
+    marginInline: "var(--zerus-note-margin-inline)",
   },
   ".cm-line": { padding: "0" },
   ".cm-title-line": {
@@ -51,7 +51,7 @@ export const editorTheme = EditorView.theme({
   ".cm-title-line *": { fontSize: "inherit !important" },
   ".cm-cursor": { borderLeftColor: ACCENT, borderLeftWidth: "2px" },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.15) !important",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.15) !important",
   },
   ".cm-wikilink": {
     color: LINK,
@@ -59,18 +59,18 @@ export const editorTheme = EditorView.theme({
     borderRadius: "3px",
   },
   ".cm-wikilink:hover": { textDecoration: "underline" },
-  ".cm-wikilink-unresolved": { color: "rgb(var(--grim-link) / 0.55)" },
+  ".cm-wikilink-unresolved": { color: "rgb(var(--zerus-link) / 0.55)" },
   ".cm-external-link": {
     color: LINK,
     cursor: "pointer",
     textDecoration: "underline",
-    textDecorationColor: "rgb(var(--grim-link) / 0.35)",
+    textDecorationColor: "rgb(var(--zerus-link) / 0.35)",
     textUnderlineOffset: "2px",
   },
   ".cm-external-link:hover": { textDecorationColor: LINK },
   ".cm-inline-tag": {
     color: ACCENT,
-    backgroundColor: "rgb(var(--grim-accent) / 0.08)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.08)",
     borderRadius: "9999px",
     padding: "1px 2px",
   },
@@ -90,8 +90,8 @@ export const editorTheme = EditorView.theme({
   ".cm-image-preview-missing": {
     padding: "6px 10px",
     fontSize: "12px",
-    color: "rgb(var(--grim-text) / 0.6)",
-    backgroundColor: "rgb(var(--grim-text) / 0.06)",
+    color: "rgb(var(--zerus-text) / 0.6)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.06)",
   },
   ".cm-image-resize-handle": {
     position: "absolute",
@@ -102,8 +102,8 @@ export const editorTheme = EditorView.theme({
     height: "44px",
     maxHeight: "60%",
     borderRadius: "9999px",
-    backgroundColor: "rgb(var(--grim-text) / 0.4)",
-    border: "1.5px solid rgb(var(--grim-editor-bg))",
+    backgroundColor: "rgb(var(--zerus-text) / 0.4)",
+    border: "1.5px solid rgb(var(--zerus-editor-bg))",
     cursor: "ew-resize",
     opacity: "0",
     transition: "opacity 120ms ease",
@@ -112,20 +112,20 @@ export const editorTheme = EditorView.theme({
   ".cm-image-preview:hover .cm-image-resize-handle": { opacity: "1" },
   ".cm-image-resizing .cm-image-resize-handle": { opacity: "1" },
   ".cm-tooltip.cm-tooltip-autocomplete": {
-    border: "1px solid rgb(var(--grim-text) / 0.12)",
+    border: "1px solid rgb(var(--zerus-text) / 0.12)",
     borderRadius: "8px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
     boxShadow: "0 8px 24px rgb(0 0 0 / 0.12)",
     overflow: "hidden",
   },
   ".cm-tooltip-autocomplete ul li": { padding: "4px 10px" },
   ".cm-tooltip-autocomplete ul li[aria-selected]": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.12)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.12)",
     color: "inherit",
   },
 });
 
-/** The body line Grimoire uses as the note title: its first non-empty line. */
+/** The body line Zerus uses as the note title: its first non-empty line. */
 export function titleLineFrom(state: EditorState): number {
   for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber += 1) {
     const line = state.doc.line(lineNumber);
@@ -156,11 +156,11 @@ export const markdownHighlighting = syntaxHighlighting(
     { tag: tags.strikethrough, textDecoration: "line-through" },
     { tag: tags.link, color: LINK },
     { tag: tags.url, color: LINK },
-    { tag: tags.quote, color: "rgb(var(--grim-text) / 0.62)", fontStyle: "italic" },
+    { tag: tags.quote, color: "rgb(var(--zerus-text) / 0.62)", fontStyle: "italic" },
     { tag: tags.monospace, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: "0.9em", color: ACCENT },
-    { tag: tags.processingInstruction, color: "rgb(var(--grim-text) / 0.45)" },
-    { tag: tags.meta, color: "rgb(var(--grim-text) / 0.45)" },
-    { tag: tags.contentSeparator, color: "rgb(var(--grim-text) / 0.45)" },
+    { tag: tags.processingInstruction, color: "rgb(var(--zerus-text) / 0.45)" },
+    { tag: tags.meta, color: "rgb(var(--zerus-text) / 0.45)" },
+    { tag: tags.contentSeparator, color: "rgb(var(--zerus-text) / 0.45)" },
   ]),
 );
 

@@ -2,6 +2,7 @@ import {
   type Note,
   isArchived,
   isExternalNote,
+  isSavedLinkNote,
   isTrashed,
   noteMatchesSearch,
   noteTypePath,
@@ -9,11 +10,13 @@ import {
 } from "@/lib/note-utils";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 
 export type NoteFilter =
   | { kind: "all" }
   | { kind: "external" }
   | { kind: "files" }
+  | { kind: "links" }
   | { kind: "type"; path: string[]; includeSubtypes?: boolean }
   | { kind: "trash" };
 
@@ -106,7 +109,15 @@ export function filterNotes(
         getFileHubReference(note) !== null
       );
     }
+    if (filter.kind === "links") {
+      return (
+        !isExternalNote(note) &&
+        !isTrashed(note) &&
+        getLinkHubReference(note) !== null
+      );
+    }
     if (isExternalNote(note)) return false;
+    if (isSavedLinkNote(note)) return false;
     if (isTrashed(note)) return false;
     if (filter.kind === "type") {
       const prefix = typeKey(filter.path);

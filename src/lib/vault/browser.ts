@@ -1,8 +1,8 @@
 import type { VaultBackend, VaultFile } from "./backend";
 
-const STORAGE_KEY = "grimoire.browserVault.v1";
-const ASSETS_KEY = "grimoire.browserVault.assets.v1";
-const DIRS_KEY = "grimoire.browserVault.dirs.v1";
+const STORAGE_KEY = "zerus.browserVault.v1";
+const ASSETS_KEY = "zerus.browserVault.assets.v1";
+const DIRS_KEY = "zerus.browserVault.dirs.v1";
 
 interface StoredFile {
   content: string;
@@ -30,11 +30,11 @@ function seedFiles(): Record<string, StoredFile> {
   const at = (offsetMinutes: number) =>
     new Date(now - offsetMinutes * 60_000).toISOString();
   return {
-    "inbox/Welcome to Grimoire.md": {
+    "inbox/Welcome to Zerus.md": {
       updatedAt: at(60),
-      content: `# Welcome to Grimoire
+      content: `# Welcome to Zerus
 
-Grimoire is a Bear-style notes app where your notes are plain markdown files in folders, and the folders are your **types**: every note has a type, and optionally a sub-type and sub-sub-type.
+Zerus is a Bear-style notes app where your notes are plain markdown files in folders, and the folders are your **types**: every note has a type, and optionally a sub-type and sub-sub-type.
 
 ## The basics
 
@@ -48,7 +48,7 @@ Type \`[[\` to link to another note — try it! For example: [[Project Polaris]]
 
 Cmd/Ctrl+Click a link to follow it. Open [[Project Polaris]] and toggle the **Backlinks** sidebar with the link button at the top right: notes that link to it are grouped by their type, so you can see *where* a note is referenced from at a glance.
 
-> In the desktop app you point Grimoire at any folder of .md files and they show up here with their types.`,
+> In the desktop app you point Zerus at any folder of .md files and they show up here with their types.`,
     },
     "work/projects/Project Polaris.md": {
       updatedAt: at(50),
@@ -150,10 +150,10 @@ export class BrowserVault implements VaultBackend {
   }
 
   async loadAll(): Promise<VaultFile[]> {
-    // only .md files are notes — config files (.grimoire/…) also live in
+    // only .md files are notes — config files (.zerus/…) also live in
     // `files` via write(), and must not show up as notes
     return Object.entries(this.files)
-      .filter(([path]) => /\.md$/i.test(path))
+      .filter(([path]) => /\.md$/i.test(path) && !path.startsWith(".zerus/"))
       .map(([path, file]) => ({
         path,
         content: file.content,

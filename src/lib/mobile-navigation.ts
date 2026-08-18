@@ -4,7 +4,7 @@ export type MobileNavigationEntry =
   | { view: "chat-history" }
   | { view: "note"; noteId: string; origin: "notes" | "chat" };
 
-const MOBILE_NAVIGATION_KEY = "grimoireMobileNavigation";
+const MOBILE_NAVIGATION_KEY = "zerusMobileNavigation";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;

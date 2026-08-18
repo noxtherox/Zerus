@@ -22,14 +22,17 @@ import { Sidebar } from "@/components/notes/Sidebar";
 import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
 import { EditorPane } from "@/components/notes/EditorPane";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
+import { AiPanel } from "@/components/ai/AiPanel";
 import {
   chooseVaultFolder,
   copyExternalNoteToVault,
   createFileNote,
+  createLinkNote,
   createNote,
   initStore,
   moveExternalNoteToVault,
+  moveSavedLinkToVault,
   onDesktopNotesOpened,
   openExternalNotes,
   prioritizeNoteLoad,
@@ -42,7 +45,11 @@ import {
   type NoteFilter,
   type NoteListFilters,
 } from "@/lib/filters";
-import { DEFAULT_TYPE } from "@/lib/note-utils";
+import {
+  DEFAULT_TYPE,
+  noteContainingFolder,
+  normalizeFsPath,
+} from "@/lib/note-utils";
 import {
   loadDefaultNoteType,
   loadHideSubtypeNotes,
@@ -54,6 +61,12 @@ import {
 import { cn } from "@/lib/utils";
 import { showError } from "@/utils/toast";
 import { AutoUpdater } from "@/lib/auto-updater";
+import {
+  createNavigationHistory,
+  goBackInNavigationHistory,
+  goForwardInNavigationHistory,
+  pushNavigationHistory,
+} from "@/lib/navigation-history";
 
 const TerminalPanel = lazy(() =>
   import("@/components/terminal/TerminalPanel").then((module) => ({
@@ -70,16 +83,64 @@ const DEFAULT_PANEL_LAYOUT = [
   EDITOR_DEFAULT_SIZE,
 ];
 
+interface AppNavigationEntry {
+  filter: NoteFilter;
+  selectedNoteId: string | null;
+}
+
+const INITIAL_NAVIGATION_ENTRY: AppNavigationEntry = {
+  filter: { kind: "all" },
+  selectedNoteId: null,
+};
+
+function navigationEntriesEqual(
+  left: AppNavigationEntry,
+  right: AppNavigationEntry,
+): boolean {
+  if (left.selectedNoteId !== right.selectedNoteId) return false;
+  if (left.filter.kind !== right.filter.kind) return false;
+  if (left.filter.kind !== "type" || right.filter.kind !== "type") return true;
+  const leftPath = left.filter.path;
+  const rightPath = right.filter.path;
+  return (
+    left.filter.includeSubtypes === right.filter.includeSubtypes &&
+    leftPath.length === rightPath.length &&
+    leftPath.every((part, index) => part === rightPath[index])
+  );
+}
+
+function filterTerminalDirectory(
+  filter: NoteFilter,
+  vaultLocation: string | null,
+): string | null {
+  if (!vaultLocation) return null;
+  const root = vaultLocation.replace(/[\\/]$/, "");
+  if (filter.kind === "type") return `${root}/${filter.path.join("/")}`;
+  if (filter.kind === "trash") return `${root}/.trash`;
+  if (
+    filter.kind === "all" ||
+    filter.kind === "files" ||
+    filter.kind === "links"
+  ) {
+    return root;
+  }
+  return null;
+}
+
 const Index = () => {
   const vault = useVault();
-  const [filter, setFilter] = useState<NoteFilter>({ kind: "all" });
+  const [navigation, setNavigation] = useState(() =>
+    createNavigationHistory(INITIAL_NAVIGATION_ENTRY),
+  );
+  const { filter, selectedNoteId } = navigation.current;
   const [search, setSearch] = useState("");
   const [listFilters, setListFilters] =
     useState<NoteListFilters>(EMPTY_NOTE_LIST_FILTERS);
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalLoaded, setTerminalLoaded] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [terminalDirectory, setTerminalDirectory] = useState<string | null>(null);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
@@ -88,25 +149,7 @@ const Index = () => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const expandedPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
   const previousPanelLayoutRef = useRef([...DEFAULT_PANEL_LAYOUT]);
-
-  useEffect(() => {
-    const stopListening = onDesktopNotesOpened(
-      (ids, firstNoteIsExternal, firstNoteIsFileHub) => {
-        setFilter(
-          firstNoteIsFileHub
-            ? { kind: "files" }
-            : firstNoteIsExternal
-              ? { kind: "external" }
-              : { kind: "all" },
-        );
-        setListFilters(EMPTY_NOTE_LIST_FILTERS);
-        setSearch("");
-        setSelectedNoteId(ids[0]);
-      },
-    );
-    initStore();
-    return stopListening;
-  }, []);
+  const terminalNoteIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     const refresh = () => void refreshVaultFromDisk();
@@ -119,6 +162,44 @@ const Index = () => {
   }, []);
 
   const { notes } = vault;
+  const navigate = (entry: AppNavigationEntry) => {
+    setNavigation((history) =>
+      pushNavigationHistory(history, entry, navigationEntriesEqual),
+    );
+  };
+
+  const navigateBack = () => {
+    terminalNoteIdRef.current = null;
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    setNavigation(goBackInNavigationHistory);
+  };
+
+  const navigateForward = () => {
+    terminalNoteIdRef.current = null;
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    setNavigation(goForwardInNavigationHistory);
+  };
+
+  useEffect(() => {
+    const stopListening = onDesktopNotesOpened(
+      (ids, firstNoteIsExternal, firstNoteIsFileHub) => {
+        navigate({
+          filter: firstNoteIsFileHub
+            ? { kind: "files" }
+            : firstNoteIsExternal
+              ? { kind: "external" }
+              : { kind: "all" },
+          selectedNoteId: ids[0],
+        });
+        setListFilters(EMPTY_NOTE_LIST_FILTERS);
+        setSearch("");
+      },
+    );
+    initStore();
+    return stopListening;
+  }, []);
   const effectiveFilter = useMemo<NoteFilter>(
     () =>
       filter.kind === "type"
@@ -140,11 +221,40 @@ const Index = () => {
   );
 
   const handleFilterChange = (nextFilter: NoteFilter) => {
-    setFilter(nextFilter);
+    navigate({ filter: nextFilter, selectedNoteId: null });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    terminalNoteIdRef.current = null;
+    const directory = filterTerminalDirectory(nextFilter, vault.location);
+    if (directory) setTerminalDirectory(directory);
   };
 
   const selectedNote = notes.find((note) => note.id === selectedNoteId) ?? null;
+  const selectedNoteDirectory = selectedNote
+    ? noteContainingFolder(selectedNote, vault.location)
+    : null;
+  const terminalTargetDirectory =
+    terminalDirectory ?? selectedNoteDirectory ?? vault.location;
+
+  useEffect(() => {
+    if (
+      !selectedNoteId ||
+      !selectedNoteDirectory ||
+      terminalNoteIdRef.current === selectedNoteId
+    ) {
+      return;
+    }
+    terminalNoteIdRef.current = selectedNoteId;
+    setTerminalDirectory((current) =>
+      current && normalizeFsPath(current) === normalizeFsPath(selectedNoteDirectory)
+        ? current
+        : selectedNoteDirectory,
+    );
+  }, [selectedNoteDirectory, selectedNoteId]);
+
+  useEffect(() => {
+    setTerminalDirectory(vault.location);
+    terminalNoteIdRef.current = null;
+  }, [vault.location]);
 
   useEffect(() => {
     setDefaultNoteType(loadDefaultNoteType(vault.location));
@@ -168,7 +278,10 @@ const Index = () => {
   };
 
   const handleTerminalOpenChange = useCallback((open: boolean) => {
-    if (open) setTerminalLoaded(true);
+    if (open) {
+      setTerminalLoaded(true);
+      setAiOpen(false);
+    }
     setTerminalOpen(open);
   }, []);
 
@@ -186,26 +299,36 @@ const Index = () => {
           : DEFAULT_TYPE;
     const note = await createNote(typePath);
     if (!note) return;
-    if (
-      filter.kind === "trash" ||
-      filter.kind === "external" ||
-      filter.kind === "files"
-    ) {
-      setFilter({ kind: "all" });
-    }
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(note.id);
+    navigate({
+      filter:
+        filter.kind === "trash" ||
+        filter.kind === "external" ||
+        filter.kind === "files" ||
+        filter.kind === "links"
+          ? { kind: "all" }
+          : filter,
+      selectedNoteId: note.id,
+    });
   };
 
   const handleCreateFile = async () => {
     if (vault.isRefreshing) return;
     const note = await createFileNote(defaultNoteType);
     if (!note) return;
-    setFilter({ kind: "files" });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(note.id);
+    navigate({ filter: { kind: "files" }, selectedNoteId: note.id });
+  };
+
+  const handleCreateLink = async (url: string) => {
+    if (vault.isRefreshing) return;
+    const note = await createLinkNote(url);
+    if (!note) return;
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+    navigate({ filter: { kind: "links" }, selectedNoteId: note.id });
   };
 
   useEffect(() => {
@@ -234,54 +357,76 @@ const Index = () => {
       event.preventDefault();
       if (vault.isRefreshing) return;
       if (!vault.isDesktop) return;
-      if (!selectedNote) {
-        showError("Select a note to open its terminal.");
+      if (!terminalTargetDirectory) {
+        showError("Select a folder or note to open its terminal.");
         return;
       }
       handleToggleTerminal();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleToggleTerminal, selectedNote, vault.isDesktop, vault.isRefreshing]);
+  }, [handleToggleTerminal, terminalTargetDirectory, vault.isDesktop, vault.isRefreshing]);
 
   const handleOpenNote = (id: string) => {
-    setFilter({ kind: "all" });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(id);
+    navigate({ filter: { kind: "all" }, selectedNoteId: id });
+    const openedNote = notes.find((note) => note.id === id);
+    const directory = openedNote
+      ? noteContainingFolder(openedNote, vault.location)
+      : null;
+    if (directory) setTerminalDirectory(directory);
+    terminalNoteIdRef.current = id;
     void prioritizeNoteLoad(id);
   };
 
   const handleSelectNote = (id: string) => {
-    setSelectedNoteId(id);
+    navigate({ filter, selectedNoteId: id });
+    const openedNote = notes.find((note) => note.id === id);
+    const directory = openedNote
+      ? noteContainingFolder(openedNote, vault.location)
+      : null;
+    if (directory) setTerminalDirectory(directory);
+    terminalNoteIdRef.current = id;
     void prioritizeNoteLoad(id);
   };
 
   const handleOpenExternalNotes = async () => {
     const ids = await openExternalNotes();
     if (!ids.length) return;
-    setFilter({ kind: "external" });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(ids[0]);
+    navigate({ filter: { kind: "external" }, selectedNoteId: ids[0] });
   };
 
   const handleMoveExternalToVault = async (id: string, typePath: string[]) => {
     const moved = await moveExternalNoteToVault(id, typePath);
     if (!moved) return;
-    setFilter({ kind: "type", path: typePath });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(id);
+    navigate({
+      filter: { kind: "type", path: typePath },
+      selectedNoteId: id,
+    });
+    setTerminalDirectory(
+      filterTerminalDirectory({ kind: "type", path: typePath }, vault.location),
+    );
+    terminalNoteIdRef.current = id;
   };
 
   const handleCopyExternalToVault = async (id: string, typePath: string[]) => {
     const copied = await copyExternalNoteToVault(id, typePath);
     if (!copied) return;
-    setFilter({ kind: "type", path: typePath });
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
-    setSelectedNoteId(copied.id);
+    navigate({
+      filter: { kind: "type", path: typePath },
+      selectedNoteId: copied.id,
+    });
+    setTerminalDirectory(
+      filterTerminalDirectory({ kind: "type", path: typePath }, vault.location),
+    );
+    terminalNoteIdRef.current = copied.id;
   };
 
   const handleToggleFocusMode = () => {
@@ -324,16 +469,16 @@ const Index = () => {
 
   if (vault.status === "pick-vault" || vault.status === "error") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-grim-surface">
+      <div className="flex h-screen w-screen items-center justify-center bg-zerus-surface">
         <div className="max-w-sm text-center">
-          <GrimoireLogo
-            alt="Grimoire"
+          <ZerusLogo
+            alt="Zerus"
             className="mx-auto h-20 w-20 rounded-xl"
           />
-          <h1 className="mt-4 text-xl font-semibold">Grimoire</h1>
+          <h1 className="mt-4 text-xl font-semibold">Zerus</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Your notes are plain markdown files in a folder — folders are types.
-            Point Grimoire at a folder to open your vault.
+            Point Zerus at a folder to open your vault.
           </p>
           {vault.status === "error" && (
             <p className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -353,7 +498,7 @@ const Index = () => {
 
   if (vault.status !== "ready") {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-grim-surface">
+      <div className="flex h-screen w-screen items-center justify-center bg-zerus-surface">
         <Loader2 className="animate-spin text-muted-foreground" />
       </div>
     );
@@ -455,6 +600,7 @@ const Index = () => {
             onSelectNote={handleSelectNote}
             onCreateNote={() => void handleCreateNote()}
             onCreateFile={() => void handleCreateFile()}
+            onCreateLink={handleCreateLink}
             onOpenExternalNotes={() => void handleOpenExternalNotes()}
           />
         </ResizablePanel>
@@ -487,23 +633,56 @@ const Index = () => {
                 onMoveExternalToVault={(id, typePath) =>
                   void handleMoveExternalToVault(id, typePath)
                 }
+                onMoveSavedLinkToVault={(id, typePath) =>
+                  void (async () => {
+                    if (!(await moveSavedLinkToVault(id, typePath))) return;
+                    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+                    setSearch("");
+                    navigate({
+                      filter: { kind: "type", path: typePath },
+                      selectedNoteId: id,
+                    });
+                  })()
+                }
                 isFocusMode={isFocusMode}
                 onToggleFocusMode={handleToggleFocusMode}
                 isDesktop={vault.isDesktop}
                 terminalOpen={terminalOpen}
                 onToggleTerminal={handleToggleTerminal}
+                aiOpen={aiOpen}
+                onToggleAi={() =>
+                  setAiOpen((current) => {
+                    if (!current) handleTerminalOpenChange(false);
+                    return !current;
+                  })
+                }
                 conflict={
                   selectedNote
                     ? (vault.conflicts[selectedNote.id] ?? null)
                     : null
                 }
+                canNavigateBack={navigation.back.length > 0}
+                canNavigateForward={navigation.forward.length > 0}
+                onNavigateBack={navigateBack}
+                onNavigateForward={navigateForward}
               />
             </div>
+            {vault.isDesktop && (
+              <AiPanel
+                open={aiOpen}
+                note={selectedNote}
+                notes={notes}
+                targetDirectory={terminalTargetDirectory}
+                vaultLocation={vault.location}
+                onOpenChange={setAiOpen}
+              />
+            )}
             {vault.isDesktop && terminalLoaded && (
               <Suspense fallback={null}>
                 <TerminalPanel
                   open={terminalOpen}
                   note={selectedNote}
+                  targetDirectory={terminalTargetDirectory}
                   vaultLocation={vault.location}
                   onOpenChange={handleTerminalOpenChange}
                 />

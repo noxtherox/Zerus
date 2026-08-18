@@ -24,9 +24,9 @@ struct CloudAIGenerateResponse: Encodable {
 }
 
 final class CloudAIManager {
-  private let endpointKey = "grimoire.cloudAI.endpoint.v1"
-  private let modelKey = "grimoire.cloudAI.model.v1"
-  private let keychainService = "com.grimoire.notes.cloud-ai"
+  private let endpointKey = "zerus.cloudAI.endpoint.v1"
+  private let modelKey = "zerus.cloudAI.model.v1"
+  private let keychainService = "com.zerus.notes.cloud-ai"
   private let defaultEndpoint = "https://openrouter.ai/api/v1"
   private let defaultModel = "openai/gpt-5-mini"
 

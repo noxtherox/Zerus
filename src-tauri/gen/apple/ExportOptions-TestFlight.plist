@@ -10,8 +10,8 @@
 	<string>app-store-connect</string>
 	<key>provisioningProfiles</key>
 	<dict>
-		<key>com.grimoire.notes</key>
-		<string>Grimoire App Store</string>
+		<key>com.zerus.notes</key>
+		<string>Zerus App Store</string>
 	</dict>
 	<key>signingCertificate</key>
 	<string>Apple Distribution</string>
