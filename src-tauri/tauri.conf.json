@@ -30,8 +30,7 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "resources": [
-      "binaries/*",
-      "vendor/mlx/**/*"
+      "binaries/*"
     ],
     "macOS": {
       "signingIdentity": "Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)",
