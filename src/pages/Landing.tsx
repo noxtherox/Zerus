@@ -12,20 +12,20 @@ import {
   Sparkles,
   TerminalSquare,
   X,
-} from "lucide-react";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+} from "@/lib/icons";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import "./Landing.css";
 
 const DOWNLOAD_URL = "/api/download";
-const RELEASES_URL = "https://github.com/noxtherox/grimoire/releases/latest";
-const REPOSITORY_URL = "https://github.com/noxtherox/grimoire";
+const RELEASES_URL = "https://github.com/noxtherox/Zerus/releases/latest";
+const REPOSITORY_URL = "https://github.com/noxtherox/Zerus";
 
 const features = [
   {
     number: "01",
     title: "Files, not a format",
     description:
-      "Every note is a Markdown file inside a folder you choose. Open it with Grimoire, a text editor, or tools that have not been invented yet.",
+      "Every note is a Markdown file inside a folder you choose. Open it with Zerus, a text editor, or tools that have not been invented yet.",
     icon: FileText,
   },
   {
@@ -48,35 +48,35 @@ const faqs = [
   {
     question: "Where are my notes stored?",
     answer:
-      "In a normal folder on your Mac. Grimoire reads and writes Markdown directly, so your vault stays portable and easy to back up.",
+      "In a normal folder on your Mac. Zerus reads and writes Markdown directly, so your vault stays portable and easy to back up.",
   },
   {
     question: "Do I need an account?",
     answer:
-      "No. Grimoire is local-first and does not require an account, a subscription, or an internet connection to use your notes.",
+      "No. Zerus is local-first and does not require an account, a subscription, or an internet connection to use your notes.",
   },
   {
     question: "Can I use my existing Markdown files?",
     answer:
-      "Yes. Point Grimoire at an existing folder or start a new vault. Your folders become types, while your Markdown stays readable everywhere.",
+      "Yes. Point Zerus at an existing folder or start a new vault. Your folders become types, while your Markdown stays readable everywhere.",
   },
 ];
 
 export function Landing() {
   useEffect(() => {
-    document.title = "Grimoire — Notes that stay yours";
+    document.title = "Zerus — Notes that stay yours";
   }, []);
 
   return (
     <div className="landing-page">
       <header className="landing-nav">
-        <a className="landing-brand" href="#top" aria-label="Grimoire home">
-          <GrimoireLogo className="landing-brand-mark" />
-          <span>Grimoire</span>
+        <a className="landing-brand" href="#top" aria-label="Zerus home">
+          <ZerusLogo className="landing-brand-mark" />
+          <span>Zerus</span>
         </a>
 
         <nav className="landing-nav-links" aria-label="Main navigation">
-          <a href="#principles">Why Grimoire</a>
+          <a href="#principles">Why Zerus</a>
           <a href="#features">Features</a>
           <a href="#questions">Questions</a>
         </nav>
@@ -101,7 +101,7 @@ export function Landing() {
               <span> outlive your notes app.</span>
             </h1>
             <p className="landing-hero-intro">
-              Grimoire turns an ordinary folder of Markdown files into a
+              Zerus turns an ordinary folder of Markdown files into a
               focused, connected knowledge base—without taking ownership of a
               single word.
             </p>
@@ -143,7 +143,7 @@ export function Landing() {
             <div>
               <p>
                 No proprietary cloud. No export ritual. No anxiety about what
-                happens when a service changes direction. Grimoire works with
+                happens when a service changes direction. Zerus works with
                 the files already on your computer.
               </p>
               <ul className="landing-check-list">
@@ -188,13 +188,13 @@ export function Landing() {
               Explore the browser demo <ArrowRight size={17} aria-hidden="true" />
             </a>
           </div>
-          <div className="landing-command-card" aria-label="Grimoire command example">
+          <div className="landing-command-card" aria-label="Zerus command example">
             <div className="landing-command-titlebar">
               <span /><span /><span />
-              <p>grimoire — research</p>
+              <p>zerus — research</p>
             </div>
             <div className="landing-command-content">
-              <p><span>$</span> grimoire search <em>"local-first"</em></p>
+              <p><span>$</span> zerus search <em>"local-first"</em></p>
               <div className="landing-command-result">
                 <p>3 notes found</p>
                 <strong>Principles / Local-first software.md</strong>
@@ -225,13 +225,13 @@ export function Landing() {
         </section>
 
         <section className="landing-final-cta">
-          <GrimoireLogo className="landing-final-mark" />
+          <ZerusLogo className="landing-final-mark" />
           <p>YOUR NOTES. YOUR FILES. YOUR SYSTEM.</p>
           <h2>Make your knowledge durable.</h2>
           <div className="landing-hero-actions">
             <a className="landing-button landing-button-primary" href={DOWNLOAD_URL}>
               <Download size={18} aria-hidden="true" />
-              Download Grimoire
+              Download Zerus
             </a>
             <a className="landing-button landing-button-secondary" href={REPOSITORY_URL}>
               <Github size={18} aria-hidden="true" />
@@ -243,8 +243,8 @@ export function Landing() {
 
       <footer className="landing-footer">
         <a className="landing-brand" href="#top">
-          <GrimoireLogo className="landing-brand-mark" />
-          <span>Grimoire</span>
+          <ZerusLogo className="landing-brand-mark" />
+          <span>Zerus</span>
         </a>
         <p>Local-first notes, made with care.</p>
         <div>
@@ -258,20 +258,20 @@ export function Landing() {
 
 function ProductPreview() {
   return (
-    <div className="landing-product" aria-label="Preview of the Grimoire notes app">
+    <div className="landing-product" aria-label="Preview of the Zerus notes app">
       <div className="landing-product-titlebar">
         <div><span /><span /><span /></div>
-        <p>Grimoire</p>
+        <p>Zerus</p>
         <span />
       </div>
       <div className="landing-product-body">
         <aside className="landing-product-sidebar">
-          <GrimoireLogo className="landing-product-logo" />
+          <ZerusLogo className="landing-product-logo" />
           <nav aria-label="Example vault folders">
             <a className="is-active"><Folder /> Notes <span>12</span></a>
-            <a><span className="folder-emoji">◈</span> Projects <span>6</span></a>
-            <a><span className="folder-emoji">✦</span> Ideas <span>18</span></a>
-            <a><span className="folder-emoji">◎</span> People <span>9</span></a>
+            <a><span className="folder-icon">◈</span> Projects <span>6</span></a>
+            <a><span className="folder-icon">✦</span> Ideas <span>18</span></a>
+            <a><span className="folder-icon">◎</span> People <span>9</span></a>
           </nav>
         </aside>
         <div className="landing-product-list">
@@ -315,7 +315,7 @@ function VaultDiagram() {
     <div className="landing-vault-diagram">
       <div className="landing-vault-root">
         <Folder aria-hidden="true" />
-        <div><strong>My Grimoire</strong><span>A normal folder on your Mac</span></div>
+        <div><strong>My Zerus</strong><span>A normal folder on your Mac</span></div>
       </div>
       <div className="landing-vault-branches">
         <div><Folder /><strong>Projects</strong><span>Folders become note types</span></div>

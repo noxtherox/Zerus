@@ -62,7 +62,7 @@ export default function TablerIconPicker({
               className={cn(
                 "flex aspect-square min-h-10 items-center justify-center rounded-md text-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 name === selectedName &&
-                  "bg-grim-accent/15 text-grim-accent hover:bg-grim-accent/20 hover:text-grim-accent",
+                  "bg-zerus-accent/15 text-zerus-accent hover:bg-zerus-accent/20 hover:text-zerus-accent",
               )}
             >
               <Icon size={19} stroke={1.8} aria-hidden="true" />

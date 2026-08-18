@@ -36,14 +36,18 @@
         { "path": "**" },
         { "path": "/**" },
         { "path": "$HOME/**" },
-        { "path": "**/.grimoire" },
-        { "path": "**/.grimoire/**" },
-        { "path": "/**/.grimoire" },
-        { "path": "/**/.grimoire/**" },
+        { "path": "**/.zerus" },
+        { "path": "**/.zerus/**" },
+        { "path": "/**/.zerus" },
+        { "path": "/**/.zerus/**" },
         { "path": "**/.trash" },
         { "path": "**/.trash/**" },
         { "path": "/**/.trash" },
-        { "path": "/**/.trash/**" }
+        { "path": "/**/.trash/**" },
+        { "path": "**/.trash/.zerus" },
+        { "path": "**/.trash/.zerus/**" },
+        { "path": "/**/.trash/.zerus" },
+        { "path": "/**/.trash/.zerus/**" }
       ]
     }
   ]

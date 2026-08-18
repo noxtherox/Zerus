@@ -11,7 +11,7 @@ import {
   Save,
   Trash2,
   TerminalSquare,
-} from "lucide-react";
+} from "@/lib/icons";
 import { invoke } from "@tauri-apps/api/core";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import {
@@ -50,7 +50,7 @@ import {
 import {
   DEFAULT_THEME,
   MAX_SAVED_THEME_NAME_LENGTH,
-  type GrimoireTheme,
+  type ZerusTheme,
   THEME_PRESETS,
   THEME_TOKENS,
   applyTheme,
@@ -156,7 +156,7 @@ export function ThemeSettingsDialog({
   onDefaultNoteTypeChange,
   onHideSubtypeNotesChange,
 }: ThemeSettingsDialogProps) {
-  const [theme, setTheme] = useState<GrimoireTheme>(loadTheme);
+  const [theme, setTheme] = useState<ZerusTheme>(loadTheme);
   const [savedThemes, setSavedThemes] = useState(loadSavedThemes);
   const [themeName, setThemeName] = useState("");
   const [interfaceZoom, setInterfaceZoom] =
@@ -200,7 +200,7 @@ export function ThemeSettingsDialog({
   }, [isDesktop, location, notes, open]);
 
   // Changes apply immediately so you can preview them behind the dialog
-  const update = (patch: Partial<GrimoireTheme>) => {
+  const update = (patch: Partial<ZerusTheme>) => {
     setTheme((previous) => {
       const next = { ...previous, ...patch };
       applyTheme(next);
@@ -262,8 +262,8 @@ export function ThemeSettingsDialog({
       if (idsAdded !== null) {
         setCliMessage(
           idsAdded === 0
-            ? "CLI installed successfully. Your notes already have grimoire-id."
-            : `CLI installed successfully. Added grimoire-id to ${idsAdded} ${idsAdded === 1 ? "note" : "notes"}.`,
+            ? "CLI installed successfully. Your notes already have zerus-id."
+            : `CLI installed successfully. Added zerus-id to ${idsAdded} ${idsAdded === 1 ? "note" : "notes"}.`,
         );
       } else {
         setCliMessage(`CLI reinstalled successfully at ${status.executablePath}.`);
@@ -284,7 +284,7 @@ export function ThemeSettingsDialog({
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
-            Choose how Grimoire looks, behaves, and connects to your files.
+            Choose how Zerus looks, behaves, and connects to your files.
           </DialogDescription>
         </DialogHeader>
         <Tabs defaultValue="general" className="min-w-0">
@@ -302,9 +302,9 @@ export function ThemeSettingsDialog({
                   <div className="flex items-start gap-3">
                     <TerminalSquare className="mt-0.5 shrink-0 text-muted-foreground" size={18} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">Grimoire command line</p>
+                      <p className="text-sm font-medium">Zerus command line</p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        Installing the CLI will enable your AI agents to interact directly with the commands for Grimoire, which makes it clearer for the agent to work. For that, we will need to introduce some hidden properties in your notes which will not affect how you use the desktop application. Here&apos;s a preview.
+                        Installing the CLI will enable your AI agents to interact directly with the commands for Zerus, which makes it clearer for the agent to work. For that, we will need to introduce some hidden properties in your notes which will not affect how you use the desktop application. Here&apos;s a preview.
                       </p>
                       <div className="mt-3 rounded-md bg-muted/60 p-3 text-xs">
                         {migrationPreview ? (
@@ -344,7 +344,7 @@ export function ThemeSettingsDialog({
                       </div>
                       {cliStatus?.installed && (
                         <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                          <CheckCircle2 size={13} className="text-green-600" /> Installed at {cliStatus.executablePath}{!cliStatus.onPath && " · Add its folder to PATH to use grimoire anywhere."}
+                          <CheckCircle2 size={13} className="text-green-600" /> Installed at {cliStatus.executablePath}{!cliStatus.onPath && " · Add its folder to PATH to use zerus anywhere."}
                         </p>
                       )}
                     </div>
@@ -355,7 +355,7 @@ export function ThemeSettingsDialog({
                     <Bot className="mt-0.5 shrink-0 text-muted-foreground" size={18} />
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">AI agent skills</p>
-                      <p className="mt-1 text-xs text-muted-foreground">Install instructions that teach an agent to use Grimoire safely and consistently.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Install instructions that teach an agent to use Zerus safely and consistently.</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {["Claude", "Codex", "Hermes"].map((agent) => (
                           <Button
@@ -391,8 +391,8 @@ export function ThemeSettingsDialog({
                             setCliBusy(true);
                             try {
                               const path = await saveDialog({
-                                title: "Download Grimoire skill",
-                                defaultPath: "grimoire-skill.md",
+                                title: "Download Zerus skill",
+                                defaultPath: "zerus-skill.md",
                                 filters: [
                                   {
                                     name: "Markdown",
@@ -407,7 +407,7 @@ export function ThemeSettingsDialog({
                                 "cli_export_skill",
                                 { path },
                               );
-                              setCliMessage(`Grimoire skill saved to ${savedPath}`);
+                              setCliMessage(`Zerus skill saved to ${savedPath}`);
                               setCliMessageKind("success");
                             } catch (error) {
                               setCliMessage(String(error));
@@ -856,10 +856,10 @@ export function ThemeSettingsDialog({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Install the Grimoire CLI?</AlertDialogTitle>
+            <AlertDialogTitle>Install the Zerus CLI?</AlertDialogTitle>
             <AlertDialogDescription>
               To make your notes safely addressable from the command line,
-              Grimoire will add a hidden <code>grimoire-id</code> property to
+              Zerus will add a hidden <code>zerus-id</code> property to
               {migrationPreview
                 ? ` ${migrationPreview.idsAdded} ${migrationPreview.idsAdded === 1 ? "note" : "notes"}`
                 : " your notes"}

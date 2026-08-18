@@ -197,7 +197,7 @@ describe("mobile chat vault persistence", () => {
 
     const [conversation] = await loadChatConversations(backend);
     const attachment = conversation.messages[0].attachments?.[0];
-    expect(attachment?.path).toMatch(/^\.grimoire\/chats\/[^/]+\/assets\/[^/]+\.jpg$/);
+    expect(attachment?.path).toMatch(/^\.zerus\/chats\/[^/]+\/assets\/[^/]+\.jpg$/);
     expect(attachment?.byteLength).toBe(4);
     expect(await backend.readBinary(attachment!.path)).toEqual(new Uint8Array([255, 216, 255, 217]));
     const eventPaths = await backend.listFiles(`${CHAT_ROOT}/${conversation.id}/events`);

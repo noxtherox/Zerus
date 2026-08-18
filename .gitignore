@@ -16,7 +16,7 @@ outputs/
 mobile-preview*.png
 *.tsbuildinfo
 .worktrees/
-grimoire/
+zerus/
 *.local
 
 # Editor directories and files

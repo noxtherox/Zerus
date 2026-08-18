@@ -1,4 +1,4 @@
-const STORAGE_KEY = "grimoire.mobileDiagnostics.v1";
+const STORAGE_KEY = "zerus.mobileDiagnostics.v1";
 const MAX_ENTRIES = 160;
 
 interface DiagnosticEntry {
@@ -44,7 +44,7 @@ export function mobileDiagnostic(
     event,
     ...(detail ? { detail: redact(detail) as Record<string, unknown> } : {}),
   };
-  console.info("Grimoire mobile diagnostic", entry);
+  console.info("Zerus mobile diagnostic", entry);
   if (typeof localStorage === "undefined") return;
   try {
     const entries = [...readEntries(), entry].slice(-MAX_ENTRIES);
@@ -60,7 +60,7 @@ export function clearMobileDiagnostics(): void {
 
 export function getMobileDiagnostics(): string {
   const header = [
-    "Grimoire mobile diagnostics",
+    "Zerus mobile diagnostics",
     `Generated: ${new Date().toISOString()}`,
     `User agent: ${typeof navigator === "undefined" ? "unavailable" : navigator.userAgent}`,
     "Privacy: note contents and device file paths are not included.",

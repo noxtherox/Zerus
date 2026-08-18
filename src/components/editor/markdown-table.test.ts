@@ -7,6 +7,8 @@ import {
   MAX_TABLE_ROWS,
   parseMarkdownTable,
   serializeMarkdownTable,
+  serializeTableCellRange,
+  tableCellRangeIndices,
 } from "./markdown-table";
 
 describe("parseMarkdownTable", () => {
@@ -132,5 +134,28 @@ describe("serializeMarkdownTable", () => {
         rows: [["Line one\nLine two"]],
       }),
     ).toContain("| Line one Line two |");
+  });
+});
+
+describe("table cell ranges", () => {
+  it("selects every cell in a rectangular range in either drag direction", () => {
+    expect(tableCellRangeIndices(1, 8, 3)).toEqual([1, 2, 4, 5, 7, 8]);
+    expect(tableCellRangeIndices(8, 1, 3)).toEqual([1, 2, 4, 5, 7, 8]);
+  });
+
+  it("serializes a rectangular range as rows and tab-separated columns", () => {
+    expect(
+      serializeTableCellRange(
+        ["A", "B", "C", "1", "2", "3", "4", "5", "6"],
+        1,
+        8,
+        3,
+      ),
+    ).toBe("B\tC\n2\t3\n5\t6");
+  });
+
+  it("returns an empty range for invalid coordinates", () => {
+    expect(tableCellRangeIndices(-1, 2, 3)).toEqual([]);
+    expect(serializeTableCellRange(["A"], 0, 0, 0)).toBe("");
   });
 });

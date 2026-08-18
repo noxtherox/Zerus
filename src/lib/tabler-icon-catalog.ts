@@ -20,7 +20,7 @@ const FEATURED_NAMES = [
   "Palette", "Code", "Terminal2", "Database", "Rocket", "Target", "ChartLine",
   "Wallet", "ShoppingCart", "Gift", "Plane", "Map", "Beach", "Mountain", "Tent",
   "ChefHat", "Coffee", "ToolsKitchen2", "Stethoscope", "Barbell", "Run", "Moon",
-  "Sparkles", "Plant2", "Trees", "Paw", "Dog", "Cat", "Car", "Bike", "Gamepad2",
+  "Sparkles", "Plant2", "Trees", "Paw", "Dog", "Cat", "Car", "Bike", "DeviceGamepad2",
   "School", "Microscope", "Flask", "Lock", "Key", "Shield", "Tool", "Hammer",
 ];
 

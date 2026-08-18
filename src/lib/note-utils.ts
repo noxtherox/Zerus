@@ -17,7 +17,7 @@ export interface Note {
   externalPath?: string;
   content: string;
   pinned: boolean;
-  /** Grimoire-only visibility state; archived notes remain in place on disk. */
+  /** Zerus-only visibility state; archived notes remain in place on disk. */
   archived?: boolean;
   updatedAt: string;
 }
@@ -33,6 +33,15 @@ export const IMAGE_MD_REGEX = /!\[([^\]]*)\]\(([^()\s]+)\)/g;
 
 export function isExternalNote(note: Note): boolean {
   return !!note.externalPath;
+}
+
+/** A saved web link is app-managed until it is explicitly moved into a type. */
+export function isSavedLinkNote(note: Note): boolean {
+  const properties = getNoteProperties(note.content);
+  return (
+    typeof properties["zerus-link-id"] === "string" &&
+    typeof properties["zerus-link-url"] === "string"
+  );
 }
 
 /** Normalizes separators and Windows casing for reliable path comparisons. */
@@ -120,7 +129,8 @@ export function typeKey(typePath: string[]): string {
 /** Non-trashed notes of the given type, including its sub-types. */
 export function notesOfTypeKey(notes: Note[], ownerKey: string): Note[] {
   return notes.filter((note) => {
-    if (isExternalNote(note) || isTrashed(note)) return false;
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+      return false;
     const key = typeKey(noteTypePath(note));
     return key === ownerKey || key.startsWith(`${ownerKey}/`);
   });
@@ -179,6 +189,7 @@ export function findNoteByTitle(
   return notes.find(
     (note) =>
       !isExternalNote(note) &&
+      !isSavedLinkNote(note) &&
       !isTrashed(note) &&
       noteTitle(note).toLowerCase() === needle,
   );
@@ -226,7 +237,8 @@ export function buildTypeTree(
     addPath(typePath.slice(0, MAX_TYPE_DEPTH), 0);
   }
   for (const note of notes) {
-    if (isExternalNote(note) || isTrashed(note)) continue;
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+      continue;
     addPath(noteTypePath(note), 1);
   }
   if (typeOrder.length) {
@@ -324,7 +336,8 @@ export function getAllTypePaths(
   };
   for (const typePath of extraTypePaths) add(typePath);
   for (const note of notes) {
-    if (!isExternalNote(note) && !isTrashed(note)) add(noteTypePath(note));
+    if (!isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note))
+      add(noteTypePath(note));
   }
   return [...seen.values()].sort((a, b) =>
     typeKey(a).localeCompare(typeKey(b)),
@@ -369,7 +382,7 @@ export function noteMatchesSearch(note: Note, query: string): boolean {
   if (!q) return true;
   return (
     note.content.toLowerCase().includes(q) ||
-    String(getNoteProperties(note.content)["grimoire-file-name"] ?? "")
+    String(getNoteProperties(note.content)["zerus-file-name"] ?? "")
       .toLowerCase()
       .includes(q) ||
     note.externalPath?.toLowerCase().includes(q) ||

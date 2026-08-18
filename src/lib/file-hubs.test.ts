@@ -32,8 +32,8 @@ describe("file hub metadata", () => {
 
   it("round-trips reserved flat frontmatter without changing the body", () => {
     const content = setFileHubReference("# Proposal\n\nNotes", locationReference);
-    expect(content).toContain("grimoire-file-kind: location");
-    expect(content).toContain("grimoire-file-path: Clients/Acme/Proposal.docx");
+    expect(content).toContain("zerus-file-kind: location");
+    expect(content).toContain("zerus-file-path: Clients/Acme/Proposal.docx");
     expect(getFileHubReference(content)).toEqual(locationReference);
     expect(removeFileHubReference(content)).toBe("# Proposal\n\nNotes");
   });

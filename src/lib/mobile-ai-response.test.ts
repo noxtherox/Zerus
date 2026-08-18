@@ -24,10 +24,10 @@ describe("mobile AI answers", () => {
     expect(prompt).toContain("Start immediately with a natural-language answer");
     expect(prompt).toContain("Editable note handle: navsea");
     expect(prompt).toContain("Current revision: rev-navsea");
-    expect(prompt).not.toContain("grimoire-id");
+    expect(prompt).not.toContain("zerus-id");
     expect(prompt).toContain("create_note");
     expect(prompt).toContain("CURRENT user message explicitly asks");
-    expect(prompt).not.toContain("<grimoire-action>");
+    expect(prompt).not.toContain("<zerus-action>");
   });
 
   it("removes an echoed prompt and keeps the generated prose", () => {

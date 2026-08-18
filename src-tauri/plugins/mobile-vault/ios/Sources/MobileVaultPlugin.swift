@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 import WebKit
 
 final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewControllerDataSource {
-  private let bookmarkKey = "grimoire.mobileVaultBookmark.v1"
-  private let externalBookmarksKey = "grimoire.mobileExternalBookmarks.v1"
-  private let authorizedFileCopiesKey = "grimoire.authorizedFileCopies.v1"
+  private let bookmarkKey = "zerus.mobileVaultBookmark.v1"
+  private let externalBookmarksKey = "zerus.mobileExternalBookmarks.v1"
+  private let authorizedFileCopiesKey = "zerus.authorizedFileCopies.v1"
   private var activeURL: URL?
   private var activeAccess = false
   private var activeExternalURLs: [String: URL] = [:]
@@ -159,9 +159,9 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
     from viewController: UIViewController,
     invoke: Invoke
   ) {
-    var message = "Choose the current file in its storage location. Grimoire will replace its saved copy and open it."
+    var message = "Choose the current file in its storage location. Zerus will replace its saved copy and open it."
     if let error {
-      message = "Your storage provider requires permission for the individual file. Grimoire will keep an authorized copy for future opens.\n\n\(error.localizedDescription)"
+      message = "Your storage provider requires permission for the individual file. Zerus will keep an authorized copy for future opens.\n\n\(error.localizedDescription)"
     }
     let alert = UIAlertController(
       title: "Select this file once",
@@ -296,7 +296,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
           }
 
           let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("GrimoirePreview", isDirectory: true)
+            .appendingPathComponent("ZerusPreview", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
           try FileManager.default.createDirectory(
             at: directory,
@@ -595,7 +595,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
       let values = try url.resourceValues(forKeys: [.isDirectoryKey])
       guard values.isDirectory == true else {
         stopActiveAccess()
-        invoke.reject("Please select a folder for your Grimoire vault")
+        invoke.reject("Please select a folder for your Zerus vault")
         return
       }
     } catch {

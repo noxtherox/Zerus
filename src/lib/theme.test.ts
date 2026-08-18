@@ -45,7 +45,7 @@ describe("saved themes", () => {
 
   it("ignores malformed saved themes", () => {
     values.set(
-      "grimoire-saved-themes",
+      "zerus-saved-themes",
       JSON.stringify([
         { name: "Valid", theme: DEFAULT_THEME },
         { name: "Broken", theme: { ...DEFAULT_THEME, text: "red" } },

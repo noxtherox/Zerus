@@ -20,7 +20,7 @@ import { WIKILINK_REGEX } from "@/lib/note-utils";
 import { normalizeExternalUrl } from "@/lib/external-links";
 import { tableDecoration } from "./markdown-table";
 
-const ACCENT = "rgb(var(--grim-accent))";
+const ACCENT = "rgb(var(--zerus-accent))";
 
 const toggleEffect = StateEffect.define<boolean>();
 
@@ -43,6 +43,18 @@ interface ExternalLinkMatch {
 
 function trimLinkPunctuation(value: string): string {
   return value.replace(/[.,!?;:]+$/g, "");
+}
+
+/** A bare domain in the first Markdown heading is title text, not an implicit URL. */
+function isTitleHeadingLine(
+  state: EditorState,
+  lineFrom: number,
+  lineText: string,
+): boolean {
+  return (
+    state.sliceDoc(0, lineFrom).trim().length === 0 &&
+    /^#{1,6}(?:\s|$)/.test(lineText)
+  );
 }
 
 /** Resolve a rendered Markdown link or a pasted web address at a document position. */
@@ -69,6 +81,7 @@ export function externalLinkAt(
   }
 
   const line = state.doc.lineAt(pos);
+  if (isTitleHeadingLine(state, line.from, line.text)) return null;
   for (const match of line.text.matchAll(BARE_LINK_REGEX)) {
     const raw = trimLinkPunctuation(match[0]);
     const from = line.from + (match.index ?? 0);
@@ -235,6 +248,8 @@ function buildDecorations(view: EditorView): DecorationSet {
     for (const match of state.sliceDoc(from, to).matchAll(BARE_LINK_REGEX)) {
       const raw = trimLinkPunctuation(match[0]);
       const start = from + (match.index ?? 0);
+      const line = state.doc.lineAt(start);
+      if (isTitleHeadingLine(state, line.from, line.text)) continue;
       if (!raw || !normalizeExternalUrl(raw)) continue;
       decos.push(
         Decoration.mark({
@@ -500,11 +515,11 @@ const livePreviewTheme = EditorView.theme({
     textIndent: "calc(-1 * var(--cm-list-indent))",
   },
   ".cm-blockquote-line": {
-    borderLeft: "3px solid rgb(var(--grim-text) / 0.22)",
+    borderLeft: "3px solid rgb(var(--zerus-text) / 0.22)",
     paddingLeft: "12px",
   },
   ".cm-codeblock-line": {
-    backgroundColor: "rgb(var(--grim-text) / 0.05)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.05)",
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "0.9em",
     padding: "0 10px",
@@ -517,7 +532,7 @@ const livePreviewTheme = EditorView.theme({
     display: "inline-block",
     width: "100%",
     verticalAlign: "middle",
-    borderTop: "1px solid rgb(var(--grim-text) / 0.2)",
+    borderTop: "1px solid rgb(var(--zerus-text) / 0.2)",
   },
   ".cm-task-checkbox": {
     accentColor: ACCENT,
@@ -528,15 +543,20 @@ const livePreviewTheme = EditorView.theme({
     cursor: "pointer",
   },
   ".cm-markdown-table-wrapper": {
-    position: "relative",
     boxSizing: "border-box",
     width: "100%",
-    margin: "20px 0 10px",
-    border: "1px solid rgb(var(--grim-text) / 0.14)",
-    borderRadius: "10px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
-    boxShadow: "0 1px 2px rgb(0 0 0 / 0.08)",
+    // CodeMirror measures block widgets without their CSS margins. Keeping the
+    // vertical spacing inside the measured box prevents pointer/selection
+    // coordinates below a table from drifting away from the rendered text.
+    padding: "20px 0 10px",
     cursor: "text",
+  },
+  ".cm-markdown-table-card": {
+    position: "relative",
+    border: "1px solid rgb(var(--zerus-text) / 0.14)",
+    borderRadius: "10px",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
+    boxShadow: "0 1px 2px rgb(0 0 0 / 0.08)",
   },
   ".cm-markdown-table-scroll": {
     overflowX: "auto",
@@ -550,9 +570,9 @@ const livePreviewTheme = EditorView.theme({
     display: "flex",
     gap: "3px",
     padding: "3px",
-    border: "1px solid rgb(var(--grim-text) / 0.14)",
+    border: "1px solid rgb(var(--zerus-text) / 0.14)",
     borderRadius: "7px",
-    backgroundColor: "rgb(var(--grim-editor-bg))",
+    backgroundColor: "rgb(var(--zerus-editor-bg))",
     boxShadow: "0 4px 12px rgb(0 0 0 / 0.12)",
     opacity: "0",
     transform: "translateY(2px)",
@@ -572,7 +592,7 @@ const livePreviewTheme = EditorView.theme({
     border: "0",
     borderRadius: "5px",
     padding: "4px 8px",
-    color: "rgb(var(--grim-text) / 0.72)",
+    color: "rgb(var(--zerus-text) / 0.72)",
     backgroundColor: "transparent",
     fontFamily: "inherit",
     fontSize: "11px",
@@ -582,7 +602,7 @@ const livePreviewTheme = EditorView.theme({
   },
   ".cm-markdown-table-action:hover:not(:disabled), .cm-markdown-table-action:focus-visible": {
     color: ACCENT,
-    backgroundColor: "rgb(var(--grim-accent) / 0.1)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.1)",
     outline: "none",
   },
   ".cm-markdown-table-action:disabled": {
@@ -598,8 +618,8 @@ const livePreviewTheme = EditorView.theme({
   ".cm-markdown-table th, .cm-markdown-table td": {
     minWidth: "7rem",
     padding: "10px 14px",
-    borderRight: "1px solid rgb(var(--grim-text) / 0.12)",
-    borderBottom: "1px solid rgb(var(--grim-text) / 0.12)",
+    borderRight: "1px solid rgb(var(--zerus-text) / 0.12)",
+    borderBottom: "1px solid rgb(var(--zerus-text) / 0.12)",
     textAlign: "left",
     verticalAlign: "top",
     outline: "none",
@@ -607,20 +627,40 @@ const livePreviewTheme = EditorView.theme({
     transition: "background-color 100ms ease, box-shadow 100ms ease",
   },
   ".cm-markdown-table th": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.09)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.09)",
     fontWeight: "650",
-    color: "rgb(var(--grim-text))",
+    color: "rgb(var(--zerus-text))",
   },
   ".cm-markdown-table tbody tr:nth-child(even) td": {
-    backgroundColor: "rgb(var(--grim-text) / 0.025)",
+    backgroundColor: "rgb(var(--zerus-text) / 0.025)",
   },
   ".cm-markdown-table tbody tr:hover td": {
-    backgroundColor: "rgb(var(--grim-accent) / 0.055)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.055)",
   },
   ".cm-markdown-table th[contenteditable]:focus, .cm-markdown-table td[contenteditable]:focus": {
     position: "relative",
-    backgroundColor: "rgb(var(--grim-accent) / 0.08)",
+    backgroundColor: "rgb(var(--zerus-accent) / 0.08)",
     boxShadow: `inset 0 0 0 2px ${ACCENT}`,
+  },
+  ".cm-markdown-table th.cm-markdown-table-cell-selected, .cm-markdown-table td.cm-markdown-table-cell-selected": {
+    backgroundColor: "rgb(var(--zerus-accent) / 0.13) !important",
+    backgroundImage: `linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT}), linear-gradient(${ACCENT}, ${ACCENT})`,
+    backgroundPosition: "top, right, bottom, left",
+    backgroundRepeat: "no-repeat",
+    backgroundSize: "100% var(--cm-table-selection-top, 0), var(--cm-table-selection-right, 0) 100%, 100% var(--cm-table-selection-bottom, 0), var(--cm-table-selection-left, 0) 100%",
+    boxShadow: "none",
+  },
+  ".cm-markdown-table-selection-top": {
+    "--cm-table-selection-top": "2px",
+  },
+  ".cm-markdown-table-selection-right": {
+    "--cm-table-selection-right": "2px",
+  },
+  ".cm-markdown-table-selection-bottom": {
+    "--cm-table-selection-bottom": "2px",
+  },
+  ".cm-markdown-table-selection-left": {
+    "--cm-table-selection-left": "2px",
   },
   ".cm-markdown-table tr:last-child td": { borderBottom: "0" },
   ".cm-markdown-table th:last-child, .cm-markdown-table td:last-child": {

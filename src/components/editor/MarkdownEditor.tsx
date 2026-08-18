@@ -36,12 +36,14 @@ import {
   Maximize,
   Minimize,
   Quote,
+  Search,
   Strikethrough,
   Table2,
-} from "lucide-react";
+} from "@/lib/icons";
 import { insertMarkdownTable } from "./markdown-table";
 import { TableSizeDialog } from "./TableSizeDialog";
 import { openExternalUrl } from "@/lib/external-links";
+import { findInNoteExtension, openFindInNote } from "./find-in-note";
 
 interface MarkdownEditorProps {
   noteId: string;
@@ -58,6 +60,7 @@ interface MarkdownEditorProps {
   followLinksOnClick?: boolean;
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
+  findRequest?: number;
 }
 
 function toggleInlineMarkup(
@@ -209,6 +212,7 @@ export function MarkdownEditor({
   followLinksOnClick = false,
   isFullHeight = false,
   onToggleFullHeight,
+  findRequest = 0,
 }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -237,6 +241,7 @@ export function MarkdownEditor({
       doc: initialContent,
       extensions: [
         history(),
+        findInNoteExtension,
         keymap.of([
           {
             key: "Mod-b",
@@ -358,6 +363,37 @@ export function MarkdownEditor({
     });
   }, [readOnly]);
 
+  useEffect(() => {
+    const handleFindShortcut = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.shiftKey ||
+        event.altKey ||
+        event.key.toLowerCase() !== "f"
+      ) {
+        return;
+      }
+
+      const view = viewRef.current;
+      if (!view) return;
+      event.preventDefault();
+      openFindInNote(view);
+    };
+
+    window.addEventListener("keydown", handleFindShortcut);
+    return () => window.removeEventListener("keydown", handleFindShortcut);
+  }, []);
+
+  useEffect(() => {
+    if (findRequest === 0) return;
+    const frame = requestAnimationFrame(() => {
+      const view = viewRef.current;
+      if (view) openFindInNote(view);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [findRequest]);
+
   const handleInsertTable = (columns: number, rows: number) => {
     const view = viewRef.current;
     setTableDialogOpen(false);
@@ -453,6 +489,20 @@ export function MarkdownEditor({
             <Icon size={15} />
           </Button>
         ))}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground"
+          title="Find in note (Ctrl/⌘+F)"
+          aria-label="Find in note"
+          onClick={() => {
+            const view = viewRef.current;
+            if (view) openFindInNote(view);
+          }}
+        >
+          <Search size={15} />
+        </Button>
         <Button
           type="button"
           variant="ghost"

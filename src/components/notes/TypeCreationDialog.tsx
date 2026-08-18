@@ -1,4 +1,4 @@
-import { ChevronRight, Folder } from "lucide-react";
+import { ChevronRight, Folder } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,

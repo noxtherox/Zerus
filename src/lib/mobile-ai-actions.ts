@@ -2,7 +2,7 @@ import { chatContentRevision } from "@/lib/mobile-chat-history";
 import { noteBody } from "@/lib/frontmatter";
 import { DEFAULT_TYPE, isExternalNote, isTrashed, noteTitle, type Note } from "@/lib/note-utils";
 
-const ACTION_BLOCK = /<grimoire-action>\s*([\s\S]*?)\s*<\/grimoire-action>/gi;
+const ACTION_BLOCK = /<zerus-action>\s*([\s\S]*?)\s*<\/zerus-action>/gi;
 
 export type MobileAIAction =
   | { action: "create_note"; title: string; body: string; type?: string[] }
@@ -79,7 +79,7 @@ export function parseMobileAIActions(raw: string): ParsedMobileAIActions {
     }
   }
   const visibleText = raw.replace(ACTION_BLOCK, "").trim();
-  if (/<\/?grimoire-action\b/i.test(visibleText)) malformed = true;
+  if (/<\/?zerus-action\b/i.test(visibleText)) malformed = true;
   return { actions, visibleText, malformed };
 }
 

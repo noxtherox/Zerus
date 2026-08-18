@@ -50,7 +50,7 @@ describe("note type order preference", () => {
 
   it("ignores invalid entries and removes duplicates", () => {
     values.set(
-      "grimoire.noteTypeOrder./vault/one",
+      "zerus.noteTypeOrder./vault/one",
       JSON.stringify(["work", 42, "work", "../inbox"]),
     );
 
@@ -88,7 +88,7 @@ describe("hide sub-type notes preference", () => {
 describe("note width preference", () => {
   it("uses 75% when there is no valid saved preference", () => {
     expect(loadNoteWidth()).toBe(DEFAULT_NOTE_WIDTH);
-    values.set("grimoire.noteWidth", "46");
+    values.set("zerus.noteWidth", "46");
     expect(loadNoteWidth()).toBe(DEFAULT_NOTE_WIDTH);
   });
 
@@ -97,16 +97,16 @@ describe("note width preference", () => {
 
     expect(loadNoteWidth()).toBe(85);
     expect(
-      document.documentElement.style.getPropertyValue("--grim-note-width"),
+      document.documentElement.style.getPropertyValue("--zerus-note-width"),
     ).toBe("85%");
   });
 
   it("can apply a width without persisting it", () => {
     applyNoteWidth(60);
 
-    expect(values.has("grimoire.noteWidth")).toBe(false);
+    expect(values.has("zerus.noteWidth")).toBe(false);
     expect(
-      document.documentElement.style.getPropertyValue("--grim-note-width"),
+      document.documentElement.style.getPropertyValue("--zerus-note-width"),
     ).toBe("60%");
   });
 });
@@ -114,7 +114,7 @@ describe("note width preference", () => {
 describe("note alignment preference", () => {
   it("uses center when there is no valid saved preference", () => {
     expect(loadNoteAlignment()).toBe(DEFAULT_NOTE_ALIGNMENT);
-    values.set("grimoire.noteAlignment", "right");
+    values.set("zerus.noteAlignment", "right");
     expect(loadNoteAlignment()).toBe(DEFAULT_NOTE_ALIGNMENT);
   });
 
@@ -124,7 +124,7 @@ describe("note alignment preference", () => {
     expect(loadNoteAlignment()).toBe("left");
     expect(
       document.documentElement.style.getPropertyValue(
-        "--grim-note-margin-inline",
+        "--zerus-note-margin-inline",
       ),
     ).toBe("0 auto");
   });
@@ -132,10 +132,10 @@ describe("note alignment preference", () => {
   it("can apply center alignment without persisting it", () => {
     applyNoteAlignment("center");
 
-    expect(values.has("grimoire.noteAlignment")).toBe(false);
+    expect(values.has("zerus.noteAlignment")).toBe(false);
     expect(
       document.documentElement.style.getPropertyValue(
-        "--grim-note-margin-inline",
+        "--zerus-note-margin-inline",
       ),
     ).toBe("auto");
   });

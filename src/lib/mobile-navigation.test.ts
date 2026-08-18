@@ -19,7 +19,7 @@ describe("mobile navigation history state", () => {
   it("preserves router state and rejects malformed entries", () => {
     const state = withMobileNavigationEntry({ idx: 3, key: "router-key" }, { view: "chat" });
     expect(state).toMatchObject({ idx: 3, key: "router-key" });
-    expect(readMobileNavigationEntry({ grimoireMobileNavigation: { view: "note", noteId: "", origin: "chat" } })).toBeNull();
-    expect(readMobileNavigationEntry({ grimoireMobileNavigation: { view: "note", noteId: "note", origin: "somewhere" } })).toBeNull();
+    expect(readMobileNavigationEntry({ zerusMobileNavigation: { view: "note", noteId: "", origin: "chat" } })).toBeNull();
+    expect(readMobileNavigationEntry({ zerusMobileNavigation: { view: "note", noteId: "note", origin: "somewhere" } })).toBeNull();
   });
 });

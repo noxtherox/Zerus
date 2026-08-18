@@ -6,13 +6,14 @@ import {
   FolderSearch,
   FileText,
   FilePlus2,
+  Link2,
   Pin,
   Plus,
   Search,
   Trash2,
   Undo2,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Input } from "@/components/ui/input";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,12 @@ import {
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
+import { AddLinkDialog } from "./AddLinkDialog";
+import {
+  fileManagerName,
+  primaryModifierLabel,
+} from "@/lib/desktop-platform";
 
 const INITIAL_NOTE_COUNT = 100;
 const NOTE_LOAD_INCREMENT = 50;
@@ -85,6 +92,7 @@ interface NoteListProps {
   onSelectNote: (id: string) => void;
   onCreateNote: () => void;
   onCreateFile: () => void;
+  onCreateLink: (url: string) => Promise<void>;
   onOpenExternalNotes: () => void;
 }
 
@@ -101,6 +109,7 @@ export function NoteList({
   onSelectNote,
   onCreateNote,
   onCreateFile,
+  onCreateLink,
   onOpenExternalNotes,
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
@@ -109,11 +118,13 @@ export function NoteList({
     null,
   );
   const [visibleNoteCount, setVisibleNoteCount] = useState(INITIAL_NOTE_COUNT);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const inTrash = filter.kind === "trash";
   const inExternal = filter.kind === "external";
   const inFiles = filter.kind === "files";
+  const inLinks = filter.kind === "links";
   const filterKey =
     filter.kind === "type" ? `type:${filter.path.join("/")}` : filter.kind;
   const listFilterKey = JSON.stringify(listFilters);
@@ -131,7 +142,9 @@ export function NoteList({
           ? "External Notes"
           : filter.kind === "files"
             ? "Files"
-          : "Trash";
+            : filter.kind === "links"
+              ? "Links"
+              : "Trash";
 
   useEffect(() => {
     setVisibleNoteCount(INITIAL_NOTE_COUNT);
@@ -158,7 +171,7 @@ export function NoteList({
   }, [hasMoreNotes, notes.length]);
 
   return (
-    <div className="flex h-full flex-col bg-grim-surface">
+    <div className="flex h-full flex-col bg-zerus-surface">
       <div
         className={cn(
           "flex items-center gap-2 border-b border-border/60 px-3 py-2.5",
@@ -185,6 +198,7 @@ export function NoteList({
             title={undefined}
             onClick={() => {
               if (inFiles) onCreateFile();
+              else if (inLinks) setAddLinkOpen(true);
               else if (inExternal) onOpenExternalNotes();
               else onCreateNote();
             }}
@@ -192,15 +206,23 @@ export function NoteList({
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="flex items-center">
-                  {inFiles ? <FilePlus2 size={16} /> : <Plus size={16} />}
+                  {inFiles ? (
+                    <FilePlus2 size={16} />
+                  ) : inLinks ? (
+                    <Link2 size={16} />
+                  ) : (
+                    <Plus size={16} />
+                  )}
                 </span>
               </TooltipTrigger>
               <TooltipContent>
                 {inFiles
                   ? "Add a file to Files"
+                  : inLinks
+                    ? "Add a URL to Links"
                   : inExternal
                     ? "Open markdown file(s)"
-                    : "New note (⌘N)"}
+                    : `New note (${primaryModifierLabel}N)`}
               </TooltipContent>
             </Tooltip>
           </Button>
@@ -220,8 +242,10 @@ export function NoteList({
           <Input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder={inFiles ? "Search files…" : "Search notes…"}
-            className="h-8 bg-grim-editor pl-8 text-sm"
+            placeholder={
+              inFiles ? "Search files…" : inLinks ? "Search links…" : "Search notes…"
+            }
+            className="h-8 bg-zerus-editor pl-8 text-sm"
           />
         </div>
         <NoteListFilters
@@ -249,6 +273,8 @@ export function NoteList({
                 ? "Open markdown files from anywhere on your computer."
                 : inFiles
                   ? "Files attached to notes will appear here."
+                  : inLinks
+                    ? "URLs added to Links will appear here."
                 : "No notes here yet."}
           </p>
         )}
@@ -257,8 +283,13 @@ export function NoteList({
           const external = isExternalNote(note);
           const archived = isArchived(note);
           const fileHub = getFileHubReference(note);
+          const linkHub = getLinkHubReference(note);
           const title = inFiles && fileHub ? fileHub.name : noteName;
-          const snippet = inFiles ? noteName : noteSnippet(note);
+          const snippet = inFiles
+            ? noteName
+            : inLinks && linkHub
+              ? linkHub.url
+              : noteSnippet(note);
           const type = typeKey(noteTypePath(note));
           return (
             <ContextMenu key={note.id}>
@@ -268,16 +299,19 @@ export function NoteList({
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     note.id === selectedNoteId
-                      ? "bg-grim-accent/10"
-                      : "hover:bg-grim-text/[0.03]",
+                      ? "bg-zerus-accent/10"
+                      : "hover:bg-zerus-text/[0.03]",
                   )}
                 >
                   <div className="flex items-center gap-1.5">
                     {fileHub && (
-                      <FileText size={12} className="shrink-0 text-grim-accent" />
+                      <FileText size={12} className="shrink-0 text-zerus-accent" />
+                    )}
+                    {linkHub && (
+                      <Link2 size={12} className="shrink-0 text-zerus-accent" />
                     )}
                     {note.pinned && (
-                      <Pin size={12} className="shrink-0 text-grim-accent" />
+                      <Pin size={12} className="shrink-0 text-zerus-accent" />
                     )}
                     {archived && (
                       <Archive
@@ -302,6 +336,8 @@ export function NoteList({
                       <span className="truncate">
                         {fileHub
                           ? `${fileExtension(fileHub.name).toUpperCase()} · ${type || "unfiled"}`
+                          : linkHub
+                            ? "LINK"
                           : external
                             ? "external"
                             : type || "unfiled"}
@@ -317,7 +353,8 @@ export function NoteList({
                 <ContextMenuItem
                   onClick={() => void revealNoteInDesktop(note.id)}
                 >
-                  <FolderSearch size={14} className="mr-2" /> Reveal in Finder
+                  <FolderSearch size={14} className="mr-2" /> Reveal in{" "}
+                  {fileManagerName}
                 </ContextMenuItem>
                 {external ? (
                   <>
@@ -416,7 +453,7 @@ export function NoteList({
                 : "this note"}”?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Grimoire will stop tracking this external note. The file will be
+              Zerus will stop tracking this external note. The file will be
               saved and left in its current location.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -463,6 +500,11 @@ export function NoteList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AddLinkDialog
+        open={addLinkOpen}
+        onOpenChange={setAddLinkOpen}
+        onAdd={onCreateLink}
+      />
     </div>
   );
 }

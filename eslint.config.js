@@ -1,15 +1,27 @@
 import js from "@eslint/js";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
+
+const nestedRepositories = readdirSync(import.meta.dirname, {
+  withFileTypes: true,
+})
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      existsSync(join(import.meta.dirname, entry.name, ".git")),
+  )
+  .map((entry) => `${entry.name}/**`);
 
 export default tseslint.config(
   {
     ignores: [
       ".worktrees/**",
       "dist/**",
-      "grimoire/**",
+      ...nestedRepositories,
       "src-tauri/target/**",
     ],
   },

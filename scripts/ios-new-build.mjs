@@ -86,7 +86,7 @@ function copyToXcodeOrganizer(archive, version, build) {
   const destination = join(
     organizerArchiveRoot,
     date,
-    `Grimoire ${version} (${build}).xcarchive`,
+    `Zerus ${version} (${build}).xcarchive`,
   );
 
   if (existsSync(destination)) {
