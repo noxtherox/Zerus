@@ -75,4 +75,11 @@ describe("external links", () => {
       externalLinkAt(createState("![logo](https://example.com/logo.png)"), 3),
     ).toBeNull();
   });
+
+  it("does not auto-link a bare domain used as the note title", () => {
+    const state = createState("# start.gg\n\nhttps://www.start.gg/");
+
+    expect(externalLinkAt(state, 5)).toBeNull();
+    expect(externalLinkAt(state, 20)?.url).toBe("https://www.start.gg/");
+  });
 });

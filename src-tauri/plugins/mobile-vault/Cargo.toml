@@ -1,10 +1,10 @@
 [package]
 name = "tauri-plugin-mobile-vault"
 version = "0.1.0"
-description = "Tauri mobile vault, AI, and speech integration for Grimoire"
-authors = ["Grimoire contributors"]
+description = "Tauri mobile vault, AI, and speech integration for Zerus"
+authors = ["Zerus contributors"]
 license = "MIT"
-repository = "https://github.com/noxtherox/grimoire"
+repository = "https://github.com/noxtherox/Zerus"
 edition = "2021"
 rust-version = "1.77.2"
 exclude = ["/examples", "/dist-js", "/guest-js", "/node_modules"]

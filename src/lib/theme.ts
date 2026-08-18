@@ -1,13 +1,13 @@
 import { applyLogoForSidebar } from "@/lib/branding";
 
 /**
- * App-wide color theme. Every distinctive Grimoire color lives behind a
+ * App-wide color theme. Every distinctive Zerus color lives behind a
  * `--grim-*` CSS variable (an "R G B" triplet so Tailwind opacity modifiers
  * like `bg-grim-accent/10` keep working). This module owns loading, saving
  * and applying those variables; defaults live in globals.css.
  */
 
-export interface GrimoireTheme {
+export interface ZerusTheme {
   /** Highlight color: pins, selection tint, tags, cursor, type chip. */
   accent: string;
   /** Wikilinks, URLs and relation chips. */
@@ -26,10 +26,10 @@ export interface GrimoireTheme {
 
 export interface SavedTheme {
   name: string;
-  theme: GrimoireTheme;
+  theme: ZerusTheme;
 }
 
-export const DEFAULT_THEME: GrimoireTheme = {
+export const DEFAULT_THEME: ZerusTheme = {
   accent: "#d84b40",
   link: "#0b6acd",
   text: "#020817",
@@ -40,7 +40,7 @@ export const DEFAULT_THEME: GrimoireTheme = {
 };
 
 export const THEME_TOKENS: {
-  key: keyof GrimoireTheme;
+  key: keyof ZerusTheme;
   label: string;
   hint: string;
 }[] = [
@@ -53,8 +53,8 @@ export const THEME_TOKENS: {
   { key: "sidebarFg", label: "Sidebar text", hint: "Navigation labels" },
 ];
 
-export const THEME_PRESETS: { name: string; theme: GrimoireTheme }[] = [
-  { name: "Grimoire", theme: DEFAULT_THEME },
+export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
+  { name: "Zerus", theme: DEFAULT_THEME },
   {
     name: "Ember",
     theme: {
@@ -177,11 +177,11 @@ export const THEME_PRESETS: { name: string; theme: GrimoireTheme }[] = [
   },
 ];
 
-const STORAGE_KEY = "grimoire-theme";
-const SAVED_THEMES_STORAGE_KEY = "grimoire-saved-themes";
+const STORAGE_KEY = "zerus-theme";
+const SAVED_THEMES_STORAGE_KEY = "zerus-saved-themes";
 export const MAX_SAVED_THEME_NAME_LENGTH = 40;
 
-const CSS_VARS: Record<keyof GrimoireTheme, string> = {
+const CSS_VARS: Record<keyof ZerusTheme, string> = {
   accent: "--grim-accent",
   link: "--grim-link",
   text: "--grim-text",
@@ -238,9 +238,9 @@ function rgbToHslTriplet([r, g, b]: Rgb): string {
   return `${Math.round(h)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
-export function applyTheme(theme: GrimoireTheme): void {
+export function applyTheme(theme: ZerusTheme): void {
   const root = document.documentElement;
-  for (const key of Object.keys(CSS_VARS) as (keyof GrimoireTheme)[]) {
+  for (const key of Object.keys(CSS_VARS) as (keyof ZerusTheme)[]) {
     const rgb = hexToRgb(theme[key]);
     if (rgb) root.style.setProperty(CSS_VARS[key], rgb.join(" "));
   }
@@ -273,13 +273,13 @@ export function applyTheme(theme: GrimoireTheme): void {
   setHsl("--ring", mix(text, editor, 0.6));
 }
 
-export function loadTheme(): GrimoireTheme {
+export function loadTheme(): ZerusTheme {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULT_THEME };
-    const parsed = JSON.parse(raw) as Partial<GrimoireTheme>;
+    const parsed = JSON.parse(raw) as Partial<ZerusTheme>;
     const theme = { ...DEFAULT_THEME };
-    for (const key of Object.keys(CSS_VARS) as (keyof GrimoireTheme)[]) {
+    for (const key of Object.keys(CSS_VARS) as (keyof ZerusTheme)[]) {
       const value = parsed[key];
       if (typeof value === "string" && isValidHex(value)) theme[key] = value;
     }
@@ -289,11 +289,11 @@ export function loadTheme(): GrimoireTheme {
   }
 }
 
-function parseCompleteTheme(value: unknown): GrimoireTheme | null {
+function parseCompleteTheme(value: unknown): ZerusTheme | null {
   if (!value || typeof value !== "object") return null;
-  const candidate = value as Partial<GrimoireTheme>;
+  const candidate = value as Partial<ZerusTheme>;
   const theme = { ...DEFAULT_THEME };
-  for (const key of Object.keys(CSS_VARS) as (keyof GrimoireTheme)[]) {
+  for (const key of Object.keys(CSS_VARS) as (keyof ZerusTheme)[]) {
     const color = candidate[key];
     if (typeof color !== "string" || !isValidHex(color)) return null;
     theme[key] = color.trim();
@@ -331,7 +331,7 @@ export function loadSavedThemes(): SavedTheme[] {
 /** Save a named theme, replacing the existing saved theme with the same name. */
 export function saveNamedTheme(
   name: string,
-  theme: GrimoireTheme,
+  theme: ZerusTheme,
 ): SavedTheme[] {
   const cleanName = name.trim().slice(0, MAX_SAVED_THEME_NAME_LENGTH);
   if (!cleanName) return loadSavedThemes();
@@ -370,7 +370,7 @@ export function deleteSavedTheme(name: string): SavedTheme[] {
   return next;
 }
 
-export function saveTheme(theme: GrimoireTheme): void {
+export function saveTheme(theme: ZerusTheme): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
   } catch {

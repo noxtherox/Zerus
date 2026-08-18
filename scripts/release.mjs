@@ -76,7 +76,7 @@ writeFileSync(lockPath, nextLock);
 run("cargo", ["check", "--manifest-path", cargoPath, "-p", "app"]);
 run("git", ["add", configPath, cargoPath, lockPath]);
 run("git", ["commit", "-m", `Release ${tag}`]);
-run("git", ["tag", "-a", tag, "-m", `Grimoire ${tag}`]);
+run("git", ["tag", "-a", tag, "-m", `Zerus ${tag}`]);
 run("git", ["push", "--atomic", "origin", "main", `refs/tags/${tag}`]);
 
 console.log(`${tag} pushed. GitHub Actions is building and publishing the release.`);

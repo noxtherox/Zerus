@@ -19,6 +19,7 @@ import {
   fileStem,
   getAllTypePaths,
   isExternalNote,
+  isSavedLinkNote,
   isRemoteUrl,
   isTrashed,
   logicalPath,
@@ -39,10 +40,10 @@ import {
   withBody,
 } from "@/lib/frontmatter";
 import {
-  isReservedGrimoireProperty,
-  readGrimoireMetadata,
-  setGrimoireState,
-} from "@/lib/grimoire-metadata";
+  isReservedZerusProperty,
+  readZerusMetadata,
+  setZerusState,
+} from "@/lib/zerus-metadata";
 import {
   type PropertyDef,
   type PropertySchemas,
@@ -87,14 +88,28 @@ import {
   type FileLocationDefinition,
   type ResolvedFileHub,
 } from "@/lib/file-hubs";
+import {
+  getLinkHubReference,
+  linkDisplayName,
+  removeLinkHubReference,
+  setLinkHubReference,
+  withLinkMarkdown,
+} from "@/lib/link-hubs";
+import { normalizeExternalUrl } from "@/lib/external-links";
 
-const VAULT_PATH_KEY = "grimoire.vaultPath";
-const EXTERNAL_PATHS_KEY = "grimoire.externalPaths";
-const FILE_LOCATION_MAPPINGS_KEY = "grimoire.fileLocationMappings.v1";
-const FILE_HUB_MAPPINGS_KEY = "grimoire.fileHubMappings.v1";
-const STARTUP_CACHE_KEY_PREFIX = "grimoire.startupCache.v1.";
+const VAULT_PATH_KEY = "zerus.vaultPath";
+const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
+const FILE_LOCATION_MAPPINGS_KEY = "zerus.fileLocationMappings.v1";
+const FILE_HUB_MAPPINGS_KEY = "zerus.fileHubMappings.v1";
+const STARTUP_CACHE_KEY_PREFIX = "zerus.startupCache.v1.";
+const SAVED_LINKS_DIR = ".zerus/links";
+const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
 const FLUSH_DELAY_MS = 500;
 const MOBILE_NOTE_PAGE_SIZE = 30;
+
+function isManagedSavedLink(note: Note): boolean {
+  return isSavedLinkNote(note) && note.path.startsWith(`${SAVED_LINKS_DIR}/`);
+}
 
 export interface VaultState {
   status: "booting" | "pick-vault" | "loading" | "ready" | "error";
@@ -237,7 +252,7 @@ export function prioritizeNoteLoad(id: string): Promise<void> {
       });
     })
     .catch((error) => {
-      console.error("Grimoire: failed to prioritize startup note", error);
+      console.error("Zerus: failed to prioritize startup note", error);
     })
     .finally(() => {
       pendingStartupNoteLoads.delete(id);
@@ -300,7 +315,7 @@ function setFileHubMapping(id: string, path: string | null) {
 // ---- note display state, persisted per vault ------------------------------
 
 function pinnedStorageKey(): string {
-  return `grimoire.pinned.${state.location ?? "browser"}`;
+  return `zerus.pinned.${state.location ?? "browser"}`;
 }
 
 function loadPinnedPaths(): Set<string> {
@@ -325,7 +340,7 @@ function savePinnedPaths() {
 }
 
 function archivedStorageKey(): string {
-  return `grimoire.archived.${state.location ?? "browser"}`;
+  return `zerus.archived.${state.location ?? "browser"}`;
 }
 
 function loadArchivedPaths(): Set<string> {
@@ -445,9 +460,58 @@ async function loadExternalNotes(): Promise<Note[]> {
   return loaded.filter((note): note is Note => note !== null);
 }
 
+async function loadSavedLinkPaths(fromBackend: VaultBackend): Promise<string[]> {
+  try {
+    const parsed: unknown = JSON.parse(
+      await fromBackend.readText(SAVED_LINKS_INDEX_PATH),
+    );
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed.filter(
+          (path): path is string =>
+            typeof path === "string" &&
+            path.startsWith(`${SAVED_LINKS_DIR}/`),
+        ),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+async function saveSavedLinkPaths(paths: string[]): Promise<void> {
+  if (!backend) return;
+  await backend.write(SAVED_LINKS_INDEX_PATH, JSON.stringify(paths, null, 2));
+}
+
+async function loadSavedLinkNotes(fromBackend: VaultBackend): Promise<Note[]> {
+  const paths = await loadSavedLinkPaths(fromBackend);
+  const loaded = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const content = await fromBackend.readText(path);
+        if (!getLinkHubReference(content)) return null;
+        return noteFromVaultFile(
+          { path, content, updatedAt: new Date().toISOString() },
+          new Set(),
+          new Set(),
+        );
+      } catch {
+        return null;
+      }
+    }),
+  );
+  const notes = loaded.filter((note): note is Note => note !== null);
+  if (notes.length !== paths.length) {
+    await saveSavedLinkPaths(notes.map((note) => note.path));
+  }
+  return notes;
+}
+
 // ---- vault lifecycle -------------------------------------------------------
 
-const SCHEMAS_PATH = ".grimoire/properties.json";
+const SCHEMAS_PATH = ".zerus/properties.json";
 
 async function loadSchemas(
   fromBackend: VaultBackend,
@@ -462,8 +526,8 @@ async function loadSchemas(
   }
 }
 
-const TYPE_ICONS_PATH = ".grimoire/type-icons.json";
-const FILE_LOCATIONS_PATH = ".grimoire/file-locations.json";
+const TYPE_ICONS_PATH = ".zerus/type-icons.json";
+const FILE_LOCATIONS_PATH = ".zerus/file-locations.json";
 
 async function loadTypeIcons(fromBackend: VaultBackend): Promise<TypeIcons> {
   try {
@@ -591,7 +655,7 @@ function noteFromVaultFile(
   archivedPaths: Set<string>,
   existingId?: string,
 ): Note {
-  const metadata = readGrimoireMetadata(file.content);
+  const metadata = readZerusMetadata(file.content);
   return {
     id: existingId ?? metadata.id ?? crypto.randomUUID(),
     path: file.path,
@@ -758,7 +822,7 @@ async function loadVault(nextBackend: VaultBackend) {
       nextBackend.kind === "mobile" &&
       nextBackend.listNoteEntries !== undefined &&
       nextBackend.loadFiles !== undefined;
-    const [noteSource, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
+    const [noteSource, savedLinkNotes, schemas, dirs, typeIcons, fileLocations] = await Promise.all([
       canPage
         ? nextBackend.listNoteEntries!()
         : nextBackend instanceof DesktopVault
@@ -767,6 +831,7 @@ async function loadVault(nextBackend: VaultBackend) {
             onPriorityLoaded: applyPriorityFiles,
           })
         : nextBackend.loadAll(),
+      loadSavedLinkNotes(nextBackend),
       loadSchemas(nextBackend),
       nextBackend.listDirs(),
       loadTypeIcons(nextBackend),
@@ -825,7 +890,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const extraTypes = dirs
       .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
-    const loadedNotes = [...externalNotes, ...vaultNotes];
+    const loadedNotes = [...externalNotes, ...savedLinkNotes, ...vaultNotes];
     const mobileSummary = canPage
       ? summarizeMobileEntries(mobileNoteEntries)
       : { totalNoteCount: vaultNotes.filter((note) => !isTrashed(note)).length, typeNoteCounts: {} };
@@ -1052,7 +1117,7 @@ export async function createMobileVaultOnDevice(): Promise<boolean> {
 export async function chooseVaultFolder() {
   const folder = await openDialog({
     directory: true,
-    title: "Choose your Grimoire vault folder",
+    title: "Choose your Zerus vault folder",
   });
   if (typeof folder !== "string" || !folder) return;
   if (backend && !(await flushAll())) return;
@@ -1072,12 +1137,15 @@ export async function refreshVaultFromDisk() {
   await flushAll();
   const files = await backend.loadAll();
   const existingByPath = new Map(
-    state.notes.filter((note) => !isExternalNote(note)).map((note) => [note.path, note]),
+    state.notes
+      .filter((note) => !isExternalNote(note) && !isManagedSavedLink(note))
+      .map((note) => [note.path, note]),
   );
   const external = state.notes.filter(isExternalNote);
+  const savedLinks = state.notes.filter(isManagedSavedLink);
   const refreshed = files.map((file) => {
     const previous = existingByPath.get(file.path);
-    const metadata = readGrimoireMetadata(file.content);
+    const metadata = readZerusMetadata(file.content);
     const note: Note = {
       id: metadata.id ?? previous?.id ?? crypto.randomUUID(),
       path: file.path,
@@ -1089,7 +1157,7 @@ export async function refreshVaultFromDisk() {
     diskSnapshots.set(note.id, file.content);
     return note;
   });
-  const next = [...refreshed, ...external];
+  const next = [...refreshed, ...savedLinks, ...external];
   if (JSON.stringify(next) !== JSON.stringify(state.notes)) setState({ notes: next });
 }
 
@@ -1172,9 +1240,9 @@ export async function synchronizeDesktopFiles() {
       loadFileLocations(activeBackend),
     ]);
     if (backend !== activeBackend || state.status !== "ready") return;
-    // The filesystem scan is asynchronous. If Grimoire edited, saved, renamed,
+    // The filesystem scan is asynchronous. If Zerus edited, saved, renamed,
     // added, or removed a note while it was in progress, its results may describe
-    // the disk from before Grimoire's own write. Ignore that stale scan and let
+    // the disk from before Zerus's own write. Ignore that stale scan and let
     // the next poll compare against the new snapshot.
     if (!desktopSyncBasisIsCurrent(syncBasis)) return;
 
@@ -1206,7 +1274,7 @@ export async function synchronizeDesktopFiles() {
     const unmatchedFiles = new Set(files.map((file) => relativePathKey(file.path)));
     for (let index = 0; index < latestNotes.length; index += 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note)) continue;
+      if (isExternalNote(note) || isManagedSavedLink(note)) continue;
       const key = relativePathKey(note.path);
       if (filesByPath.has(key)) {
         unmatchedFiles.delete(key);
@@ -1236,7 +1304,7 @@ export async function synchronizeDesktopFiles() {
 
     for (let index = latestNotes.length - 1; index >= 0; index -= 1) {
       const note = latestNotes[index];
-      if (isExternalNote(note)) continue;
+      if (isExternalNote(note) || isManagedSavedLink(note)) continue;
       const key = relativePathKey(note.path);
       const file = filesByPath.get(key);
       if (file) {
@@ -1330,9 +1398,20 @@ export async function synchronizeDesktopFiles() {
       JSON.stringify(nextConflicts) !== JSON.stringify(state.conflicts);
     const locationsChanged =
       JSON.stringify(fileLocations) !== JSON.stringify(state.fileLocations);
+    const uniqueNotes = [
+      ...new Map(
+        latestNotes.map((note) => [
+          isExternalNote(note)
+            ? `external:${note.externalPath}`
+            : `path:${note.path}`,
+          note,
+        ]),
+      ).values(),
+    ];
+    if (uniqueNotes.length !== latestNotes.length) notesChanged = true;
     if (notesChanged || typesChanged || conflictsChanged || locationsChanged) {
       setState({
-        notes: latestNotes,
+        notes: uniqueNotes,
         extraTypes: typesChanged ? extraTypes : state.extraTypes,
         conflicts: nextConflicts,
         fileLocations: locationsChanged ? fileLocations : state.fileLocations,
@@ -1341,7 +1420,7 @@ export async function synchronizeDesktopFiles() {
     }
     if (registryChanged) saveExternalPaths();
   } catch (error) {
-    console.error("Grimoire: failed to synchronize files", error);
+    console.error("Zerus: failed to synchronize files", error);
   } finally {
     desktopSyncInFlight = false;
   }
@@ -1438,7 +1517,7 @@ function setNoteBusy(id: string, busy: boolean) {
 }
 
 function reportError(action: string, error: unknown) {
-  console.error(`Grimoire: failed to ${action}`, error);
+  console.error(`Zerus: failed to ${action}`, error);
   showError(`Failed to ${action}: ${error}`);
 }
 
@@ -1550,6 +1629,11 @@ async function persistNote(
       return true;
     }
     if (!backend) return false;
+    if (isSavedLinkNote(note)) {
+      await backend.write(note.path, note.content);
+      diskSnapshots.set(id, note.content);
+      return true;
+    }
     let path = note.path;
     const desiredStem = sanitizeFileStem(noteTitle(note));
     if (
@@ -1607,7 +1691,7 @@ async function flushUntilIdle(id: string): Promise<boolean> {
 
 async function flushAll(): Promise<boolean> {
   if (Object.keys(state.conflicts).length > 0) {
-    showError("Resolve note changes from disk before closing Grimoire.");
+    showError("Resolve note changes from disk before closing Zerus.");
     return false;
   }
   let saved = true;
@@ -1698,9 +1782,9 @@ async function collectPendingDesktopOpenPaths() {
 function installDesktopOpenHook() {
   if (desktopOpenHookInstalled) return;
   desktopOpenHookInstalled = true;
-  void listen("grimoire-open-files", () => {
+  void listen("zerus-open-files", () => {
     void collectPendingDesktopOpenPaths().catch((error) =>
-      reportError("open file from Finder", error),
+      reportError("open file from desktop", error),
     );
   })
     .then(() => collectPendingDesktopOpenPaths())
@@ -1719,7 +1803,7 @@ async function drainDesktopOpenPaths(): Promise<void> {
       const notePaths = paths.filter(isMarkdownFilePath);
       const documentPaths = paths.filter((path) => !isMarkdownFilePath(path));
       const ids = [
-        ...(await openDocumentPathsFromFinder(documentPaths)),
+        ...(await openDocumentPathsFromDesktop(documentPaths)),
         ...(await openExternalPaths(notePaths)),
       ];
       if (!ids.length) continue;
@@ -1737,7 +1821,7 @@ async function drainDesktopOpenPaths(): Promise<void> {
   return desktopOpenDrain;
 }
 
-export async function openDocumentPathsFromFinder(
+export async function openDocumentPathsFromDesktop(
   paths: string[],
 ): Promise<string[]> {
   const ids: string[] = [];
@@ -1880,7 +1964,7 @@ export async function copyExternalNoteToVault(
     const existedKeys = existingTypeKeys();
     try {
       const copiedId = crypto.randomUUID();
-      const content = setGrimoireState(source.content, { id: copiedId });
+      const content = setZerusState(source.content, { id: copiedId });
       const path = await writeUniquePathOnDisk(
         typeKey(typePath),
         fileStem(source.externalPath),
@@ -2051,6 +2135,100 @@ export async function createFileNote(
   const picked = await chooseDocumentFile();
   if (!picked) return null;
   return createUnmanagedFileHubNote(typePath, picked);
+}
+
+/** Creates an app-managed web link outside the vault's note/type hierarchy. */
+export async function createLinkNote(
+  rawUrl: string,
+): Promise<Note | null> {
+  const url = normalizeExternalUrl(rawUrl);
+  if (!url) return null;
+  const existing = state.notes.find(
+    (note) => getLinkHubReference(note)?.url === url,
+  );
+  if (existing) return existing;
+
+  const id = crypto.randomUUID();
+  const title = linkDisplayName(url) || "Link";
+  const path = `${SAVED_LINKS_DIR}/${id}.md`;
+  const content = setZerusState(
+    setLinkHubReference(withLinkMarkdown(`# ${title}\n`, url), { id, url }),
+    { id },
+  );
+  const note: Note = {
+    id,
+    path,
+    content,
+    pinned: false,
+    archived: false,
+    updatedAt: new Date().toISOString(),
+  };
+  if (!backend) return null;
+  try {
+    await backend.writeNew(path, content);
+    const paths = state.notes
+      .filter(isSavedLinkNote)
+      .map((candidate) => candidate.path);
+    await saveSavedLinkPaths([...paths, path]);
+    diskSnapshots.set(id, content);
+    setState({ notes: [note, ...state.notes] });
+    return note;
+  } catch (error) {
+    await backend.removeFile(path).catch(() => {});
+    reportError("create link", error);
+    return null;
+  }
+}
+
+/** Converts an app-managed saved link into an ordinary typed Markdown note. */
+export async function moveSavedLinkToVault(
+  id: string,
+  typePath: string[],
+): Promise<boolean> {
+  if (!backend || !isSafeTypePath(typePath) || state.busyNoteIds.has(id)) {
+    return false;
+  }
+  const initial = state.notes.find((note) => note.id === id);
+  if (!initial || !isSavedLinkNote(initial)) return false;
+  setNoteBusy(id, true);
+  try {
+    if (!(await flushUntilIdle(id))) return false;
+    const note = state.notes.find((candidate) => candidate.id === id);
+    if (!note || !isSavedLinkNote(note)) return false;
+    const existedKeys = existingTypeKeys();
+    const content = removeLinkHubReference(note.content);
+    const target = uniquePath(typeKey(typePath), sanitizeFileStem(noteTitle(note)), id);
+    await backend.write(target, content);
+    const managedSavedLink = note.path.startsWith(`${SAVED_LINKS_DIR}/`);
+    const previousSavedLinkPaths = state.notes
+      .filter(isSavedLinkNote)
+      .map((candidate) => candidate.path);
+    const nextSavedLinkPaths = previousSavedLinkPaths.filter(
+      (path) => path !== note.path,
+    );
+    if (managedSavedLink) await saveSavedLinkPaths(nextSavedLinkPaths);
+    if (target !== note.path) {
+      try {
+        await backend.removeFile(note.path);
+      } catch (error) {
+        if (managedSavedLink) {
+          await saveSavedLinkPaths(previousSavedLinkPaths).catch(() => {});
+        }
+        await backend.removeFile(target).catch(() => {});
+        throw error;
+      }
+    }
+    updateNote(id, { path: target, content });
+    diskSnapshots.set(id, content);
+    saveNoteDisplayState();
+    await suggestIconsForNewType(typePath, existedKeys);
+    return true;
+  } catch (error) {
+    reportError("move link to vault", error);
+    return false;
+  } finally {
+    setNoteBusy(id, false);
+  }
 }
 
 async function findHubForAbsolutePath(
@@ -2436,7 +2614,7 @@ function schemaOwnerKey(typeKeyOrPath: string): string {
 }
 
 export function addTypeProperty(typeKeyOrPath: string, def: PropertyDef) {
-  if (isReservedGrimoireProperty(def.name)) return;
+  if (isReservedZerusProperty(def.name)) return;
   const ownerKey = schemaOwnerKey(typeKeyOrPath);
   const defs = state.schemas[ownerKey] ?? [];
   if (defs.some((d) => d.name.toLowerCase() === def.name.toLowerCase())) return;
@@ -2449,7 +2627,7 @@ export function updateTypeProperty(
   oldName: string,
   def: PropertyDef,
 ) {
-  if (isReservedGrimoireProperty(def.name)) return;
+  if (isReservedZerusProperty(def.name)) return;
   const ownerKey = schemaOwnerKey(typeKeyOrPath);
   const defs = state.schemas[ownerKey] ?? [];
   const idx = defs.findIndex(
@@ -2525,7 +2703,7 @@ export function setNoteProperty(
   name: string,
   value: PropertyValue | null,
 ) {
-  if (isReservedGrimoireProperty(name)) return;
+  if (isReservedZerusProperty(name)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return;
   const next = setContentProperty(note.content, name, value);
@@ -2755,7 +2933,7 @@ export async function createNote(
   );
   const path = uniquePath(dir, stem);
   const id = crypto.randomUUID();
-  const persistedContent = setGrimoireState(content, { id });
+  const persistedContent = setZerusState(content, { id });
   const note: Note = {
     id,
     path,
@@ -2865,7 +3043,7 @@ export function toggleNotePinned(id: string) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note)) return;
   const pinned = !note.pinned;
-  updateNoteContent(id, setGrimoireState(note.content, { pinned }));
+  updateNoteContent(id, setZerusState(note.content, { pinned }));
   updateNote(id, { pinned });
   savePinnedPaths();
 }
@@ -2877,7 +3055,7 @@ export function toggleNoteArchived(id: string) {
   const pinned = archived ? false : note.pinned;
   updateNoteContent(
     id,
-    setGrimoireState(note.content, { archived, pinned }),
+    setZerusState(note.content, { archived, pinned }),
   );
   updateNote(id, { archived, pinned });
   saveNoteDisplayState();

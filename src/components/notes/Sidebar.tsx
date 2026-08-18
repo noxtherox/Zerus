@@ -25,15 +25,16 @@ import {
   Files,
   FolderPlus,
   GripVertical,
+  Link2,
   Notebook,
   Pencil,
   Plus,
   Settings,
   Smile,
   Trash2,
-} from "lucide-react";
+} from "@/lib/icons";
 import { cn } from "@/lib/utils";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import {
   DEFAULT_TYPE,
   MAX_TYPE_DEPTH,
@@ -42,6 +43,7 @@ import {
   buildTypeTree,
   getAllTypePaths,
   isExternalNote,
+  isSavedLinkNote,
   isTrashed,
   parseTypePath,
   reorderTypeTree,
@@ -86,6 +88,7 @@ import { TypeIcon } from "./TypeIcon";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 
 interface SidebarProps {
   notes: Note[];
@@ -400,7 +403,8 @@ export function Sidebar({
 }: SidebarProps) {
   const tree = buildTypeTree(notes, extraTypes, typeOrder);
   const activeCount = notes.filter(
-    (note) => !isExternalNote(note) && !isTrashed(note),
+    (note) =>
+      !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note),
   ).length;
   const externalCount = notes.filter(isExternalNote).length;
   const fileCount = notes.filter(
@@ -408,6 +412,12 @@ export function Sidebar({
       !isExternalNote(note) &&
       !isTrashed(note) &&
       getFileHubReference(note) !== null,
+  ).length;
+  const linkCount = notes.filter(
+    (note) =>
+      !isExternalNote(note) &&
+      !isTrashed(note) &&
+      getLinkHubReference(note) !== null,
   ).length;
   const trashCount = notes.filter((note) => isTrashed(note)).length;
   const typeSensors = useSensors(
@@ -592,11 +602,11 @@ export function Sidebar({
     <div className="flex h-full flex-col bg-grim-sidebar pt-4">
       <div className="flex items-center justify-between px-4 pb-3">
         <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-grim-sidebar-fg/90">
-          <GrimoireLogo
+          <ZerusLogo
             alt=""
             className="h-6 w-6 shrink-0 rounded-sm"
           />
-          <span className="truncate">Grimoire</span>
+          <span className="truncate">Zerus</span>
         </h1>
         <button
           type="button"
@@ -631,6 +641,13 @@ export function Sidebar({
               icon={<FileStack size={15} />}
               label="Files"
               count={fileCount}
+            />
+            <SidebarRow
+              active={filter.kind === "links"}
+              onClick={() => onFilterChange({ kind: "links" })}
+              icon={<Link2 size={15} />}
+              label="Links"
+              count={linkCount}
             />
           </>
         )}

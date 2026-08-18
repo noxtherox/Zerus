@@ -78,7 +78,7 @@
 .landing-product-sidebar nav a svg { width: 11px; }
 .landing-product-sidebar nav a span:last-child { margin-left: auto; color: #6e6e74; font-family: "DM Mono", monospace; font-size: 8px; }
 .landing-product-sidebar nav a.is-active { background: rgba(216,75,64,.15); color: #f06a5d; }
-.folder-emoji { width: 11px; text-align: center; font-size: 10px; }
+.folder-icon { width: 11px; text-align: center; font-size: 10px; }
 .landing-product-list { border-right: 1px solid #292a2f; background: #1a1b20; }
 .landing-product-search { display: flex; align-items: center; gap: 7px; margin: 14px 12px 10px; padding: 9px; border: 1px solid #303136; border-radius: 5px; color: #74757c; font-size: 9px; }
 .landing-product-search svg { width: 12px; height: 12px; }
@@ -179,7 +179,7 @@ details[open] .faq-close-icon { opacity: 1; }
 
 @media (min-width: 1100px) {
   .landing-hero {
-    min-height: calc(100svh - 82px);
+    min-height: clamp(650px, 72svh, 700px);
     padding: clamp(55px, 7vh, 80px) 0 60px;
   }
   .landing-hero-copy { width: min(590px, 44vw); }

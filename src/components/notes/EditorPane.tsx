@@ -3,6 +3,9 @@ import {
   Archive,
   ArchiveRestore,
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Copy,
   Ellipsis,
   FileUp,
   FolderSearch,
@@ -14,11 +17,13 @@ import {
   Minimize,
   Pin,
   RefreshCw,
+  Search,
   SquareTerminal,
+  Sparkles,
   Trash2,
   Undo2,
   X,
-} from "lucide-react";
+} from "@/lib/icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -47,12 +52,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
 import { FileHubPanel } from "./FileHubPanel";
+import { LinkHubPanel } from "./LinkHubPanel";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { GrimoireLogo } from "@/components/GrimoireLogo";
+import { ZerusLogo } from "@/components/ZerusLogo";
 import { TypePicker } from "./TypePicker";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { getBacklinksGroupedByType } from "@/lib/links";
@@ -69,6 +75,7 @@ import {
 } from "@/lib/note-utils";
 import { noteBody } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference, withLinkMarkdown } from "@/lib/link-hubs";
 import type { PropertySchemas } from "@/lib/properties";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
@@ -91,6 +98,10 @@ import {
   updateNoteBody,
 } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
+import {
+  fileManagerName,
+  primaryModifierLabel,
+} from "@/lib/desktop-platform";
 
 interface EditorPaneProps {
   note: Note | null;
@@ -104,6 +115,7 @@ interface EditorPaneProps {
   onOpenNote: (id: string) => void;
   onCopyExternalToVault: (id: string, typePath: string[]) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
+  onMoveSavedLinkToVault: (id: string, typePath: string[]) => void;
   isBusy: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -112,7 +124,130 @@ interface EditorPaneProps {
   isDesktop: boolean;
   terminalOpen: boolean;
   onToggleTerminal: () => void;
+  aiOpen: boolean;
+  onToggleAi: () => void;
   conflict: NoteConflict | null;
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}
+
+interface NavigationControlsProps {
+  canNavigateBack: boolean;
+  canNavigateForward: boolean;
+  onNavigateBack: () => void;
+  onNavigateForward: () => void;
+}
+
+function NavigationControls({
+  canNavigateBack,
+  canNavigateForward,
+  onNavigateBack,
+  onNavigateForward,
+}: NavigationControlsProps) {
+  return (
+    <div className="flex shrink-0 items-center gap-0.5" aria-label="Navigation history">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        title="Go back"
+        aria-label="Go back"
+        disabled={!canNavigateBack}
+        onClick={onNavigateBack}
+      >
+        <ArrowLeft size={15} />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7"
+        title="Go forward"
+        aria-label="Go forward"
+        disabled={!canNavigateForward}
+        onClick={onNavigateForward}
+      >
+        <ArrowRight size={15} />
+      </Button>
+    </div>
+  );
+}
+
+interface EditorContextControlsProps {
+  isDesktop: boolean;
+  aiOpen: boolean;
+  onToggleAi: () => void;
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
+  isFocusMode: boolean;
+  onToggleFocusMode: () => void;
+}
+
+function EditorContextControls({
+  isDesktop,
+  aiOpen,
+  onToggleAi,
+  terminalOpen,
+  onToggleTerminal,
+  isFocusMode,
+  onToggleFocusMode,
+}: EditorContextControlsProps) {
+  return (
+    <>
+      {isDesktop && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn(
+            "h-7 shrink-0 gap-1 px-2 text-xs",
+            aiOpen && "bg-muted text-grim-accent",
+          )}
+          title={aiOpen ? "Hide AI chat" : "Open AI chat"}
+          aria-label={aiOpen ? "Hide AI chat" : "Open AI chat"}
+          aria-pressed={aiOpen}
+          onClick={onToggleAi}
+        >
+          <Sparkles size={15} />
+          AI
+        </Button>
+      )}
+      {isDesktop && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-7 w-7 shrink-0",
+            terminalOpen && "bg-muted text-grim-accent",
+          )}
+          title={
+            terminalOpen
+              ? `Hide terminal (${primaryModifierLabel}J)`
+              : `Open terminal (${primaryModifierLabel}J)`
+          }
+          aria-label={terminalOpen ? "Hide terminal" : "Open terminal"}
+          aria-pressed={terminalOpen}
+          onClick={onToggleTerminal}
+        >
+          <SquareTerminal size={15} />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon"
+        className={cn(
+          "h-7 w-7 shrink-0",
+          isFocusMode && "bg-muted text-grim-accent",
+        )}
+        title={isFocusMode ? "Collapse note" : "Expand note"}
+        aria-label={isFocusMode ? "Collapse note" : "Expand note"}
+        aria-pressed={isFocusMode}
+        onClick={onToggleFocusMode}
+      >
+        {isFocusMode ? <Minimize size={15} /> : <Maximize size={15} />}
+      </Button>
+    </>
+  );
 }
 
 type ExpandedFileHubSection = "pdf" | "markdown";
@@ -127,6 +262,7 @@ export function EditorPane({
   onOpenNote,
   onCopyExternalToVault,
   onMoveExternalToVault,
+  onMoveSavedLinkToVault,
   isBusy,
   isLoading,
   isRefreshing,
@@ -135,7 +271,13 @@ export function EditorPane({
   isDesktop,
   terminalOpen,
   onToggleTerminal,
+  aiOpen,
+  onToggleAi,
   conflict,
+  canNavigateBack,
+  canNavigateForward,
+  onNavigateBack,
+  onNavigateForward,
 }: EditorPaneProps) {
   const [showBacklinks, setShowBacklinks] = useState(false);
   const [expandBacklinks, setExpandBacklinks] = useState(false);
@@ -143,6 +285,7 @@ export function EditorPane({
   const [closeExternalConfirmOpen, setCloseExternalConfirmOpen] =
     useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
+  const [findRequest, setFindRequest] = useState(0);
   const [conflictReviewOpen, setConflictReviewOpen] = useState(false);
   const [overwriteDiskConfirmOpen, setOverwriteDiskConfirmOpen] =
     useState(false);
@@ -175,15 +318,35 @@ export function EditorPane({
 
   if (!note) {
     return (
-      <div className="flex h-full items-center justify-center bg-grim-editor">
-        <div className="text-center text-muted-foreground">
-          <GrimoireLogo
-            alt="Grimoire"
-            className="mx-auto h-16 w-16 rounded-xl"
+      <div className="flex h-full flex-col bg-grim-editor">
+        <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+          <NavigationControls
+            canNavigateBack={canNavigateBack}
+            canNavigateForward={canNavigateForward}
+            onNavigateBack={onNavigateBack}
+            onNavigateForward={onNavigateForward}
           />
-          <p className="mt-3 text-sm">
-            Select a note, or press ⌘N to create one.
-          </p>
+          <div className="flex-1" />
+          <EditorContextControls
+            isDesktop={isDesktop}
+            aiOpen={aiOpen}
+            onToggleAi={onToggleAi}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={onToggleTerminal}
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={onToggleFocusMode}
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <ZerusLogo
+              alt="Zerus"
+              className="mx-auto h-16 w-16 rounded-xl"
+            />
+            <p className="mt-3 text-sm">
+              Select a note, or press {primaryModifierLabel}N to create one.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -191,18 +354,39 @@ export function EditorPane({
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-grim-editor">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading note…
+      <div className="flex h-full flex-col bg-grim-editor">
+        <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
+          <NavigationControls
+            canNavigateBack={canNavigateBack}
+            canNavigateForward={canNavigateForward}
+            onNavigateBack={onNavigateBack}
+            onNavigateForward={onNavigateForward}
+          />
+          <div className="flex-1" />
+          <EditorContextControls
+            isDesktop={isDesktop}
+            aiOpen={aiOpen}
+            onToggleAi={onToggleAi}
+            terminalOpen={terminalOpen}
+            onToggleTerminal={onToggleTerminal}
+            isFocusMode={isFocusMode}
+            onToggleFocusMode={onToggleFocusMode}
+          />
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading note…
+          </div>
         </div>
       </div>
     );
   }
 
   const external = isExternalNote(note);
+  const linkHub = getLinkHubReference(note);
   const absolutePath = noteAbsolutePath(note, vaultLocation);
-  const backlinkCount = external
+  const backlinkCount = external || linkHub
     ? 0
     : [...getBacklinksGroupedByType(note, allNotes, schemas).values()].reduce(
         (sum, group) => sum + group.length,
@@ -227,6 +411,13 @@ export function EditorPane({
     const result = await attachFileToNote(note.id, path, "auto");
     if (result.status === "duplicate") onOpenNote(result.noteId);
     if (result.status === "needs-choice") setPendingAttachPath(result.path);
+  };
+
+  const copyFileHubIntoVault = async () => {
+    const status = await getFileHubStatus(note.id);
+    const path = status?.resolved.absolutePath;
+    if (!path) return;
+    await attachFileToNote(note.id, path, "copy");
   };
 
   const fileHub = getFileHubReference(note);
@@ -255,7 +446,11 @@ export function EditorPane({
       >
         <MarkdownEditor
           noteId={note.id}
-          initialContent={noteBody(note.content)}
+          initialContent={
+            linkHub
+              ? withLinkMarkdown(noteBody(note.content), linkHub.url)
+              : noteBody(note.content)
+          }
           getLinkableTitles={() =>
             getNotes()
               .filter(
@@ -274,9 +469,10 @@ export function EditorPane({
           onToggleFullHeight={
             pdfHub ? () => toggleExpandedSection("markdown") : undefined
           }
+          findRequest={findRequest}
         />
       </div>
-      {!external && showBacklinks && (
+      {!external && !linkHub && showBacklinks && (
         <BacklinksPanel
           note={note}
           allNotes={allNotes}
@@ -297,6 +493,12 @@ export function EditorPane({
           isRefreshing && "pointer-events-none opacity-70",
         )}
       >
+        <NavigationControls
+          canNavigateBack={canNavigateBack}
+          canNavigateForward={canNavigateForward}
+          onNavigateBack={onNavigateBack}
+          onNavigateForward={onNavigateForward}
+        />
         {external ? (
           <>
             <TypePicker
@@ -336,7 +538,7 @@ export function EditorPane({
               variant="ghost"
               size="sm"
               className="h-7 gap-1.5 text-xs"
-              title="Reveal in Finder"
+              title={`Reveal in ${fileManagerName}`}
               onClick={() => void revealNoteInDesktop(note.id)}
             >
               <FolderSearch size={14} /> Reveal
@@ -351,6 +553,21 @@ export function EditorPane({
             >
               <X size={14} /> Close
             </Button>
+          </>
+        ) : linkHub ? (
+          <>
+            <TypePicker
+              value={[]}
+              existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
+              typeIcons={typeIcons}
+              label="Move to vault…"
+              title="Convert this saved link into a vault note and assign its type"
+              onChange={(typePath) =>
+                onMoveSavedLinkToVault(note.id, typePath)
+              }
+              disabled={isBusy}
+            />
+            <div className="flex-1" />
           </>
         ) : (
           <>
@@ -375,10 +592,17 @@ export function EditorPane({
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuItem
+                  onSelect={() => setFindRequest((request) => request + 1)}
+                >
+                  <Search className="mr-2" size={14} />
+                  Find in note
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
                   onSelect={() => void revealNoteInDesktop(note.id)}
                 >
                   <FolderSearch className="mr-2" size={14} />
-                  Reveal in Finder
+                  Reveal in {fileManagerName}
                 </DropdownMenuItem>
                 {fileHub && (
                   <>
@@ -390,6 +614,14 @@ export function EditorPane({
                       >
                         <MapPin className="mr-2" size={14} />
                         Locate
+                      </DropdownMenuItem>
+                    )}
+                    {!fileHub.managed && fileHub.kind !== "vault" && fileHubExists && (
+                      <DropdownMenuItem
+                        onSelect={() => void copyFileHubIntoVault()}
+                      >
+                        <Copy className="mr-2" size={14} />
+                        Copy into Vault
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem onSelect={() => void startFileHubAttach()}>
@@ -471,44 +703,23 @@ export function EditorPane({
             </Button>
           </>
         )}
-        {isDesktop && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(
-              "h-7 w-7 shrink-0",
-              terminalOpen && "bg-muted text-grim-accent",
-            )}
-            title={terminalOpen ? "Hide terminal (⌘J)" : "Open terminal (⌘J)"}
-            aria-label={terminalOpen ? "Hide terminal" : "Open terminal"}
-            aria-pressed={terminalOpen}
-            onClick={onToggleTerminal}
-          >
-            <SquareTerminal size={15} />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "h-7 w-7 shrink-0",
-            isFocusMode && "bg-muted text-grim-accent",
-          )}
-          title={isFocusMode ? "Collapse note" : "Expand note"}
-          aria-label={isFocusMode ? "Collapse note" : "Expand note"}
-          aria-pressed={isFocusMode}
-          onClick={onToggleFocusMode}
-        >
-          {isFocusMode ? <Minimize size={15} /> : <Maximize size={15} />}
-        </Button>
+        <EditorContextControls
+          isDesktop={isDesktop}
+          aiOpen={aiOpen}
+          onToggleAi={onToggleAi}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={onToggleTerminal}
+          isFocusMode={isFocusMode}
+          onToggleFocusMode={onToggleFocusMode}
+        />
       </div>
       {conflict && (
         <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs">
           <AlertTriangle className="shrink-0 text-amber-600" size={16} />
           <span className="min-w-0 flex-1">
             {conflict.kind === "deleted"
-              ? "This note was deleted on disk while you have unsaved changes in Grimoire."
-              : "This note changed on disk while you have unsaved changes in Grimoire."}
+              ? "This note was deleted on disk while you have unsaved changes in Zerus."
+              : "This note changed on disk while you have unsaved changes in Zerus."}
           </span>
           <Button
             variant="outline"
@@ -573,6 +784,11 @@ export function EditorPane({
             {editorContent}
           </div>
         )
+      ) : linkHub ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <LinkHubPanel note={note} />
+          {editorContent}
+        </div>
       ) : (
         editorContent
       )}
@@ -596,7 +812,7 @@ export function EditorPane({
               Close “{noteTitle(note)}”?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Grimoire will stop tracking this external note. The file will be
+              Zerus will stop tracking this external note. The file will be
               saved and left in its current location.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -673,7 +889,7 @@ export function EditorPane({
             <div className="grid min-h-0 grid-cols-2 gap-3 overflow-hidden">
               <div className="flex min-w-0 flex-col overflow-hidden rounded-md border">
                 <div className="border-b bg-muted/50 px-3 py-2 text-xs font-semibold">
-                  Current note in Grimoire
+                  Current note in Zerus
                 </div>
                 <pre className="min-h-0 flex-1 overflow-y-auto overscroll-contain whitespace-pre-wrap break-words p-3 text-xs">
                   {conflict.currentContent}
@@ -699,9 +915,9 @@ export function EditorPane({
           <AlertDialogHeader>
             <AlertDialogTitle>Save the current note over disk?</AlertDialogTitle>
             <AlertDialogDescription>
-              This keeps the note currently shown in Grimoire and overwrites the
+              This keeps the note currently shown in Zerus and overwrites the
               changed version on disk. The external changes cannot be recovered
-              through Grimoire.
+              through Zerus.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

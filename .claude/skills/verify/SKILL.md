@@ -1,9 +1,9 @@
 ---
 name: verify
-description: Build/launch/drive recipe for verifying Grimoire changes in a real browser.
+description: Build/launch/drive recipe for verifying Zerus changes in a real browser.
 ---
 
-# Verifying Grimoire
+# Verifying Zerus
 
 Vite + React notes app with two vault backends: `DesktopVault` (Tauri fs) and
 `BrowserVault` (localStorage, auto-selected when not running under Tauri).
@@ -34,8 +34,8 @@ Gotchas that worked:
 - To simulate pasting an image, dispatch a synthetic
   `ClipboardEvent("paste", { clipboardData })` on `.cm-content` with a `File`
   added to a `DataTransfer` — CodeMirror's `domEventHandlers` receives it.
-- Browser-vault storage keys: notes `grimoire.browserVault.v1`, image assets
-  `grimoire.browserVault.assets.v1` (path → base64).
+- Browser-vault storage keys: notes `zerus.browserVault.v1`, image assets
+  `zerus.browserVault.assets.v1` (path → base64).
 - Image preview widgets: `.cm-image-preview`, resize handle
   `.cm-image-resize-handle` (hover the preview first, then mouse
   down/move/up), missing-asset fallback `.cm-image-preview-missing`.

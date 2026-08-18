@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="public/grimoire-logo.svg" alt="Grimoire logo" width="96" />
+  <img src="public/zerus-logo.svg" alt="Zerus logo" width="96" />
 </p>
 
-<h1 align="center">Grimoire</h1>
+<h1 align="center">Zerus</h1>
 
 <p align="center">
   A local-first Markdown notes app built around folders, links, and files you own.
 </p>
 
-Grimoire turns an ordinary folder of Markdown files into a structured knowledge
+Zerus turns an ordinary folder of Markdown files into a structured knowledge
 base. Folders become note types, `[[wikilinks]]` connect ideas, and YAML
 frontmatter adds queryable properties without locking your writing into a
 proprietary database.
@@ -19,7 +19,7 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 ## Highlights
 
 - **Plain files, real folders** — choose any folder as a vault. A path such as
-  `Projects/Active/Grimoire.md` appears as a nested type in the sidebar.
+  `Projects/Active/Zerus.md` appears as a nested type in the sidebar.
 - **Focused Markdown editing** — CodeMirror live preview supports headings,
   lists, tables, links, tags, pasted images, and keyboard-friendly formatting.
 - **Connected notes** — autocomplete `[[wikilinks]]`, follow links from the
@@ -34,7 +34,7 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   links in the browser, use focus mode, and run an embedded terminal in the
   selected note's folder.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
-  light and dark themes with a theme-aware Grimoire mark.
+  light and dark themes with a theme-aware Zerus mark.
 
 ## How the vault works
 
@@ -42,25 +42,25 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 My Vault/
 ├── Projects/
 │   ├── Active/
-│   │   └── Grimoire.md
+│   │   └── Zerus.md
 │   └── Project Index.md
 ├── People/
 │   └── Ada.md
 ├── assets/                 # pasted and dropped images
-├── .grimoire/              # Grimoire's vault metadata
+├── .zerus/              # Zerus's vault metadata
 └── .trash/                 # recoverable deleted notes
 ```
 
-Each `.md` file is a note. Grimoire derives its type from its containing folders,
+Each `.md` file is a note. Zerus derives its type from its containing folders,
 up to three levels deep. Moving a note to another type moves the file; changing
 the title line renames it. Property values stay in the note's frontmatter, while
-vault-wide property definitions and display metadata live under `.grimoire/`.
+vault-wide property definitions and display metadata live under `.zerus/`.
 
 ## Getting started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 22.13 or newer and [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/) and [pnpm](https://pnpm.io/)
 - [Rust](https://www.rust-lang.org/tools/install) and the
   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for desktop
   development
@@ -78,7 +78,7 @@ pnpm desktop:dev
 ```
 
 Vite serves the browser app at `http://localhost:8080` by default. On first
-desktop launch, choose the folder you want Grimoire to use as its vault.
+desktop launch, choose the folder you want Zerus to use as its vault.
 
 ## Development
 
@@ -102,12 +102,12 @@ versions in sync, commits the version bump, creates the matching `v0.3.1` tag,
 and pushes both atomically. GitHub Actions then builds the DMG and signed updater
 bundle, publishes the GitHub Release, and generates `latest.json`. Installed
 desktop copies check that file on launch and every six hours. When an update is
-available, the user can download and install it or ask Grimoire to remind them
-again in 24 hours. Grimoire relaunches after an accepted update is installed.
+available, the user can download and install it or ask Zerus to remind them
+again in 24 hours. Zerus relaunches after an accepted update is installed.
 
 The updater private key is stored in the repository's
 `TAURI_SIGNING_PRIVATE_KEY` Actions secret. Back up the local key at
-`~/.tauri/grimoire-updater.key`; losing it prevents existing installations from
+`~/.tauri/zerus-updater.key`; losing it prevents existing installations from
 accepting future updates.
 
 The project is built with React, TypeScript, CodeMirror 6, Tailwind CSS,
@@ -124,7 +124,7 @@ src-tauri/            Rust desktop shell, permissions, and packaging
 
 ## Built with Codex and GPT-5.6
 
-A substantial part of Grimoire's recent development was completed through an
+A substantial part of Zerus's recent development was completed through an
 iterative human–AI workflow using [OpenAI Codex](https://openai.com/codex/) with
 GPT-5.6.
 
@@ -142,15 +142,11 @@ GPT-5.6.
   issues found during live desktop and browser checks.
 
 Codex and GPT-5.6 were development tools; they are not bundled into the app.
-Grimoire currently has no OpenAI API integration, and using it does not require
+Zerus currently has no OpenAI API integration, and using it does not require
 an OpenAI account or API key.
 
 ## Project status
 
-Grimoire is under active development. The browser build is useful for previewing
+Zerus is under active development. The browser build is useful for previewing
 the interface, but its vault is stored in browser local storage; use the desktop
-app when you want Grimoire to work directly with files on disk.
-
-## License
-
-Grimoire is available under the [MIT License](LICENSE).
+app when you want Zerus to work directly with files on disk.

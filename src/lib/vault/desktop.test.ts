@@ -49,7 +49,7 @@ import { DesktopVault } from "./desktop";
 
 describe("DesktopVault startup loading", () => {
   it("loads notes concurrently while preserving vault discovery rules", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grimoire-desktop-vault-"));
+    const root = await mkdtemp(join(tmpdir(), "zerus-desktop-vault-"));
     await Promise.all([
       mkdir(join(root, "Notes"), { recursive: true }),
       mkdir(join(root, "Projects", "Active"), { recursive: true }),

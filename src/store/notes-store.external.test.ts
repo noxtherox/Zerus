@@ -109,7 +109,7 @@ import {
   getNoteConflict,
   initStore,
   moveExternalNoteToVault,
-  openDocumentPathsFromFinder,
+  openDocumentPathsFromDesktop,
   openExternalNotes,
   prioritizeNoteLoad,
   revealNoteInDesktop,
@@ -122,6 +122,7 @@ import {
 } from "./notes-store";
 import { isExternalNote, noteTypePath } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
 
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
@@ -152,7 +153,7 @@ describe("external note store workflow", () => {
   let startupSnapshotContent: string;
 
   beforeAll(async () => {
-    root = await mkdtemp(join(tmpdir(), "grimoire-external-test-"));
+    root = await mkdtemp(join(tmpdir(), "zerus-external-test-"));
     root = await realpath(root);
     vault = join(root, "vault");
     firstPath = join(root, "one", "First external.md");
@@ -169,9 +170,9 @@ describe("external note store workflow", () => {
       writeFile(firstPath, "# First external\n", "utf8"),
       writeFile(secondPath, "# Second external\n", "utf8"),
     ]);
-    storage.set("grimoire.vaultPath", vault);
+    storage.set("zerus.vaultPath", vault);
     storage.set(
-      `grimoire.startupCache.v1.${vault}`,
+      `zerus.startupCache.v1.${vault}`,
       JSON.stringify({
         version: 1,
         location: vault,
@@ -202,7 +203,7 @@ describe("external note store workflow", () => {
       }),
     );
     storage.set(
-      "grimoire.externalPaths",
+      "zerus.externalPaths",
       JSON.stringify([missingPath, join(vault, "inbox", "Welcome.md")]),
     );
     mocks.invoke.mockImplementation(
@@ -303,18 +304,18 @@ describe("external note store workflow", () => {
     await staleScanBlocked;
     updateNoteBody(
       vaultNote!.id,
-      "# Welcome\n\nWritten in Grimoire while a disk scan was running.\n",
+      "# Welcome\n\nWritten in Zerus while a disk scan was running.\n",
     );
     await waitFor(async () =>
       (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
-        "Written in Grimoire",
+        "Written in Zerus",
       ),
     );
     releaseStaleScan();
     await staleScan;
     expect(getNoteConflict(vaultNote!.id)).toBeNull();
     expect(getNotes().find((note) => note.id === vaultNote!.id)?.content).toContain(
-      "Written in Grimoire",
+      "Written in Zerus",
     );
 
     await revealNoteInDesktop(vaultNote!.id);
@@ -353,7 +354,7 @@ describe("external note store workflow", () => {
 
     updateNoteBody(
       ids[0],
-      "# First external\n\nUnsaved change currently shown in Grimoire.\n",
+      "# First external\n\nUnsaved change currently shown in Zerus.\n",
     );
     await writeFile(
       firstPath,
@@ -365,7 +366,7 @@ describe("external note store workflow", () => {
       "Simultaneous change from disk.",
     );
     expect(getNoteConflict(ids[0])?.currentContent).toContain(
-      "Unsaved change currently shown in Grimoire.",
+      "Unsaved change currently shown in Zerus.",
     );
     await resolveNoteConflict(ids[0], "disk");
     expect(getNotes().find((note) => note.id === ids[0])?.content).toContain(
@@ -459,7 +460,7 @@ describe("external note store workflow", () => {
       readFile(join(vault, "research", "First external 2.md"), "utf8"),
     ).resolves.toContain("Saved during shutdown.");
 
-    expect(JSON.parse(storage.get("grimoire.externalPaths") ?? "[]")).toEqual([
+    expect(JSON.parse(storage.get("zerus.externalPaths") ?? "[]")).toEqual([
       missingPath,
     ]);
   });
@@ -516,28 +517,56 @@ describe("external note store workflow", () => {
     );
   });
 
-  it("automatically creates a file hub when macOS opens a non-markdown file", async () => {
-    const video = join(root, "one", "Automatic Import.mov");
-    await writeFile(video, "video bytes");
+  it("keeps desktop-opened files linked until the user copies one into the vault", async () => {
+    const presentation = join(root, "one", "Automatic Import.pptx");
+    await writeFile(presentation, "presentation bytes");
 
-    const ids = await openDocumentPathsFromFinder([video]);
+    const ids = await openDocumentPathsFromDesktop([presentation]);
 
     expect(ids).toHaveLength(1);
     const imported = getNotes().find((note) => note.id === ids[0]);
     expect(imported).toBeDefined();
     expect(getFileHubReference(imported!)).toMatchObject({
-      name: "Automatic Import.mov",
+      name: "Automatic Import.pptx",
       kind: "local",
       managed: false,
     });
 
-    const savedContent = await readFile(join(vault, imported!.path), "utf8");
-    expect(getFileHubReference(savedContent)).toMatchObject({
-      name: "Automatic Import.mov",
-      kind: "local",
+    await expect(
+      attachFileToNote(imported!.id, presentation, "copy"),
+    ).resolves.toEqual({ status: "attached", noteId: imported!.id });
+    const copiedNote = getNotes().find((note) => note.id === imported!.id)!;
+    expect(getFileHubReference(copiedNote)).toMatchObject({
+      name: "Automatic Import.pptx",
+      kind: "vault",
+      path: "inbox/Automatic Import.pptx",
+      managed: true,
     });
+    await expect(
+      readFile(join(vault, "inbox", "Automatic Import.pptx"), "utf8"),
+    ).resolves.toBe("presentation bytes");
+    await expect(readFile(presentation, "utf8")).resolves.toBe(
+      "presentation bytes",
+    );
 
     await synchronizeDesktopFiles();
     expect(getNotes().find((note) => note.id === ids[0])).toBeDefined();
+  });
+
+  it("does not duplicate a legacy typed link during repeated desktop syncs", async () => {
+    const url = "https://example.com/legacy-link";
+    const path = join(vault, "inbox", "Legacy link.md");
+    await writeFile(
+      path,
+      setLinkHubReference("# Legacy link\n", { id: "legacy-link", url }),
+      "utf8",
+    );
+
+    await synchronizeDesktopFiles();
+    await synchronizeDesktopFiles();
+
+    expect(
+      getNotes().filter((note) => getLinkHubReference(note)?.url === url),
+    ).toHaveLength(1);
   });
 });

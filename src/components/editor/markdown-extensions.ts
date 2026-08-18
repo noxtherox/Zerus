@@ -125,7 +125,7 @@ export const editorTheme = EditorView.theme({
   },
 });
 
-/** The body line Grimoire uses as the note title: its first non-empty line. */
+/** The body line Zerus uses as the note title: its first non-empty line. */
 export function titleLineFrom(state: EditorState): number {
   for (let lineNumber = 1; lineNumber <= state.doc.lines; lineNumber += 1) {
     const line = state.doc.line(lineNumber);

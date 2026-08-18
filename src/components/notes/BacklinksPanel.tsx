@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Archive, Folder, Link2, Maximize2, Minimize2 } from "lucide-react";
+import { Archive, Folder, Link2, Maximize2, Minimize2 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { PropertiesSection } from "./PropertiesSection";

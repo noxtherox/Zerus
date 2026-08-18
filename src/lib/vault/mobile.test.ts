@@ -35,7 +35,7 @@ import { MobileFolderVault } from "./mobile";
 
 describe("MobileFolderVault discovery", () => {
   it("opens a custom-named existing vault without adding metadata", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grimoire-mobile-vault-"));
+    const root = await mkdtemp(join(tmpdir(), "zerus-mobile-vault-"));
     const notePath = join(root, "Ideas", "Existing.md");
     await mkdir(join(root, "Ideas"), { recursive: true });
     await writeFile(notePath, "# Existing vault\n", "utf8");
@@ -48,18 +48,18 @@ describe("MobileFolderVault discovery", () => {
     expect((await vault?.loadAll())?.map((file) => file.path)).toEqual([
       "Ideas/Existing.md",
     ]);
-    await expect(readFile(join(root, ".grimoire", "mobile-vault-v1"))).rejects.toThrow();
+    await expect(readFile(join(root, ".zerus", "mobile-vault-v1"))).rejects.toThrow();
   });
 
-  it("finds a Grimoire vault inside the selected iCloud parent folder", async () => {
-    const root = await mkdtemp(join(tmpdir(), "grimoire-mobile-parent-"));
-    const vaultRoot = join(root, "Grimoire");
+  it("finds a Zerus vault inside the selected iCloud parent folder", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zerus-mobile-parent-"));
+    const vaultRoot = join(root, "Zerus");
     await mkdir(join(vaultRoot, "Journal"), { recursive: true });
     await writeFile(join(vaultRoot, "Journal", "Today.md"), "# Today\n", "utf8");
 
     const vault = await MobileFolderVault.locate(pathToFileURL(root).href, "iCloud Drive");
 
-    expect(vault?.location).toBe("Grimoire");
+    expect(vault?.location).toBe("Zerus");
     expect((await vault?.loadAll())?.map((file) => file.path)).toEqual([
       "Journal/Today.md",
     ]);
