@@ -1,4 +1,6 @@
-export type AiProvider = "openai" | "anthropic" | "openrouter" | "compatible";
+export type AiProvider = "codex" | "openai" | "anthropic" | "openrouter" | "compatible";
+
+export const CODEX_PROVIDER_URL = "codex://chatgpt";
 
 export interface AiProviderConfig {
   provider: AiProvider;
@@ -20,6 +22,12 @@ interface StoredAiProviderSettings {
 }
 
 export const DEFAULT_AI_PROVIDER_CONFIGS: Record<AiProvider, AiProviderConfig> = {
+  codex: {
+    provider: "codex",
+    baseUrl: CODEX_PROVIDER_URL,
+    model: "",
+    favoriteModels: [],
+  },
   openai: {
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",
@@ -52,7 +60,7 @@ const LEGACY_CONFIG_STORAGE_KEY = "zerus.ai.provider.v1";
 const CONFIG_STORAGE_KEY = "zerus.ai.providers.v2";
 
 function isProvider(value: unknown): value is AiProvider {
-  return value === "openai" || value === "anthropic" ||
+  return value === "codex" || value === "openai" || value === "anthropic" ||
     value === "openrouter" || value === "compatible";
 }
 

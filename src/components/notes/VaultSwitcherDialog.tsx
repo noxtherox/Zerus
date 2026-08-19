@@ -35,23 +35,33 @@ export function VaultSwitcherDialog({
     if (open) setVaults(getDesktopVaults());
   }, [currentPath, open]);
 
+  const closeBeforeVaultAction = async () => {
+    onOpenChange(false);
+    // Let Radix commit the closed portal before loading a vault replaces the
+    // sidebar that owns this dialog. Otherwise its backdrop can be orphaned.
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+  };
+
   const selectVault = async (path: string) => {
     if (path === currentPath) {
       onOpenChange(false);
       return;
     }
     setBusyPath(path);
+    await closeBeforeVaultAction();
     const switched = await switchDesktopVault(path);
     setBusyPath(null);
-    if (switched) onOpenChange(false);
+    if (!switched) setVaults(getDesktopVaults());
   };
 
   const addVault = async () => {
     setBusyPath("__new__");
-    const added = await chooseVaultFolder();
+    await closeBeforeVaultAction();
+    await chooseVaultFolder();
     setBusyPath(null);
     setVaults(getDesktopVaults());
-    if (added) onOpenChange(false);
   };
 
   return (

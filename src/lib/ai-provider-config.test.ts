@@ -32,6 +32,23 @@ describe("AI provider configuration", () => {
     }
   });
 
+  it("persists ChatGPT via Codex without storing credentials", () => {
+    saveAiProviderConfig({
+      provider: "codex",
+      baseUrl: "codex://chatgpt",
+      model: "gpt-5.4",
+      favoriteModels: [],
+    });
+
+    expect(readAiProviderConfig()).toEqual({
+      provider: "codex",
+      baseUrl: "codex://chatgpt",
+      model: "gpt-5.4",
+      favoriteModels: [],
+    });
+    expect(localStorage.getItem("zerus.ai.providers.v2")).not.toContain("token");
+  });
+
   it("persists provider metadata without an API key", () => {
     saveAiProviderConfig({
       provider: "openrouter",

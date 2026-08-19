@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader2, Plus, RefreshCw, X } from "@/lib/icons";
+import { ExternalLink, Loader2, Plus, RefreshCw, X } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,14 +25,27 @@ import {
   type AiProviderConfig,
   type CloudAiModel,
 } from "@/lib/ai-provider-config";
+import { openExternalUrl } from "@/lib/external-links";
+
+const API_KEY_CREATION_URLS: Partial<Record<AiProvider, string>> = {
+  anthropic: "https://platform.claude.com/settings/keys",
+};
+
 interface AiProviderDialogProps {
   open: boolean;
   config: AiProviderConfig;
   models: CloudAiModel[];
   modelsSource: string;
   loadingModels: boolean;
+  codexAvailable: boolean;
+  codexConnected: boolean;
+  codexAccountLabel: string;
+  codexPlanType: string;
   onOpenChange: (open: boolean) => void;
   onLoadModels: (provider: AiProvider, baseUrl: string, apiKey: string) => Promise<void>;
+  onConnectCodex: () => Promise<boolean>;
+  onRefreshCodex: () => Promise<boolean>;
+  onConnectOpenRouter: () => Promise<boolean>;
   onSave: (config: AiProviderConfig, apiKey: string) => void;
 }
 
@@ -42,8 +55,15 @@ export function AiProviderDialog({
   models,
   modelsSource,
   loadingModels,
+  codexAvailable,
+  codexConnected,
+  codexAccountLabel,
+  codexPlanType,
   onOpenChange,
   onLoadModels,
+  onConnectCodex,
+  onRefreshCodex,
+  onConnectOpenRouter,
   onSave,
 }: AiProviderDialogProps) {
   const [provider, setProvider] = useState<AiProvider>(config.provider);
@@ -53,6 +73,8 @@ export function AiProviderDialog({
   const [newModel, setNewModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [savedKeyAvailable, setSavedKeyAvailable] = useState(false);
+  const [connectingCodex, setConnectingCodex] = useState(false);
+  const [connectingOpenRouter, setConnectingOpenRouter] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -68,7 +90,7 @@ export function AiProviderDialog({
   }, [config, open]);
 
   useEffect(() => {
-    if (!open || !baseUrl.trim()) {
+    if (!open || provider === "codex" || !baseUrl.trim()) {
       setSavedKeyAvailable(false);
       return;
     }
@@ -99,6 +121,7 @@ export function AiProviderDialog({
   };
 
   const canSave = Boolean(baseUrl.trim() && model.trim());
+  const apiKeyCreationUrl = API_KEY_CREATION_URLS[provider];
   const providerModels = `${provider}:${baseUrl.trim()}` === modelsSource ? models : [];
   const modelOptions = [
     ...favoriteModels.map((id) => ({ id, name: id })),
@@ -126,7 +149,7 @@ export function AiProviderDialog({
         <DialogHeader>
           <DialogTitle>Configure AI chat</DialogTitle>
           <DialogDescription>
-            Connect OpenAI, Claude, OpenRouter, or another cloud API.
+            Use your ChatGPT plan through Codex, or connect a cloud API.
           </DialogDescription>
         </DialogHeader>
 
@@ -136,7 +159,8 @@ export function AiProviderDialog({
             <Select value={provider} onValueChange={(value) => selectProvider(value as AiProvider)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="openai">OpenAI (ChatGPT)</SelectItem>
+                <SelectItem value="openai">OpenAI API key</SelectItem>
+                <SelectItem value="codex">ChatGPT plan · Codex</SelectItem>
                 <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
                 <SelectItem value="compatible">OpenAI-compatible API</SelectItem>
@@ -145,6 +169,42 @@ export function AiProviderDialog({
           </div>
 
           <>
+              {provider === "codex" && (
+                <div className="space-y-3 rounded-md border border-border/70 bg-muted/25 p-3">
+                  <div>
+                    <p className="text-sm font-medium">Use your ChatGPT plan</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Zerus connects through the Codex app-server installed with ChatGPT or the Codex CLI. Codex owns the browser sign-in and credentials.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={codexConnected ? "outline" : "default"}
+                    className="w-full gap-2"
+                    disabled={connectingCodex}
+                    onClick={() => {
+                      setConnectingCodex(true);
+                      void (codexConnected ? onRefreshCodex() : onConnectCodex())
+                        .finally(() => setConnectingCodex(false));
+                    }}
+                  >
+                    {connectingCodex && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {connectingCodex
+                      ? "Waiting for ChatGPT…"
+                      : codexConnected
+                        ? "Refresh ChatGPT connection"
+                        : "Connect ChatGPT"}
+                  </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    {codexConnected
+                      ? `Connected${codexAccountLabel ? ` as ${codexAccountLabel}` : ""}${codexPlanType ? ` · ${codexPlanType}` : ""}`
+                      : codexAvailable
+                        ? "Codex is installed and ready to connect"
+                        : "Install ChatGPT or Codex CLI to enable this option"}
+                  </p>
+                </div>
+              )}
+              {provider !== "codex" && <>
               <div className="space-y-2">
                 <Label htmlFor="ai-provider-url">API base URL</Label>
                 <Input
@@ -158,7 +218,45 @@ export function AiProviderDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="ai-provider-key">API key</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="ai-provider-key">API key</Label>
+                  {provider === "openrouter" ? (
+                    <Button
+                      type="button"
+                      variant={savedKeyAvailable ? "outline" : "default"}
+                      size="sm"
+                      className="h-7 gap-1.5 px-2 text-xs"
+                      disabled={connectingOpenRouter}
+                      onClick={() => {
+                        setConnectingOpenRouter(true);
+                        void onConnectOpenRouter()
+                          .then((connected) => {
+                            if (connected) setSavedKeyAvailable(true);
+                          })
+                          .finally(() => setConnectingOpenRouter(false));
+                      }}
+                    >
+                      {connectingOpenRouter
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <ExternalLink size={13} />}
+                      {connectingOpenRouter
+                        ? "Waiting for OpenRouter…"
+                        : savedKeyAvailable
+                          ? "Reconnect OpenRouter"
+                          : "Connect OpenRouter"}
+                    </Button>
+                  ) : apiKeyCreationUrl ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 px-2 text-xs"
+                      onClick={() => void openExternalUrl(apiKeyCreationUrl)}
+                    >
+                      <ExternalLink size={13} /> Create API key
+                    </Button>
+                  ) : null}
+                </div>
                 <Input
                   id="ai-provider-key"
                   type="password"
@@ -171,10 +269,13 @@ export function AiProviderDialog({
                   {apiKey.trim()
                     ? "This key will replace the saved key for this endpoint."
                     : savedKeyAvailable
-                      ? "A saved key is available for this endpoint and will be reused."
+                      ? provider === "openrouter"
+                        ? "OpenRouter is connected. The generated key is stored securely on this device."
+                        : "A saved key is available for this endpoint and will be reused."
                       : "Saved in this device’s secure credential store when supported. It is never put in your vault or browser storage."}
                 </p>
               </div>
+              </>}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label htmlFor="ai-provider-model">Model</Label>
@@ -183,7 +284,9 @@ export function AiProviderDialog({
                     size="sm"
                     className="h-7 gap-1.5"
                     disabled={loadingModels || !baseUrl.trim()}
-                    onClick={() => void onLoadModels(provider, baseUrl.trim(), apiKey)}
+                    onClick={() => void (provider === "codex"
+                      ? onRefreshCodex()
+                      : onLoadModels(provider, baseUrl.trim(), apiKey))}
                   >
                     {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw size={13} />}
                     Load models

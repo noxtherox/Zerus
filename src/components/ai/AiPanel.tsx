@@ -28,6 +28,7 @@ import { AiMarkdown } from "@/components/ai/AiMarkdown";
 import {
   readAiProviderConfig,
   saveAiProviderConfig,
+  CODEX_PROVIDER_URL,
   type AiProvider,
   type AiProviderConfig,
   type CloudAiModel,
@@ -86,6 +87,14 @@ interface AiChatResponse {
 interface AiChatReasoningEvent {
   streamId: string;
   reasoning: string;
+}
+
+interface CodexAiStatus {
+  available: boolean;
+  connected: boolean;
+  accountLabel: string | null;
+  planType: string | null;
+  models: CloudAiModel[];
 }
 
 interface AiPanelProps {
@@ -257,6 +266,7 @@ export function AiPanel({
   const [streamingToolCalls, setStreamingToolCalls] = useState<StoredAiToolCall[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PreparedChatImage[]>([]);
   const [preparingImages, setPreparingImages] = useState(false);
+  const [codexStatus, setCodexStatus] = useState<CodexAiStatus | null>(null);
 
   const context = useMemo(
     () => buildAiContext(note, notes, targetDirectory, vaultLocation),
@@ -272,6 +282,25 @@ export function AiPanel({
   useEffect(() => {
     if (!open) return;
     let disposed = false;
+    if (providerConfig.provider === "codex") {
+      void invoke<CodexAiStatus>("codex_ai_status").then((status) => {
+        if (disposed) return;
+        setCodexStatus(status);
+        setCloudReady(status.connected);
+        setCloudModels(status.models);
+        setCloudModelsSource(`codex:${CODEX_PROVIDER_URL}`);
+      }).catch(() => {
+        if (!disposed) setCloudReady(false);
+      });
+      return () => {
+        disposed = true;
+      };
+    }
+    void invoke<CodexAiStatus>("codex_ai_status").then((status) => {
+      if (!disposed) setCodexStatus(status);
+    }).catch(() => {
+      if (!disposed) setCodexStatus(null);
+    });
     void invoke("cloud_ai_configure", {
       provider: providerConfig.provider,
       baseUrl: providerConfig.baseUrl,
@@ -536,12 +565,14 @@ export function AiPanel({
           });
         }
         const response = await invoke<AiChatResponse>(
-          "cloud_ai_chat",
+          providerConfig.provider === "codex" ? "codex_ai_chat" : "cloud_ai_chat",
           {
-            provider: providerConfig.provider,
             streamId,
-            baseUrl: providerConfig.baseUrl,
             model: providerConfig.model,
+            ...(providerConfig.provider === "codex" ? {} : {
+              provider: providerConfig.provider,
+              baseUrl: providerConfig.baseUrl,
+            }),
             request: {
               systemPrompt: currentContext.systemPrompt,
               messages: requestMessages,
@@ -760,14 +791,68 @@ export function AiPanel({
     }
   };
 
+  const applyCodexStatus = (status: CodexAiStatus) => {
+    setCodexStatus(status);
+    setCloudReady(status.connected);
+    setCloudModels(status.models);
+    setCloudModelsSource(`codex:${CODEX_PROVIDER_URL}`);
+    return status.connected;
+  };
+
+  const connectCodex = async () => {
+    try {
+      const status = await invoke<CodexAiStatus>("codex_ai_login");
+      const connected = applyCodexStatus(status);
+      if (connected) showSuccess("ChatGPT connected through Codex");
+      return connected;
+    } catch (error) {
+      showError(String(error));
+      return false;
+    }
+  };
+
+  const refreshCodex = async () => {
+    setLoadingModels(true);
+    try {
+      const status = await invoke<CodexAiStatus>("codex_ai_status");
+      const connected = applyCodexStatus(status);
+      if (!status.available) showError("Install ChatGPT or Codex CLI to use ChatGPT sign-in.");
+      return connected;
+    } catch (error) {
+      showError(String(error));
+      return false;
+    } finally {
+      setLoadingModels(false);
+    }
+  };
+
+  const connectOpenRouter = async () => {
+    try {
+      await invoke("openrouter_oauth_login");
+      setCloudReady(true);
+      showSuccess("OpenRouter connected securely");
+      return true;
+    } catch (error) {
+      showError(String(error));
+      return false;
+    }
+  };
+
   const saveProvider = async (config: AiProviderConfig, apiKey: string) => {
     try {
-      await invoke("cloud_ai_configure", {
-        provider: config.provider,
-        baseUrl: config.baseUrl,
-        apiKey: apiKey.trim() || null,
-      });
-      setCloudReady(true);
+      if (config.provider === "codex") {
+        const status = await invoke<CodexAiStatus>("codex_ai_status");
+        if (!applyCodexStatus(status)) {
+          throw new Error("Connect ChatGPT before saving this provider.");
+        }
+      } else {
+        await invoke("cloud_ai_configure", {
+          provider: config.provider,
+          baseUrl: config.baseUrl,
+          apiKey: apiKey.trim() || null,
+        });
+        setCloudReady(true);
+      }
       saveAiProviderConfig(config);
       setProviderConfig(config);
       setProviderDialogOpen(false);
@@ -872,6 +957,7 @@ export function AiPanel({
               <div className="truncate text-[10px] leading-3 text-muted-foreground">
                 {context?.noteTitle ?? "Folder context"} · {{
                   openai: "OpenAI",
+                  codex: "ChatGPT · Codex",
                   anthropic: "Claude",
                   openrouter: "OpenRouter",
                   compatible: "Cloud API",
@@ -917,7 +1003,9 @@ export function AiPanel({
         {!cloudReady && (
           <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
             <span className="min-w-0 flex-1 text-muted-foreground">
-              Enter your provider API key to enable cloud chat.
+              {providerConfig.provider === "codex"
+                ? "Connect your ChatGPT account to enable AI chat."
+                : "Enter your provider API key to enable cloud chat."}
             </span>
             <Button variant="outline" size="sm" className="h-7" onClick={() => setProviderDialogOpen(true)}>
               Configure
@@ -1088,8 +1176,15 @@ export function AiPanel({
         models={cloudModels}
         modelsSource={cloudModelsSource}
         loadingModels={loadingModels}
+        codexAvailable={codexStatus?.available ?? false}
+        codexConnected={codexStatus?.connected ?? false}
+        codexAccountLabel={codexStatus?.accountLabel ?? ""}
+        codexPlanType={codexStatus?.planType ?? ""}
         onOpenChange={setProviderDialogOpen}
         onLoadModels={loadCloudModels}
+        onConnectCodex={connectCodex}
+        onRefreshCodex={refreshCodex}
+        onConnectOpenRouter={connectOpenRouter}
         onSave={(config, apiKey) => void saveProvider(config, apiKey)}
       />
     </>
