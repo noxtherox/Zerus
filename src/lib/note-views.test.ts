@@ -3,6 +3,7 @@ import {
   boardColumnOrderKey,
   defaultTypeViewConfig,
   normalizeTypeViewConfigs,
+  propertyGroupLabels,
   reconcileBoardColumnOrder,
   typeViewConfigFor,
 } from "./note-views";
@@ -63,5 +64,14 @@ describe("note view configuration", () => {
       ),
     ).toEqual(["Done", "Todo", "__no_value__", "Doing"]);
     expect(boardColumnOrderKey(" Status ")).toBe("status");
+  });
+
+  it("creates one group per relation for multi-relation values", () => {
+    expect(propertyGroupLabels(["Epic One", "Epic Two", "Epic One"])).toEqual([
+      "Epic One",
+      "Epic Two",
+    ]);
+    expect(propertyGroupLabels([])).toEqual(["No value"]);
+    expect(propertyGroupLabels("Epic One")).toEqual(["Epic One"]);
   });
 });

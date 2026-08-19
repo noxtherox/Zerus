@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Folder, FolderPlus, Loader2 } from "@/lib/icons";
+import { AlertTriangle, Check, Folder, FolderPlus, Loader2 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   chooseVaultFolder,
+  getDesktopVaultConflictCount,
   getDesktopVaults,
   switchDesktopVault,
 } from "@/store/notes-store";
@@ -55,7 +56,7 @@ export function VaultSwitcherDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busyPath && onOpenChange(next)}>
-      <DialogContent className="max-w-md gap-5">
+      <DialogContent className="min-w-0 max-w-md gap-5 overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>Vaults</DialogTitle>
           <DialogDescription>
@@ -63,10 +64,11 @@ export function VaultSwitcherDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-2">
+        <div className="min-w-0 space-y-2">
           {vaults.map((vault) => {
             const active = vault.path === currentPath;
             const loading = busyPath === vault.path;
+            const conflictCount = getDesktopVaultConflictCount(vault.path);
             return (
               <button
                 key={vault.path}
@@ -74,7 +76,7 @@ export function VaultSwitcherDialog({
                 disabled={busyPath !== null}
                 onClick={() => void selectVault(vault.path)}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors",
+                  "flex w-full min-w-0 max-w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-3 text-left transition-colors",
                   active
                     ? "border-primary/40 bg-primary/5"
                     : "border-border hover:bg-accent",
@@ -86,12 +88,20 @@ export function VaultSwitcherDialog({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{vault.name}</span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground" title={vault.path}>
+                  <span className="mt-0.5 block max-w-full truncate text-xs text-muted-foreground" title={vault.path}>
                     {vault.path}
                   </span>
                 </span>
                 {loading ? (
                   <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                ) : conflictCount > 0 ? (
+                  <span
+                    className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-amber-600"
+                    title={`${conflictCount} note conflict${conflictCount === 1 ? "" : "s"}`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Needs review
+                  </span>
                 ) : active ? (
                   <Check className="h-4 w-4 shrink-0 text-primary" aria-label="Current vault" />
                 ) : null}

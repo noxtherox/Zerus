@@ -205,6 +205,11 @@ let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
 const startupEditedNoteIds = new Set<string>();
+interface SuspendedVaultConflict {
+  note: Note;
+  conflict: NoteConflict;
+}
+const suspendedDesktopConflicts = new Map<string, SuspendedVaultConflict[]>();
 const desktopOpenListeners = new Set<
   (
     ids: string[],
@@ -212,6 +217,53 @@ const desktopOpenListeners = new Set<
     firstNoteIsFileHub: boolean,
   ) => void
 >();
+
+function conflictNoteKey(note: Note): string {
+  return note.externalPath
+    ? `external:${normalizeFsPath(note.externalPath)}`
+    : `vault:${normalizeFsPath(note.path)}`;
+}
+
+/** Keeps unresolved edits alive while another desktop vault is open. */
+function suspendCurrentDesktopConflicts(): void {
+  if (backend?.kind !== "desktop" || !state.location) return;
+  const suspended = Object.values(state.conflicts).flatMap((conflict) => {
+    const note = state.notes.find((candidate) => candidate.id === conflict.noteId);
+    return note ? [{ note: { ...note }, conflict: { ...conflict } }] : [];
+  });
+  if (suspended.length) suspendedDesktopConflicts.set(state.location, suspended);
+  else suspendedDesktopConflicts.delete(state.location);
+}
+
+function restoreDesktopConflicts(
+  location: string,
+  notes: Note[],
+): { notes: Note[]; conflicts: Record<string, NoteConflict> } {
+  const suspended = suspendedDesktopConflicts.get(location);
+  if (!suspended?.length) return { notes, conflicts: {} };
+
+  suspendedDesktopConflicts.delete(location);
+  const restoredNotes = [...notes];
+  const conflicts: Record<string, NoteConflict> = {};
+  for (const saved of suspended) {
+    const key = conflictNoteKey(saved.note);
+    const index = restoredNotes.findIndex((note) => conflictNoteKey(note) === key);
+    const diskNote = index >= 0 ? restoredNotes[index] : saved.note;
+    const note = {
+      ...diskNote,
+      content: saved.conflict.currentContent,
+      updatedAt: saved.note.updatedAt,
+    };
+    if (index >= 0) restoredNotes[index] = note;
+    else restoredNotes.push(note);
+    conflicts[note.id] = {
+      ...saved.conflict,
+      noteId: note.id,
+      diskPath: noteAbsolutePath(note, location) ?? saved.conflict.diskPath,
+    };
+  }
+  return { notes: restoredNotes, conflicts };
+}
 
 function emit() {
   listeners.forEach((listener) => listener());
@@ -932,12 +984,24 @@ async function loadVault(nextBackend: VaultBackend) {
     const extraTypes = dirs
       .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
-    const loadedNotes = [...externalNotes, ...savedLinkNotes, ...vaultNotes];
+    let loadedNotes = [...externalNotes, ...savedLinkNotes, ...vaultNotes];
     const mobileSummary = canPage
       ? summarizeMobileEntries(mobileNoteEntries)
       : { totalNoteCount: vaultNotes.filter((note) => !isTrashed(note)).length, typeNoteCounts: {} };
+    const restoredSession =
+      nextBackend.kind === "desktop"
+        ? restoreDesktopConflicts(nextBackend.location, loadedNotes)
+        : { notes: loadedNotes, conflicts: {} };
+    loadedNotes = restoredSession.notes;
     diskSnapshots.clear();
     for (const note of loadedNotes) {
+      const restoredConflict = restoredSession.conflicts[note.id];
+      if (restoredConflict) {
+        if (restoredConflict.diskContent !== null) {
+          diskSnapshots.set(note.id, restoredConflict.diskContent);
+        }
+        continue;
+      }
       if (startupEditedNoteIds.has(note.id)) {
         const diskFile = files.find((file) => file.path === note.path);
         if (diskFile) diskSnapshots.set(note.id, diskFile.content);
@@ -961,6 +1025,7 @@ async function loadVault(nextBackend: VaultBackend) {
       typeIcons,
       typeViews,
       fileLocations,
+      conflicts: restoredSession.conflicts,
       loadingNoteIds: new Set(),
       isRefreshing: false,
     });
@@ -1163,10 +1228,16 @@ export function getDesktopVaults(): DesktopVaultEntry[] {
   return loadDesktopVaults(state.location);
 }
 
+export function getDesktopVaultConflictCount(path: string): number {
+  if (path === state.location) return Object.keys(state.conflicts).length;
+  return suspendedDesktopConflicts.get(path)?.length ?? 0;
+}
+
 export async function switchDesktopVault(path: string): Promise<boolean> {
   if (!path || !isTauri() || isIOSRuntime()) return false;
   if (backend?.kind === "desktop" && state.location === path) return true;
-  if (backend && !(await flushAll())) return false;
+  if (backend && !(await flushAll({ allowConflicts: true }))) return false;
+  suspendCurrentDesktopConflicts();
   localStorage.setItem(VAULT_PATH_KEY, path);
   rememberDesktopVault(path);
   await loadVault(new DesktopVault(path));
@@ -1721,22 +1792,45 @@ async function flushUntilIdle(id: string): Promise<boolean> {
   return true;
 }
 
-async function flushAll(): Promise<boolean> {
-  if (Object.keys(state.conflicts).length > 0) {
-    showError("Resolve note changes from disk before closing Zerus.");
+async function flushAll(
+  options: { allowConflicts?: boolean } = {},
+): Promise<boolean> {
+  const conflictIds = new Set(Object.keys(state.conflicts));
+  const suspendedConflictCount = [...suspendedDesktopConflicts.values()].reduce(
+    (total, conflicts) => total + conflicts.length,
+    0,
+  );
+  if (
+    !options.allowConflicts &&
+    (conflictIds.size > 0 || suspendedConflictCount > 0)
+  ) {
+    showError(
+      suspendedConflictCount > 0
+        ? "Switch back to vaults marked Needs review and resolve their note changes before closing Zerus."
+        : "Resolve note changes from disk before closing Zerus.",
+    );
     return false;
   }
   let saved = true;
   for (const id of [...startupEditedNoteIds]) {
+    if (conflictIds.has(id)) continue;
     if (await flushUntilIdle(id)) startupEditedNoteIds.delete(id);
     else saved = false;
   }
   do {
-    const ids = new Set([...pendingFlush.keys(), ...inFlightFlush.keys()]);
+    const ids = new Set(
+      [...pendingFlush.keys(), ...inFlightFlush.keys()].filter(
+        (id) => !conflictIds.has(id),
+      ),
+    );
     for (const id of ids) {
       if (!(await flushUntilIdle(id))) saved = false;
     }
-  } while (pendingFlush.size > 0 || inFlightFlush.size > 0);
+  } while (
+    [...pendingFlush.keys(), ...inFlightFlush.keys()].some(
+      (id) => !conflictIds.has(id),
+    )
+  );
   await typeViewsWriteInFlight;
   return saved;
 }
@@ -2593,6 +2687,16 @@ export function getImageUrl(path: string): Promise<string | null> {
     imageUrlCache.set(path, cached);
   }
   return cached;
+}
+
+/** Reads a vault-relative image for a provider request. */
+export async function readVaultImage(path: string): Promise<Uint8Array | null> {
+  if (!backend || isRemoteUrl(path)) return null;
+  try {
+    return await backend.readBinary(decodeURI(path));
+  } catch {
+    return null;
+  }
 }
 
 /**

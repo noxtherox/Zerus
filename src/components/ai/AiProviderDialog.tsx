@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { Loader2, Plus, RefreshCw, X } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,20 +20,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  readAiProviderProfile,
   type AiProvider,
   type AiProviderConfig,
   type CloudAiModel,
 } from "@/lib/ai-provider-config";
-
-const OPENROUTER_URL = "https://openrouter.ai/api/v1";
 interface AiProviderDialogProps {
   open: boolean;
   config: AiProviderConfig;
   models: CloudAiModel[];
-  modelsBaseUrl: string;
+  modelsSource: string;
   loadingModels: boolean;
   onOpenChange: (open: boolean) => void;
-  onLoadModels: (baseUrl: string, apiKey: string) => Promise<void>;
+  onLoadModels: (provider: AiProvider, baseUrl: string, apiKey: string) => Promise<void>;
   onSave: (config: AiProviderConfig, apiKey: string) => void;
 }
 
@@ -40,7 +40,7 @@ export function AiProviderDialog({
   open,
   config,
   models,
-  modelsBaseUrl,
+  modelsSource,
   loadingModels,
   onOpenChange,
   onLoadModels,
@@ -52,6 +52,7 @@ export function AiProviderDialog({
   const [favoriteModels, setFavoriteModels] = useState(config.favoriteModels);
   const [newModel, setNewModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [savedKeyAvailable, setSavedKeyAvailable] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -59,30 +60,46 @@ export function AiProviderDialog({
       return;
     }
     setProvider(config.provider);
-    setBaseUrl(config.provider === "openrouter" ? OPENROUTER_URL : config.baseUrl);
+    setBaseUrl(config.baseUrl);
     setModel(config.model);
     setFavoriteModels(config.favoriteModels);
     setNewModel("");
     setApiKey("");
   }, [config, open]);
 
-  const selectProvider = (value: AiProvider) => {
-    setProvider(value);
-    if (value === "openrouter") {
-      setBaseUrl(OPENROUTER_URL);
-      if (config.provider !== "openrouter") {
-        setModel("");
-        setFavoriteModels([]);
-      }
-    } else if (config.provider !== "compatible") {
-      setBaseUrl("");
-      setModel("");
-      setFavoriteModels([]);
+  useEffect(() => {
+    if (!open || !baseUrl.trim()) {
+      setSavedKeyAvailable(false);
+      return;
     }
+    let disposed = false;
+    const timer = window.setTimeout(() => {
+      void invoke<boolean>("cloud_ai_key_status", {
+        provider,
+        baseUrl: baseUrl.trim(),
+      }).then((available) => {
+        if (!disposed) setSavedKeyAvailable(available);
+      }).catch(() => {
+        if (!disposed) setSavedKeyAvailable(false);
+      });
+    }, 200);
+    return () => {
+      disposed = true;
+      window.clearTimeout(timer);
+    };
+  }, [baseUrl, open, provider]);
+
+  const selectProvider = (value: AiProvider) => {
+    const saved = value === config.provider ? config : readAiProviderProfile(value);
+    setProvider(value);
+    setBaseUrl(saved.baseUrl);
+    setModel(saved.model);
+    setFavoriteModels(saved.favoriteModels);
+    setApiKey("");
   };
 
   const canSave = Boolean(baseUrl.trim() && model.trim());
-  const providerModels = baseUrl.trim() === modelsBaseUrl ? models : [];
+  const providerModels = `${provider}:${baseUrl.trim()}` === modelsSource ? models : [];
   const modelOptions = [
     ...favoriteModels.map((id) => ({ id, name: id })),
     ...providerModels,
@@ -109,7 +126,7 @@ export function AiProviderDialog({
         <DialogHeader>
           <DialogTitle>Configure AI chat</DialogTitle>
           <DialogDescription>
-            Connect an OpenAI-compatible cloud provider.
+            Connect OpenAI, Claude, OpenRouter, or another cloud API.
           </DialogDescription>
         </DialogHeader>
 
@@ -119,6 +136,8 @@ export function AiProviderDialog({
             <Select value={provider} onValueChange={(value) => selectProvider(value as AiProvider)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
+                <SelectItem value="openai">OpenAI (ChatGPT)</SelectItem>
+                <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
                 <SelectItem value="compatible">OpenAI-compatible API</SelectItem>
               </SelectContent>
@@ -132,7 +151,7 @@ export function AiProviderDialog({
                   id="ai-provider-url"
                   value={baseUrl}
                   onChange={(event) => setBaseUrl(event.target.value)}
-                  disabled={provider === "openrouter"}
+                  disabled={provider !== "compatible"}
                   placeholder="https://api.example.com/v1"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -149,7 +168,11 @@ export function AiProviderDialog({
                   autoComplete="off"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Saved in this device’s secure credential store when supported. It is never put in your vault or browser storage.
+                  {apiKey.trim()
+                    ? "This key will replace the saved key for this endpoint."
+                    : savedKeyAvailable
+                      ? "A saved key is available for this endpoint and will be reused."
+                      : "Saved in this device’s secure credential store when supported. It is never put in your vault or browser storage."}
                 </p>
               </div>
               <div className="space-y-2">
@@ -160,7 +183,7 @@ export function AiProviderDialog({
                     size="sm"
                     className="h-7 gap-1.5"
                     disabled={loadingModels || !baseUrl.trim()}
-                    onClick={() => void onLoadModels(baseUrl.trim(), apiKey)}
+                    onClick={() => void onLoadModels(provider, baseUrl.trim(), apiKey)}
                   >
                     {loadingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw size={13} />}
                     Load models

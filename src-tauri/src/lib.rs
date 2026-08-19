@@ -378,6 +378,7 @@ struct PendingOpenFiles(Mutex<Vec<String>>);
 
 #[derive(Clone)]
 struct CloudAiCredentials {
+    provider: CloudAiProvider,
     base_url: String,
     api_key: String,
 }
@@ -388,13 +389,49 @@ struct CloudAiState(Mutex<Option<CloudAiCredentials>>);
 const AI_TEMPERATURE: f64 = 0.2;
 const CLOUD_AI_KEYRING_SERVICE: &str = "com.zerus.notes.cloud-ai";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CloudAiProvider {
+    OpenAi,
+    Anthropic,
+    OpenRouter,
+    Compatible,
+}
+
+impl CloudAiProvider {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value.trim() {
+            "openai" => Ok(Self::OpenAi),
+            "anthropic" => Ok(Self::Anthropic),
+            "openrouter" => Ok(Self::OpenRouter),
+            "compatible" => Ok(Self::Compatible),
+            _ => Err("Select a supported cloud AI provider".to_string()),
+        }
+    }
+
+    fn environment_key(self) -> Option<&'static str> {
+        match self {
+            Self::OpenAi => Some("OPENAI_API_KEY"),
+            Self::Anthropic => Some("ANTHROPIC_API_KEY"),
+            Self::OpenRouter => Some("OPENROUTER_API_KEY"),
+            Self::Compatible => None,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiImage {
+    media_type: String,
+    data: String,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AiMessage {
     role: String,
     content: String,
     #[serde(default)]
-    image_paths: Vec<String>,
+    images: Vec<AiImage>,
 }
 
 #[derive(Deserialize)]
@@ -450,7 +487,11 @@ fn normalized_cloud_ai_base_url(value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
-fn cloud_ai_request_body(request: AiChatRequest, model: &str) -> Result<serde_json::Value, String> {
+fn cloud_ai_request_body(
+    request: AiChatRequest,
+    model: &str,
+    provider: CloudAiProvider,
+) -> Result<serde_json::Value, String> {
     let model = model.trim();
     if model.is_empty() || model.len() > 200 {
         return Err("Select a valid cloud model".to_string());
@@ -462,10 +503,14 @@ fn cloud_ai_request_body(request: AiChatRequest, model: &str) -> Result<serde_js
         return Err("The AI conversation has an invalid number of messages".to_string());
     }
 
-    let mut messages = vec![serde_json::json!({
-        "role": "system",
-        "content": request.system_prompt,
-    })];
+    let system_prompt = request.system_prompt;
+    let mut messages = Vec::with_capacity(request.messages.len() + 1);
+    if provider != CloudAiProvider::Anthropic {
+        messages.push(serde_json::json!({
+            "role": "system",
+            "content": &system_prompt,
+        }));
+    }
     for message in request.messages {
         if !matches!(message.role.as_str(), "user" | "assistant") {
             return Err("The AI conversation contains an invalid role".to_string());
@@ -473,22 +518,96 @@ fn cloud_ai_request_body(request: AiChatRequest, model: &str) -> Result<serde_js
         if message.content.len() > 50_000 {
             return Err("An AI message is too large".to_string());
         }
-        if !message.image_paths.is_empty() {
-            return Err("Cloud image attachments are not supported yet".to_string());
+        if message.images.len() > 4 {
+            return Err("An AI message contains too many image attachments".to_string());
         }
+        if message.role != "user" && !message.images.is_empty() {
+            return Err("Only user messages can contain image attachments".to_string());
+        }
+        let mut total_image_length = 0usize;
+        for image in &message.images {
+            if !matches!(
+                image.media_type.as_str(),
+                "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+            ) {
+                return Err("An AI message contains an unsupported image type".to_string());
+            }
+            if image.data.is_empty() || image.data.len() > 4_200_000 {
+                return Err("An AI image attachment has an invalid size".to_string());
+            }
+            total_image_length = total_image_length.saturating_add(image.data.len());
+        }
+        if total_image_length > 16_800_000 {
+            return Err("The AI image attachments are too large".to_string());
+        }
+
+        let content = if message.images.is_empty() {
+            serde_json::Value::String(message.content)
+        } else if provider == CloudAiProvider::Anthropic {
+            let mut parts = message
+                .images
+                .into_iter()
+                .map(|image| {
+                    serde_json::json!({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image.media_type,
+                            "data": image.data,
+                        },
+                    })
+                })
+                .collect::<Vec<_>>();
+            parts.push(serde_json::json!({
+                "type": "text",
+                "text": message.content,
+            }));
+            serde_json::Value::Array(parts)
+        } else {
+            let mut parts = vec![serde_json::json!({
+                "type": "text",
+                "text": message.content,
+            })];
+            parts.extend(message.images.into_iter().map(|image| {
+                serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": format!("data:{};base64,{}", image.media_type, image.data),
+                    },
+                })
+            }));
+            serde_json::Value::Array(parts)
+        };
         messages.push(serde_json::json!({
             "role": message.role,
-            "content": message.content,
+            "content": content,
         }));
     }
 
-    Ok(serde_json::json!({
-        "model": model,
-        "messages": messages,
-        "temperature": AI_TEMPERATURE,
-        "max_tokens": 2048,
-        "stream": true,
-    }))
+    if provider == CloudAiProvider::Anthropic {
+        Ok(serde_json::json!({
+            "model": model,
+            "system": &system_prompt,
+            "messages": messages,
+            "max_tokens": 2048,
+            "stream": true,
+        }))
+    } else if provider == CloudAiProvider::OpenAi {
+        Ok(serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "max_completion_tokens": 2048,
+            "stream": true,
+        }))
+    } else {
+        Ok(serde_json::json!({
+            "model": model,
+            "messages": messages,
+            "temperature": AI_TEMPERATURE,
+            "max_tokens": 2048,
+            "stream": true,
+        }))
+    }
 }
 
 fn cloud_ai_error(payload: &serde_json::Value, fallback: &str) -> String {
@@ -576,6 +695,7 @@ fn remember_cloud_ai_credentials(
 
 fn cloud_ai_credentials(
     state: &CloudAiState,
+    provider: CloudAiProvider,
     base_url: &str,
     api_key: Option<String>,
 ) -> Result<CloudAiCredentials, String> {
@@ -585,6 +705,7 @@ fn cloud_ai_credentials(
         return remember_cloud_ai_credentials(
             state,
             CloudAiCredentials {
+                provider,
                 base_url,
                 api_key: supplied_key,
             },
@@ -595,22 +716,36 @@ fn cloud_ai_credentials(
             .0
             .lock()
             .map_err(|_| "The cloud AI configuration is unavailable")?;
-        if let Some(credentials) = stored.as_ref().filter(|value| value.base_url == base_url) {
+        if let Some(credentials) = stored
+            .as_ref()
+            .filter(|value| value.provider == provider && value.base_url == base_url)
+        {
             return Ok(credentials.clone());
         }
     }
-    if base_url == "https://openrouter.ai/api/v1" {
-        if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
+    if let Some(environment_key) = provider.environment_key() {
+        if let Ok(api_key) = std::env::var(environment_key) {
             if !api_key.trim().is_empty() {
                 return remember_cloud_ai_credentials(
                     state,
-                    CloudAiCredentials { base_url, api_key },
+                    CloudAiCredentials {
+                        provider,
+                        base_url,
+                        api_key,
+                    },
                 );
             }
         }
     }
     if let Some(api_key) = load_cloud_ai_key(&base_url)? {
-        return remember_cloud_ai_credentials(state, CloudAiCredentials { base_url, api_key });
+        return remember_cloud_ai_credentials(
+            state,
+            CloudAiCredentials {
+                provider,
+                base_url,
+                api_key,
+            },
+        );
     }
     Err("Enter an API key. Zerus will save it in your system credential store".to_string())
 }
@@ -618,23 +753,54 @@ fn cloud_ai_credentials(
 #[tauri::command]
 fn cloud_ai_configure(
     state: tauri::State<'_, CloudAiState>,
+    provider: String,
     base_url: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
+    let provider = CloudAiProvider::parse(&provider)?;
     let base_url = normalized_cloud_ai_base_url(&base_url)?;
     let supplied_key = api_key.unwrap_or_default().trim().to_string();
     if supplied_key.is_empty() {
-        return cloud_ai_credentials(&state, &base_url, None).map(|_| ());
+        return cloud_ai_credentials(&state, provider, &base_url, None).map(|_| ());
     }
     save_cloud_ai_key(&base_url, &supplied_key)?;
     remember_cloud_ai_credentials(
         &state,
         CloudAiCredentials {
+            provider,
             base_url,
             api_key: supplied_key,
         },
     )
     .map(|_| ())
+}
+
+#[tauri::command]
+fn cloud_ai_key_status(
+    state: tauri::State<'_, CloudAiState>,
+    provider: String,
+    base_url: String,
+) -> Result<bool, String> {
+    let provider = CloudAiProvider::parse(&provider)?;
+    let base_url = normalized_cloud_ai_base_url(&base_url)?;
+    {
+        let stored = state
+            .0
+            .lock()
+            .map_err(|_| "The cloud AI configuration is unavailable")?;
+        if stored
+            .as_ref()
+            .is_some_and(|value| value.provider == provider && value.base_url == base_url)
+        {
+            return Ok(true);
+        }
+    }
+    if let Some(environment_key) = provider.environment_key() {
+        if std::env::var(environment_key).is_ok_and(|value| !value.trim().is_empty()) {
+            return Ok(true);
+        }
+    }
+    load_cloud_ai_key(&base_url).map(|value| value.is_some())
 }
 
 #[cfg_attr(target_os = "macos", allow(dead_code))]
@@ -682,11 +848,35 @@ fn chat_stream_delta(payload: &serde_json::Value) -> (Option<String>, Option<Str
     )
 }
 
+fn anthropic_stream_delta(payload: &serde_json::Value) -> (Option<String>, Option<String>) {
+    let Some(delta) = payload.get("delta") else {
+        return (None, None);
+    };
+    match delta.get("type").and_then(|value| value.as_str()) {
+        Some("text_delta") => (
+            delta
+                .get("text")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+            None,
+        ),
+        Some("thinking_delta") => (
+            None,
+            delta
+                .get("thinking")
+                .and_then(|value| value.as_str())
+                .map(str::to_string),
+        ),
+        _ => (None, None),
+    }
+}
+
 async fn collect_chat_stream(
     mut response: reqwest::Response,
     app: &tauri::AppHandle,
     stream_id: &str,
     source: &str,
+    provider: CloudAiProvider,
 ) -> Result<AiChatResponse, String> {
     let mut pending = Vec::<u8>::new();
     let mut content = String::new();
@@ -711,7 +901,17 @@ async fn collect_chat_stream(
             }
             let payload = serde_json::from_str::<serde_json::Value>(data)
                 .map_err(|error| format!("The {source} stream returned invalid JSON: {error}"))?;
-            let (content_delta, reasoning_delta) = chat_stream_delta(&payload);
+            if payload.get("type").and_then(|value| value.as_str()) == Some("error") {
+                return Err(format!(
+                    "The {source} stream failed: {}",
+                    cloud_ai_error(&payload, "Unknown provider error")
+                ));
+            }
+            let (content_delta, reasoning_delta) = if provider == CloudAiProvider::Anthropic {
+                anthropic_stream_delta(&payload)
+            } else {
+                chat_stream_delta(&payload)
+            };
             if let Some(delta) = content_delta {
                 content.push_str(&delta);
             }
@@ -741,17 +941,25 @@ async fn collect_chat_stream(
 #[tauri::command]
 async fn cloud_ai_models(
     state: tauri::State<'_, CloudAiState>,
+    provider: String,
     base_url: String,
     api_key: Option<String>,
 ) -> Result<Vec<CloudAiModel>, String> {
-    let credentials = cloud_ai_credentials(&state, &base_url, api_key)?;
+    let provider = CloudAiProvider::parse(&provider)?;
+    let credentials = cloud_ai_credentials(&state, provider, &base_url, api_key)?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|error| error.to_string())?;
-    let response = client
-        .get(format!("{}/models", credentials.base_url))
-        .bearer_auth(&credentials.api_key)
+    let mut request_builder = client.get(format!("{}/models", credentials.base_url));
+    request_builder = if provider == CloudAiProvider::Anthropic {
+        request_builder
+            .header("x-api-key", &credentials.api_key)
+            .header("anthropic-version", "2023-06-01")
+    } else {
+        request_builder.bearer_auth(&credentials.api_key)
+    };
+    let response = request_builder
         .send()
         .await
         .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
@@ -779,6 +987,7 @@ async fn cloud_ai_models(
             }
             let name = model
                 .get("name")
+                .or_else(|| model.get("display_name"))
                 .and_then(|value| value.as_str())
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or(id);
@@ -800,21 +1009,33 @@ async fn cloud_ai_models(
 async fn cloud_ai_chat(
     app: tauri::AppHandle,
     state: tauri::State<'_, CloudAiState>,
+    provider: String,
     base_url: String,
     model: String,
     stream_id: String,
     request: AiChatRequest,
 ) -> Result<AiChatResponse, String> {
-    let credentials = cloud_ai_credentials(&state, &base_url, None)?;
-    let body = cloud_ai_request_body(request, &model)?;
+    let provider = CloudAiProvider::parse(&provider)?;
+    let credentials = cloud_ai_credentials(&state, provider, &base_url, None)?;
+    let body = cloud_ai_request_body(request, &model, provider)?;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(180))
         .build()
         .map_err(|error| error.to_string())?;
-    let mut request_builder = client
-        .post(format!("{}/chat/completions", credentials.base_url))
-        .bearer_auth(&credentials.api_key);
-    if credentials.base_url == "https://openrouter.ai/api/v1" {
+    let path = if provider == CloudAiProvider::Anthropic {
+        "messages"
+    } else {
+        "chat/completions"
+    };
+    let mut request_builder = client.post(format!("{}/{path}", credentials.base_url));
+    if provider == CloudAiProvider::Anthropic {
+        request_builder = request_builder
+            .header("x-api-key", &credentials.api_key)
+            .header("anthropic-version", "2023-06-01");
+    } else {
+        request_builder = request_builder.bearer_auth(&credentials.api_key);
+    }
+    if provider == CloudAiProvider::OpenRouter {
         request_builder = request_builder
             .header("HTTP-Referer", "https://zerus.im")
             .header("X-Title", "Zerus");
@@ -835,7 +1056,7 @@ async fn cloud_ai_chat(
             cloud_ai_error(&payload, "Unknown provider error")
         ));
     }
-    collect_chat_stream(response, &app, &stream_id, "cloud AI provider").await
+    collect_chat_stream(response, &app, &stream_id, "cloud AI provider", provider).await
 }
 
 fn write_new_vault_file_impl(
@@ -1010,34 +1231,44 @@ fn enqueue_desktop_open_files(app: &tauri::AppHandle, paths: Vec<String>) {
 #[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
-    let status = std::process::Command::new("open")
-        .args(["-R", &path])
-        .status();
+    {
+        use objc2_app_kit::NSWorkspace;
+        use objc2_foundation::{NSArray, NSString, NSURL};
 
-    #[cfg(target_os = "windows")]
-    let status = std::process::Command::new("explorer")
-        .arg(format!("/select,{}", path))
-        .status();
+        let path = NSString::from_str(&path);
+        let url = NSURL::fileURLWithPath(&path);
+        let urls = NSArray::from_retained_slice(&[url]);
+        NSWorkspace::sharedWorkspace().activateFileViewerSelectingURLs(&urls);
+        Ok(())
+    }
 
-    #[cfg(target_os = "linux")]
-    let status = {
-        let parent = std::path::Path::new(&path)
-            .parent()
-            .ok_or_else(|| "The note has no parent folder".to_string())?;
-        std::process::Command::new("xdg-open").arg(parent).status()
-    };
+    #[cfg(not(target_os = "macos"))]
+    {
+        #[cfg(target_os = "windows")]
+        let status = std::process::Command::new("explorer")
+            .arg(format!("/select,{}", path))
+            .status();
 
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    let status = Err::<std::process::ExitStatus, _>(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "Revealing files is not supported on this platform",
-    ));
+        #[cfg(target_os = "linux")]
+        let status = {
+            let parent = std::path::Path::new(&path)
+                .parent()
+                .ok_or_else(|| "The note has no parent folder".to_string())?;
+            std::process::Command::new("xdg-open").arg(parent).status()
+        };
 
-    status
-        .map_err(|error| error.to_string())?
-        .success()
-        .then_some(())
-        .ok_or_else(|| "The file manager could not reveal the note".to_string())
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        let status = Err::<std::process::ExitStatus, _>(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "Revealing files is not supported on this platform",
+        ));
+
+        status
+            .map_err(|error| error.to_string())?
+            .success()
+            .then_some(())
+            .ok_or_else(|| "The file manager could not reveal the note".to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1069,6 +1300,7 @@ pub fn run() {
             cloud_ai_models,
             cloud_ai_chat,
             cloud_ai_configure,
+            cloud_ai_key_status,
             cli_status,
             cli_install,
             cli_register_vault,
@@ -1127,10 +1359,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        chat_stream_delta, cli_export_skill, cloud_ai_keyring_account, cloud_ai_request_body,
-        copy_file_into_vault, desktop_open_paths, normalized_cloud_ai_base_url,
-        remove_legacy_model_directory, sync_opened_vault_record, write_new_vault_file_impl,
-        AiChatRequest, AiMessage,
+        anthropic_stream_delta, chat_stream_delta, cli_export_skill, cloud_ai_keyring_account,
+        cloud_ai_request_body, copy_file_into_vault, desktop_open_paths,
+        normalized_cloud_ai_base_url, remove_legacy_model_directory, sync_opened_vault_record,
+        write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage, CloudAiProvider,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1187,10 +1419,11 @@ mod tests {
                 messages: vec![AiMessage {
                     role: "user".to_string(),
                     content: "Summarize this note".to_string(),
-                    image_paths: Vec::new(),
+                    images: Vec::new(),
                 }],
             },
             "anthropic/claude-sonnet-4",
+            CloudAiProvider::OpenRouter,
         )
         .expect("build cloud AI request");
 
@@ -1198,6 +1431,121 @@ mod tests {
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["role"], "system");
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn anthropic_request_and_stream_use_the_messages_contract() {
+        let body = cloud_ai_request_body(
+            AiChatRequest {
+                system_prompt: "Current note context".to_string(),
+                messages: vec![AiMessage {
+                    role: "user".to_string(),
+                    content: "Summarize this note".to_string(),
+                    images: Vec::new(),
+                }],
+            },
+            "claude-sonnet-5",
+            CloudAiProvider::Anthropic,
+        )
+        .expect("build Anthropic request");
+
+        assert_eq!(body["system"], "Current note context");
+        assert_eq!(body["messages"][0]["role"], "user");
+        assert_eq!(body["max_tokens"], 2048);
+        assert!(body.get("temperature").is_none());
+
+        let text = serde_json::json!({
+            "type": "content_block_delta",
+            "delta": { "type": "text_delta", "text": "Answer" }
+        });
+        assert_eq!(
+            anthropic_stream_delta(&text),
+            (Some("Answer".to_string()), None)
+        );
+
+        let thinking = serde_json::json!({
+            "type": "content_block_delta",
+            "delta": { "type": "thinking_delta", "thinking": "Working" }
+        });
+        assert_eq!(
+            anthropic_stream_delta(&thinking),
+            (None, Some("Working".to_string()))
+        );
+    }
+
+    #[test]
+    fn openai_request_uses_current_chat_completion_parameters() {
+        let body = cloud_ai_request_body(
+            AiChatRequest {
+                system_prompt: "Current note context".to_string(),
+                messages: vec![AiMessage {
+                    role: "user".to_string(),
+                    content: "Summarize this note".to_string(),
+                    images: Vec::new(),
+                }],
+            },
+            "gpt-5.4-mini",
+            CloudAiProvider::OpenAi,
+        )
+        .expect("build OpenAI request");
+
+        assert_eq!(body["max_completion_tokens"], 2048);
+        assert!(body.get("max_tokens").is_none());
+        assert!(body.get("temperature").is_none());
+    }
+
+    #[test]
+    fn openai_compatible_requests_encode_attached_images_as_data_urls() {
+        let body = cloud_ai_request_body(
+            AiChatRequest {
+                system_prompt: "Current note context".to_string(),
+                messages: vec![AiMessage {
+                    role: "user".to_string(),
+                    content: "Describe this image".to_string(),
+                    images: vec![AiImage {
+                        media_type: "image/jpeg".to_string(),
+                        data: "YWJj".to_string(),
+                    }],
+                }],
+            },
+            "gpt-5.4-mini",
+            CloudAiProvider::OpenAi,
+        )
+        .expect("build OpenAI image request");
+
+        assert_eq!(body["messages"][1]["content"][0]["type"], "text");
+        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
+        assert_eq!(
+            body["messages"][1]["content"][1]["image_url"]["url"],
+            "data:image/jpeg;base64,YWJj"
+        );
+    }
+
+    #[test]
+    fn anthropic_requests_put_attached_images_before_text() {
+        let body = cloud_ai_request_body(
+            AiChatRequest {
+                system_prompt: "Current note context".to_string(),
+                messages: vec![AiMessage {
+                    role: "user".to_string(),
+                    content: "Describe this image".to_string(),
+                    images: vec![AiImage {
+                        media_type: "image/jpeg".to_string(),
+                        data: "YWJj".to_string(),
+                    }],
+                }],
+            },
+            "claude-sonnet-5",
+            CloudAiProvider::Anthropic,
+        )
+        .expect("build Anthropic image request");
+
+        assert_eq!(body["messages"][0]["content"][0]["type"], "image");
+        assert_eq!(
+            body["messages"][0]["content"][0]["source"]["media_type"],
+            "image/jpeg"
+        );
+        assert_eq!(body["messages"][0]["content"][1]["type"], "text");
     }
 
     #[test]

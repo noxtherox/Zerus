@@ -118,6 +118,7 @@ import {
   restoreNote,
   setNoteType,
   synchronizeDesktopFiles,
+  switchDesktopVault,
   trashNote,
   updateNoteBody,
 } from "./notes-store";
@@ -567,6 +568,52 @@ describe("external note store workflow", () => {
 
     await synchronizeDesktopFiles();
     expect(getNotes().find((note) => note.id === ids[0])).toBeDefined();
+  });
+
+  it("switches vaults without discarding an unresolved conflict", async () => {
+    const originalVault = storage.get("zerus.vaultPath") as string;
+    const otherVault = join(root, "other-vault");
+    await mkdir(join(otherVault, "inbox"), { recursive: true });
+    await writeFile(
+      join(otherVault, "inbox", "Other.md"),
+      "# Other vault\n",
+      "utf8",
+    );
+
+    const note = getNotes().find(
+      (candidate) => candidate.path === "inbox/Welcome.md",
+    );
+    expect(note).toBeDefined();
+    updateNoteBody(
+      note!.id,
+      `${note!.content}\nLocal version awaiting review.\n`,
+    );
+    const localContent = getNotes().find(
+      (candidate) => candidate.id === note!.id,
+    )!.content;
+    await writeFile(
+      join(originalVault, note!.path),
+      `${note!.content}\nChanged on disk.\n`,
+      "utf8",
+    );
+    await waitFor(() => getNoteConflict(note!.id) !== null);
+
+    await expect(switchDesktopVault(otherVault)).resolves.toBe(true);
+    expect(getNotes().some((candidate) => candidate.path === "inbox/Other.md")).toBe(true);
+
+    const closeHandler = mocks.onCloseRequested.mock
+      .calls[0][0] as unknown as (event: {
+      preventDefault: () => void;
+    }) => Promise<void>;
+    const destroyCount = mocks.destroyWindow.mock.calls.length;
+    await closeHandler({ preventDefault: vi.fn() });
+    expect(mocks.destroyWindow).toHaveBeenCalledTimes(destroyCount);
+
+    await expect(switchDesktopVault(originalVault)).resolves.toBe(true);
+    const restored = getNotes().find((candidate) => candidate.path === note!.path);
+    expect(restored?.content).toBe(localContent);
+    expect(restored && getNoteConflict(restored.id)?.currentContent).toBe(localContent);
+    await resolveNoteConflict(restored!.id, "disk");
   });
 
   it("does not duplicate a legacy typed link during repeated desktop syncs", async () => {

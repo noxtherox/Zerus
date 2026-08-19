@@ -5,9 +5,20 @@ export interface StoredAiToolCall {
   status: "running" | "complete" | "error";
 }
 
+export interface StoredAiImageAttachment {
+  id: string;
+  path: string;
+  mimeType: "image/jpeg";
+  width: number;
+  height: number;
+  byteLength: number;
+  name?: string;
+}
+
 export interface StoredAiMessage {
   role: "user" | "assistant";
   content: string;
+  attachments?: StoredAiImageAttachment[];
   reasoning?: string | null;
   editApplied?: boolean;
   toolCalls?: StoredAiToolCall[];
@@ -58,6 +69,10 @@ function isStoredMessage(value: unknown): value is StoredAiMessage {
   return (
     (candidate.role === "user" || candidate.role === "assistant") &&
     typeof candidate.content === "string" &&
+    (candidate.attachments === undefined ||
+      (Array.isArray(candidate.attachments) &&
+        candidate.attachments.length <= 4 &&
+        candidate.attachments.every(isStoredImageAttachment))) &&
     (candidate.reasoning === undefined ||
       candidate.reasoning === null ||
       typeof candidate.reasoning === "string") &&
@@ -67,6 +82,34 @@ function isStoredMessage(value: unknown): value is StoredAiMessage {
       (Array.isArray(candidate.toolCalls) &&
         candidate.toolCalls.length <= 13 &&
         candidate.toolCalls.every(isStoredToolCall)))
+  );
+}
+
+function isStoredImageAttachment(value: unknown): value is StoredAiImageAttachment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Partial<StoredAiImageAttachment>;
+  return (
+    typeof candidate.id === "string" &&
+    candidate.id.length > 0 &&
+    candidate.id.length <= 100 &&
+    typeof candidate.path === "string" &&
+    candidate.path.startsWith("assets/") &&
+    candidate.path.length <= 1_000 &&
+    candidate.mimeType === "image/jpeg" &&
+    typeof candidate.width === "number" &&
+    Number.isFinite(candidate.width) &&
+    candidate.width > 0 &&
+    candidate.width <= 4_096 &&
+    typeof candidate.height === "number" &&
+    Number.isFinite(candidate.height) &&
+    candidate.height > 0 &&
+    candidate.height <= 4_096 &&
+    typeof candidate.byteLength === "number" &&
+    Number.isFinite(candidate.byteLength) &&
+    candidate.byteLength > 0 &&
+    candidate.byteLength <= 3 * 1_024 * 1_024 &&
+    (candidate.name === undefined ||
+      (typeof candidate.name === "string" && candidate.name.length <= 255))
   );
 }
 

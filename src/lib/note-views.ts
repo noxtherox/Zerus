@@ -4,6 +4,7 @@ import {
   type NoteListFilters,
   type NotePropertyFilter,
 } from "@/lib/filters";
+import type { PropertyValue } from "@/lib/frontmatter";
 
 export const NOTE_VIEW_MODES = [
   "gallery",
@@ -89,6 +90,22 @@ export function reconcileBoardColumnOrder(
   );
   const orderedSet = new Set(ordered);
   return [...ordered, ...available.filter((column) => !orderedSet.has(column))];
+}
+
+/**
+ * Labels used when grouping notes by a frontmatter value. Multi-value
+ * properties (including relations) put the note in one group per value.
+ */
+export function propertyGroupLabels(
+  value: PropertyValue | undefined,
+): string[] {
+  if (value === undefined || value === "") return ["No value"];
+  if (Array.isArray(value)) {
+    const labels = [...new Set(value.filter((item) => item !== ""))];
+    return labels.length ? labels : ["No value"];
+  }
+  if (typeof value === "boolean") return [value ? "Checked" : "Unchecked"];
+  return [String(value)];
 }
 
 export function normalizeTypeViewConfig(value: unknown): TypeViewConfig {

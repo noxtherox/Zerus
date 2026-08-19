@@ -58,6 +58,7 @@ import {
 } from "@/lib/properties";
 import {
   boardColumnOrderKey,
+  propertyGroupLabels,
   reconcileBoardColumnOrder,
   type NoteViewMode,
   type TypeViewConfig,
@@ -107,11 +108,6 @@ function propertyLabel(value: PropertyValue | undefined): string {
   if (Array.isArray(value)) return value.join(", ");
   if (typeof value === "boolean") return value ? "Checked" : "Unchecked";
   return String(value);
-}
-
-function propertyGroupKey(note: Note, propertyName: string | null): string {
-  if (!propertyName) return "All notes";
-  return propertyLabel(propertyValue(note, propertyName));
 }
 
 export function TypeViewSwitcher({
@@ -246,8 +242,12 @@ function GalleryView({
   const groups = useMemo(() => {
     const grouped = new Map<string, Note[]>();
     for (const note of notes) {
-      const key = propertyGroupKey(note, groupBy);
-      grouped.set(key, [...(grouped.get(key) ?? []), note]);
+      const labels = groupBy
+        ? propertyGroupLabels(propertyValue(note, groupBy))
+        : ["All notes"];
+      for (const label of labels) {
+        grouped.set(label, [...(grouped.get(label) ?? []), note]);
+      }
     }
     return [...grouped];
   }, [groupBy, notes]);
@@ -744,13 +744,16 @@ export function TypeViewWorkspace({
     [config.filters, notes, typeFilter],
   );
   const properties = effectiveProperties(typePath, schemas);
-  const groupableProperties = properties.filter(
-    (property) => property.type !== "relation" && !(property.type === "list" && property.listMultiple),
+  const groupableProperties = properties.filter((property) =>
+    config.mode === "gallery"
+      ? !(property.type === "list" && property.listMultiple)
+      : property.type !== "relation" && !(property.type === "list" && property.listMultiple),
   );
   const dateProperties = properties.filter((property) => property.type === "date");
-  const activeGroupProperty = properties.find(
+  const activeGroupProperty = groupableProperties.find(
     (property) => property.name.toLowerCase() === config.groupBy?.toLowerCase(),
   );
+  const activeGroupBy = activeGroupProperty?.name ?? null;
 
   if (editorOpen) {
     return (
@@ -786,7 +789,7 @@ export function TypeViewWorkspace({
           {(config.mode === "gallery" || config.mode === "board") && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               Group by
-              <Select value={config.groupBy ?? NO_PROPERTY} onValueChange={(value) => onConfigChange({ groupBy: value === NO_PROPERTY ? null : value })}>
+              <Select value={activeGroupBy ?? NO_PROPERTY} onValueChange={(value) => onConfigChange({ groupBy: value === NO_PROPERTY ? null : value })}>
                 <SelectTrigger className="h-7 w-40 border-border/60 bg-zerus-surface px-2 text-xs">
                   <SelectValue placeholder="No grouping" />
                 </SelectTrigger>
@@ -821,20 +824,20 @@ export function TypeViewWorkspace({
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-auto">
-        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={config.groupBy} onOpen={onOpenNote} />}
+        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} onOpen={onOpenNote} />}
         {config.mode === "board" && (
           <BoardView
             notes={filteredNotes}
-            property={config.groupBy}
+            property={activeGroupBy}
             propertyDef={activeGroupProperty}
-            columnOrder={config.groupBy ? config.boardColumnOrder[boardColumnOrderKey(config.groupBy)] : undefined}
+            columnOrder={activeGroupBy ? config.boardColumnOrder[boardColumnOrderKey(activeGroupBy)] : undefined}
             onOpen={onOpenNote}
             onColumnOrderChange={(order) => {
-              if (!config.groupBy) return;
+              if (!activeGroupBy) return;
               onConfigChange({
                 boardColumnOrder: {
                   ...config.boardColumnOrder,
-                  [boardColumnOrderKey(config.groupBy)]: order,
+                  [boardColumnOrderKey(activeGroupBy)]: order,
                 },
               });
             }}

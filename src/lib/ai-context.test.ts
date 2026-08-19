@@ -64,7 +64,7 @@ describe("buildAiContext", () => {
       {
         role: "user",
         content: "What is this note?",
-        imagePaths: [],
+        images: [],
       },
     ]);
 

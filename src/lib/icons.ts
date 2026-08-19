@@ -73,6 +73,7 @@ export {
   IconMinus as Minus,
   IconDots as MoreHorizontal,
   IconNotebook as Notebook,
+  IconPaperclip as Paperclip,
   IconAlertOctagon as OctagonX,
   IconLayoutSidebar as PanelLeft,
   IconPencil as Pencil,
