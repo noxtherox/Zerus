@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Brain,
   Cloud,
-  Download,
   History,
   ImagePlus,
   Loader2,
@@ -44,26 +43,12 @@ import {
 } from "@/lib/mobile-chat-history";
 import { chatDeviceLabel, getChatDevice } from "@/lib/mobile-device";
 import {
-  cancelLocalAIDownload,
-  deleteLocalAI,
-  downloadLocalAI,
-  generateLocalAI,
-  getLocalAIStatus,
-  loadLocalAI,
-  type LocalAIStatus,
-} from "@/lib/mobile-local-ai";
-import {
+  cloudEndpointLabel,
   configureCloudAI,
   generateCloudAI,
   getCloudAIStatus,
   type CloudAIStatus,
 } from "@/lib/mobile-cloud-ai";
-import {
-  cloudEndpointLabel,
-  loadMobileAIEngine,
-  saveMobileAIEngine,
-  type MobileAIEngine,
-} from "@/lib/mobile-ai-engine";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import {
   executeMobileAIActions,
@@ -87,13 +72,18 @@ import type { Note } from "@/lib/note-utils";
 import type { VaultBackend } from "@/lib/vault/backend";
 import { createNote, getNotes, getVaultBackend, updateNoteBody } from "@/store/notes-store";
 
-type HistoryFilter = "all" | "device" | "other" | "archived" | "deleted";
+type HistoryFilter =
+  | "all"
+  | "device"
+  | "other"
+  | "archived"
+  | "deleted";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error) return String(error.message);
-  return "The local model could not complete that request.";
+  return "The AI provider could not complete that request.";
 }
 
 function conversationSummaryPrompt(conversation: ChatConversation, messages: PersistedChatMessage[]): string {
@@ -248,7 +238,7 @@ function PersistedChatImage({ attachment }: { attachment: ChatImageAttachment })
   );
 }
 
-export function PersistentLocalAIChat({
+export function PersistentAIChat({
   notes,
   notesReady,
   notesPreparationError,
@@ -291,8 +281,6 @@ export function PersistentLocalAIChat({
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyActionsId, setHistoryActionsId] = useState<string | null>(null);
-  const [status, setStatus] = useState<LocalAIStatus | null>(null);
-  const [engine, setEngine] = useState<MobileAIEngine>(loadMobileAIEngine);
   const [cloudStatus, setCloudStatus] = useState<CloudAIStatus | null>(null);
   const [cloudEndpoint, setCloudEndpoint] = useState("https://openrouter.ai/api/v1");
   const [cloudModel, setCloudModel] = useState("openai/gpt-5-mini");
@@ -392,10 +380,10 @@ export function PersistentLocalAIChat({
       setCloudEndpoint(next.endpoint);
       setCloudModel(next.model);
     }).catch((statusError) => {
-      if (active && engine === "cloud") setError(errorMessage(statusError));
+      if (active) setError(errorMessage(statusError));
     });
     return () => { active = false; };
-  }, [engine]);
+  }, []);
 
   useEffect(() => {
     if (!visible || !device) return;
@@ -469,35 +457,6 @@ export function PersistentLocalAIChat({
     if (!historyVisible) setHistoryActionsId(null);
   }, [historyVisible]);
 
-  useEffect(() => {
-    let active = true;
-    const refresh = async () => {
-      try {
-        const next = await getLocalAIStatus();
-        if (active) setStatus(next);
-      } catch (statusError) {
-        if (active) setError(errorMessage(statusError));
-      }
-    };
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 750);
-    return () => { active = false; window.clearInterval(timer); };
-  }, []);
-
-  const runStatusAction = async (action: () => Promise<LocalAIStatus>) => {
-    setBusy(true);
-    setError(null);
-    try { setStatus(await action()); }
-    catch (actionError) { setError(errorMessage(actionError)); }
-    finally { setBusy(false); }
-  };
-
-  const selectEngine = (next: MobileAIEngine) => {
-    setEngine(next);
-    saveMobileAIEngine(next);
-    setError(null);
-  };
-
   const saveCloudSettings = async () => {
     setBusy(true);
     setError(null);
@@ -511,7 +470,6 @@ export function PersistentLocalAIChat({
       setCloudEndpoint(next.endpoint);
       setCloudModel(next.model);
       setCloudAPIKey("");
-      selectEngine("cloud");
       setSettingsOpen(false);
     } catch (configurationError) {
       setError(errorMessage(configurationError));
@@ -520,10 +478,10 @@ export function PersistentLocalAIChat({
     }
   };
 
-  const generateWithSelectedEngine = (
+  const generateAnswerWithCloud = (
     prompt: string,
     image?: { bytes: Uint8Array; mimeType: string },
-  ) => engine === "cloud" ? generateCloudAI(prompt, image) : generateLocalAI(prompt, image);
+  ) => generateCloudAI(prompt, image);
 
   const updateMemory = async (conversation: ChatConversation, backend: VaultBackend, localDevice: ChatDevice) => {
     if (conversation.owner.id !== localDevice.id) return;
@@ -534,11 +492,11 @@ export function PersistentLocalAIChat({
     if (newMessages.length < 4) return;
     setMemoryBusy(true);
     try {
-      const text = await generateWithSelectedEngine(conversationSummaryPrompt(conversation, newMessages));
+      const text = await generateAnswerWithCloud(conversationSummaryPrompt(conversation, newMessages));
       await saveChatSummary(backend, conversation, localDevice, text, candidates.map((message) => message.id));
       await refreshHistory(false, conversation.id);
     } catch (summaryError) {
-      mobileDiagnostic("local-ai.summary.error", { error: errorMessage(summaryError) });
+      mobileDiagnostic("mobile-ai.summary.error", { error: errorMessage(summaryError) });
     } finally {
       setMemoryBusy(false);
     }
@@ -572,14 +530,14 @@ export function PersistentLocalAIChat({
       retrieval, previousMessages, question, conversation.summary?.text ?? null, Boolean(image),
     );
     mobileDiagnostic("mobile-ai.question", {
-      engine,
+      engine: "cloud",
       direct: Boolean(directAnswer),
       image: Boolean(image),
       selectedNotes: retrieval.notes.length,
       totalNotes: retrieval.totalNotes,
       promptChars: prompt?.length ?? 0,
     });
-    const generated = directAnswer ?? await generateWithSelectedEngine(prompt!, image);
+    const generated = directAnswer ?? await generateAnswerWithCloud(prompt!, image);
     let answer = generated;
     let changedNoteIds: string[] = [];
     if (!directAnswer) {
@@ -611,7 +569,7 @@ export function PersistentLocalAIChat({
     const loaded = await refreshHistory(false, conversation.id);
     const updated = loaded.find((candidate) => candidate.id === conversation.id);
     mobileDiagnostic("mobile-ai.answer", {
-      engine,
+      engine: "cloud",
       direct: Boolean(directAnswer),
       image: Boolean(image),
       changedNoteIds,
@@ -623,8 +581,7 @@ export function PersistentLocalAIChat({
     const submittedImage = pendingImage;
     const question = draft.trim() || (submittedImage ? "What is in this image?" : "");
     const backend = getVaultBackend();
-    const engineReady = engine === "cloud" ? cloudStatus?.configured : status?.phase === "ready";
-    if (!question || !backend || !device || !notesReady || busy || memoryBusy || !engineReady) return;
+    if (!question || !backend || !device || !notesReady || busy || memoryBusy || !cloudStatus?.configured) return;
     if (current && !canEditCurrent) return;
     setDraft("");
     setBusy(true);
@@ -647,20 +604,18 @@ export function PersistentLocalAIChat({
       replacePendingImage(null);
       await generateAnswer(backend, working, device, turnId, question);
     } catch (generationError) {
-      mobileDiagnostic("mobile-ai.error", { engine, error: errorMessage(generationError) });
+      mobileDiagnostic("mobile-ai.error", { engine: "cloud", error: errorMessage(generationError) });
       setError(errorMessage(generationError));
       await refreshHistory(false);
     } finally {
       setBusy(false);
-      if (engine === "local") try { setStatus(await getLocalAIStatus()); } catch { /* polling retries */ }
     }
   };
 
   const retryTurn = async (turnId: string) => {
     const backend = getVaultBackend();
     const question = current?.messages.find((message) => message.turnId === turnId && message.role === "user")?.text;
-    const engineReady = engine === "cloud" ? cloudStatus?.configured : status?.phase === "ready";
-    if (!backend || !device || !current || !question || !notesReady || !canEditCurrent || busy || memoryBusy || !engineReady) return;
+    if (!backend || !device || !current || !question || !notesReady || !canEditCurrent || busy || memoryBusy || !cloudStatus?.configured) return;
     setBusy(true);
     setError(null);
     try { await generateAnswer(backend, current, device, turnId, question); }
@@ -862,12 +817,7 @@ export function PersistentLocalAIChat({
     }
   };
 
-  const phase = status?.phase;
-  const canChat = engine === "cloud" ? Boolean(cloudStatus?.configured) : phase === "ready" || phase === "generating";
-  const percent = Math.round((status?.progress ?? 0) * 100);
-  const downloadSize = status?.approximateBytes
-    ? `${(status.approximateBytes / 1_000_000_000).toFixed(2)} GB`
-    : "1.75 GB";
+  const canChat = Boolean(cloudStatus?.configured);
   const savedCloudKeyApplies = Boolean(
     cloudStatus?.configured
     && cloudStatus.endpoint.replace(/\/+$/, "") === cloudEndpoint.trim().replace(/\/+$/, ""),
@@ -904,8 +854,8 @@ export function PersistentLocalAIChat({
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[18px] font-semibold">{current?.title ?? "New chat"}</h2>
           <button type="button" onClick={() => setSettingsOpen(true)} className="flex max-w-full items-center gap-1.5 truncate text-xs text-[#8e8e93]" aria-label="Change chat model">
-            {engine === "cloud" ? <Cloud className="h-3 w-3 shrink-0 text-[#ef847d]" /> : <Brain className="h-3 w-3 shrink-0 text-[#ef847d]" />}
-            <span className="truncate">{engine === "cloud" ? `${cloudStatus ? cloudEndpointLabel(cloudStatus.endpoint) : "Cloud"} · ${cloudStatus?.model ?? "setup needed"}` : `On-device · ${status?.modelName ?? "Qwen3.5 2B"}`}</span>
+            <Cloud className="h-3 w-3 shrink-0 text-[#ef847d]" />
+            <span className="truncate">{cloudStatus ? cloudEndpointLabel(cloudStatus.endpoint) : "Cloud"} · {cloudStatus?.model ?? "setup needed"}</span>
           </button>
         </div>
         <Button variant="ghost" size="icon" onClick={() => setOptionsOpen(true)} className="h-10 w-10 rounded-full bg-white/[0.08]" aria-label="Chat options"><MoreHorizontal className="h-5 w-5" /></Button>
@@ -915,17 +865,11 @@ export function PersistentLocalAIChat({
 
       {!canChat ? (
         <main className="flex min-h-0 flex-1 flex-col items-center justify-center px-7 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-[#df5149]/15 text-[#ef6b62]">{engine === "cloud" ? <Cloud className="h-8 w-8" /> : <Sparkles className="h-8 w-8" />}</span>
-          <h3 className="mt-5 text-[24px] font-bold">{engine === "cloud" ? "Cloud notes chat" : "Local notes chat"}</h3>
-          <p className="mt-2 max-w-xs text-sm leading-5 text-[#9b9893]">{engine === "cloud" ? "Connect OpenRouter or another OpenAI-compatible API. Matching note excerpts are sent with each question." : `Download the ${downloadSize} model once, then your note context and answers stay on-device.`}</p>
-          {engine === "cloud" && <Button onClick={() => setSettingsOpen(true)} className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-[#df5149] font-semibold text-white"><Settings2 className="mr-2 h-5 w-5" />Set up cloud chat</Button>}
-          {!status && !error && <Loader2 className="mt-6 h-6 w-6 animate-spin text-[#ef6b62]" />}
-          {engine === "local" && (phase === "notDownloaded" || phase === "failed") && <Button onClick={() => void runStatusAction(downloadLocalAI)} disabled={busy} className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-[#df5149] font-semibold text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Download className="mr-2 h-5 w-5" />}{phase === "failed" ? "Retry download" : "Download Qwen3.5 2B"}</Button>}
-          {engine === "local" && phase === "downloading" && <div className="mt-6 w-full max-w-xs"><p className="text-sm text-[#aaa6a0]">Downloading model files… {percent}%</p><Button variant="ghost" onClick={() => void runStatusAction(cancelLocalAIDownload)} className="mt-3">Cancel</Button></div>}
-          {engine === "local" && phase === "downloaded" && <Button onClick={() => void runStatusAction(loadLocalAI)} disabled={busy} className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-[#df5149] font-semibold text-white">{busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Sparkles className="mr-2 h-5 w-5" />}Load model</Button>}
-          {engine === "local" && phase === "loading" && <p className="mt-6 flex items-center text-sm text-[#aaa6a0]"><Loader2 className="mr-2 h-5 w-5 animate-spin text-[#ef6b62]" />Loading into memory…</p>}
+          <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-[#df5149]/15 text-[#ef6b62]"><Cloud className="h-8 w-8" /></span>
+          <h3 className="mt-5 text-[24px] font-bold">Cloud notes chat</h3>
+          <p className="mt-2 max-w-xs text-sm leading-5 text-[#9b9893]">Connect OpenRouter or another OpenAI-compatible API. Matching note excerpts are sent with each question.</p>
+          <Button onClick={() => setSettingsOpen(true)} className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-[#df5149] font-semibold text-white"><Settings2 className="mr-2 h-5 w-5" />Set up cloud chat</Button>
           {error && <p className="mt-4 max-w-xs rounded-[13px] bg-[#df5149]/10 px-4 py-3 text-sm leading-5 text-[#ef847d]">{error}</p>}
-          {engine === "local" && (phase === "downloaded" || phase === "failed") && <button type="button" onClick={() => void runStatusAction(deleteLocalAI)} disabled={busy} className="mt-4 text-xs text-[#77777d] underline underline-offset-4">Remove downloaded files</button>}
         </main>
       ) : (
         <>
@@ -949,7 +893,7 @@ export function PersistentLocalAIChat({
                   {message.role === "user" && unanswered.has(message.turnId) && !busy && notesReady && canEditCurrent && <button type="button" onClick={() => void retryTurn(message.turnId)} className="mt-1 flex items-center gap-1 text-xs text-[#ef847d]"><RotateCcw className="h-3 w-3" />Retry interrupted answer</button>}
                 </div>
               ))}
-              {busy && <div className="flex w-fit items-center rounded-[18px] bg-[#292a2b] px-4 py-3 text-sm text-[#aaa6a0]"><Loader2 className="mr-2 h-4 w-4 animate-spin text-[#ef6b62]" />{engine === "cloud" ? "Thinking in the cloud…" : "Thinking on-device…"}</div>}
+              {busy && <div className="flex w-fit items-center rounded-[18px] bg-[#292a2b] px-4 py-3 text-sm text-[#aaa6a0]"><Loader2 className="mr-2 h-4 w-4 animate-spin text-[#ef6b62]" />Thinking in the cloud…</div>}
               {memoryBusy && <p className="flex items-center text-xs text-[#77777d]"><Brain className="mr-1.5 h-3.5 w-3.5" />Updating conversation memory…</p>}
               {error && <p className="rounded-[13px] bg-[#df5149]/10 px-4 py-3 text-sm leading-5 text-[#ef847d]">{error}</p>}
             </div>
@@ -978,18 +922,14 @@ export function PersistentLocalAIChat({
         <div className="w-full rounded-t-[26px] bg-[#292a2b] px-5 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3" onClick={(event) => event.stopPropagation()}>
           <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" />
           <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Chat model</h2><Button variant="ghost" size="icon" onClick={() => setSettingsOpen(false)} aria-label="Close chat settings"><X className="h-5 w-5" /></Button></div>
-          <div className="mt-4 grid grid-cols-2 rounded-xl bg-black/20 p-1">
-            <button type="button" onClick={() => selectEngine("local")} className={cn("flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium", engine === "local" ? "bg-[#454647] text-white" : "text-[#9b9893]")}><Brain className="h-4 w-4" />On-device</button>
-            <button type="button" onClick={() => selectEngine("cloud")} className={cn("flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium", engine === "cloud" ? "bg-[#454647] text-white" : "text-[#9b9893]")}><Cloud className="h-4 w-4" />Cloud</button>
-          </div>
-          {engine === "cloud" ? <div className="mt-5 space-y-4">
+          <div className="mt-5 space-y-4">
             <p className="text-xs leading-5 text-[#9b9893]">Questions and matching note excerpts are sent to this endpoint. The API key stays in the iOS Keychain and is never written to your vault.</p>
             <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#c4c0bb]">API endpoint</span><Input value={cloudEndpoint} onChange={(event) => setCloudEndpoint(event.target.value)} inputMode="url" autoCapitalize="none" autoCorrect="off" className="h-11 rounded-xl border-white/[0.09] bg-[#202122] text-sm" placeholder="https://openrouter.ai/api/v1" /></label>
             <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#c4c0bb]">Model ID</span><Input value={cloudModel} onChange={(event) => setCloudModel(event.target.value)} autoCapitalize="none" autoCorrect="off" className="h-11 rounded-xl border-white/[0.09] bg-[#202122] text-sm" placeholder="openai/gpt-5-mini" /></label>
             <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#c4c0bb]">API key</span><Input type="password" value={cloudAPIKey} onChange={(event) => setCloudAPIKey(event.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="off" className="h-11 rounded-xl border-white/[0.09] bg-[#202122] text-sm" placeholder={savedCloudKeyApplies ? "Stored in Keychain · leave blank to keep" : "Required for this endpoint"} /></label>
             {error && <p className="rounded-xl bg-[#df5149]/10 px-3 py-2.5 text-xs leading-5 text-[#ef847d]">{error}</p>}
             <Button onClick={() => void saveCloudSettings()} disabled={busy || !cloudEndpoint.trim() || !cloudModel.trim() || (!savedCloudKeyApplies && !cloudAPIKey.trim())} className="h-12 w-full rounded-xl bg-[#df5149] font-semibold text-white">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save cloud model</Button>
-          </div> : <div className="mt-5"><p className="text-sm leading-6 text-[#aaa6a0]">Runs privately on this device and works offline after the model is downloaded.</p><Button onClick={() => setSettingsOpen(false)} className="mt-5 h-12 w-full rounded-xl bg-[#df5149] font-semibold text-white">Use on-device model</Button></div>}
+          </div>
         </div>
       </div>}
 

@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  LOCAL_AI_CONFIG,
   type AiProvider,
   type AiProviderConfig,
   type CloudAiModel,
@@ -69,11 +68,7 @@ export function AiProviderDialog({
 
   const selectProvider = (value: AiProvider) => {
     setProvider(value);
-    if (value === "local") {
-      setBaseUrl("");
-      setModel(LOCAL_AI_CONFIG.model);
-      setFavoriteModels([]);
-    } else if (value === "openrouter") {
+    if (value === "openrouter") {
       setBaseUrl(OPENROUTER_URL);
       if (config.provider !== "openrouter") {
         setModel("");
@@ -86,7 +81,7 @@ export function AiProviderDialog({
     }
   };
 
-  const canSave = provider === "local" || Boolean(baseUrl.trim() && model.trim());
+  const canSave = Boolean(baseUrl.trim() && model.trim());
   const providerModels = baseUrl.trim() === modelsBaseUrl ? models : [];
   const modelOptions = [
     ...favoriteModels.map((id) => ({ id, name: id })),
@@ -114,7 +109,7 @@ export function AiProviderDialog({
         <DialogHeader>
           <DialogTitle>Configure AI chat</DialogTitle>
           <DialogDescription>
-            Use Zerus’s offline model or connect an OpenAI-compatible cloud provider.
+            Connect an OpenAI-compatible cloud provider.
           </DialogDescription>
         </DialogHeader>
 
@@ -124,19 +119,13 @@ export function AiProviderDialog({
             <Select value={provider} onValueChange={(value) => selectProvider(value as AiProvider)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="local">Local · Qwen3 1.7B</SelectItem>
                 <SelectItem value="openrouter">OpenRouter</SelectItem>
                 <SelectItem value="compatible">OpenAI-compatible API</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
-          {provider === "local" ? (
-            <div className="rounded-md border border-border/70 bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-              Runs locally with MLX. Notes and prompts stay on this device.
-            </div>
-          ) : (
-            <>
+          <>
               <div className="space-y-2">
                 <Label htmlFor="ai-provider-url">API base URL</Label>
                 <Input
@@ -271,8 +260,7 @@ export function AiProviderDialog({
               <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground">
                 Cloud requests send the current note and folder context to the selected provider and may incur usage charges.
               </div>
-            </>
-          )}
+          </>
         </div>
 
         <DialogFooter>

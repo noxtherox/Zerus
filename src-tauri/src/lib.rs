@@ -1,17 +1,11 @@
-use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::io::Write;
+use std::path::Path;
+use std::sync::Mutex;
 
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager};
-
-#[cfg(target_os = "macos")]
-mod mlx_ai_native;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +132,17 @@ fn sync_opened_vault_record(
         .sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
     registry.default_vault_id = Some(record.id);
     record
+}
+
+fn remove_legacy_model_directory(path: &Path) -> Result<(), String> {
+    match fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!(
+            "Could not remove the retired AI model files at {}: {error}",
+            path.display()
+        )),
+    }
 }
 
 #[tauri::command]
@@ -371,12 +376,6 @@ fn cli_migration_apply(
 #[derive(Default)]
 struct PendingOpenFiles(Mutex<Vec<String>>);
 
-#[derive(Default)]
-struct LocalAiRuntimeState {
-    #[cfg(target_os = "macos")]
-    native: mlx_ai_native::NativeAiRuntime,
-}
-
 #[derive(Clone)]
 struct CloudAiCredentials {
     base_url: String,
@@ -386,84 +385,12 @@ struct CloudAiCredentials {
 #[derive(Default)]
 struct CloudAiState(Mutex<Option<CloudAiCredentials>>);
 
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-const LOCAL_AI_BASE_URL: &str = "http://127.0.0.1:8080";
-#[cfg(target_os = "macos")]
-const LOCAL_AI_MODEL: &str = "Qwen3-1.7B-4bit";
-#[cfg(not(target_os = "macos"))]
-const LOCAL_AI_MODEL: &str = "gemma-4-E4B-it";
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-const LOCAL_AI_TEMPERATURE: f64 = 0.2;
-#[cfg(not(target_os = "macos"))]
-const LOCAL_AI_MODEL_FILE: &str = "gemma-4-E4B-it.litertlm";
-#[cfg(target_os = "macos")]
-const LOCAL_AI_MODEL_SIZE: u64 = 984_015_687;
-#[cfg(not(target_os = "macos"))]
-const LOCAL_AI_MODEL_SIZE: u64 = 3_659_530_240;
-const LOCAL_AI_MODEL_SHA256: &str =
-    "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0";
-const LOCAL_AI_MODEL_URL: &str = "https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm/resolve/main/gemma-4-E4B-it.litertlm?download=true";
+const AI_TEMPERATURE: f64 = 0.2;
 const CLOUD_AI_KEYRING_SERVICE: &str = "com.zerus.notes.cloud-ai";
-static LOCAL_AI_DOWNLOAD_ACTIVE: AtomicBool = AtomicBool::new(false);
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LocalAiStatus {
-    runtime_ready: bool,
-    model_downloaded: bool,
-    model_path: String,
-    download_size_bytes: u64,
-}
-
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LocalAiDownloadProgress {
-    downloaded_bytes: u64,
-    total_bytes: u64,
-    phase: &'static str,
-}
-
-struct LocalAiDownloadGuard;
-
-impl Drop for LocalAiDownloadGuard {
-    fn drop(&mut self) {
-        LOCAL_AI_DOWNLOAD_ACTIVE.store(false, Ordering::Release);
-    }
-}
-
-fn local_ai_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map(|path| {
-            #[cfg(target_os = "macos")]
-            {
-                path.join("local-ai").join("mlx")
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                path.join("local-ai")
-                    .join("models")
-                    .join(LOCAL_AI_MODEL_FILE)
-            }
-        })
-        .map_err(|error| format!("Could not locate Zerus's model folder: {error}"))
-}
-
-fn local_ai_model_downloaded(path: &Path) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        path.join(mlx_ai_native::READY_MARKER).is_file()
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        path.metadata()
-            .is_ok_and(|metadata| metadata.is_file() && metadata.len() == LOCAL_AI_MODEL_SIZE)
-    }
-}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LocalAiMessage {
+struct AiMessage {
     role: String,
     content: String,
     #[serde(default)]
@@ -472,14 +399,14 @@ struct LocalAiMessage {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LocalAiChatRequest {
+struct AiChatRequest {
     system_prompt: String,
-    messages: Vec<LocalAiMessage>,
+    messages: Vec<AiMessage>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct LocalAiChatResponse {
+struct AiChatResponse {
     content: String,
     reasoning: Option<String>,
 }
@@ -523,10 +450,7 @@ fn normalized_cloud_ai_base_url(value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
-fn cloud_ai_request_body(
-    request: LocalAiChatRequest,
-    model: &str,
-) -> Result<serde_json::Value, String> {
+fn cloud_ai_request_body(request: AiChatRequest, model: &str) -> Result<serde_json::Value, String> {
     let model = model.trim();
     if model.is_empty() || model.len() > 200 {
         return Err("Select a valid cloud model".to_string());
@@ -561,7 +485,7 @@ fn cloud_ai_request_body(
     Ok(serde_json::json!({
         "model": model,
         "messages": messages,
-        "temperature": LOCAL_AI_TEMPERATURE,
+        "temperature": AI_TEMPERATURE,
         "max_tokens": 2048,
         "stream": true,
     }))
@@ -713,81 +637,6 @@ fn cloud_ai_configure(
     .map(|_| ())
 }
 
-fn validated_ai_image_path(path: &str) -> Result<String, String> {
-    let canonical = Path::new(path)
-        .canonicalize()
-        .map_err(|error| format!("Could not open the attached image: {error}"))?;
-    if !canonical.is_file() {
-        return Err("The attached image is not a file".to_string());
-    }
-    let supported = canonical
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .is_some_and(|extension| {
-            matches!(
-                extension.to_ascii_lowercase().as_str(),
-                "png" | "jpg" | "jpeg" | "webp" | "heic" | "heif"
-            )
-        });
-    if !supported {
-        return Err("The attached file is not a supported image".to_string());
-    }
-    Ok(canonical.to_string_lossy().into_owned())
-}
-
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-fn local_ai_request_body(request: LocalAiChatRequest) -> Result<serde_json::Value, String> {
-    if request.system_prompt.trim().is_empty() {
-        return Err("The AI context is empty".to_string());
-    }
-    if request.messages.is_empty() || request.messages.len() > 64 {
-        return Err("The AI conversation has an invalid number of messages".to_string());
-    }
-
-    let mut messages = vec![serde_json::json!({
-        "role": "system",
-        "content": request.system_prompt,
-    })];
-    for message in request.messages {
-        if !matches!(message.role.as_str(), "user" | "assistant") {
-            return Err("The AI conversation contains an invalid role".to_string());
-        }
-        if message.content.len() > 50_000 {
-            return Err("An AI message is too large".to_string());
-        }
-        let content = if message.image_paths.is_empty() {
-            serde_json::Value::String(message.content)
-        } else {
-            let mut parts = vec![serde_json::json!({
-                "type": "text",
-                "text": message.content,
-            })];
-            for path in message.image_paths {
-                parts.push(serde_json::json!({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": validated_ai_image_path(&path)?,
-                    },
-                }));
-            }
-            serde_json::Value::Array(parts)
-        };
-        messages.push(serde_json::json!({
-            "role": message.role,
-            "content": content,
-        }));
-    }
-
-    Ok(serde_json::json!({
-        "model": LOCAL_AI_MODEL,
-        "messages": messages,
-        "temperature": LOCAL_AI_TEMPERATURE,
-        "max_tokens": 2048,
-        "stream": true,
-        "reasoning_effort": "medium",
-    }))
-}
-
 #[cfg_attr(target_os = "macos", allow(dead_code))]
 fn response_text(value: Option<&serde_json::Value>) -> Option<String> {
     match value {
@@ -838,7 +687,7 @@ async fn collect_chat_stream(
     app: &tauri::AppHandle,
     stream_id: &str,
     source: &str,
-) -> Result<LocalAiChatResponse, String> {
+) -> Result<AiChatResponse, String> {
     let mut pending = Vec::<u8>::new();
     let mut content = String::new();
     let mut reasoning = String::new();
@@ -883,337 +732,10 @@ async fn collect_chat_stream(
     if content.trim().is_empty() {
         return Err(format!("The {source} response contained no text"));
     }
-    Ok(LocalAiChatResponse {
+    Ok(AiChatResponse {
         content,
         reasoning: (!reasoning.is_empty()).then_some(reasoning),
     })
-}
-
-async fn local_ai_runtime_ready(app: &tauri::AppHandle) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        return mlx_ai_native::available(app);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let client = match reqwest::Client::builder()
-            .timeout(std::time::Duration::from_millis(900))
-            .build()
-        {
-            Ok(client) => client,
-            Err(_) => return false,
-        };
-        let response = match client
-            .get(format!("{LOCAL_AI_BASE_URL}/v1/models"))
-            .send()
-            .await
-        {
-            Ok(response) if response.status().is_success() => response,
-            _ => return false,
-        };
-        response
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|payload| {
-                payload
-                    .get("data")
-                    .and_then(|data| data.as_array())
-                    .cloned()
-            })
-            .is_some_and(|models| {
-                models.iter().any(|model| {
-                    model
-                        .get("id")
-                        .and_then(|id| id.as_str())
-                        .is_some_and(|id| id.eq_ignore_ascii_case(LOCAL_AI_MODEL))
-                })
-            })
-    }
-}
-
-#[tauri::command]
-async fn local_ai_status(app: tauri::AppHandle) -> Result<LocalAiStatus, String> {
-    let model_path = local_ai_model_path(&app)?;
-    Ok(LocalAiStatus {
-        runtime_ready: local_ai_runtime_ready(&app).await,
-        model_downloaded: local_ai_model_downloaded(&model_path),
-        model_path: model_path.to_string_lossy().into_owned(),
-        download_size_bytes: LOCAL_AI_MODEL_SIZE,
-    })
-}
-
-#[tauri::command]
-async fn local_ai_download_model(
-    app: tauri::AppHandle,
-    runtime: tauri::State<'_, LocalAiRuntimeState>,
-) -> Result<LocalAiStatus, String> {
-    #[cfg(target_os = "macos")]
-    {
-        LOCAL_AI_DOWNLOAD_ACTIVE
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| "The Qwen model is already downloading".to_string())?;
-        let _download_guard = LocalAiDownloadGuard;
-        let model_path = local_ai_model_path(&app)?;
-        if local_ai_model_downloaded(&model_path) {
-            return local_ai_status(app).await;
-        }
-        mlx_ai_native::download(&app, &runtime.native, &model_path, |progress| {
-            let phase = match progress.phase.as_str() {
-                "installing" => "installing",
-                "complete" => "complete",
-                _ => "downloading",
-            };
-            let _ = app.emit(
-                "local-ai-download-progress",
-                LocalAiDownloadProgress {
-                    downloaded_bytes: progress.downloaded_bytes,
-                    total_bytes: if progress.total_bytes == 0 {
-                        LOCAL_AI_MODEL_SIZE
-                    } else {
-                        progress.total_bytes
-                    },
-                    phase,
-                },
-            );
-        })?;
-        return local_ai_status(app).await;
-    }
-
-    #[allow(unreachable_code)]
-    {
-        LOCAL_AI_DOWNLOAD_ACTIVE
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| "The Gemma model is already downloading".to_string())?;
-        let _download_guard = LocalAiDownloadGuard;
-        let model_path = local_ai_model_path(&app)?;
-        if local_ai_model_downloaded(&model_path) {
-            return local_ai_status(app).await;
-        }
-
-        let parent = model_path
-            .parent()
-            .ok_or_else(|| "The Gemma model path has no parent folder".to_string())?;
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Could not create the local AI model folder: {error}"))?;
-        if model_path.exists() {
-            fs::remove_file(&model_path)
-                .map_err(|error| format!("Could not replace the invalid Gemma model: {error}"))?;
-        }
-        let partial_path = model_path.with_extension("litertlm.part");
-        if partial_path.exists() {
-            fs::remove_file(&partial_path).map_err(|error| {
-                format!("Could not clear the incomplete model download: {error}")
-            })?;
-        }
-
-        let result: Result<(), String> = async {
-            let client = reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60 * 60 * 3))
-                .build()
-                .map_err(|error| error.to_string())?;
-            let mut response = client
-                .get(LOCAL_AI_MODEL_URL)
-                .send()
-                .await
-                .map_err(|error| format!("Could not start the Hugging Face download: {error}"))?;
-            if !response.status().is_success() {
-                return Err(format!(
-                    "Hugging Face returned {} while downloading Gemma",
-                    response.status()
-                ));
-            }
-            if response
-                .content_length()
-                .is_some_and(|size| size != LOCAL_AI_MODEL_SIZE)
-            {
-                return Err("Hugging Face reported an unexpected Gemma model size".to_string());
-            }
-
-            let mut file = OpenOptions::new()
-                .create_new(true)
-                .write(true)
-                .open(&partial_path)
-                .map_err(|error| format!("Could not create the model download: {error}"))?;
-            let mut hasher = Sha256::new();
-            let mut downloaded = 0_u64;
-            let mut last_emitted = 0_u64;
-            app.emit(
-                "local-ai-download-progress",
-                LocalAiDownloadProgress {
-                    downloaded_bytes: 0,
-                    total_bytes: LOCAL_AI_MODEL_SIZE,
-                    phase: "downloading",
-                },
-            )
-            .map_err(|error| error.to_string())?;
-
-            while let Some(chunk) = response
-                .chunk()
-                .await
-                .map_err(|error| format!("The Gemma download was interrupted: {error}"))?
-            {
-                downloaded = downloaded.saturating_add(chunk.len() as u64);
-                if downloaded > LOCAL_AI_MODEL_SIZE {
-                    return Err("The Gemma download exceeded its expected size".to_string());
-                }
-                file.write_all(&chunk)
-                    .map_err(|error| format!("Could not save the Gemma model: {error}"))?;
-                hasher.update(&chunk);
-                if downloaded == LOCAL_AI_MODEL_SIZE
-                    || downloaded.saturating_sub(last_emitted) >= 8 * 1024 * 1024
-                {
-                    app.emit(
-                        "local-ai-download-progress",
-                        LocalAiDownloadProgress {
-                            downloaded_bytes: downloaded,
-                            total_bytes: LOCAL_AI_MODEL_SIZE,
-                            phase: "downloading",
-                        },
-                    )
-                    .map_err(|error| error.to_string())?;
-                    last_emitted = downloaded;
-                }
-            }
-            file.flush()
-                .map_err(|error| format!("Could not finish saving the Gemma model: {error}"))?;
-            if downloaded != LOCAL_AI_MODEL_SIZE {
-                return Err(format!(
-                "The Gemma download was incomplete ({downloaded} of {LOCAL_AI_MODEL_SIZE} bytes)"
-            ));
-            }
-            app.emit(
-                "local-ai-download-progress",
-                LocalAiDownloadProgress {
-                    downloaded_bytes: downloaded,
-                    total_bytes: LOCAL_AI_MODEL_SIZE,
-                    phase: "verifying",
-                },
-            )
-            .map_err(|error| error.to_string())?;
-            let digest = format!("{:x}", hasher.finalize());
-            if digest != LOCAL_AI_MODEL_SHA256 {
-                return Err("The downloaded Gemma model failed its integrity check".to_string());
-            }
-            app.emit(
-                "local-ai-download-progress",
-                LocalAiDownloadProgress {
-                    downloaded_bytes: downloaded,
-                    total_bytes: LOCAL_AI_MODEL_SIZE,
-                    phase: "installing",
-                },
-            )
-            .map_err(|error| error.to_string())?;
-            fs::rename(&partial_path, &model_path).map_err(|error| {
-                format!("Could not install the downloaded Gemma model: {error}")
-            })?;
-            if !local_ai_model_downloaded(&model_path) {
-                return Err(
-                    "Gemma was downloaded but the installed model could not be verified"
-                        .to_string(),
-                );
-            }
-            app.emit(
-                "local-ai-download-progress",
-                LocalAiDownloadProgress {
-                    downloaded_bytes: downloaded,
-                    total_bytes: LOCAL_AI_MODEL_SIZE,
-                    phase: "complete",
-                },
-            )
-            .map_err(|error| error.to_string())?;
-            Ok(())
-        }
-        .await;
-
-        if let Err(error) = result {
-            let _ = fs::remove_file(&partial_path);
-            return Err(error);
-        }
-        local_ai_status(app).await
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn local_ai_native_response(
-    app: &tauri::AppHandle,
-    runtime: &LocalAiRuntimeState,
-    request: LocalAiChatRequest,
-) -> Result<LocalAiChatResponse, String> {
-    if request.system_prompt.trim().is_empty() || request.messages.is_empty() {
-        return Err("The AI conversation is empty".to_string());
-    }
-    if request
-        .messages
-        .iter()
-        .any(|message| !message.image_paths.is_empty())
-    {
-        return Err("Qwen3 1.7B is text-only and cannot read image attachments".to_string());
-    }
-    let model_path = local_ai_model_path(app)?;
-    if !local_ai_model_downloaded(&model_path) {
-        return Err("Qwen is not downloaded".to_string());
-    }
-    let messages = serde_json::to_value(&request.messages)
-        .map_err(|error| format!("Could not encode the MLX conversation: {error}"))?;
-    let response = mlx_ai_native::chat(
-        app,
-        &runtime.native,
-        &model_path,
-        &request.system_prompt,
-        &messages,
-    )?;
-    Ok(LocalAiChatResponse {
-        content: response.content,
-        reasoning: response.reasoning,
-    })
-}
-
-#[tauri::command]
-async fn local_ai_chat(
-    app: tauri::AppHandle,
-    runtime: tauri::State<'_, LocalAiRuntimeState>,
-    stream_id: String,
-    request: LocalAiChatRequest,
-) -> Result<LocalAiChatResponse, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = &stream_id;
-        return local_ai_native_response(&app, &runtime, request);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let body = local_ai_request_body(request)?;
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(180))
-            .build()
-            .map_err(|error| error.to_string())?;
-        let response = client
-            .post(format!("{LOCAL_AI_BASE_URL}/v1/chat/completions"))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| {
-                format!("Could not reach the local Gemma runtime at {LOCAL_AI_BASE_URL}: {error}")
-            })?;
-        let status = response.status();
-        if !status.is_success() {
-            let payload = response
-                .json::<serde_json::Value>()
-                .await
-                .map_err(|error| {
-                    format!("The local Gemma runtime returned invalid JSON: {error}")
-                })?;
-            let detail = payload
-                .pointer("/error/message")
-                .and_then(|value| value.as_str())
-                .unwrap_or("Unknown local runtime error");
-            return Err(format!("Gemma request failed ({status}): {detail}"));
-        }
-        collect_chat_stream(response, &app, &stream_id, "local AI").await
-    }
 }
 
 #[tauri::command]
@@ -1281,8 +803,8 @@ async fn cloud_ai_chat(
     base_url: String,
     model: String,
     stream_id: String,
-    request: LocalAiChatRequest,
-) -> Result<LocalAiChatResponse, String> {
+    request: AiChatRequest,
+) -> Result<AiChatResponse, String> {
     let credentials = cloud_ai_credentials(&state, &base_url, None)?;
     let body = cloud_ai_request_body(request, &model)?;
     let client = reqwest::Client::builder()
@@ -1314,281 +836,6 @@ async fn cloud_ai_chat(
         ));
     }
     collect_chat_stream(response, &app, &stream_id, "cloud AI provider").await
-}
-
-#[derive(Clone, Default)]
-struct TerminalManager(Arc<TerminalManagerInner>);
-
-#[derive(Default)]
-struct TerminalManagerInner {
-    sessions: Mutex<HashMap<u64, TerminalSession>>,
-    next_id: AtomicU64,
-}
-
-struct TerminalSession {
-    id: u64,
-    cwd: String,
-    writer: Box<dyn Write + Send>,
-    master: Box<dyn MasterPty + Send>,
-    killer: Box<dyn ChildKiller + Send + Sync>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TerminalSessionInfo {
-    session_id: u64,
-    working_directory: String,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TerminalOutput {
-    session_id: u64,
-    data: Vec<u8>,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct TerminalExit {
-    session_id: u64,
-    exit_code: Option<u32>,
-    signal: Option<String>,
-    error: Option<String>,
-}
-
-fn configured_shell() -> String {
-    #[cfg(target_os = "windows")]
-    {
-        std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-    }
-}
-
-fn validated_terminal_directory(path: &str) -> Result<std::path::PathBuf, String> {
-    let directory = Path::new(path)
-        .canonicalize()
-        .map_err(|error| format!("Could not open the note folder: {error}"))?;
-    if !directory.is_dir() {
-        return Err("The terminal working path is not a folder".to_string());
-    }
-    Ok(directory)
-}
-
-#[tauri::command]
-fn terminal_status(state: tauri::State<'_, TerminalManager>) -> Vec<TerminalSessionInfo> {
-    let sessions = state
-        .0
-        .sessions
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let mut infos = sessions
-        .values()
-        .map(|session| TerminalSessionInfo {
-            session_id: session.id,
-            working_directory: session.cwd.clone(),
-        })
-        .collect::<Vec<_>>();
-    infos.sort_by_key(|info| info.session_id);
-    infos
-}
-
-#[tauri::command]
-fn terminal_start(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, TerminalManager>,
-    working_directory: String,
-    rows: u16,
-    cols: u16,
-) -> Result<TerminalSessionInfo, String> {
-    let directory = validated_terminal_directory(&working_directory)?;
-    let canonical_directory = directory.to_string_lossy().into_owned();
-
-    {
-        let sessions = state
-            .0
-            .sessions
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        if let Some(session) = sessions
-            .values()
-            .find(|session| session.cwd == canonical_directory)
-        {
-            return Ok(TerminalSessionInfo {
-                session_id: session.id,
-                working_directory: session.cwd.clone(),
-            });
-        }
-    }
-
-    let pair = native_pty_system()
-        .openpty(PtySize {
-            rows: rows.max(1),
-            cols: cols.max(1),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|error| format!("Could not create a terminal: {error}"))?;
-
-    let shell = configured_shell();
-    let mut command = CommandBuilder::new(&shell);
-    #[cfg(not(target_os = "windows"))]
-    command.arg("-l");
-    command.cwd(&directory);
-    command.env("TERM", "xterm-256color");
-    command.env("COLORTERM", "truecolor");
-
-    let mut child = pair
-        .slave
-        .spawn_command(command)
-        .map_err(|error| format!("Could not start {shell}: {error}"))?;
-    let killer = child.clone_killer();
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .map_err(|error| format!("Could not read terminal output: {error}"))?;
-    let writer = pair
-        .master
-        .take_writer()
-        .map_err(|error| format!("Could not write to the terminal: {error}"))?;
-
-    let session_id = state.0.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-    let info = TerminalSessionInfo {
-        session_id,
-        working_directory: canonical_directory.clone(),
-    };
-    let manager = state.inner().clone();
-    {
-        let mut sessions = manager
-            .0
-            .sessions
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        sessions.insert(
-            session_id,
-            TerminalSession {
-                id: session_id,
-                cwd: canonical_directory,
-                writer,
-                master: pair.master,
-                killer,
-            },
-        );
-    }
-
-    let output_app = app.clone();
-    std::thread::spawn(move || {
-        let mut buffer = vec![0_u8; 8 * 1024];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(count) => {
-                    let _ = output_app.emit(
-                        "zerus-terminal-output",
-                        TerminalOutput {
-                            session_id,
-                            data: buffer[..count].to_vec(),
-                        },
-                    );
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => break,
-            }
-        }
-    });
-
-    let exit_app = app;
-    std::thread::spawn(move || {
-        let result = child.wait();
-        {
-            let mut sessions = manager
-                .0
-                .sessions
-                .lock()
-                .unwrap_or_else(|error| error.into_inner());
-            sessions.remove(&session_id);
-        }
-        let payload = match result {
-            Ok(status) => TerminalExit {
-                session_id,
-                exit_code: Some(status.exit_code()),
-                signal: status.signal().map(str::to_string),
-                error: None,
-            },
-            Err(error) => TerminalExit {
-                session_id,
-                exit_code: None,
-                signal: None,
-                error: Some(error.to_string()),
-            },
-        };
-        let _ = exit_app.emit("zerus-terminal-exit", payload);
-    });
-
-    Ok(info)
-}
-
-#[tauri::command]
-fn terminal_write(
-    state: tauri::State<'_, TerminalManager>,
-    session_id: u64,
-    data: String,
-) -> Result<(), String> {
-    let mut sessions = state
-        .0
-        .sessions
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let session = sessions
-        .get_mut(&session_id)
-        .ok_or_else(|| "The terminal session is no longer running".to_string())?;
-    session
-        .writer
-        .write_all(data.as_bytes())
-        .and_then(|_| session.writer.flush())
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn terminal_resize(
-    state: tauri::State<'_, TerminalManager>,
-    session_id: u64,
-    rows: u16,
-    cols: u16,
-) -> Result<(), String> {
-    let sessions = state
-        .0
-        .sessions
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let session = sessions
-        .get(&session_id)
-        .ok_or_else(|| "The terminal session is no longer running".to_string())?;
-    session
-        .master
-        .resize(PtySize {
-            rows: rows.max(1),
-            cols: cols.max(1),
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|error| error.to_string())
-}
-
-#[tauri::command]
-fn terminal_stop(state: tauri::State<'_, TerminalManager>, session_id: u64) -> Result<(), String> {
-    let mut sessions = state
-        .0
-        .sessions
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    let mut session = sessions
-        .remove(&session_id)
-        .ok_or_else(|| "The terminal session is no longer running".to_string())?;
-    session.killer.kill().map_err(|error| error.to_string())
 }
 
 fn write_new_vault_file_impl(
@@ -1734,7 +981,7 @@ fn desktop_open_paths(args: &[String], cwd: &Path) -> Vec<String> {
     args.iter()
         .skip(1)
         .filter_map(|argument| {
-            let candidate = PathBuf::from(argument);
+            let candidate = std::path::PathBuf::from(argument);
             let candidate = if candidate.is_absolute() {
                 candidate
             } else {
@@ -1808,8 +1055,6 @@ pub fn run() {
 
     let app = builder
         .manage(PendingOpenFiles::default())
-        .manage(TerminalManager::default())
-        .manage(LocalAiRuntimeState::default())
         .manage(CloudAiState::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -1821,14 +1066,6 @@ pub fn run() {
             copy_file_into_vault,
             canonicalize_path,
             take_pending_open_files,
-            terminal_status,
-            terminal_start,
-            terminal_write,
-            terminal_resize,
-            terminal_stop,
-            local_ai_status,
-            local_ai_download_model,
-            local_ai_chat,
             cloud_ai_models,
             cloud_ai_chat,
             cloud_ai_configure,
@@ -1841,6 +1078,11 @@ pub fn run() {
             cli_migration_apply
         ])
         .setup(|app| {
+            if let Ok(app_data) = app.path().app_data_dir() {
+                if let Err(error) = remove_legacy_model_directory(&app_data.join("local-ai")) {
+                    log::warn!("{error}");
+                }
+            }
             #[cfg(target_os = "windows")]
             {
                 let args = std::env::args().collect::<Vec<_>>();
@@ -1884,13 +1126,11 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(not(target_os = "macos"))]
-    use super::LOCAL_AI_MODEL_SIZE;
     use super::{
         chat_stream_delta, cli_export_skill, cloud_ai_keyring_account, cloud_ai_request_body,
-        copy_file_into_vault, desktop_open_paths, local_ai_model_downloaded, local_ai_request_body,
-        normalized_cloud_ai_base_url, sync_opened_vault_record, write_new_vault_file_impl,
-        LocalAiChatRequest, LocalAiMessage,
+        copy_file_into_vault, desktop_open_paths, normalized_cloud_ai_base_url,
+        remove_legacy_model_directory, sync_opened_vault_record, write_new_vault_file_impl,
+        AiChatRequest, AiMessage,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1925,29 +1165,26 @@ mod tests {
     }
 
     #[test]
-    fn local_ai_request_uses_low_temperature_and_default_reasoning() {
-        let body = local_ai_request_body(LocalAiChatRequest {
-            system_prompt: "Current note context".to_string(),
-            messages: vec![LocalAiMessage {
-                role: "user".to_string(),
-                content: "Summarize this note".to_string(),
-                image_paths: Vec::new(),
-            }],
-        })
-        .expect("build local AI request");
+    fn removes_the_retired_model_directory_if_it_exists() {
+        let root = test_root("retired-model");
+        let model_directory = root.join("local-ai");
+        fs::create_dir_all(&model_directory).expect("create retired model directory");
+        fs::write(model_directory.join("model.bin"), b"retired model")
+            .expect("write retired model fixture");
 
-        assert_eq!(body["temperature"], serde_json::json!(0.2));
-        assert_eq!(body["reasoning_effort"], "medium");
-        assert_eq!(body["stream"], true);
-        assert_eq!(body["messages"][0]["role"], "system");
+        remove_legacy_model_directory(&model_directory).expect("remove retired model directory");
+        assert!(!model_directory.exists());
+        remove_legacy_model_directory(&model_directory).expect("ignore an absent directory");
+
+        fs::remove_dir_all(root).expect("remove test root");
     }
 
     #[test]
     fn cloud_ai_request_uses_the_selected_model() {
         let body = cloud_ai_request_body(
-            LocalAiChatRequest {
+            AiChatRequest {
                 system_prompt: "Current note context".to_string(),
-                messages: vec![LocalAiMessage {
+                messages: vec![AiMessage {
                     role: "user".to_string(),
                     content: "Summarize this note".to_string(),
                     image_paths: Vec::new(),
@@ -2019,62 +1256,6 @@ mod tests {
             openrouter,
             cloud_ai_keyring_account("https://api.openai.com/v1")
         );
-    }
-
-    #[test]
-    fn local_ai_request_sends_validated_local_images() {
-        let root = test_root("local-ai-image");
-        fs::create_dir_all(&root).expect("create image test root");
-        let image = root.join("context.png");
-        fs::write(&image, b"synthetic image fixture").expect("write image fixture");
-
-        let body = local_ai_request_body(LocalAiChatRequest {
-            system_prompt: "Current note context".to_string(),
-            messages: vec![LocalAiMessage {
-                role: "user".to_string(),
-                content: "Describe this image".to_string(),
-                image_paths: vec![image.to_string_lossy().into_owned()],
-            }],
-        })
-        .expect("build multimodal request");
-
-        assert_eq!(body["messages"][1]["content"][1]["type"], "image_url");
-        assert_eq!(
-            body["messages"][1]["content"][1]["image_url"]["url"],
-            image.canonicalize().unwrap().to_string_lossy().as_ref()
-        );
-
-        fs::remove_dir_all(root).expect("remove image test root");
-    }
-
-    #[test]
-    fn local_ai_model_is_installed_only_at_the_verified_size() {
-        let root = test_root("local-ai-model-status");
-        fs::create_dir_all(&root).expect("create model test root");
-
-        #[cfg(target_os = "macos")]
-        {
-            let model = root.join("mlx");
-            fs::create_dir_all(&model).expect("create MLX cache fixture");
-            assert!(!local_ai_model_downloaded(&model));
-            fs::write(model.join(super::mlx_ai_native::READY_MARKER), b"")
-                .expect("write MLX ready marker");
-            assert!(local_ai_model_downloaded(&model));
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let model = root.join("gemma.litertlm");
-            let file = fs::File::create(&model).expect("create sparse model fixture");
-            file.set_len(LOCAL_AI_MODEL_SIZE - 1)
-                .expect("set incomplete model size");
-            assert!(!local_ai_model_downloaded(&model));
-            file.set_len(LOCAL_AI_MODEL_SIZE)
-                .expect("set complete model size");
-            assert!(local_ai_model_downloaded(&model));
-        }
-
-        fs::remove_dir_all(root).expect("remove model test root");
     }
 
     #[test]

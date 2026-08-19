@@ -11,12 +11,6 @@ Default permissions for the plugin
 - `allow-pick-files`
 - `allow-pick-external-folder`
 - `allow-open-file`
-- `allow-local-ai-status`
-- `allow-download-local-ai`
-- `allow-cancel-local-ai-download`
-- `allow-load-local-ai`
-- `allow-generate-local-ai`
-- `allow-delete-local-ai`
 - `allow-cloud-ai-status`
 - `allow-configure-cloud-ai`
 - `allow-generate-cloud-ai`
@@ -34,32 +28,6 @@ Default permissions for the plugin
 <th>Description</th>
 </tr>
 
-
-<tr>
-<td>
-
-`mobile-vault:allow-cancel-local-ai-download`
-
-</td>
-<td>
-
-Enables the cancel_local_ai_download command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-cancel-local-ai-download`
-
-</td>
-<td>
-
-Denies the cancel_local_ai_download command without any pre-configured scope.
-
-</td>
-</tr>
 
 <tr>
 <td>
@@ -168,32 +136,6 @@ Denies the configure_cloud_ai command without any pre-configured scope.
 <tr>
 <td>
 
-`mobile-vault:allow-delete-local-ai`
-
-</td>
-<td>
-
-Enables the delete_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-delete-local-ai`
-
-</td>
-<td>
-
-Denies the delete_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `mobile-vault:allow-device-name`
 
 </td>
@@ -220,32 +162,6 @@ Denies the device_name command without any pre-configured scope.
 <tr>
 <td>
 
-`mobile-vault:allow-download-local-ai`
-
-</td>
-<td>
-
-Enables the download_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-download-local-ai`
-
-</td>
-<td>
-
-Denies the download_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
 `mobile-vault:allow-generate-cloud-ai`
 
 </td>
@@ -265,84 +181,6 @@ Enables the generate_cloud_ai command without any pre-configured scope.
 <td>
 
 Denies the generate_cloud_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:allow-generate-local-ai`
-
-</td>
-<td>
-
-Enables the generate_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-generate-local-ai`
-
-</td>
-<td>
-
-Denies the generate_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:allow-load-local-ai`
-
-</td>
-<td>
-
-Enables the load_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-load-local-ai`
-
-</td>
-<td>
-
-Denies the load_local_ai command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:allow-local-ai-status`
-
-</td>
-<td>
-
-Enables the local_ai_status command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`mobile-vault:deny-local-ai-status`
-
-</td>
-<td>
-
-Denies the local_ai_status command without any pre-configured scope.
 
 </td>
 </tr>

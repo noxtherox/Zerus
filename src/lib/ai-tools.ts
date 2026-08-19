@@ -4,25 +4,25 @@ import {
   noteTitle,
   type Note,
 } from "@/lib/note-utils";
-import type { LocalAiNoteAction } from "@/lib/local-ai-actions";
+import type { AiNoteAction } from "@/lib/ai-actions";
 
-export type LocalAiToolCall =
+export type AiToolCall =
   | { name: "note_get"; arguments: { selector?: string } }
   | { name: "note_list"; arguments: { limit?: number } }
   | { name: "search"; arguments: { query: string; limit?: number } }
   | { name: "note_append"; arguments: { text: string } }
   | { name: "note_set_body"; arguments: { body: string } };
 
-export interface ParsedLocalAiToolResponse {
+export interface ParsedAiToolResponse {
   content: string;
-  toolCall: LocalAiToolCall | null;
+  toolCall: AiToolCall | null;
   toolError: string | null;
 }
 
-export interface LocalAiToolResult {
+export interface AiToolResult {
   ok: boolean;
   result: unknown;
-  mutation?: { noteId: string; action: LocalAiNoteAction };
+  mutation?: { noteId: string; action: AiNoteAction };
 }
 
 const TOOL_PATTERN = /<zerus_tool>\s*([\s\S]*?)\s*<\/zerus_tool>/gi;
@@ -32,7 +32,7 @@ const TYPED_TOOL_MARKER =
   /<\/?(?:note_get|note_list|search|note_append|note_set_body)>/i;
 const MAX_TOOL_TEXT_LENGTH = 100_000;
 
-export const LOCAL_AI_TOOL_PROMPT = [
+export const AI_TOOL_PROMPT = [
   "Zerus provides these MCP-like tools:",
   "- Read a note: <note_get>current or an exact title, path, or ID</note_get>",
   "- List notes: <note_list>20</note_list>",
@@ -54,9 +54,9 @@ function boundedLimit(value: unknown, fallback: number): number {
     : fallback;
 }
 
-export function parseLocalAiToolResponse(
+export function parseAiToolResponse(
   raw: string,
-): ParsedLocalAiToolResponse {
+): ParsedAiToolResponse {
   const typedMatches = [...raw.matchAll(TYPED_TOOL_PATTERN)];
   if (typedMatches.length > 0) {
     const content = raw.replace(TYPED_TOOL_PATTERN, "").trim();
@@ -67,7 +67,7 @@ export function parseLocalAiToolResponse(
         toolError: "The AI model returned more than one tool call at once.",
       };
     }
-    const name = typedMatches[0][1] as LocalAiToolCall["name"];
+    const name = typedMatches[0][1] as AiToolCall["name"];
     const value = typedMatches[0][2].trim();
     if (name === "note_get") {
       return {
@@ -274,11 +274,11 @@ function noteSummary(note: Note) {
   return { id: note.id, title: noteTitle(note), path: note.path };
 }
 
-export function runLocalAiTool(
-  call: LocalAiToolCall,
+export function runAiTool(
+  call: AiToolCall,
   notes: Note[],
   currentNoteId: string | null,
-): LocalAiToolResult {
+): AiToolResult {
   const available = notes.filter((note) => !isTrashed(note));
   if (call.name === "note_get") {
     const resolved = resolveNote(
@@ -325,7 +325,7 @@ export function runLocalAiTool(
   if (!current) {
     return { ok: false, result: { error: "No note is currently selected." } };
   }
-  const action: LocalAiNoteAction =
+  const action: AiNoteAction =
     call.name === "note_append"
       ? { type: "append", text: call.arguments.text }
       : { type: "replace_body", body: call.arguments.body };

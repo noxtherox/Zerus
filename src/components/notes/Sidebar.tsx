@@ -53,7 +53,6 @@ import {
 import type { NoteFilter } from "@/lib/filters";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
-  chooseVaultFolder,
   createType,
   deleteType,
   renameType,
@@ -90,6 +89,8 @@ import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
+import { VaultSwitcherDialog } from "./VaultSwitcherDialog";
+import { vaultNameFromPath } from "@/lib/vault-registry";
 
 interface SidebarProps {
   notes: Note[];
@@ -608,9 +609,10 @@ export function Sidebar({
     });
   };
 
-  const vaultName = vaultLocation?.split("/").filter(Boolean).pop();
+  const vaultName = vaultLocation ? vaultNameFromPath(vaultLocation) : null;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [vaultsOpen, setVaultsOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col bg-zerus-sidebar pt-4">
@@ -715,7 +717,8 @@ export function Sidebar({
         />
         {isDesktop && (
           <button
-            onClick={() => void chooseVaultFolder()}
+            type="button"
+            onClick={() => setVaultsOpen(true)}
             title={vaultLocation ?? undefined}
             className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-zerus-sidebar-fg/40 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/70"
           >
@@ -731,6 +734,11 @@ export function Sidebar({
         existingTypePaths={getAllTypePaths(notes, extraTypes)}
         onDefaultNoteTypeChange={onDefaultNoteTypeChange}
         onHideSubtypeNotesChange={onHideSubtypeNotesChange}
+      />
+      <VaultSwitcherDialog
+        currentPath={vaultLocation}
+        open={vaultsOpen}
+        onOpenChange={setVaultsOpen}
       />
       <IconPickerDialog
         open={iconTarget !== null}

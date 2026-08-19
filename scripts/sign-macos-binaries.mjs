@@ -25,7 +25,6 @@ if (!identity) {
 
 const binaries = [
   resolve(root, "src-tauri/binaries/zerus"),
-  resolve(root, "src-tauri/vendor/mlx/zerus-mlx"),
 ];
 
 for (const binary of binaries) {

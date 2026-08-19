@@ -4,7 +4,6 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Check,
   Code2,
-  Download,
   Loader2,
   RefreshCw,
   Send,
@@ -12,16 +11,6 @@ import {
   Sparkles,
   X,
 } from "@/lib/icons";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -51,20 +40,20 @@ import {
 } from "@/lib/ai-conversations";
 import type { Note } from "@/lib/note-utils";
 import {
-  buildLocalAiContext,
-  injectLocalAiSessionContext,
-  type LocalAiContext,
-} from "@/lib/local-ai-context";
+  buildAiContext,
+  injectAiSessionContext,
+  type AiContext,
+} from "@/lib/ai-context";
 import {
-  applyLocalAiNoteAction,
-  directLocalAiNoteAction,
-  parseLocalAiResponse,
-} from "@/lib/local-ai-actions";
+  applyAiNoteAction,
+  directAiNoteAction,
+  parseAiResponse,
+} from "@/lib/ai-actions";
 import {
-  parseLocalAiToolResponse,
-  runLocalAiTool,
-  type LocalAiToolCall,
-} from "@/lib/local-ai-tools";
+  parseAiToolResponse,
+  runAiTool,
+  type AiToolCall,
+} from "@/lib/ai-tools";
 import { noteBody } from "@/lib/frontmatter";
 import { getNotes, updateNoteBody } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
@@ -76,7 +65,7 @@ const WIDTH_STORAGE_KEY = "zerus.ai.width";
 
 type ChatMessage = StoredAiMessage;
 
-interface LocalAiChatResponse {
+interface AiChatResponse {
   content: string;
   reasoning: string | null;
 }
@@ -84,19 +73,6 @@ interface LocalAiChatResponse {
 interface AiChatReasoningEvent {
   streamId: string;
   reasoning: string;
-}
-
-interface LocalAiStatus {
-  runtimeReady: boolean;
-  modelDownloaded: boolean;
-  modelPath: string;
-  downloadSizeBytes: number;
-}
-
-interface LocalAiDownloadProgress {
-  downloadedBytes: number;
-  totalBytes: number;
-  phase: "downloading" | "verifying" | "installing" | "complete";
 }
 
 interface AiPanelProps {
@@ -129,7 +105,7 @@ function formatToolDetail(value: unknown): string {
 }
 
 function toolCallActivity(
-  call: LocalAiToolCall,
+  call: AiToolCall,
   status: StoredAiToolCall["status"],
   result = "",
 ): StoredAiToolCall {
@@ -205,16 +181,11 @@ export function AiPanel({
   const panelRef = useRef<HTMLDivElement>(null);
   const requestIdRef = useRef(0);
   const activeStreamIdRef = useRef<string | null>(null);
-  const contextRef = useRef<LocalAiContext | null>(null);
+  const contextRef = useRef<AiContext | null>(null);
   const skipConversationSaveRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
-  const [status, setStatus] = useState<LocalAiStatus | null>(null);
-  const [downloadConfirmOpen, setDownloadConfirmOpen] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<LocalAiDownloadProgress | null>(null);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [width, setWidth] = useState(storedWidth);
   const [providerConfig, setProviderConfig] = useState(readAiProviderConfig);
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
@@ -226,7 +197,7 @@ export function AiPanel({
   const [streamingToolCalls, setStreamingToolCalls] = useState<StoredAiToolCall[]>([]);
 
   const context = useMemo(
-    () => buildLocalAiContext(note, notes, targetDirectory, vaultLocation),
+    () => buildAiContext(note, notes, targetDirectory, vaultLocation),
     [note, notes, targetDirectory, vaultLocation],
   );
   contextRef.current = context;
@@ -236,21 +207,8 @@ export function AiPanel({
     context?.key ?? null,
   );
 
-  const checkStatus = async () => {
-    try {
-      setStatus(await invoke<LocalAiStatus>("local_ai_status"));
-    } catch {
-      setStatus(null);
-    }
-  };
-
   useEffect(() => {
     if (!open) return;
-    void checkStatus();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || providerConfig.provider === "local") return;
     let disposed = false;
     void invoke("cloud_ai_configure", {
       baseUrl: providerConfig.baseUrl,
@@ -268,21 +226,6 @@ export function AiPanel({
   useEffect(() => {
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<LocalAiDownloadProgress>("local-ai-download-progress", (event) => {
-      setDownloadProgress(event.payload);
-    }).then((stopListening) => {
-      if (disposed) stopListening();
-      else unlisten = stopListening;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
     void listen<AiChatReasoningEvent>("ai-chat-reasoning", (event) => {
       if (event.payload.streamId === activeStreamIdRef.current) {
         setStreamingReasoning(event.payload.reasoning);
@@ -296,33 +239,6 @@ export function AiPanel({
       unlisten?.();
     };
   }, []);
-
-  const downloadModel = async () => {
-    if (downloading) return;
-    setDownloadConfirmOpen(false);
-    setDownloading(true);
-    setDownloadError(null);
-    setDownloadProgress({
-      downloadedBytes: 0,
-      totalBytes: status?.downloadSizeBytes ?? 984_015_687,
-      phase: "downloading",
-    });
-    try {
-      const nextStatus = await invoke<LocalAiStatus>("local_ai_download_model");
-      if (!nextStatus.modelDownloaded) {
-        throw new Error("The download finished, but Zerus could not verify the installed model.");
-      }
-      setStatus(nextStatus);
-      setDownloadProgress(null);
-    } catch (error) {
-      const message = String(error);
-      setDownloadError(message);
-      showError(`Qwen could not be downloaded: ${message}`);
-      await checkStatus();
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   useEffect(() => {
     requestIdRef.current += 1;
@@ -343,9 +259,7 @@ export function AiPanel({
   const sendMessage = async () => {
     const currentContext = contextRef.current;
     const content = draft.trim();
-    const providerReady = providerConfig.provider === "local"
-      ? Boolean(status?.modelDownloaded && status.runtimeReady)
-      : Boolean(cloudReady && providerConfig.model);
+    const providerReady = Boolean(cloudReady && providerConfig.model);
     if (
       !currentContext ||
       !providerReady ||
@@ -366,7 +280,7 @@ export function AiPanel({
     setStreamingReasoning("");
     setStreamingToolCalls([]);
 
-    const directAction = directLocalAiNoteAction(content);
+    const directAction = directAiNoteAction(content);
     if (directAction && currentContext.noteId) {
       const latestNote = getNotes().find(
         (candidate) => candidate.id === currentContext.noteId,
@@ -374,7 +288,7 @@ export function AiPanel({
       if (latestNote && contextRef.current?.noteId === currentContext.noteId) {
         updateNoteBody(
           latestNote.id,
-          applyLocalAiNoteAction(noteBody(latestNote.content), directAction),
+          applyAiNoteAction(noteBody(latestNote.content), directAction),
         );
         setMessages([
           ...history,
@@ -411,7 +325,7 @@ export function AiPanel({
         const streamId = `${requestId}-${toolRound}`;
         activeStreamIdRef.current = streamId;
         setStreamingReasoning("");
-        const requestMessages = injectLocalAiSessionContext(
+        const requestMessages = injectAiSessionContext(
           currentContext,
           modelMessages,
         );
@@ -422,16 +336,12 @@ export function AiPanel({
             imagePaths: [],
           });
         }
-        const response = await invoke<LocalAiChatResponse>(
-          providerConfig.provider === "local" ? "local_ai_chat" : "cloud_ai_chat",
+        const response = await invoke<AiChatResponse>(
+          "cloud_ai_chat",
           {
             streamId,
-            ...(providerConfig.provider === "local"
-              ? {}
-              : {
-                  baseUrl: providerConfig.baseUrl,
-                  model: providerConfig.model,
-                }),
+            baseUrl: providerConfig.baseUrl,
+            model: providerConfig.model,
             request: {
               systemPrompt: currentContext.systemPrompt,
               messages: requestMessages,
@@ -441,7 +351,7 @@ export function AiPanel({
         if (requestIdRef.current !== requestId) return;
         finalReasoning = response.reasoning;
 
-        const parsedTool = parseLocalAiToolResponse(response.content);
+        const parsedTool = parseAiToolResponse(response.content);
         if (parsedTool.toolError) {
           showError(`Zerus tool call failed: ${parsedTool.toolError}`);
           finalContent = parsedTool.content;
@@ -450,7 +360,7 @@ export function AiPanel({
         if (!parsedTool.toolCall) {
           // Accept the action format used by development builds before the
           // MCP-like tool registry was introduced.
-          const parsed = parseLocalAiResponse(response.content);
+          const parsed = parseAiResponse(response.content);
           finalContent = parsed.content;
           if (parsed.actionError) {
             showError(`The AI note edit was not applied: ${parsed.actionError}`);
@@ -477,7 +387,7 @@ export function AiPanel({
               } else {
                 updateNoteBody(
                   latestNote.id,
-                  applyLocalAiNoteAction(latestBody, parsed.action),
+                  applyAiNoteAction(latestBody, parsed.action),
                 );
                 editApplied = true;
                 showSuccess("Note updated by AI");
@@ -512,7 +422,7 @@ export function AiPanel({
         if (requestIdRef.current !== requestId) return;
         let toolResult = executedToolCalls.has(signature)
           ? { ok: false, result: { error: "This tool call already ran." } }
-          : runLocalAiTool(
+          : runAiTool(
               parsedTool.toolCall,
               getNotes(),
               currentContext.noteId,
@@ -547,7 +457,7 @@ export function AiPanel({
             } else {
               updateNoteBody(
                 latestNote.id,
-                applyLocalAiNoteAction(latestBody, action),
+                applyAiNoteAction(latestBody, action),
               );
               editApplied = true;
               toolResult = {
@@ -599,16 +509,10 @@ export function AiPanel({
           toolCalls: completedToolCalls,
         },
       ]);
-      if (providerConfig.provider === "local") {
-        setStatus((current) => current ? { ...current, runtimeReady: true } : current);
-      }
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
       const message = String(error);
-      if (providerConfig.provider === "local") {
-        setStatus((current) => current ? { ...current, runtimeReady: false } : current);
-      }
-      showError(`${providerConfig.provider === "local" ? "Local" : "Cloud"} AI failed: ${message}`);
+      showError(`Cloud AI failed: ${message}`);
     } finally {
       if (requestIdRef.current === requestId) {
         activeStreamIdRef.current = null;
@@ -651,13 +555,11 @@ export function AiPanel({
 
   const saveProvider = async (config: AiProviderConfig, apiKey: string) => {
     try {
-      if (config.provider !== "local") {
-        await invoke("cloud_ai_configure", {
-          baseUrl: config.baseUrl,
-          apiKey: apiKey.trim() || null,
-        });
-        setCloudReady(true);
-      }
+      await invoke("cloud_ai_configure", {
+        baseUrl: config.baseUrl,
+        apiKey: apiKey.trim() || null,
+      });
+      setCloudReady(true);
       saveAiProviderConfig(config);
       setProviderConfig(config);
       setProviderDialogOpen(false);
@@ -702,20 +604,7 @@ export function AiPanel({
     handle.addEventListener("pointerup", onUp);
   };
 
-  const rawDownloadPercent = downloadProgress?.totalBytes
-    ? Math.round((downloadProgress.downloadedBytes / downloadProgress.totalBytes) * 100)
-    : 0;
-  const downloadPercent = downloadProgress?.phase === "downloading"
-    ? Math.min(99, rawDownloadPercent)
-    : 100;
-  const downloadLabel = downloadProgress?.phase === "verifying"
-    ? "Verifying Qwen…"
-    : downloadProgress?.phase === "installing"
-      ? "Installing Qwen…"
-      : "Downloading Qwen…";
-  const aiReady = providerConfig.provider === "local"
-    ? Boolean(status?.modelDownloaded && status.runtimeReady)
-    : cloudReady;
+  const aiReady = cloudReady;
   const activeCloudModels = providerConfig.baseUrl === cloudModelsBaseUrl
     ? cloudModels
     : [];
@@ -754,10 +643,7 @@ export function AiPanel({
               <Sparkles size={15} />
             </div>
             <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-              {providerConfig.provider === "local" ? (
-                <div className="truncate text-xs font-medium leading-4">Qwen3 1.7B · MLX</div>
-              ) : (
-                <Select
+              <Select
                   value={providerConfig.model}
                   onValueChange={(model) => {
                     const next = { ...providerConfig, model };
@@ -774,10 +660,9 @@ export function AiPanel({
                       <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
                     ))}
                   </SelectContent>
-                </Select>
-              )}
+              </Select>
               <div className="truncate text-[10px] leading-3 text-muted-foreground">
-                {context?.noteTitle ?? "Folder context"} · {providerConfig.provider === "local" ? "Local" : providerConfig.provider === "openrouter" ? "OpenRouter" : "Cloud API"} · temperature 0.2
+                {context?.noteTitle ?? "Folder context"} · {providerConfig.provider === "openrouter" ? "OpenRouter" : "Cloud API"} · temperature 0.2
               </div>
             </div>
           </div>
@@ -814,58 +699,7 @@ export function AiPanel({
           </div>
         </header>
 
-        {providerConfig.provider === "local" && status && !status.modelDownloaded && (
-          <div className="border-b border-border/60 bg-muted/40 px-3 py-3 text-xs">
-            <div className="font-medium">Qwen is not downloaded</div>
-            <div className="mt-1 text-muted-foreground">
-              Download the 984 MB MLX model from Hugging Face for offline use.
-            </div>
-            {downloading ? (
-              <div className="mt-2">
-                <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
-                  <span>{downloadLabel}</span>
-                  <span>{downloadProgress?.phase === "downloading" ? `${downloadPercent}%` : "Finishing…"}</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-border/70">
-                  <div
-                    className="h-full bg-zerus-accent transition-[width]"
-                    style={{ width: `${downloadPercent}%` }}
-                  />
-                </div>
-              </div>
-            ) : (
-              <>
-                {downloadError && (
-                  <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-destructive">
-                    Download failed: {downloadError}
-                  </div>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 h-7 gap-1.5"
-                  onClick={() => setDownloadConfirmOpen(true)}
-                >
-                  <Download size={14} />
-                  {downloadError ? "Try download again" : "Download model"}
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-
-        {providerConfig.provider === "local" && status?.modelDownloaded && !status.runtimeReady && (
-          <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
-            <span className="min-w-0 flex-1 text-muted-foreground">
-              Qwen is downloaded, but the bundled MLX runtime is missing.
-            </span>
-            <Button variant="outline" size="sm" className="h-7" onClick={() => void checkStatus()}>
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {providerConfig.provider !== "local" && !cloudReady && (
+        {!cloudReady && (
           <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
             <span className="min-w-0 flex-1 text-muted-foreground">
               Enter your provider API key to enable cloud chat.
@@ -934,7 +768,7 @@ export function AiPanel({
               ) : (
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {providerConfig.provider === "local" ? "Qwen" : "Cloud AI"} is thinking…
+                  Cloud AI is thinking…
                 </div>
               )}
             </>
@@ -979,25 +813,6 @@ export function AiPanel({
         onLoadModels={loadCloudModels}
         onSave={(config, apiKey) => void saveProvider(config, apiKey)}
       />
-      <AlertDialog open={downloadConfirmOpen} onOpenChange={setDownloadConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Download Qwen3 1.7B?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Zerus will download the 984 MB MLX model directly from the
-              mlx-community repository on Hugging Face. It will be stored in
-              Zerus’s application data and can run offline after the local
-              runtime is available.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void downloadModel()}>
-              Download 984 MB
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

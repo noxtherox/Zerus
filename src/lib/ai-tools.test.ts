@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Note } from "./note-utils";
 import {
-  LOCAL_AI_TOOL_PROMPT,
-  parseLocalAiToolResponse,
-  runLocalAiTool,
-} from "./local-ai-tools";
+  AI_TOOL_PROMPT,
+  parseAiToolResponse,
+  runAiTool,
+} from "./ai-tools";
 
 const notes: Note[] = [
   {
@@ -16,15 +16,15 @@ const notes: Note[] = [
   },
 ];
 
-describe("parseLocalAiToolResponse", () => {
-  it("gives the small local model concrete tool-call examples", () => {
-    expect(LOCAL_AI_TOOL_PROMPT).toContain("<note_append>Brazil</note_append>");
-    expect(LOCAL_AI_TOOL_PROMPT).toContain("<note_get>current</note_get>");
+describe("parseAiToolResponse", () => {
+  it("gives the AI provider concrete tool-call examples", () => {
+    expect(AI_TOOL_PROMPT).toContain("<note_append>Brazil</note_append>");
+    expect(AI_TOOL_PROMPT).toContain("<note_get>current</note_get>");
   });
 
-  it("parses the typed tags Qwen reliably generates", () => {
+  it("parses the supported typed tool tags", () => {
     expect(
-      parseLocalAiToolResponse(
+      parseAiToolResponse(
         "<note_append>Braskem is a Brazilian company.</note_append>",
       ).toolCall,
     ).toEqual({
@@ -34,7 +34,7 @@ describe("parseLocalAiToolResponse", () => {
   });
 
   it("parses one valid CLI-like tool call", () => {
-    const parsed = parseLocalAiToolResponse(
+    const parsed = parseAiToolResponse(
       'I will check.\n<zerus_tool>{"name":"search","arguments":{"query":"Brazil"}}</zerus_tool>',
     );
     expect(parsed.content).toBe("I will check.");
@@ -47,18 +47,18 @@ describe("parseLocalAiToolResponse", () => {
 
   it("does not execute a malformed tool call", () => {
     expect(
-      parseLocalAiToolResponse(
+      parseAiToolResponse(
         'zerus_tool>{"name":"note_append","arguments":{"text":"Brazil"}}',
       ).toolError,
     ).toContain("malformed");
   });
 });
 
-describe("runLocalAiTool", () => {
+describe("runAiTool", () => {
   it("reads and searches notes", () => {
-    expect(runLocalAiTool({ name: "note_get", arguments: {} }, notes, "braskem-id").ok).toBe(true);
+    expect(runAiTool({ name: "note_get", arguments: {} }, notes, "braskem-id").ok).toBe(true);
     expect(
-      runLocalAiTool(
+      runAiTool(
         { name: "search", arguments: { query: "Brazil", limit: 10 } },
         notes,
         "braskem-id",
@@ -68,7 +68,7 @@ describe("runLocalAiTool", () => {
 
   it("prepares current-note mutations without applying them", () => {
     expect(
-      runLocalAiTool(
+      runAiTool(
         { name: "note_append", arguments: { text: "More" } },
         notes,
         "braskem-id",

@@ -17,13 +17,3 @@ export const fileManagerName =
     : desktopPlatform === "macos"
       ? "Finder"
       : "file manager";
-
-export function quoteTerminalArgument(
-  value: string,
-  platform = desktopPlatform,
-): string {
-  if (platform === "windows") {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}

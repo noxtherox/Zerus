@@ -38,32 +38,6 @@ pub struct OpenFileRequest {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct LocalAiStatusResponse {
-    pub phase: String,
-    pub progress: Option<f64>,
-    pub error: Option<String>,
-    pub model_name: String,
-    pub model_id: String,
-    pub approximate_bytes: i64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocalAiGenerateRequest {
-    pub prompt: String,
-    #[serde(default)]
-    pub image_bytes: Option<Vec<u8>>,
-    #[serde(default)]
-    pub image_mime_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct LocalAiGenerateResponse {
-    pub answer: String,
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct CloudAiStatusResponse {
     pub endpoint: String,
     pub model: String,

@@ -10,7 +10,6 @@ import {
   Menu,
   Search,
   Sparkles,
-  TerminalSquare,
   X,
 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
@@ -39,8 +38,8 @@ const features = [
     number: "03",
     title: "Made for real work",
     description:
-      "Search, filters, linked files, live Markdown preview, and an embedded terminal keep research and execution in the same calm workspace.",
-    icon: TerminalSquare,
+      "Search, filters, linked files, live Markdown preview, and AI chat keep research and synthesis in the same calm workspace.",
+    icon: Sparkles,
   },
 ];
 
@@ -181,8 +180,8 @@ export function Landing() {
             <h2>Think in notes.<br />Work in files.</h2>
             <p>
               Write with live Markdown formatting, move through linked ideas,
-              attach the documents that matter, then open a terminal in the
-              exact folder you are already working in.
+              attach the documents that matter, then use AI chat with the note
+              context you are already working in.
             </p>
             <a href="/app">
               Explore the browser demo <ArrowRight size={17} aria-hidden="true" />

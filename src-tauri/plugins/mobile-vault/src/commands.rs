@@ -51,47 +51,6 @@ pub(crate) async fn open_file<R: Runtime>(
 }
 
 #[command]
-pub(crate) async fn local_ai_status<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<LocalAiStatusResponse> {
-    app.mobile_vault().local_ai_status()
-}
-
-#[command]
-pub(crate) async fn download_local_ai<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<LocalAiStatusResponse> {
-    app.mobile_vault().download_local_ai()
-}
-
-#[command]
-pub(crate) async fn cancel_local_ai_download<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<LocalAiStatusResponse> {
-    app.mobile_vault().cancel_local_ai_download()
-}
-
-#[command]
-pub(crate) async fn load_local_ai<R: Runtime>(app: AppHandle<R>) -> Result<LocalAiStatusResponse> {
-    app.mobile_vault().load_local_ai()
-}
-
-#[command]
-pub(crate) async fn generate_local_ai<R: Runtime>(
-    app: AppHandle<R>,
-    request: LocalAiGenerateRequest,
-) -> Result<LocalAiGenerateResponse> {
-    app.mobile_vault().generate_local_ai(request)
-}
-
-#[command]
-pub(crate) async fn delete_local_ai<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<LocalAiStatusResponse> {
-    app.mobile_vault().delete_local_ai()
-}
-
-#[command]
 pub(crate) async fn cloud_ai_status<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<CloudAiStatusResponse> {

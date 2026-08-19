@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  detectDesktopPlatform,
-  quoteTerminalArgument,
-} from "./desktop-platform";
+import { detectDesktopPlatform } from "./desktop-platform";
 
 describe("desktop platform helpers", () => {
   it("recognizes the supported desktop platforms", () => {
@@ -17,12 +14,4 @@ describe("desktop platform helpers", () => {
     );
   });
 
-  it("quotes paths for the active native shell", () => {
-    expect(quoteTerminalArgument("C:\\My Notes\\today.md", "windows")).toBe(
-      '"C:\\My Notes\\today.md"',
-    );
-    expect(quoteTerminalArgument("/Users/me/My Notes/today's.md", "macos")).toBe(
-      "'/Users/me/My Notes/today'\\''s.md'",
-    );
-  });
 });

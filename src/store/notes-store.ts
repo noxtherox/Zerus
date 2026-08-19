@@ -102,6 +102,11 @@ import {
   type TypeViewConfig,
   type TypeViewConfigs,
 } from "@/lib/note-views";
+import {
+  loadDesktopVaults,
+  rememberDesktopVault,
+  type DesktopVaultEntry,
+} from "@/lib/vault-registry";
 
 const VAULT_PATH_KEY = "zerus.vaultPath";
 const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
@@ -1087,6 +1092,7 @@ export function initStore() {
     installDesktopFileSync();
     const saved = localStorage.getItem(VAULT_PATH_KEY);
     if (saved) {
+      rememberDesktopVault(saved);
       void loadVault(new DesktopVault(saved));
     } else {
       setState({ status: "pick-vault", isDesktop: true });
@@ -1153,15 +1159,27 @@ export async function createMobileVaultOnDevice(): Promise<boolean> {
   return state.status === "ready";
 }
 
-export async function chooseVaultFolder() {
+export function getDesktopVaults(): DesktopVaultEntry[] {
+  return loadDesktopVaults(state.location);
+}
+
+export async function switchDesktopVault(path: string): Promise<boolean> {
+  if (!path || !isTauri() || isIOSRuntime()) return false;
+  if (backend?.kind === "desktop" && state.location === path) return true;
+  if (backend && !(await flushAll())) return false;
+  localStorage.setItem(VAULT_PATH_KEY, path);
+  rememberDesktopVault(path);
+  await loadVault(new DesktopVault(path));
+  return state.status === "ready";
+}
+
+export async function chooseVaultFolder(): Promise<boolean> {
   const folder = await openDialog({
     directory: true,
     title: "Choose your Zerus vault folder",
   });
-  if (typeof folder !== "string" || !folder) return;
-  if (backend && !(await flushAll())) return;
-  localStorage.setItem(VAULT_PATH_KEY, folder);
-  await loadVault(new DesktopVault(folder));
+  if (typeof folder !== "string" || !folder) return false;
+  return switchDesktopVault(folder);
 }
 
 export async function reloadVault() {

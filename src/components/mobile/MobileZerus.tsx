@@ -60,7 +60,7 @@ import { PropertiesSection } from "@/components/notes/PropertiesSection";
 import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
-import { PersistentLocalAIChat } from "@/components/mobile/LocalAIChat";
+import { PersistentAIChat } from "@/components/mobile/AIChat";
 import { cn } from "@/lib/utils";
 import { noteBody } from "@/lib/frontmatter";
 import {
@@ -1670,7 +1670,7 @@ export function MobileZerus() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-        <PersistentLocalAIChat
+        <PersistentAIChat
           notes={vault.notes}
           notesReady={!vault.hasMoreNotes}
           notesPreparationError={notesPreparationError}

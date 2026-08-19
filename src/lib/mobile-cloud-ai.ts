@@ -17,6 +17,15 @@ export interface CloudAIImageInput {
   mimeType: string;
 }
 
+export function cloudEndpointLabel(endpoint: string): string {
+  try {
+    const host = new URL(endpoint).hostname.toLowerCase();
+    return host === "openrouter.ai" ? "OpenRouter" : host;
+  } catch {
+    return "Cloud";
+  }
+}
+
 export async function getCloudAIStatus(): Promise<CloudAIStatus> {
   return invoke<CloudAIStatus>("plugin:mobile-vault|cloud_ai_status");
 }

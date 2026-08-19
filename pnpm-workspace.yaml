@@ -21,7 +21,6 @@ allowBuilds:
   "@bazel/terser": true
   "@bazel/typescript": true
   "@bufbuild/buf": true
-  "@cdktf/node-pty-prebuilt-multiarch": true
   "@ckeditor/ckeditor5-vue": true
   "@cloudflare/wrangler": true
   "@contrast/fn-inspect": true
@@ -262,7 +261,6 @@ allowBuilds:
   node-jq: true
   node-libcurl: true
   node-mac-contacts: true
-  node-pty: true
   node-rdkafka: true
   node-sass: true
   node-webcrypto-ossl: true

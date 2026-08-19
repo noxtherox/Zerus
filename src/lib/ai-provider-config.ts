@@ -1,4 +1,4 @@
-export type AiProvider = "local" | "openrouter" | "compatible";
+export type AiProvider = "openrouter" | "compatible";
 
 export interface AiProviderConfig {
   provider: AiProvider;
@@ -12,10 +12,10 @@ export interface CloudAiModel {
   name: string;
 }
 
-export const LOCAL_AI_CONFIG: AiProviderConfig = {
-  provider: "local",
-  baseUrl: "",
-  model: "Qwen3-1.7B-4bit",
+export const DEFAULT_AI_CONFIG: AiProviderConfig = {
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  model: "openai/gpt-5-mini",
   favoriteModels: [],
 };
 
@@ -28,32 +28,29 @@ export function readAiProviderConfig(): AiProviderConfig {
     ) as Partial<AiProviderConfig> | null;
     if (
       value &&
-      (value.provider === "local" ||
-        value.provider === "openrouter" ||
+      (value.provider === "openrouter" ||
         value.provider === "compatible") &&
       typeof value.baseUrl === "string" &&
       typeof value.model === "string"
     ) {
-      return value.provider === "local"
-        ? LOCAL_AI_CONFIG
-        : {
-            provider: value.provider,
-            baseUrl: value.baseUrl,
-            model: value.model,
-            favoriteModels: Array.isArray(value.favoriteModels)
-              ? [...new Set(
-                  value.favoriteModels
-                    .filter((model): model is string => typeof model === "string")
-                    .map((model) => model.trim())
-                    .filter((model) => model.length > 0 && model.length <= 200),
-                )]
-              : [],
-          };
+      return {
+        provider: value.provider,
+        baseUrl: value.baseUrl,
+        model: value.model,
+        favoriteModels: Array.isArray(value.favoriteModels)
+          ? [...new Set(
+              value.favoriteModels
+                .filter((model): model is string => typeof model === "string")
+                .map((model) => model.trim())
+                .filter((model) => model.length > 0 && model.length <= 200),
+            )]
+          : [],
+      };
     }
   } catch {
-    // Fall back to local AI when an older configuration cannot be read.
+    // Fall back to the default cloud provider when configuration is missing or stale.
   }
-  return LOCAL_AI_CONFIG;
+  return DEFAULT_AI_CONFIG;
 }
 
 export function saveAiProviderConfig(config: AiProviderConfig) {

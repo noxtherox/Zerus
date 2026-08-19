@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildLocalAiContext,
-  injectLocalAiSessionContext,
-} from "./local-ai-context";
+  buildAiContext,
+  injectAiSessionContext,
+} from "./ai-context";
 import type { Note } from "./note-utils";
 
 function note(id: string, path: string, content: string): Note {
@@ -15,14 +15,14 @@ function note(id: string, path: string, content: string): Note {
   };
 }
 
-describe("buildLocalAiContext", () => {
+describe("buildAiContext", () => {
   const vault = "/vault";
   const alpha = note("alpha", "projects/alpha.md", "# Alpha\nCurrent body");
   const beta = note("beta", "projects/beta.md", "# Beta\nSibling body");
   const elsewhere = note("travel", "travel/lisbon.md", "# Lisbon\nPack");
 
   it("includes the current note and sibling notes from only its folder", () => {
-    const context = buildLocalAiContext(
+    const context = buildAiContext(
       alpha,
       [alpha, beta, elsewhere],
       "/vault/projects",
@@ -35,13 +35,13 @@ describe("buildLocalAiContext", () => {
   });
 
   it("uses a different session key when the selected note changes", () => {
-    const alphaContext = buildLocalAiContext(
+    const alphaContext = buildAiContext(
       alpha,
       [alpha, beta],
       "/vault/projects",
       vault,
     );
-    const betaContext = buildLocalAiContext(
+    const betaContext = buildAiContext(
       beta,
       [alpha, beta],
       "/vault/projects",
@@ -52,7 +52,7 @@ describe("buildLocalAiContext", () => {
   });
 
   it("injects the current note before every visible session message", () => {
-    const context = buildLocalAiContext(
+    const context = buildAiContext(
       alpha,
       [alpha, beta],
       "/vault/projects",
@@ -60,7 +60,7 @@ describe("buildLocalAiContext", () => {
     );
     expect(context).not.toBeNull();
 
-    const messages = injectLocalAiSessionContext(context!, [
+    const messages = injectAiSessionContext(context!, [
       {
         role: "user",
         content: "What is this note?",
@@ -76,7 +76,7 @@ describe("buildLocalAiContext", () => {
   });
 
   it("supports a folder-only session", () => {
-    const context = buildLocalAiContext(
+    const context = buildAiContext(
       null,
       [alpha, beta],
       "/vault/projects",

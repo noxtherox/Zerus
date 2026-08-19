@@ -18,7 +18,6 @@ import {
   Pin,
   RefreshCw,
   Search,
-  SquareTerminal,
   Sparkles,
   Trash2,
   Undo2,
@@ -126,8 +125,6 @@ interface EditorPaneProps {
   isFocusMode: boolean;
   onToggleFocusMode: () => void;
   isDesktop: boolean;
-  terminalOpen: boolean;
-  onToggleTerminal: () => void;
   aiOpen: boolean;
   onToggleAi: () => void;
   conflict: NoteConflict | null;
@@ -182,8 +179,6 @@ interface EditorContextControlsProps {
   isDesktop: boolean;
   aiOpen: boolean;
   onToggleAi: () => void;
-  terminalOpen: boolean;
-  onToggleTerminal: () => void;
   isFocusMode: boolean;
   onToggleFocusMode: () => void;
 }
@@ -192,8 +187,6 @@ function EditorContextControls({
   isDesktop,
   aiOpen,
   onToggleAi,
-  terminalOpen,
-  onToggleTerminal,
   isFocusMode,
   onToggleFocusMode,
 }: EditorContextControlsProps) {
@@ -214,26 +207,6 @@ function EditorContextControls({
         >
           <Sparkles size={15} />
           AI
-        </Button>
-      )}
-      {isDesktop && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn(
-            "h-7 w-7 shrink-0",
-            terminalOpen && "bg-muted text-zerus-accent",
-          )}
-          title={
-            terminalOpen
-              ? `Hide terminal (${primaryModifierLabel}J)`
-              : `Open terminal (${primaryModifierLabel}J)`
-          }
-          aria-label={terminalOpen ? "Hide terminal" : "Open terminal"}
-          aria-pressed={terminalOpen}
-          onClick={onToggleTerminal}
-        >
-          <SquareTerminal size={15} />
         </Button>
       )}
       <Button
@@ -274,8 +247,6 @@ export function EditorPane({
   isFocusMode,
   onToggleFocusMode,
   isDesktop,
-  terminalOpen,
-  onToggleTerminal,
   aiOpen,
   onToggleAi,
   conflict,
@@ -342,8 +313,6 @@ export function EditorPane({
             isDesktop={isDesktop}
             aiOpen={aiOpen}
             onToggleAi={onToggleAi}
-            terminalOpen={terminalOpen}
-            onToggleTerminal={onToggleTerminal}
             isFocusMode={isFocusMode}
             onToggleFocusMode={onToggleFocusMode}
           />
@@ -378,8 +347,6 @@ export function EditorPane({
             isDesktop={isDesktop}
             aiOpen={aiOpen}
             onToggleAi={onToggleAi}
-            terminalOpen={terminalOpen}
-            onToggleTerminal={onToggleTerminal}
             isFocusMode={isFocusMode}
             onToggleFocusMode={onToggleFocusMode}
           />
@@ -738,8 +705,6 @@ export function EditorPane({
           isDesktop={isDesktop}
           aiOpen={aiOpen}
           onToggleAi={onToggleAi}
-          terminalOpen={terminalOpen}
-          onToggleTerminal={onToggleTerminal}
           isFocusMode={isFocusMode}
           onToggleFocusMode={onToggleFocusMode}
         />

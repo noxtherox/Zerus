@@ -1,10 +1,10 @@
-export type LocalAiNoteAction =
+export type AiNoteAction =
   | { type: "append"; text: string }
   | { type: "replace_body"; body: string };
 
-export interface ParsedLocalAiResponse {
+export interface ParsedAiResponse {
   content: string;
-  action: LocalAiNoteAction | null;
+  action: AiNoteAction | null;
   actionError: string | null;
 }
 
@@ -13,11 +13,11 @@ const MAX_ACTION_TEXT_LENGTH = 100_000;
 
 /**
  * Handles the safest edit command without relying on a small model to produce
- * valid structured output. Broader requests still go to Qwen.
+ * valid structured output. Broader requests still go to the configured AI provider.
  */
-export function directLocalAiNoteAction(
+export function directAiNoteAction(
   request: string,
-): LocalAiNoteAction | null {
+): AiNoteAction | null {
   if (!/\b(?:add|append|put)\b/i.test(request)) return null;
   if (!/\b(?:note|end|bottom)\b/i.test(request)) return null;
   if (/\b(?:do not|don't|never)\s+(?:add|append|put)\b/i.test(request)) {
@@ -33,7 +33,7 @@ export function directLocalAiNoteAction(
   return { type: "append", text };
 }
 
-export function parseLocalAiResponse(raw: string): ParsedLocalAiResponse {
+export function parseAiResponse(raw: string): ParsedAiResponse {
   const matches = [...raw.matchAll(ACTION_PATTERN)];
   const content = raw.replace(ACTION_PATTERN, "").trim();
   if (matches.length === 0) {
@@ -41,7 +41,7 @@ export function parseLocalAiResponse(raw: string): ParsedLocalAiResponse {
       return {
         content: "I couldn't prepare a valid note edit.",
         action: null,
-        actionError: "Qwen returned a malformed note edit.",
+        actionError: "The AI provider returned a malformed note edit.",
       };
     }
     return { content: raw.trim(), action: null, actionError: null };
@@ -50,7 +50,7 @@ export function parseLocalAiResponse(raw: string): ParsedLocalAiResponse {
     return {
       content,
       action: null,
-      actionError: "Qwen returned more than one note edit.",
+      actionError: "The AI provider returned more than one note edit.",
     };
   }
 
@@ -89,7 +89,7 @@ export function parseLocalAiResponse(raw: string): ParsedLocalAiResponse {
         actionError: null,
       };
     }
-    throw new Error("Qwen returned an unsupported or empty note edit.");
+    throw new Error("The AI provider returned an unsupported or empty note edit.");
   } catch (error) {
     return {
       content,
@@ -99,9 +99,9 @@ export function parseLocalAiResponse(raw: string): ParsedLocalAiResponse {
   }
 }
 
-export function applyLocalAiNoteAction(
+export function applyAiNoteAction(
   currentBody: string,
-  action: LocalAiNoteAction,
+  action: AiNoteAction,
 ): string {
   if (action.type === "replace_body") return action.body;
   if (!currentBody.trim()) return action.text.trim();

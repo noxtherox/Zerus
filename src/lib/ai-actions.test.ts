@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyLocalAiNoteAction,
-  directLocalAiNoteAction,
-  parseLocalAiResponse,
-} from "./local-ai-actions";
+  applyAiNoteAction,
+  directAiNoteAction,
+  parseAiResponse,
+} from "./ai-actions";
 
-describe("directLocalAiNoteAction", () => {
+describe("directAiNoteAction", () => {
   it("extracts exact quoted text from an add-to-note request", () => {
     expect(
-      directLocalAiNoteAction(
+      directAiNoteAction(
         'can you add text to this note? "Braskem is a company from Brazil"',
       ),
     ).toEqual({
@@ -19,16 +19,16 @@ describe("directLocalAiNoteAction", () => {
 
   it("supports smart quotes and ignores ambiguous or negated requests", () => {
     expect(
-      directLocalAiNoteAction("append “Brazil” at the end of the note"),
+      directAiNoteAction("append “Brazil” at the end of the note"),
     ).toEqual({ type: "append", text: "Brazil" });
-    expect(directLocalAiNoteAction('do not add "Brazil" to the note')).toBeNull();
-    expect(directLocalAiNoteAction("add a summary to the note")).toBeNull();
+    expect(directAiNoteAction('do not add "Brazil" to the note')).toBeNull();
+    expect(directAiNoteAction("add a summary to the note")).toBeNull();
   });
 });
 
-describe("parseLocalAiResponse", () => {
+describe("parseAiResponse", () => {
   it("extracts an append action from the visible response", () => {
-    const parsed = parseLocalAiResponse(
+    const parsed = parseAiResponse(
       'Added it.\n<zerus_action>{"type":"append","text":"Brazil"}</zerus_action>',
     );
 
@@ -41,31 +41,31 @@ describe("parseLocalAiResponse", () => {
 
   it("rejects malformed and multiple actions", () => {
     expect(
-      parseLocalAiResponse("<zerus_action>not json</zerus_action>")
+      parseAiResponse("<zerus_action>not json</zerus_action>")
         .actionError,
     ).toContain("JSON");
     expect(
-      parseLocalAiResponse(
+      parseAiResponse(
         '<zerus_action>{"type":"append","text":"A"}</zerus_action>' +
           '<zerus_action>{"type":"append","text":"B"}</zerus_action>',
       ).actionError,
     ).toContain("more than one");
     expect(
-      parseLocalAiResponse(
+      parseAiResponse(
         'zerus_action>{"type":"replace_body","body":"hallucinated"}',
       ),
     ).toEqual({
       content: "I couldn't prepare a valid note edit.",
       action: null,
-      actionError: "Qwen returned a malformed note edit.",
+      actionError: "The AI provider returned a malformed note edit.",
     });
   });
 });
 
-describe("applyLocalAiNoteAction", () => {
+describe("applyAiNoteAction", () => {
   it("appends a Markdown paragraph with stable spacing", () => {
     expect(
-      applyLocalAiNoteAction("# Braskem\n", {
+      applyAiNoteAction("# Braskem\n", {
         type: "append",
         text: "braskem is a company from brazil",
       }),
@@ -74,7 +74,7 @@ describe("applyLocalAiNoteAction", () => {
 
   it("replaces the complete note body", () => {
     expect(
-      applyLocalAiNoteAction("old", { type: "replace_body", body: "new" }),
+      applyAiNoteAction("old", { type: "replace_body", body: "new" }),
     ).toBe("new");
   });
 });

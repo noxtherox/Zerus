@@ -67,45 +67,6 @@ impl<R: Runtime> MobileVault<R> {
             .map_err(Into::into)
     }
 
-    pub fn local_ai_status(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.0
-            .run_mobile_plugin("localAIStatus", EmptyRequest::default())
-            .map_err(Into::into)
-    }
-
-    pub fn download_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.0
-            .run_mobile_plugin("downloadLocalAI", EmptyRequest::default())
-            .map_err(Into::into)
-    }
-
-    pub fn cancel_local_ai_download(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.0
-            .run_mobile_plugin("cancelLocalAIDownload", EmptyRequest::default())
-            .map_err(Into::into)
-    }
-
-    pub fn load_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.0
-            .run_mobile_plugin("loadLocalAI", EmptyRequest::default())
-            .map_err(Into::into)
-    }
-
-    pub fn generate_local_ai(
-        &self,
-        request: LocalAiGenerateRequest,
-    ) -> crate::Result<LocalAiGenerateResponse> {
-        self.0
-            .run_mobile_plugin("generateLocalAI", request)
-            .map_err(Into::into)
-    }
-
-    pub fn delete_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.0
-            .run_mobile_plugin("deleteLocalAI", EmptyRequest::default())
-            .map_err(Into::into)
-    }
-
     pub fn cloud_ai_status(&self) -> crate::Result<CloudAiStatusResponse> {
         self.0
             .run_mobile_plugin("cloudAIStatus", EmptyRequest::default())

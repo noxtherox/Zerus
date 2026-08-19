@@ -18,12 +18,17 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   private var previewURL: URL?
   private var previewDirectoryURL: URL?
   private var webviewOffsetObservation: NSKeyValueObservation?
-  private lazy var localAI = LocalAIManager()
   private lazy var cloudAI = CloudAIManager()
   private lazy var speechRecognizer = OnDeviceSpeechRecognizer()
   private var modernSpeechRecognizerStorage: AnyObject?
 
   @objc public override func load(webview: WKWebView) {
+    if let support = FileManager.default.urls(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask
+    ).first {
+      try? FileManager.default.removeItem(at: support.appending(path: "LocalAI"))
+    }
     let appBackground = UIColor(red: 28 / 255, green: 29 / 255, blue: 30 / 255, alpha: 1)
     webview.overrideUserInterfaceStyle = .dark
     webview.backgroundColor = appBackground
@@ -359,68 +364,6 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
     UserDefaults.standard.removeObject(forKey: bookmarkKey)
     stopActiveAccess()
     invoke.resolve()
-  }
-
-  @objc public func localAIStatus(_ invoke: Invoke) {
-    Task { @MainActor in
-      invoke.resolve(localAI.status())
-    }
-  }
-
-  @objc public func downloadLocalAI(_ invoke: Invoke) {
-    Task { @MainActor in
-      do {
-        try localAI.startDownload()
-        invoke.resolve(localAI.status())
-      } catch {
-        invoke.reject(error.localizedDescription)
-      }
-    }
-  }
-
-  @objc public func cancelLocalAIDownload(_ invoke: Invoke) {
-    Task { @MainActor in
-      localAI.cancelDownload()
-      invoke.resolve(localAI.status())
-    }
-  }
-
-  @objc public func loadLocalAI(_ invoke: Invoke) {
-    Task { @MainActor in
-      do {
-        try await localAI.load()
-        invoke.resolve(localAI.status())
-      } catch {
-        invoke.reject(error.localizedDescription)
-      }
-    }
-  }
-
-  @objc public func generateLocalAI(_ invoke: Invoke) {
-    Task { @MainActor in
-      do {
-        let request = try invoke.parseArgs(LocalAIGenerateRequest.self)
-        let answer = try await localAI.generate(
-          prompt: request.prompt,
-          imageBytes: request.imageBytes,
-          imageMimeType: request.imageMimeType
-        )
-        invoke.resolve(LocalAIGenerateResponse(answer: answer))
-      } catch {
-        invoke.reject(error.localizedDescription)
-      }
-    }
-  }
-
-  @objc public func deleteLocalAI(_ invoke: Invoke) {
-    Task { @MainActor in
-      do {
-        try localAI.deleteDownload()
-        invoke.resolve(localAI.status())
-      } catch {
-        invoke.reject(error.localizedDescription)
-      }
-    }
   }
 
   @objc public func cloudAIStatus(_ invoke: Invoke) {

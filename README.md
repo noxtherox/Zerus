@@ -31,8 +31,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them, or associate notes with PDFs and common office documents.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
-  links in the browser, use focus mode, and run an embedded terminal in the
-  selected note's folder.
+  links in the browser, use focus mode, and chat with a cloud AI provider using
+  the selected note as context.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
   light and dark themes with a theme-aware Zerus mark.
 
@@ -112,11 +112,11 @@ accepting future updates.
 
 The project is built with React, TypeScript, CodeMirror 6, Tailwind CSS,
 shadcn/ui, and Tauri 2. The native Rust layer provides filesystem integration,
-desktop file opening, and the embedded PTY terminal.
+desktop file opening, secure AI credentials, and native packaging.
 
 ```text
 src/                  React application and browser vault
-src/components/       editor, notes, terminal, and shared UI
+src/components/       editor, notes, AI chat, and shared UI
 src/lib/              Markdown, filtering, properties, links, and vault helpers
 src/store/            note and vault state
 src-tauri/            Rust desktop shell, permissions, and packaging

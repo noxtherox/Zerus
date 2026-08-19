@@ -27,11 +27,6 @@ const environment = {
     process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD ?? "",
 };
 
-execFileSync(process.execPath, ["scripts/build-mlx-sidecar.mjs"], {
-  env: environment,
-  stdio: "inherit",
-});
-
 execFileSync("pnpm", ["exec", "tauri", "build", ...process.argv.slice(2)], {
   env: environment,
   stdio: "inherit",

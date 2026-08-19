@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  LOCAL_AI_CONFIG,
+  DEFAULT_AI_CONFIG,
   readAiProviderConfig,
   saveAiProviderConfig,
 } from "@/lib/ai-provider-config";
@@ -16,8 +16,8 @@ describe("AI provider configuration", () => {
     });
   });
 
-  it("defaults to the local model", () => {
-    expect(readAiProviderConfig()).toEqual(LOCAL_AI_CONFIG);
+  it("defaults to the cloud provider", () => {
+    expect(readAiProviderConfig()).toEqual(DEFAULT_AI_CONFIG);
   });
 
   it("persists provider metadata without an API key", () => {
@@ -54,6 +54,16 @@ describe("AI provider configuration", () => {
     });
   });
 
+  it("migrates the removed local provider to the cloud default", () => {
+    localStorage.setItem("zerus.ai.provider.v1", JSON.stringify({
+      provider: "local",
+      baseUrl: "",
+      model: "Qwen3-1.7B-4bit",
+    }));
+
+    expect(readAiProviderConfig()).toEqual(DEFAULT_AI_CONFIG);
+  });
+
   it("normalizes favourite model IDs before saving", () => {
     saveAiProviderConfig({
       provider: "openrouter",
@@ -67,6 +77,6 @@ describe("AI provider configuration", () => {
 
   it("falls back safely when stored data is invalid", () => {
     localStorage.setItem("zerus.ai.provider.v1", "not-json");
-    expect(readAiProviderConfig()).toEqual(LOCAL_AI_CONFIG);
+    expect(readAiProviderConfig()).toEqual(DEFAULT_AI_CONFIG);
   });
 });

@@ -42,37 +42,6 @@ impl<R: Runtime> MobileVault<R> {
         Ok(())
     }
 
-    pub fn local_ai_status(&self) -> crate::Result<LocalAiStatusResponse> {
-        Err(crate::Error::Unavailable(
-            "Local AI is only available in the iOS app".into(),
-        ))
-    }
-
-    pub fn download_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.local_ai_status()
-    }
-
-    pub fn cancel_local_ai_download(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.local_ai_status()
-    }
-
-    pub fn load_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.local_ai_status()
-    }
-
-    pub fn generate_local_ai(
-        &self,
-        _request: LocalAiGenerateRequest,
-    ) -> crate::Result<LocalAiGenerateResponse> {
-        Err(crate::Error::Unavailable(
-            "Local AI is only available in the iOS app".into(),
-        ))
-    }
-
-    pub fn delete_local_ai(&self) -> crate::Result<LocalAiStatusResponse> {
-        self.local_ai_status()
-    }
-
     pub fn cloud_ai_status(&self) -> crate::Result<CloudAiStatusResponse> {
         Err(crate::Error::Unavailable(
             "Cloud chat configuration is only available in the iOS app".into(),

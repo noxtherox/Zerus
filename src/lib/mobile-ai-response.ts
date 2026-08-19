@@ -58,7 +58,7 @@ function proseFallback(retrieval: NoteRetrievalResult): string {
   return prose || `I found “${first.title}”, but it doesn't contain any prose to answer from.`;
 }
 
-/** Prevents a small local model from exposing its retrieval prompt when it echoes input. */
+/** Prevents an AI provider from exposing the retrieval prompt when it echoes input. */
 export function cleanNotesAnswer(
   rawAnswer: string,
   prompt: string,

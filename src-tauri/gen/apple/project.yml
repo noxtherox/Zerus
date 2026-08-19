@@ -30,12 +30,6 @@ targets:
     platform: iOS
     sources:
       - path: Sources
-      - path: mlx.metallib
-        buildPhase: resources
-      - path: swift-transformers_Hub.bundle
-        buildPhase: resources
-      - path: swift-crypto_Crypto.bundle
-        buildPhase: resources
       - path: Assets.xcassets
       - path: app_iOS
       - path: assets
