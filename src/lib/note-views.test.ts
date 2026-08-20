@@ -25,6 +25,7 @@ describe("note view configuration", () => {
           },
           dateProperty: " Due ",
           filters: {
+            sort: "title-asc",
             date: "last-7-days",
             showArchived: true,
             typeKeys: ["Other"],
@@ -40,6 +41,7 @@ describe("note view configuration", () => {
         boardColumnOrder: { status: ["Done", "Todo"] },
         dateProperty: "Due",
         filters: {
+          sort: "title-asc",
           date: "last-7-days",
           showArchived: true,
           typeKeys: [],

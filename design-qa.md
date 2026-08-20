@@ -114,6 +114,59 @@ final result: passed
 
 ---
 
+# Sort & filter menu — 2026-08-20
+
+**Comparison Target**
+
+- Source visual truth: `/Users/tiagopereira/.codex/attachments/c06ff9dd-b173-48b8-8f6b-ae5846aebd22/codex-clipboard-0561b282-787b-45a1-a525-6bed6db8bbde.png`
+- Initial implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-sort-filter.png`
+- Final implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-sort-filter-final.png`
+- Side-by-side comparison: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-sort-filter-comparison.png`
+- Viewport and density: source 591 × 713 px with unknown CSS density; implementation 1000 × 760 CSS px at device scale 1. Both were normalized to 713 px high for the 1530 × 713 comparison canvas.
+- State: filter popover open in a desktop notes view. The source is the dark structured Table view; the implementation is the light browser-demo List view, which exercises the same shared component with a narrower trigger container and a smaller demo property set.
+
+**Findings**
+
+- No actionable P0/P1/P2 differences remain. The shared control now reads `Sort & filter`, the menu preserves the existing filter hierarchy, and the new sort section is positioned before filters so the information architecture reads naturally.
+
+**Required Fidelity Surfaces**
+
+- Fonts and typography: existing app font, weights, 12–14 px hierarchy, line height, and menu truncation behavior are preserved. The trigger label remains readable in both wide and narrow placements.
+- Spacing and layout rhythm: the source menu width, section padding, separators, radii, and control heights are retained. The sort section follows the same 12 px section padding and 32 px control height as property filters.
+- Colors and visual tokens: the implementation uses the existing background, border, muted foreground, accent, hover, and focus tokens. Light/dark differences in the comparison are theme state rather than component drift.
+- Image quality and asset fidelity: no raster assets were added. Filter, sort, and chevron glyphs use the app's existing Tabler icon system and remain sharp at the target sizes.
+- Copy and content: `Filter notes` becomes `Sort & filter`; `Clear all` becomes the more precise `Clear filters`. Sort choices are `Recently updated`, `Least recently updated`, `Title: A–Z`, and `Title: Z–A`. Created-date choices were intentionally omitted because the note model has no reliable created timestamp.
+
+**Full-view Comparison Evidence**
+
+- The combined comparison confirms that the original filter sections remain visually intact and that the added sort section uses the same density and alignment. The wider structured-view trigger remains inline with search and New; the browser-demo evidence additionally verifies the shared component's narrower sidebar placement.
+
+**Focused Region Comparison Evidence**
+
+- A separate crop was not required: both menus are fully legible at the normalized 713 px comparison height, including their icons, labels, 32 px controls, separators, and switch alignment.
+
+**Comparison History**
+
+- Initial pass (P2): the labeled trigger shared the old two-column sidebar row with search and reduced the search input to an unusable sliver.
+- Fix: the narrow Note List placement now stacks the full-width search field and full-width combined trigger, while the wide Type view keeps the requested inline control.
+- Post-fix evidence: `design-qa-sort-filter-final.png` shows both controls at useful widths with no clipping, overlap, or hidden persistent controls.
+
+**Primary Interactions Tested**
+
+- Opened and closed the combined popover through its accessible `Sort and filter notes` trigger.
+- Selected `Title: A–Z` and confirmed the visible notes reordered from update time to alphabetical title order.
+- Confirmed the popover still exposes archive, updated-date, type, and property-filter controls.
+- Checked browser console errors after the interaction sequence; none were present.
+- Verified sorting behavior with automated tests, including ascending update order and pinned-note precedence.
+
+**Follow-up Polish**
+
+- None identified.
+
+final result: passed
+
+---
+
 # Collapsed subfolder selection pattern — 2026-08-19
 
 **Comparison Target**
