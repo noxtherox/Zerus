@@ -54,17 +54,34 @@ pub struct CloudAiConfigureRequest {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CloudAiImageRequest {
+    pub bytes: Vec<u8>,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CloudAiGenerateRequest {
     pub prompt: String,
+    pub stream_id: String,
     #[serde(default)]
-    pub image_bytes: Option<Vec<u8>>,
-    #[serde(default)]
-    pub image_mime_type: Option<String>,
+    pub images: Vec<CloudAiImageRequest>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CloudAiGenerateResponse {
     pub answer: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CloudAiModelResponse {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct CloudAiModelsResponse {
+    pub models: Vec<CloudAiModelResponse>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

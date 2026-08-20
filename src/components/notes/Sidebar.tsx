@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -91,6 +91,10 @@ import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import { VaultSwitcherDialog } from "./VaultSwitcherDialog";
 import { vaultNameFromPath } from "@/lib/vault-registry";
+import {
+  TYPE_TREE_PAGE_SIZE,
+  visibleTypeNodes,
+} from "@/lib/type-tree-pagination";
 
 interface SidebarProps {
   notes: Note[];
@@ -163,6 +167,9 @@ function SidebarRow({
       </button>
       {chevron !== undefined && chevron !== "leaf" && (
         <button
+          type="button"
+          aria-label={`${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
+          title={`${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
           onClick={(event) => {
             event.stopPropagation();
             onToggle?.();
@@ -184,8 +191,10 @@ function SidebarRow({
 function TypeTreeRows({
   nodes,
   depth,
+  parentKey,
   filter,
   expanded,
+  visibleCounts,
   typeIcons,
   onFilterChange,
   onOpenTypeInNewTab,
@@ -195,11 +204,15 @@ function TypeTreeRows({
   onDeleteType,
   onChangeIcon,
   onReorder,
+  scrollContainerRef,
+  onLoadMore,
 }: {
   nodes: TypeNode[];
   depth: number;
+  parentKey: string;
   filter: NoteFilter;
   expanded: Set<string>;
+  visibleCounts: Readonly<Record<string, number>>;
   typeIcons: TypeIcons;
   onFilterChange: (filter: NoteFilter) => void;
   onOpenTypeInNewTab: (typePath: string[]) => void;
@@ -213,47 +226,31 @@ function TypeTreeRows({
     targetKey: string,
     placement: "before" | "after",
   ) => void;
+  scrollContainerRef: { readonly current: HTMLElement | null };
+  onLoadMore: (parentKey: string) => void;
 }) {
+  const visibleNodes = visibleTypeNodes(nodes, visibleCounts[parentKey]);
+  const remainingCount = nodes.length - visibleNodes.length;
+
   return (
-    <SortableContext
-      items={nodes.map((node) => typeKey(node.path))}
-      strategy={verticalListSortingStrategy}
-    >
-      {nodes.map((node) => {
-        const key = typeKey(node.path);
-        const isOpen = expanded.has(key);
-        const index = nodes.indexOf(node);
-        return (
-          <div key={key}>
-            <SortableTypeRow
-              node={node}
-              depth={depth}
-              active={filter.kind === "type" && typeKey(filter.path) === key}
-              isOpen={isOpen}
-              typeIcon={typeIcons[key]}
-              canMoveUp={index > 0}
-              canMoveDown={index < nodes.length - 1}
-              onFilterChange={onFilterChange}
-              onOpenTypeInNewTab={onOpenTypeInNewTab}
-              onToggle={onToggle}
-              onRenameType={onRenameType}
-              onAddSubtype={onAddSubtype}
-              onDeleteType={onDeleteType}
-              onChangeIcon={onChangeIcon}
-              onMoveUp={() =>
-                onReorder(key, typeKey(nodes[index - 1].path), "before")
-              }
-              onMoveDown={() =>
-                onReorder(key, typeKey(nodes[index + 1].path), "after")
-              }
-            />
-            {isOpen && node.children.length > 0 && (
-              <TypeTreeRows
-                nodes={node.children}
-                depth={depth + 1}
-                filter={filter}
-                expanded={expanded}
-                typeIcons={typeIcons}
+    <>
+      <SortableContext
+        items={visibleNodes.map((node) => typeKey(node.path))}
+        strategy={verticalListSortingStrategy}
+      >
+        {visibleNodes.map((node, index) => {
+          const key = typeKey(node.path);
+          const isOpen = expanded.has(key);
+          return (
+            <div key={key}>
+              <SortableTypeRow
+                node={node}
+                depth={depth}
+                active={filter.kind === "type" && typeKey(filter.path) === key}
+                isOpen={isOpen}
+                typeIcon={typeIcons[key]}
+                canMoveUp={index > 0}
+                canMoveDown={index < nodes.length - 1}
                 onFilterChange={onFilterChange}
                 onOpenTypeInNewTab={onOpenTypeInNewTab}
                 onToggle={onToggle}
@@ -261,13 +258,91 @@ function TypeTreeRows({
                 onAddSubtype={onAddSubtype}
                 onDeleteType={onDeleteType}
                 onChangeIcon={onChangeIcon}
-                onReorder={onReorder}
+                onMoveUp={() =>
+                  onReorder(key, typeKey(nodes[index - 1].path), "before")
+                }
+                onMoveDown={() =>
+                  onReorder(key, typeKey(nodes[index + 1].path), "after")
+                }
               />
-            )}
-          </div>
-        );
-      })}
-    </SortableContext>
+              {isOpen && node.children.length > 0 && (
+                <TypeTreeRows
+                  nodes={node.children}
+                  depth={depth + 1}
+                  parentKey={key}
+                  filter={filter}
+                  expanded={expanded}
+                  visibleCounts={visibleCounts}
+                  typeIcons={typeIcons}
+                  onFilterChange={onFilterChange}
+                  onOpenTypeInNewTab={onOpenTypeInNewTab}
+                  onToggle={onToggle}
+                  onRenameType={onRenameType}
+                  onAddSubtype={onAddSubtype}
+                  onDeleteType={onDeleteType}
+                  onChangeIcon={onChangeIcon}
+                  onReorder={onReorder}
+                  scrollContainerRef={scrollContainerRef}
+                  onLoadMore={onLoadMore}
+                />
+              )}
+            </div>
+          );
+        })}
+      </SortableContext>
+      {remainingCount > 0 && (
+        <TypeTreeLoadMore
+          parentKey={parentKey}
+          depth={depth}
+          remainingCount={remainingCount}
+          scrollContainerRef={scrollContainerRef}
+          onLoadMore={onLoadMore}
+        />
+      )}
+    </>
+  );
+}
+
+function TypeTreeLoadMore({
+  parentKey,
+  depth,
+  remainingCount,
+  scrollContainerRef,
+  onLoadMore,
+}: {
+  parentKey: string;
+  depth: number;
+  remainingCount: number;
+  scrollContainerRef: { readonly current: HTMLElement | null };
+  onLoadMore: (parentKey: string) => void;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = scrollContainerRef.current;
+    const target = sentinelRef.current;
+    if (!root || !target) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) onLoadMore(parentKey);
+      },
+      { root, rootMargin: "0px 0px 120px 0px" },
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [onLoadMore, parentKey, scrollContainerRef]);
+
+  return (
+    <div
+      ref={sentinelRef}
+      aria-label={`${remainingCount} more types load automatically while scrolling`}
+      className="flex h-8 items-center text-xs text-zerus-sidebar-fg/40"
+      style={{ paddingLeft: `${depth * 14 + 32}px` }}
+    >
+      Loading more…
+    </div>
   );
 }
 
@@ -414,7 +489,10 @@ export function Sidebar({
   onOpenTypeInNewTab,
   onCollapse,
 }: SidebarProps) {
-  const tree = buildTypeTree(notes, extraTypes, typeOrder);
+  const tree = useMemo(
+    () => buildTypeTree(notes, extraTypes, typeOrder),
+    [notes, extraTypes, typeOrder],
+  );
   const activeCount = notes.filter(
     (note) =>
       !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note),
@@ -588,25 +666,28 @@ export function Sidebar({
     }
   };
 
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  // expanded = everything not explicitly collapsed (small trees read better open)
-  const expanded = new Set<string>();
-  const walk = (nodes: TypeNode[]) => {
-    for (const node of nodes) {
-      const key = typeKey(node.path);
-      if (!collapsed.has(key)) expanded.add(key);
-      walk(node.children);
-    }
-  };
-  walk(tree);
+  // Folders always start collapsed. Expansion is intentionally session-local.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [visibleTypeCounts, setVisibleTypeCounts] = useState<
+    Record<string, number>
+  >({});
+  const typeScrollContainerRef = useRef<HTMLElement>(null);
 
   const toggle = (key: string) => {
-    setCollapsed((previous) => {
+    setExpanded((previous) => {
       const next = new Set(previous);
       if (next.has(key)) next.delete(key);
       else next.add(key);
       return next;
     });
+  };
+
+  const loadMoreTypes = (parentKey: string) => {
+    setVisibleTypeCounts((previous) => ({
+      ...previous,
+      [parentKey]:
+        (previous[parentKey] ?? TYPE_TREE_PAGE_SIZE) + TYPE_TREE_PAGE_SIZE,
+    }));
   };
 
   const vaultName = vaultLocation ? vaultNameFromPath(vaultLocation) : null;
@@ -634,7 +715,10 @@ export function Sidebar({
           <ChevronsLeft size={15} />
         </button>
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2">
+      <nav
+        ref={typeScrollContainerRef}
+        className="flex-1 space-y-0.5 overflow-y-auto px-2"
+      >
         <SidebarRow
           active={filter.kind === "all"}
           onClick={() => onFilterChange({ kind: "all" })}
@@ -687,8 +771,10 @@ export function Sidebar({
           <TypeTreeRows
             nodes={tree}
             depth={0}
+            parentKey=""
             filter={filter}
             expanded={expanded}
+            visibleCounts={visibleTypeCounts}
             typeIcons={typeIcons}
             onFilterChange={onFilterChange}
             onOpenTypeInNewTab={onOpenTypeInNewTab}
@@ -698,6 +784,8 @@ export function Sidebar({
             onDeleteType={setDeleteTarget}
             onChangeIcon={setIconTarget}
             onReorder={reorderTypes}
+            scrollContainerRef={typeScrollContainerRef}
+            onLoadMore={loadMoreTypes}
           />
         </DndContext>
       </nav>

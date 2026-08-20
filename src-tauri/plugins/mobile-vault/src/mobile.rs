@@ -82,12 +82,30 @@ impl<R: Runtime> MobileVault<R> {
             .map_err(Into::into)
     }
 
+    pub fn connect_openrouter(&self) -> crate::Result<CloudAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("connectOpenRouter", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
+    pub fn cloud_ai_models(&self) -> crate::Result<CloudAiModelsResponse> {
+        self.0
+            .run_mobile_plugin("cloudAIModels", EmptyRequest::default())
+            .map_err(Into::into)
+    }
+
     pub fn generate_cloud_ai(
         &self,
         request: CloudAiGenerateRequest,
     ) -> crate::Result<CloudAiGenerateResponse> {
         self.0
             .run_mobile_plugin("generateCloudAI", request)
+            .map_err(Into::into)
+    }
+
+    pub fn stop_cloud_ai(&self) -> crate::Result<()> {
+        self.0
+            .run_mobile_plugin("stopCloudAI", EmptyRequest::default())
             .map_err(Into::into)
     }
 

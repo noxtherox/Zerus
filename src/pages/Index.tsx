@@ -864,10 +864,12 @@ const Index = () => {
                   config={activeTypeView}
                   isRefreshing={vault.isRefreshing}
                   editorOpen={expandedEditorOpen}
+                  hideSubtypeNotes={hideSubtypeNotes}
                   editor={editorWorkspace}
                   onOpenNote={handleOpenStructuredNote}
                   onCreateNote={() => void handleCreateNote()}
                   onConfigChange={handleTypeViewChange}
+                  onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
                   onSetProperty={setNoteProperty}
                 />
               ) : (
@@ -903,6 +905,8 @@ const Index = () => {
                       onOpenExternalNotes={() => void handleOpenExternalNotes()}
                       viewMode={activeTypeView?.mode}
                       onViewModeChange={(mode) => handleTypeViewChange({ mode })}
+                      hideSubtypeNotes={hideSubtypeNotes}
+                      onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
                     />
                   </ResizablePanel>
                   <ResizableHandle

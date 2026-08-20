@@ -84,4 +84,20 @@ describe("MobileFolderVault discovery", () => {
       expect.objectContaining({ path: "Ideas/Newest.md", content: "# Newest\n" }),
     ]);
   });
+
+  it("discovers notes and folders nested beyond three levels", async () => {
+    const root = await mkdtemp(join(tmpdir(), "zerus-mobile-deep-vault-"));
+    const deepFolder = join(root, "Areas", "Work", "Clients", "Acme", "Projects");
+    await mkdir(deepFolder, { recursive: true });
+    await writeFile(join(deepFolder, "Plan.md"), "# Plan\n", "utf8");
+
+    const vault = new MobileFolderVault(pathToFileURL(root).href, "Zerus");
+
+    expect((await vault.loadAll()).map((file) => file.path)).toEqual([
+      "Areas/Work/Clients/Acme/Projects/Plan.md",
+    ]);
+    expect(await vault.listDirs()).toContain(
+      "Areas/Work/Clients/Acme/Projects",
+    );
+  });
 });

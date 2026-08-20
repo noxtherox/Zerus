@@ -7,7 +7,7 @@
     "frontendDist": "../dist",
     "devUrl": "http://localhost:8080",
     "beforeDevCommand": "pnpm cli:dev && pnpm dev",
-    "beforeBuildCommand": "pnpm build && pnpm cli:bundle && pnpm macos:sign-binaries"
+    "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "windows": [
@@ -29,13 +29,6 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "resources": [
-      "binaries/*"
-    ],
-    "macOS": {
-      "signingIdentity": "Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)",
-      "entitlements": "entitlements.plist"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -104,7 +97,7 @@
     },
     "iOS": {
       "minimumSystemVersion": "17.0",
-      "bundleVersion": "33",
+      "bundleVersion": "39",
       "infoPlist": "Info.ios.plist"
     }
   },

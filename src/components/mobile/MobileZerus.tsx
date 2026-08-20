@@ -16,6 +16,8 @@ import {
   FolderCog,
   FolderOpen,
   FolderSearch,
+  History,
+  ImagePlus,
   Loader2,
   Link2,
   Link2Off,
@@ -38,6 +40,7 @@ import {
 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,7 +63,9 @@ import { PropertiesSection } from "@/components/notes/PropertiesSection";
 import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
+import { VersionHistoryPanel } from "@/components/notes/VersionHistoryPanel";
 import { PersistentAIChat } from "@/components/mobile/AIChat";
+import type { ChatScope } from "@/lib/mobile-chat-history";
 import { cn } from "@/lib/utils";
 import { noteBody } from "@/lib/frontmatter";
 import {
@@ -84,6 +89,8 @@ import {
 } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
+import { getBacklinksGroupedByType } from "@/lib/links";
+import type { PropertySchemas } from "@/lib/properties";
 import {
   loadDefaultNoteType,
   loadNoteTypeOrder,
@@ -98,6 +105,7 @@ import {
 } from "@/lib/mobile-navigation";
 import {
   createFileNote,
+  clearVaultVersionHistory,
   createNote,
   createMobileVaultAtLocation,
   createMobileVaultOnDevice,
@@ -124,11 +132,14 @@ import {
   renameFileLocation,
   renameType,
   restoreNote,
+  savePastedImage,
+  setNoteType,
   setTypeIcon,
   toggleNoteArchived,
   toggleNotePinned,
   trashNote,
   updateNoteBody,
+  updateVersionHistorySettings,
   useVault,
   getImageUrl,
 } from "@/store/notes-store";
@@ -531,9 +542,14 @@ interface NoteActionSheetProps {
   onReplaceFile: () => void;
   onDetachFile: () => void;
   onMoveToTrash: () => void;
+  onFind: () => void;
+  onInsertImage: () => void;
+  onMoveType: () => void;
+  onChat: () => void;
+  onShowHistory: () => void;
 }
 
-function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash }: NoteActionSheetProps) {
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
   const archived = isArchived(note);
   const trashed = isTrashed(note);
   const external = isExternalNote(note);
@@ -576,6 +592,11 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
         <h3 className="truncate px-2 pb-3 pt-4 text-center text-[15px] font-semibold text-[#a6a6ab]">{noteTitle(note)}</h3>
         <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
           {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
+          {action("Chat about this note", <Sparkles className="h-5 w-5" />, onChat)}
+          {action("Find in note", <Search className="h-5 w-5" />, onFind)}
+          {!external && action("Version history", <History className="h-5 w-5" />, onShowHistory)}
+          {!external && !trashed && action("Insert image", <ImagePlus className="h-5 w-5" />, onInsertImage)}
+          {!external && !trashed && action("Move to folder", <FolderCog className="h-5 w-5" />, onMoveType)}
           {!file && !external && !trashed && action("Attach file to note", <FilePlus2 className="h-5 w-5" />, onReplaceFile)}
         </div>
         {file && !trashed && (
@@ -610,35 +631,73 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
 interface NoteViewProps {
   note: Note;
   allNotes: Note[];
+  schemas: PropertySchemas;
+  typeTree: TypeNode[];
   onBack: () => void;
   onBodyChange: (body: string) => void;
+  onRename: (title: string, body: string) => void;
   onOpenNote: (id: string) => void;
   onOpenFile: (id: string, mode?: "preview" | "refresh") => void;
+  onChat: (scope: ChatScope) => void;
 }
 
 function NoteView({
   note,
   allNotes,
+  schemas,
+  typeTree,
   onBack,
   onBodyChange,
+  onRename,
   onOpenNote,
   onOpenFile,
+  onChat,
 }: NoteViewProps) {
   const presentedNote = presentNote(note);
+  const trashed = isTrashed(note);
   const file = getFileHubReference(note);
   const hasFile = file !== null;
   const [draft, setDraft] = useState(presentedNote.body);
+  const [titleDraft, setTitleDraft] = useState(presentedNote.title);
+  const [editingTitle, setEditingTitle] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
   const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
+  useEffect(() => {
+    setDraft(presentedNote.body);
+    setTitleDraft(presentedNote.title);
+  }, [presentedNote.body, presentedNote.title]);
+  const [moveTypeOpen, setMoveTypeOpen] = useState(false);
+  const [findRequest, setFindRequest] = useState(0);
+  const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string } | null>(null);
   const [fileExists, setFileExists] = useState<boolean | null>(null);
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
   const touchStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
   const settleTimer = useRef<number | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const commitTitle = () => {
+    const next = titleDraft.replace(/[\r\n]+/g, " ").trim();
+    setEditingTitle(false);
+    if (!next) {
+      setTitleDraft(presentedNote.title);
+      return;
+    }
+    if (next !== presentedNote.title) onRename(next, draft);
+  };
+
+  const insertImage = async (file?: File) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    const path = await savePastedImage(new Uint8Array(await file.arrayBuffer()), file.type);
+    if (!path) return;
+    const markdown = `![${file.name.replace(/\.[^.]+$/, "") || "image"}](${path})`;
+    setInsertTextRequest({ id: Date.now(), text: markdown });
+  };
 
   useEffect(() => () => {
     if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
@@ -745,6 +804,12 @@ function NoteView({
 
   const propertiesVisible = propertiesOpen || (isDragging && dragX < 0);
   const transition = isDragging ? "none" : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const [showArchivedBacklinks, setShowArchivedBacklinks] = useState(false);
+  const backlinkGroups = useMemo(
+    () => getBacklinksGroupedByType(note, allNotes, schemas, showArchivedBacklinks),
+    [allNotes, note, schemas, showArchivedBacklinks],
+  );
+  const backlinkTotal = [...backlinkGroups.values()].reduce((total, group) => total + group.length, 0);
   const linkableNotes = () => getNotes().filter(
     (candidate) =>
       !isExternalNote(candidate) &&
@@ -778,9 +843,50 @@ function NoteView({
         </span>
         <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => setActionsOpen(true)} aria-label="Note actions"><MoreHorizontal className="h-[20px] w-[20px]" /></Button>
       </header>
+      {trashed && (
+        <div
+          className="mx-4 flex shrink-0 items-center gap-3 rounded-[14px] border border-[#df5149]/25 bg-[#df5149]/10 px-3 py-2.5"
+          role="status"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#df5149]/15 text-[#ef6b62]">
+            <Trash2 className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-[#c9c5bf]">
+            This note is in Recently Deleted.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void restoreNote(note.id)}
+            className="h-8 shrink-0 rounded-full bg-[#df5149] px-3 text-xs font-semibold text-white hover:bg-[#c94740]"
+          >
+            Restore
+          </Button>
+        </div>
+      )}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
         <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
-        <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
+        {editingTitle ? (
+          <Input
+            autoFocus
+            value={titleDraft}
+            onChange={(event) => setTitleDraft(event.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+              if (event.key === "Escape") {
+                setTitleDraft(presentedNote.title);
+                setEditingTitle(false);
+              }
+            }}
+            className="h-auto border-0 bg-transparent px-0 text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#f5f3ef] shadow-none focus-visible:ring-0"
+            aria-label="Note title"
+          />
+        ) : (
+          <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
+            <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
+          </button>
+        )}
         {file && <button type="button" onClick={() => onOpenFile(note.id, "preview")} className="mt-5 flex w-full min-w-0 select-none items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
@@ -801,6 +907,8 @@ function NoteView({
             placeholderText="Start writing…"
             firstLineIsTitle={false}
             followLinksOnClick
+            findRequest={findRequest}
+            insertTextRequest={insertTextRequest}
           />
         </div>
       </main>
@@ -833,9 +941,49 @@ function NoteView({
               }}
               expanded
             />
+            <section className="border-t border-white/[0.07] px-4 py-4">
+              <div className="mb-3 flex items-center gap-2">
+                <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#9b9893]">
+                  Backlinks{backlinkTotal ? ` · ${backlinkTotal}` : ""}
+                </h2>
+                <label className="flex items-center gap-2 text-xs text-[#9b9893]">
+                  <input
+                    type="checkbox"
+                    checked={showArchivedBacklinks}
+                    onChange={(event) => setShowArchivedBacklinks(event.target.checked)}
+                    className="accent-[#df5149]"
+                  />
+                  Archived
+                </label>
+              </div>
+              {backlinkTotal === 0 ? (
+                <p className="text-sm text-[#77777d]">No notes link here yet.</p>
+              ) : (
+                <div className="space-y-4">
+                  {[...backlinkGroups.entries()].map(([type, notes]) => (
+                    <div key={type}>
+                      <p className="mb-1.5 text-xs font-semibold text-[#ef6b62]">{type ? type.split("/").join(" / ") : "Inbox"}</p>
+                      <div className="overflow-hidden rounded-[14px] bg-[#292a2b]">
+                        {notes.map((backlink) => (
+                          <button
+                            key={backlink.id}
+                            type="button"
+                            onClick={() => { setPropertiesOpen(false); onOpenNote(backlink.id); }}
+                            className="block min-h-12 w-full border-b border-white/[0.07] px-3 py-2 text-left text-sm font-medium last:border-0"
+                          >
+                            {noteTitle(backlink)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
           </div>
         </div>
       )}
+      {historyOpen && <VersionHistoryPanel note={note} mobile onClose={() => setHistoryOpen(false)} />}
       {actionsOpen && (
         <NoteActionSheet
           note={note}
@@ -849,8 +997,47 @@ function NoteView({
           onReplaceFile={() => { void replaceLinkedFile(); }}
           onDetachFile={() => setDetachConfirmOpen(true)}
           onMoveToTrash={() => setTrashConfirmOpen(true)}
+          onFind={() => setFindRequest((value) => value + 1)}
+          onInsertImage={() => imageInputRef.current?.click()}
+          onMoveType={() => setMoveTypeOpen(true)}
+          onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
+          onShowHistory={() => setHistoryOpen(true)}
         />
       )}
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          void insertImage(event.target.files?.[0]);
+          event.currentTarget.value = "";
+        }}
+      />
+      <Dialog open={moveTypeOpen} onOpenChange={setMoveTypeOpen}>
+        <DialogContent className="max-h-[75dvh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Move to folder</DialogTitle></DialogHeader>
+          <div className="space-y-1">
+            {flattenTypes(typeTree).map(({ node, depth }) => (
+              <Button
+                key={typeKey(node.path)}
+                type="button"
+                variant="ghost"
+                className="w-full justify-start"
+                style={{ paddingLeft: `${12 + depth * 18}px` }}
+                disabled={typeKey(node.path) === typeKey(noteTypePath(note))}
+                onClick={() => {
+                  setMoveTypeOpen(false);
+                  void setNoteType(note.id, node.path);
+                }}
+              >
+                <Folder className="mr-2 h-4 w-4 text-[#df5149]" />
+                {node.name}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <AlertDialog open={detachConfirmOpen} onOpenChange={setDetachConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -977,11 +1164,12 @@ function MobileSettings({
   onClose,
   onChangeVault,
 }: MobileSettingsProps) {
-  const { fileLocations } = useVault();
+  const { fileLocations, historyError, historySettings } = useVault();
   const locationMappings = getFileLocationMappings();
   const [locationDraft, setLocationDraft] = useState("");
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
 
   const mapLocation = async (id: string) => {
     setBusyLocation(id);
@@ -1102,7 +1290,23 @@ function MobileSettings({
           </div>
           {locationMessage && <p className="mt-3 rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{locationMessage}</p>}
         </div>
+
+        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
+        <div className="space-y-4 rounded-[16px] bg-[#292a2b] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span><span className="block text-[15px] font-semibold">Record history</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Every content autosave</span></span>
+            <Switch checked={historySettings.enabled} onCheckedChange={(enabled) => void updateVersionHistorySettings({ ...historySettings, enabled })} />
+          </div>
+          <div className="flex items-center gap-3 border-t border-white/[0.08] pt-4">
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">Retained checkpoints</span><span className="mt-0.5 block text-xs text-[#8e8e93]">50 versions per checkpoint</span></span>
+            {historySettings.checkpointLimit === null ? <Button variant="ghost" className="h-10 rounded-[11px] bg-white/[0.07] px-3 text-xs" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: 10 })}>Unlimited</Button> : <Input key={historySettings.checkpointLimit} type="number" min={1} max={100} defaultValue={historySettings.checkpointLimit} className="h-10 w-20 border-white/[0.08] bg-white/[0.04] text-center" onBlur={(event) => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })} />}
+          </div>
+          <button type="button" className="text-left text-xs font-semibold text-[#ef6b62]" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: historySettings.checkpointLimit === null ? 10 : null })}>{historySettings.checkpointLimit === null ? "Use a fixed limit" : "Keep unlimited checkpoints"}</button>
+          <button type="button" className="block border-t border-white/[0.08] pt-4 text-left text-sm font-semibold text-[#ff6961]" onClick={() => setClearHistoryOpen(true)}>Clear all version history</button>
+          {historyError && <p className="rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{historyError}</p>}
+        </div>
       </section>
+      <AlertDialog open={clearHistoryOpen} onOpenChange={setClearHistoryOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Clear all version history?</AlertDialogTitle><AlertDialogDescription>This permanently deletes automatic and kept versions for every note in this vault. Current notes and live images are not changed.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => void clearVaultVersionHistory().then(() => setClearHistoryOpen(false))}>Clear all history</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
     </div>
   );
 }
@@ -1184,6 +1388,7 @@ export function MobileZerus() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [chatScope, setChatScope] = useState<ChatScope>({ kind: "vault" });
   const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat">("notes");
   const [notesPreparationError, setNotesPreparationError] = useState<string | null>(null);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
@@ -1331,7 +1536,9 @@ export function MobileZerus() {
     }
   };
 
-  const openChat = () => {
+  const openChat = (nextScope: ChatScope = { kind: "vault" }) => {
+    setChatScope(nextScope);
+    setSelectedNoteId(null);
     setChatOpen(true);
     setChatHistoryOpen(false);
     pushNavigation({ view: "chat" });
@@ -1556,12 +1763,18 @@ export function MobileZerus() {
             key={selectedSourceNote.id}
             note={selectedSourceNote}
             allNotes={vault.notes}
+            schemas={vault.schemas}
+            typeTree={typeTree}
             onBack={() => window.history.back()}
             onBodyChange={(body) =>
               updateNoteBody(selectedNote.id, `# ${selectedNote.title}\n\n${body}`)
             }
+            onRename={(title, body) =>
+              updateNoteBody(selectedNote.id, `# ${title}\n\n${body}`)
+            }
             onOpenNote={(id) => openNote(id, noteOrigin)}
             onOpenFile={(id, mode) => void openFileHub(id, mode)}
+            onChat={(nextScope) => openChat(nextScope)}
           />
         ) : (
           <div
@@ -1598,7 +1811,7 @@ export function MobileZerus() {
             </main>
           </div>
         )}
-        {vault.status === "ready" && !selectedNote && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={openChat} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        {vault.status === "ready" && !selectedNote && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={() => openChat({ kind: "vault" })} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
         {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet
@@ -1684,6 +1897,7 @@ export function MobileZerus() {
           }}
           onCloseHistory={() => window.history.back()}
           onOpenNote={(noteId) => openNote(noteId, "chat")}
+          scope={chatScope}
         />
         {settingsOpen && <MobileSettings location={vault.location} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
         {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}

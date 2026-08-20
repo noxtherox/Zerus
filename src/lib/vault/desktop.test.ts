@@ -53,6 +53,9 @@ describe("DesktopVault startup loading", () => {
     await Promise.all([
       mkdir(join(root, "Notes"), { recursive: true }),
       mkdir(join(root, "Projects", "Active"), { recursive: true }),
+      mkdir(join(root, "Areas", "Work", "Clients", "Acme", "Projects"), {
+        recursive: true,
+      }),
       mkdir(join(root, ".hidden"), { recursive: true }),
       mkdir(join(root, ".trash", "Notes"), { recursive: true }),
     ]);
@@ -60,6 +63,10 @@ describe("DesktopVault startup loading", () => {
       writeFile(join(root, "Notes", "One.md"), "# One\n"),
       writeFile(join(root, "Notes", "Two.md"), "# Two\n"),
       writeFile(join(root, "Projects", "Active", "Three.md"), "# Three\n"),
+      writeFile(
+        join(root, "Areas", "Work", "Clients", "Acme", "Projects", "Deep.md"),
+        "# Deep\n",
+      ),
       writeFile(join(root, ".hidden", "Ignored.md"), "# Ignored\n"),
       writeFile(join(root, ".trash", "Notes", "Deleted.md"), "# Deleted\n"),
     ]);
@@ -80,6 +87,7 @@ describe("DesktopVault startup loading", () => {
 
     expect(files.map((file) => file.path)).toEqual([
       ".trash/Notes/Deleted.md",
+      "Areas/Work/Clients/Acme/Projects/Deep.md",
       "Notes/One.md",
       "Notes/Two.md",
       "Projects/Active/Three.md",
@@ -87,10 +95,15 @@ describe("DesktopVault startup loading", () => {
     expect(readState.maxActive).toBeGreaterThan(1);
     expect(priorityLoaded).toEqual(["Notes/Two.md"]);
     expect(dirs).toEqual([
+      "Areas",
+      "Areas/Work",
+      "Areas/Work/Clients",
+      "Areas/Work/Clients/Acme",
+      "Areas/Work/Clients/Acme/Projects",
       "Notes",
       "Projects",
       "Projects/Active",
     ]);
-    expect(readState.dirs).toBe(6);
+    expect(readState.dirs).toBe(11);
   });
 });

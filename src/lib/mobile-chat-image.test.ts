@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { constrainedImageSize, questionReferencesImage } from "./mobile-chat-image";
+import {
+  constrainedImageSize,
+  imageFilesFromClipboard,
+  questionReferencesImage,
+} from "./mobile-chat-image";
 
 describe("mobile chat image preparation", () => {
   it("bounds the longest edge without enlarging small images", () => {
@@ -15,5 +19,17 @@ describe("mobile chat image preparation", () => {
 
   it("rejects invalid source dimensions", () => {
     expect(() => constrainedImageSize(0, 120)).toThrow("invalid dimensions");
+  });
+
+  it("extracts only image files from clipboard items", () => {
+    const image = { name: "pasted-image.png", type: "image/png" } as File;
+    const text = { name: "notes.txt", type: "text/plain" } as File;
+
+    expect(imageFilesFromClipboard([
+      { kind: "string", type: "text/plain", getAsFile: () => null },
+      { kind: "file", type: "text/plain", getAsFile: () => text },
+      { kind: "file", type: "image/png", getAsFile: () => image },
+      { kind: "file", type: "image/jpeg", getAsFile: () => null },
+    ])).toEqual([image]);
   });
 });

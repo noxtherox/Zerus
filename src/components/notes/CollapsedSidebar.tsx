@@ -29,8 +29,30 @@ interface CollapsedSidebarProps {
   onRestore: () => void;
 }
 
-function flattenTypeTree(nodes: TypeNode[]): TypeNode[] {
-  return nodes.flatMap((node) => [node, ...flattenTypeTree(node.children)]);
+function pathsMatch(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((part, index) => part === right[index])
+  );
+}
+
+function isPathPrefix(prefix: string[], path: string[]): boolean {
+  return (
+    prefix.length <= path.length &&
+    prefix.every((part, index) => part === path[index])
+  );
+}
+
+function visibleTypeNodes(
+  nodes: TypeNode[],
+  selectedPath: string[] | null,
+): TypeNode[] {
+  return nodes.flatMap((node) => [
+    node,
+    ...(selectedPath && isPathPrefix(node.path, selectedPath)
+      ? visibleTypeNodes(node.children, selectedPath)
+      : []),
+  ]);
 }
 
 export function CollapsedSidebar({
@@ -48,7 +70,9 @@ export function CollapsedSidebar({
   onRestore,
 }: CollapsedSidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const types = flattenTypeTree(buildTypeTree(notes, extraTypes, typeOrder));
+  const types = buildTypeTree(notes, extraTypes, typeOrder);
+  const selectedTypePath = filter.kind === "type" ? filter.path : null;
+  const visibleTypes = visibleTypeNodes(types, selectedTypePath);
 
   const iconButtonClass = (active: boolean) =>
     cn(
@@ -57,6 +81,78 @@ export function CollapsedSidebar({
         ? "bg-zerus-sidebar-fg/15 text-zerus-sidebar-fg"
         : "text-zerus-sidebar-fg/60 hover:bg-zerus-sidebar-fg/10 hover:text-zerus-sidebar-fg/90",
     );
+
+  const renderType = (node: TypeNode) => {
+    const key = typeKey(node.path);
+    const selected = selectedTypePath
+      ? pathsMatch(node.path, selectedTypePath)
+      : false;
+    const selectedSubfolder = selected && node.path.length > 1;
+    const immediateParent = selectedTypePath
+      ? node.path.length + 1 === selectedTypePath.length &&
+        isPathPrefix(node.path, selectedTypePath)
+      : false;
+    const directChild = selectedTypePath
+      ? selectedTypePath.length + 1 === node.path.length &&
+        isPathPrefix(selectedTypePath, node.path)
+      : false;
+    const topLevelAncestor = selectedTypePath
+      ? node.path.length === 1 &&
+        selectedTypePath.length >= 3 &&
+        isPathPrefix(node.path, selectedTypePath)
+      : false;
+    const expanded = selectedTypePath
+      ? node.children.length > 0 && isPathPrefix(node.path, selectedTypePath)
+      : false;
+    const label = node.path.join(" / ");
+    const contextual = immediateParent || directChild;
+
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => onFilterChange({ kind: "type", path: node.path })}
+        title={label}
+        aria-label={`Type: ${label}`}
+        aria-current={selected ? "page" : undefined}
+        aria-expanded={node.children.length > 0 ? expanded : undefined}
+        className={cn(
+          iconButtonClass(selected),
+          selected && !selectedSubfolder && "bg-zerus-sidebar-fg/25",
+          contextual && !selected && "text-zerus-sidebar-fg/90",
+        )}
+        style={
+          selectedSubfolder
+            ? {
+                backgroundColor: "rgb(var(--zerus-sidebar-fg) / 0.18)",
+                backgroundImage:
+                  "repeating-linear-gradient(45deg, transparent 0 3px, rgb(var(--zerus-sidebar-fg) / 0.24) 3px 4px)",
+                boxShadow:
+                  "inset 0 0 0 1px rgb(var(--zerus-sidebar-fg) / 0.42)",
+              }
+            : selected
+            ? {
+                boxShadow:
+                  "inset 0 0 0 1px rgb(var(--zerus-sidebar-fg) / 0.32)",
+              }
+            : contextual
+              ? {
+                  backgroundColor: "rgb(var(--zerus-sidebar-fg) / 0.07)",
+                  backgroundImage:
+                    "repeating-linear-gradient(135deg, transparent 0 3px, rgb(var(--zerus-sidebar-fg) / 0.16) 3px 4px)",
+                }
+              : topLevelAncestor
+                ? {
+                    boxShadow:
+                      "inset 0 0 0 1px rgb(var(--zerus-sidebar-fg) / 0.3)",
+                  }
+                : undefined
+        }
+      >
+        <TypeIcon icon={typeIcons[key]} size={16} />
+      </button>
+    );
+  };
 
   return (
     <nav
@@ -76,7 +172,7 @@ export function CollapsedSidebar({
         />
       </button>
 
-      <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-y-auto">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
           onClick={() => onFilterChange({ kind: "all" })}
@@ -122,27 +218,7 @@ export function CollapsedSidebar({
         <div className="my-2 h-px w-7 shrink-0 bg-zerus-sidebar-fg/15" />
 
         <div className="flex w-full flex-col items-center gap-0.5">
-          {types.map((node) => {
-            const key = typeKey(node.path);
-            const active =
-              filter.kind === "type" && typeKey(filter.path) === key;
-            const label = node.path.join(" / ");
-
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() =>
-                  onFilterChange({ kind: "type", path: node.path })
-                }
-                title={label}
-                aria-label={`Type: ${label}`}
-                className={iconButtonClass(active)}
-              >
-                <TypeIcon icon={typeIcons[key]} size={16} />
-              </button>
-            );
-          })}
+          {visibleTypes.map(renderType)}
         </div>
       </div>
 

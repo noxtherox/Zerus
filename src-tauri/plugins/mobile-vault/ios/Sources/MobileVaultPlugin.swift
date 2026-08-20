@@ -4,8 +4,10 @@ import QuickLook
 import UIKit
 import UniformTypeIdentifiers
 import WebKit
+import AuthenticationServices
+import CryptoKit
 
-final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewControllerDataSource {
+final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewControllerDataSource, ASWebAuthenticationPresentationContextProviding {
   private let bookmarkKey = "zerus.mobileVaultBookmark.v1"
   private let externalBookmarksKey = "zerus.mobileExternalBookmarks.v1"
   private let authorizedFileCopiesKey = "zerus.authorizedFileCopies.v1"
@@ -19,6 +21,8 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   private var previewDirectoryURL: URL?
   private var webviewOffsetObservation: NSKeyValueObservation?
   private lazy var cloudAI = CloudAIManager()
+  private var cloudAITask: Task<Void, Never>?
+  private var openRouterSession: ASWebAuthenticationSession?
   private lazy var speechRecognizer = OnDeviceSpeechRecognizer()
   private var modernSpeechRecognizerStorage: AnyObject?
 
@@ -379,16 +383,87 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
     }
   }
 
-  @objc public func generateCloudAI(_ invoke: Invoke) {
-    Task {
-      do {
-        let request = try invoke.parseArgs(CloudAIGenerateRequest.self)
-        let answer = try await cloudAI.generate(request)
-        invoke.resolve(CloudAIGenerateResponse(answer: answer))
-      } catch {
-        invoke.reject(error.localizedDescription)
+  @objc public func connectOpenRouter(_ invoke: Invoke) {
+    let verifier = (0..<48).map { _ in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~".randomElement()! }
+    let verifierText = String(verifier)
+    let digest = SHA256.hash(data: Data(verifierText.utf8))
+    let challenge = Data(digest).base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+    var parts = URLComponents(string: "https://openrouter.ai/auth")!
+    parts.queryItems = [
+      URLQueryItem(name: "callback_url", value: "zerus://openrouter"),
+      URLQueryItem(name: "code_challenge", value: challenge),
+      URLQueryItem(name: "code_challenge_method", value: "S256"),
+    ]
+    guard let authorizationURL = parts.url else {
+      invoke.reject("Could not prepare OpenRouter sign-in")
+      return
+    }
+    let session = ASWebAuthenticationSession(
+      url: authorizationURL,
+      callbackURLScheme: "zerus"
+    ) { callbackURL, error in
+      self.openRouterSession = nil
+      guard error == nil,
+            let callbackURL,
+            let code = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false)?
+              .queryItems?.first(where: { $0.name == "code" })?.value else {
+        invoke.reject(error?.localizedDescription ?? "OpenRouter sign-in was cancelled")
+        return
+      }
+      Task {
+        do {
+          invoke.resolve(try await self.cloudAI.connectOpenRouter(code: code, verifier: verifierText))
+        } catch {
+          invoke.reject(error.localizedDescription)
+        }
       }
     }
+    session.presentationContextProvider = self
+    session.prefersEphemeralWebBrowserSession = false
+    openRouterSession = session
+    if !session.start() {
+      openRouterSession = nil
+      invoke.reject("Could not start OpenRouter sign-in")
+    }
+  }
+
+  @objc public func cloudAIModels(_ invoke: Invoke) {
+    Task {
+      do { invoke.resolve(try await cloudAI.models()) }
+      catch { invoke.reject(error.localizedDescription) }
+    }
+  }
+
+  func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    manager.viewController?.view.window ?? ASPresentationAnchor()
+  }
+
+  @objc public func generateCloudAI(_ invoke: Invoke) {
+    cloudAITask?.cancel()
+    cloudAITask = Task {
+      do {
+        let request = try invoke.parseArgs(CloudAIGenerateRequest.self)
+        let answer = try await cloudAI.generate(request) { delta in
+          try? self.trigger(
+            "cloud-ai-delta",
+            data: ["streamId": request.streamId, "delta": delta]
+          )
+        }
+        invoke.resolve(CloudAIGenerateResponse(answer: answer))
+      } catch {
+        invoke.reject(error is CancellationError ? "AI response stopped" : error.localizedDescription)
+      }
+      self.cloudAITask = nil
+    }
+  }
+
+  @objc public func stopCloudAI(_ invoke: Invoke) {
+    cloudAITask?.cancel()
+    cloudAITask = nil
+    invoke.resolve()
   }
 
   @objc public func startSpeechRecognition(_ invoke: Invoke) {

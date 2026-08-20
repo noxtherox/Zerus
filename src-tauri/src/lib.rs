@@ -1051,12 +1051,21 @@ fn cloud_ai_keyring_account(base_url: &str) -> String {
     format!("provider-{:x}", hasher.finalize())
 }
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "windows",
-    target_os = "linux"
-))]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn save_cloud_ai_key(base_url: &str, api_key: &str) -> Result<(), String> {
+    use security_framework::passwords::{set_generic_password_options, PasswordOptions};
+    let mut options = PasswordOptions::new_generic_password(
+        CLOUD_AI_KEYRING_SERVICE,
+        &cloud_ai_keyring_account(base_url),
+    );
+    options.set_access_synchronized(Some(true));
+    #[cfg(target_os = "macos")]
+    options.use_protected_keychain();
+    set_generic_password_options(api_key.as_bytes(), options)
+        .map_err(|error| format!("Could not save the API key securely: {error}"))
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn save_cloud_ai_key(base_url: &str, api_key: &str) -> Result<(), String> {
     let entry = keyring::Entry::new(
         CLOUD_AI_KEYRING_SERVICE,
@@ -1068,12 +1077,41 @@ fn save_cloud_ai_key(base_url: &str, api_key: &str) -> Result<(), String> {
         .map_err(|error| format!("Could not save the API key securely: {error}"))
 }
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "windows",
-    target_os = "linux"
-))]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+fn load_cloud_ai_key(base_url: &str) -> Result<Option<String>, String> {
+    use security_framework::passwords::{generic_password, PasswordOptions};
+    let mut options = PasswordOptions::new_generic_password(
+        CLOUD_AI_KEYRING_SERVICE,
+        &cloud_ai_keyring_account(base_url),
+    );
+    options.set_access_synchronized(Some(true));
+    #[cfg(target_os = "macos")]
+    options.use_protected_keychain();
+    match generic_password(options) {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| "The saved API key is not valid UTF-8".to_string()),
+        Err(error) if error.code() == -25300 => {
+            // Migrate the pre-sync keyring entry on first use.
+            let entry = keyring::Entry::new(
+                CLOUD_AI_KEYRING_SERVICE,
+                &cloud_ai_keyring_account(base_url),
+            )
+            .map_err(|error| format!("Could not open the system credential store: {error}"))?;
+            match entry.get_password() {
+                Ok(api_key) if !api_key.trim().is_empty() => {
+                    save_cloud_ai_key(base_url, &api_key)?;
+                    Ok(Some(api_key))
+                }
+                Ok(_) | Err(keyring::Error::NoEntry) => Ok(None),
+                Err(error) => Err(format!("Could not read the saved API key: {error}")),
+            }
+        }
+        Err(error) => Err(format!("Could not read the saved API key: {error}")),
+    }
+}
+
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 fn load_cloud_ai_key(base_url: &str) -> Result<Option<String>, String> {
     let entry = keyring::Entry::new(
         CLOUD_AI_KEYRING_SERVICE,

@@ -9,7 +9,14 @@ import {
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { GFM } from "@lezer/markdown";
 import { languages } from "@codemirror/language-data";
-import { history, defaultKeymap, historyKeymap } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentLess,
+  indentMore,
+  indentWithTab,
+} from "@codemirror/commands";
 import { completionKeymap } from "@codemirror/autocomplete";
 import {
   editorTheme,
@@ -29,6 +36,8 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  IndentDecrease,
+  IndentIncrease,
   Italic,
   Link,
   List,
@@ -61,6 +70,7 @@ interface MarkdownEditorProps {
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
   findRequest?: number;
+  insertTextRequest?: { id: number; text: string } | null;
 }
 
 function toggleInlineMarkup(
@@ -213,6 +223,7 @@ export function MarkdownEditor({
   isFullHeight = false,
   onToggleFullHeight,
   findRequest = 0,
+  insertTextRequest = null,
 }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -267,6 +278,7 @@ export function MarkdownEditor({
               return true;
             },
           },
+          indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
           ...completionKeymap,
@@ -394,6 +406,17 @@ export function MarkdownEditor({
     return () => cancelAnimationFrame(frame);
   }, [findRequest]);
 
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !insertTextRequest || view.state.readOnly) return;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: insertTextRequest.text },
+      selection: EditorSelection.cursor(from + insertTextRequest.text.length),
+    });
+    view.focus();
+  }, [insertTextRequest]);
+
   const handleInsertTable = (columns: number, rows: number) => {
     const view = viewRef.current;
     setTableDialogOpen(false);
@@ -449,6 +472,24 @@ export function MarkdownEditor({
       label: "Numbered list",
       icon: ListOrdered,
       action: withEditor((view) => toggleLinePrefix(view, (index) => `${index + 1}. `, /^\d+\.\s/)),
+    },
+    {
+      label: "Increase indent",
+      shortcut: "Tab",
+      icon: IndentIncrease,
+      action: withEditor((view) => {
+        indentMore(view);
+        view.focus();
+      }),
+    },
+    {
+      label: "Decrease indent",
+      shortcut: "Shift+Tab",
+      icon: IndentDecrease,
+      action: withEditor((view) => {
+        indentLess(view);
+        view.focus();
+      }),
     },
     {
       label: "Quote",

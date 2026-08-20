@@ -55,6 +55,14 @@ impl<R: Runtime> MobileVault<R> {
         self.cloud_ai_status()
     }
 
+    pub fn connect_openrouter(&self) -> crate::Result<CloudAiStatusResponse> {
+        self.cloud_ai_status()
+    }
+
+    pub fn cloud_ai_models(&self) -> crate::Result<CloudAiModelsResponse> {
+        Err(crate::Error::Unavailable("Mobile model discovery is only available in the iOS app".into()))
+    }
+
     pub fn generate_cloud_ai(
         &self,
         _request: CloudAiGenerateRequest,
@@ -62,6 +70,10 @@ impl<R: Runtime> MobileVault<R> {
         Err(crate::Error::Unavailable(
             "Cloud chat is only available in the iOS app".into(),
         ))
+    }
+
+    pub fn stop_cloud_ai(&self) -> crate::Result<()> {
+        Ok(())
     }
 
     pub fn start_speech_recognition(

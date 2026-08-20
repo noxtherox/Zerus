@@ -52,7 +52,7 @@ My Vault/
 ```
 
 Each `.md` file is a note. Zerus derives its type from its containing folders,
-up to three levels deep. Moving a note to another type moves the file; changing
+up to eight levels deep. Moving a note to another type moves the file; changing
 the title line renames it. Property values stay in the note's frontmatter, while
 vault-wide property definitions and display metadata live under `.zerus/`.
 
@@ -87,6 +87,11 @@ pnpm test            # run the Vitest suite
 pnpm build           # build the web app
 pnpm desktop:build   # build installable desktop bundles for the current OS
 ```
+
+On macOS, `desktop:build` uses ad-hoc signing and skips notarization so local
+builds do not depend on Developer ID keychain access. To intentionally create a
+distribution-signed and notarized build, set `APPLE_SIGNING_IDENTITY` to the
+Developer ID Application identity before running the command.
 
 ## Releases and automatic updates
 

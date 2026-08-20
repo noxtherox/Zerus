@@ -107,6 +107,21 @@ import {
   rememberDesktopVault,
   type DesktopVaultEntry,
 } from "@/lib/vault-registry";
+import {
+  DEFAULT_HISTORY_SETTINGS,
+  type HistorySettings,
+  type HistorySource,
+  type NoteHistoryVersion,
+  clearAllHistory as clearAllStoredHistory,
+  clearNoteHistory as clearStoredNoteHistory,
+  listNoteHistory,
+  loadHistorySettings,
+  materializeHistoryImages,
+  preserveCurrentZerusMetadata,
+  recordNoteHistory,
+  saveHistorySettings,
+  updateHistoryVersion,
+} from "@/lib/note-history";
 
 const VAULT_PATH_KEY = "zerus.vaultPath";
 const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
@@ -153,6 +168,8 @@ export interface VaultState {
   isRefreshing: boolean;
   /** Simultaneous editor and disk edits awaiting an explicit user choice. */
   conflicts: Readonly<Record<string, NoteConflict>>;
+  historySettings: HistorySettings;
+  historyError: string | null;
   error: string | null;
 }
 
@@ -183,6 +200,8 @@ let state: VaultState = {
   loadingNoteIds: new Set(),
   isRefreshing: false,
   conflicts: {},
+  historySettings: DEFAULT_HISTORY_SETTINGS,
+  historyError: null,
   error: null,
 };
 
@@ -205,6 +224,8 @@ let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
 const startupEditedNoteIds = new Set<string>();
+const pendingHistorySource = new Map<string, HistorySource>();
+const historyWarnings = new Set<string>();
 interface SuspendedVaultConflict {
   note: Note;
   conflict: NoteConflict;
@@ -267,6 +288,55 @@ function restoreDesktopConflicts(
 
 function emit() {
   listeners.forEach((listener) => listener());
+}
+
+function historyOriginId(): string {
+  const key = "zerus.historyOriginId.v1";
+  try {
+    const existing = localStorage.getItem(key);
+    if (existing) return existing;
+    const created = crypto.randomUUID();
+    localStorage.setItem(key, created);
+    return created;
+  } catch {
+    return "session";
+  }
+}
+
+function localHistorySource(): HistorySource {
+  if (backend?.kind === "mobile") return "mobile";
+  if (backend?.kind === "browser") return "browser";
+  return "desktop";
+}
+
+async function recordHistorySafely(
+  noteId: string,
+  before: string,
+  after: string,
+  source: HistorySource,
+): Promise<void> {
+  const targetBackend = backend;
+  const note = state.notes.find((candidate) => candidate.id === noteId);
+  if (!targetBackend || !note || isExternalNote(note)) return;
+  try {
+    await recordNoteHistory(targetBackend, {
+      noteId,
+      before,
+      after,
+      source,
+      originId: historyOriginId(),
+      settings: state.historySettings,
+    });
+    historyWarnings.delete(noteId);
+    if (state.historyError) setState({ historyError: null });
+  } catch (error) {
+    const message = `Version history needs repair: ${String(error)}`;
+    setState({ historyError: message });
+    if (!historyWarnings.has(noteId)) {
+      historyWarnings.add(noteId);
+      showError(message);
+    }
+  }
 }
 
 function setState(patch: Partial<VaultState>) {
@@ -841,6 +911,8 @@ async function loadVault(nextBackend: VaultBackend) {
     loadingNoteIds: new Set(),
     isRefreshing: false,
     conflicts: {},
+    historySettings: DEFAULT_HISTORY_SETTINGS,
+    historyError: null,
     error: null,
   });
   try {
@@ -915,6 +987,7 @@ async function loadVault(nextBackend: VaultBackend) {
       typeIcons,
       typeViews,
       fileLocations,
+      historySettings,
     ] = await Promise.all([
       canPage
         ? nextBackend.listNoteEntries!()
@@ -930,6 +1003,7 @@ async function loadVault(nextBackend: VaultBackend) {
       loadTypeIcons(nextBackend),
       loadTypeViews(nextBackend),
       loadFileLocations(nextBackend),
+      loadHistorySettings(nextBackend),
     ]);
     if (canPage) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
@@ -1025,6 +1099,7 @@ async function loadVault(nextBackend: VaultBackend) {
       typeIcons,
       typeViews,
       fileLocations,
+      historySettings,
       conflicts: restoredSession.conflicts,
       loadingNoteIds: new Set(),
       isRefreshing: false,
@@ -1419,12 +1494,24 @@ export async function synchronizeDesktopFiles() {
           conflictFor(note, file.content, "modified");
           continue;
         }
+        const historyContent = readZerusMetadata(file.content).id
+          ? file.content
+          : setZerusState(file.content, { id: note.id });
+        if (historyContent !== file.content) {
+          await activeBackend.write(note.path, historyContent);
+        }
+        await recordHistorySafely(
+          note.id,
+          snapshot ?? note.content,
+          historyContent,
+          "external",
+        );
         latestNotes[index] = {
           ...note,
-          content: file.content,
+          content: historyContent,
           updatedAt: file.updatedAt,
         };
-        diskSnapshots.set(note.id, file.content);
+        diskSnapshots.set(note.id, historyContent);
         notesChanged = true;
         continue;
       }
@@ -1719,7 +1806,7 @@ async function persistNote(
   force = false,
   recreateMissing = false,
 ): Promise<boolean> {
-  const note = state.notes.find((candidate) => candidate.id === id);
+  let note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return true;
   try {
     if (!force) {
@@ -1732,9 +1819,18 @@ async function persistNote(
       return true;
     }
     if (!backend) return false;
+    const previousContent = diskSnapshots.get(id) ?? note.content;
+    if (!readZerusMetadata(note.content).id) {
+      const content = setZerusState(note.content, { id: note.id });
+      note = { ...note, content };
+      updateNote(id, { content });
+    }
+    const historySource = pendingHistorySource.get(id) ?? localHistorySource();
     if (isSavedLinkNote(note)) {
       await backend.write(note.path, note.content);
       diskSnapshots.set(id, note.content);
+      pendingHistorySource.delete(id);
+      await recordHistorySafely(id, previousContent, note.content, historySource);
       return true;
     }
     let path = note.path;
@@ -1766,6 +1862,8 @@ async function persistNote(
     }
     await backend.write(path, note.content);
     diskSnapshots.set(id, note.content);
+    pendingHistorySource.delete(id);
+    await recordHistorySafely(id, previousContent, note.content, historySource);
     return true;
   } catch (error) {
     reportError("save note", error);
@@ -1854,12 +1952,20 @@ export async function resolveNoteConflict(
       setState({ notes: state.notes.filter((candidate) => candidate.id !== id) });
       return true;
     }
-    diskSnapshots.set(id, conflict.diskContent);
+    const previousContent = note.content;
+    const diskContent = note.externalPath || readZerusMetadata(conflict.diskContent).id
+      ? conflict.diskContent
+      : setZerusState(conflict.diskContent, { id: note.id });
+    if (!note.externalPath && backend && diskContent !== conflict.diskContent) {
+      await backend.write(note.path, diskContent);
+    }
+    diskSnapshots.set(id, diskContent);
     updateNote(id, {
-      content: conflict.diskContent,
+      content: diskContent,
       updatedAt: new Date().toISOString(),
     });
     clearNoteConflict(id);
+    await recordHistorySafely(id, previousContent, diskContent, "external");
     return true;
   }
 
@@ -1874,6 +1980,67 @@ export async function resolveNoteConflict(
 
 export function getNoteConflict(id: string): NoteConflict | null {
   return state.conflicts[id] ?? null;
+}
+
+export async function getNoteHistoryVersions(
+  id: string,
+): Promise<NoteHistoryVersion[]> {
+  if (!backend) return [];
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note || isExternalNote(note)) return [];
+  return listNoteHistory(backend, id);
+}
+
+export async function setNoteHistoryVersion(
+  noteId: string,
+  versionId: string,
+  patch: { kept?: boolean; label?: string | null },
+): Promise<void> {
+  if (!backend) return;
+  await updateHistoryVersion(backend, noteId, versionId, patch);
+}
+
+export async function restoreNoteHistoryVersion(
+  noteId: string,
+  versionId: string,
+): Promise<boolean> {
+  if (!backend) return false;
+  const note = state.notes.find((candidate) => candidate.id === noteId);
+  if (!note || isExternalNote(note)) return false;
+  if (!(await flushUntilIdle(noteId))) return false;
+  const version = (await listNoteHistory(backend, noteId)).find(
+    (candidate) => candidate.id === versionId,
+  );
+  if (!version || version.incomplete) return false;
+  try {
+    const withImages = await materializeHistoryImages(backend, version);
+    const content = preserveCurrentZerusMetadata(withImages, note.content);
+    if (content === note.content) return true;
+    pendingHistorySource.set(noteId, "restore");
+    updateNoteContent(noteId, content);
+    return flushUntilIdle(noteId);
+  } catch (error) {
+    reportError("restore note version", error);
+    return false;
+  }
+}
+
+export async function clearNoteVersionHistory(noteId: string): Promise<void> {
+  if (!backend) return;
+  await clearStoredNoteHistory(backend, noteId);
+}
+
+export async function updateVersionHistorySettings(
+  settings: HistorySettings,
+): Promise<void> {
+  if (!backend) return;
+  const historySettings = await saveHistorySettings(backend, settings);
+  setState({ historySettings });
+}
+
+export async function clearVaultVersionHistory(): Promise<void> {
+  if (!backend) return;
+  await clearAllStoredHistory(backend);
 }
 
 function installDesktopCloseHook() {
@@ -1988,11 +2155,17 @@ export async function openExternalNotes(): Promise<string[]> {
     const paths = (await pickMobileExternalNotes()).map((file) => file.path);
     return openExternalPaths(paths);
   }
-  const picked = await openDialog({
-    multiple: true,
-    title: "Open external markdown notes",
-    filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
-  });
+  let picked: string | string[] | null;
+  try {
+    picked = await openDialog({
+      multiple: true,
+      title: "Open external markdown notes",
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+    });
+  } catch (error) {
+    reportError("open external notes", error);
+    return [];
+  }
   if (!picked) return [];
   const desktopPaths = typeof picked === "string" ? [picked] : picked;
   return openExternalPaths(desktopPaths);
@@ -3289,6 +3462,9 @@ export async function deleteNoteForever(id: string) {
       await backend.removeFile(reference.path);
     }
     await backend.removeFile(note.path);
+    await clearStoredNoteHistory(backend, id).catch((error) =>
+      reportError("delete note history", error),
+    );
     diskSnapshots.delete(id);
     clearNoteConflict(id);
     removeMobileEntry(note.path);
@@ -3321,6 +3497,9 @@ export async function emptyTrash() {
         await backend.removeFile(reference.path);
       }
       await backend.removeFile(note.path);
+      await clearStoredNoteHistory(backend, note.id).catch((error) =>
+        reportError("delete note history", error),
+      );
     } catch (error) {
       reportError("empty trash", error);
       return;

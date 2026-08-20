@@ -62,16 +62,28 @@ import { noteBody } from "@/lib/frontmatter";
 import {
   getImageUrl,
   getNotes,
+  getVaultBackend,
   readVaultImage,
   savePastedImage,
   updateNoteBody,
 } from "@/store/notes-store";
+import { readSharedAiSettings, writeSharedAiSettings } from "@/lib/shared-ai-settings";
 import {
+  imageFilesFromClipboard,
   prepareChatImage,
   type PreparedChatImage,
 } from "@/lib/mobile-chat-image";
 import { cn } from "@/lib/utils";
 import { showError, showSuccess } from "@/utils/toast";
+import {
+  loadDesktopScopedConversation,
+  syncDesktopConversation,
+  transferChatOwnership,
+  type ChatConversation,
+  type ChatDevice,
+  type ChatScope,
+} from "@/lib/mobile-chat-history";
+import { chatDeviceLabel, getChatDevice } from "@/lib/mobile-device";
 
 const DEFAULT_WIDTH = 440;
 const MIN_WIDTH = 340;
@@ -267,6 +279,8 @@ export function AiPanel({
   const [pendingAttachments, setPendingAttachments] = useState<PreparedChatImage[]>([]);
   const [preparingImages, setPreparingImages] = useState(false);
   const [codexStatus, setCodexStatus] = useState<CodexAiStatus | null>(null);
+  const [chatDevice, setChatDevice] = useState<ChatDevice | null>(null);
+  const [sharedConversation, setSharedConversation] = useState<ChatConversation | null>(null);
 
   const context = useMemo(
     () => buildAiContext(note, notes, targetDirectory, vaultLocation),
@@ -278,6 +292,35 @@ export function AiPanel({
     note?.id ?? null,
     context?.key ?? null,
   );
+  const scopedNoteId = note?.id ?? null;
+  const sharedScope = useMemo<ChatScope>(() => scopedNoteId
+    ? { kind: "note", noteId: scopedNoteId, title: context?.noteTitle ?? "Note" }
+    : targetDirectory
+      ? { kind: "type", path: targetDirectory.split("/").filter(Boolean) }
+      : { kind: "vault" }, [context?.noteTitle, scopedNoteId, targetDirectory]);
+  const ownsSharedConversation = !sharedConversation || !chatDevice ||
+    sharedConversation.owner.id === chatDevice.id;
+
+  useEffect(() => {
+    let active = true;
+    void getChatDevice().then((device) => {
+      if (active) setChatDevice(device);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const backend = getVaultBackend();
+    if (!backend) return;
+    let active = true;
+    void readSharedAiSettings(backend).then((shared) => {
+      if (!active || !shared || shared.active.provider === "codex") return;
+      saveAiProviderConfig(shared.active);
+      setProviderConfig(shared.active);
+    });
+    return () => { active = false; };
+  }, [open, vaultLocation]);
 
   useEffect(() => {
     if (!open) return;
@@ -346,14 +389,32 @@ export function AiPanel({
     requestIdRef.current += 1;
     sendInFlightRef.current = false;
     skipConversationSaveRef.current = true;
-    setMessages(readAiConversation(conversationKey));
+    const localMessages = readAiConversation(conversationKey);
+    setMessages(localMessages);
+    setSharedConversation(null);
+    const backend = getVaultBackend();
+    if (backend && chatDevice) {
+      void (async () => {
+        if (localMessages.length) {
+          await syncDesktopConversation(backend, conversationKey, sharedScope, localMessages, chatDevice);
+        }
+        const shared = await loadDesktopScopedConversation(backend, conversationKey);
+        setSharedConversation(shared);
+        if (!shared?.messages.length) return;
+        setMessages(shared.messages.map((message) => ({
+          role: message.role,
+          content: message.text,
+          attachments: message.attachments,
+        })));
+      })().catch((error) => console.error("Zerus: could not migrate desktop AI conversation", error));
+    }
     setDraft("");
     setSending(false);
     setPendingAttachments((current) => {
       for (const attachment of current) URL.revokeObjectURL(attachment.previewUrl);
       return [];
     });
-  }, [conversationKey]);
+  }, [chatDevice, conversationKey, sharedScope]);
 
   useEffect(() => {
     if (skipConversationSaveRef.current) {
@@ -361,16 +422,36 @@ export function AiPanel({
       return;
     }
     saveAiConversation(conversationKey, messages);
-  }, [conversationKey, messages]);
+    const backend = getVaultBackend();
+    if (backend && chatDevice && messages.length) {
+      void syncDesktopConversation(backend, conversationKey, sharedScope, messages, chatDevice)
+        .then(() => loadDesktopScopedConversation(backend, conversationKey))
+        .then(setSharedConversation)
+        .catch((error) => console.error("Zerus: could not sync desktop AI conversation", error));
+    }
+  }, [chatDevice, conversationKey, messages, sharedScope]);
 
-  const selectImages = async (files: FileList | null) => {
-    if (!files?.length || preparingImages) return;
+  const takeSharedConversation = async () => {
+    const backend = getVaultBackend();
+    if (!backend || !chatDevice || !sharedConversation) return;
+    try {
+      await transferChatOwnership(backend, sharedConversation, chatDevice);
+      const refreshed = await loadDesktopScopedConversation(backend, conversationKey);
+      setSharedConversation(refreshed);
+      showSuccess("Conversation moved to this device");
+    } catch (error) {
+      showError(String(error));
+    }
+  };
+
+  const selectImages = async (files: readonly File[]) => {
+    if (!files.length || preparingImages) return;
     const available = MAX_CHAT_IMAGES - pendingAttachments.length;
     if (available <= 0) {
       showError(`You can attach up to ${MAX_CHAT_IMAGES} images per message.`);
       return;
     }
-    const selected = Array.from(files).slice(0, available);
+    const selected = files.slice(0, available);
     if (files.length > available) {
       showError(`Only the first ${available} image${available === 1 ? "" : "s"} were added.`);
     }
@@ -404,6 +485,7 @@ export function AiPanel({
       !currentContext ||
       !providerReady ||
       !content ||
+      !ownsSharedConversation ||
       sending ||
       sendInFlightRef.current ||
       preparingImages
@@ -854,6 +936,10 @@ export function AiPanel({
         setCloudReady(true);
       }
       saveAiProviderConfig(config);
+      const backend = getVaultBackend();
+      if (backend && config.provider !== "codex") {
+        await writeSharedAiSettings(backend, config);
+      }
       setProviderConfig(config);
       setProviderDialogOpen(false);
       newSession();
@@ -901,17 +987,14 @@ export function AiPanel({
   const activeCloudModels = `${providerConfig.provider}:${providerConfig.baseUrl}` === cloudModelsSource
     ? cloudModels
     : [];
-  const availableCloudModels = [
-    ...providerConfig.favoriteModels.map((id) => ({
+  const favoriteCloudModels = providerConfig.favoriteModels
+    .map((id) => ({
       id,
       name: activeCloudModels.find((model) => model.id === id)?.name ?? id,
-    })),
-    ...(providerConfig.model ? [{
-      id: providerConfig.model,
-      name: activeCloudModels.find((model) => model.id === providerConfig.model)?.name ?? providerConfig.model,
-    }] : []),
-    ...activeCloudModels,
-  ].filter((model, index, models) => models.findIndex(({ id }) => id === model.id) === index);
+    }))
+    .filter((model, index, models) => models.findIndex(({ id }) => id === model.id) === index);
+  const currentModelName = activeCloudModels.find(({ id }) => id === providerConfig.model)?.name
+    ?? providerConfig.model;
 
   return (
     <>
@@ -946,12 +1029,16 @@ export function AiPanel({
                   }}
                 >
                   <SelectTrigger className="h-4 w-fit max-w-full gap-1 border-0 bg-transparent p-0 text-xs font-medium leading-4 shadow-none focus:ring-0 [&>svg]:h-3 [&>svg]:w-3">
-                    <SelectValue placeholder="Choose a model" />
+                    <SelectValue placeholder="Choose a model">{currentModelName}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {availableCloudModels.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
-                    ))}
+                    {favoriteCloudModels.length > 0 ? (
+                      favoriteCloudModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
+                      ))
+                    ) : (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">No saved favourites</p>
+                    )}
                   </SelectContent>
               </Select>
               <div className="truncate text-[10px] leading-3 text-muted-foreground">
@@ -1009,6 +1096,17 @@ export function AiPanel({
             </span>
             <Button variant="outline" size="sm" className="h-7" onClick={() => setProviderDialogOpen(true)}>
               Configure
+            </Button>
+          </div>
+        )}
+
+        {sharedConversation && chatDevice && !ownsSharedConversation && (
+          <div className="flex items-center gap-2 border-b border-border/60 bg-muted/40 px-3 py-2 text-xs">
+            <span className="min-w-0 flex-1 text-muted-foreground">
+              Read-only on this device · owned by {chatDeviceLabel(sharedConversation.owner, [chatDevice, sharedConversation.owner])}
+            </span>
+            <Button variant="outline" size="sm" className="h-7" onClick={() => void takeSharedConversation()}>
+              Move here
             </Button>
           </div>
         )}
@@ -1095,7 +1193,7 @@ export function AiPanel({
             accept="image/*"
             multiple
             className="hidden"
-            onChange={(event) => void selectImages(event.target.files)}
+            onChange={(event) => void selectImages(Array.from(event.target.files ?? []))}
           />
           {pendingAttachments.length > 0 && (
             <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
@@ -1131,6 +1229,12 @@ export function AiPanel({
           <Textarea
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onPaste={(event) => {
+              const images = imageFilesFromClipboard(event.clipboardData.items);
+              if (!images.length) return;
+              event.preventDefault();
+              void selectImages(images);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -1139,7 +1243,7 @@ export function AiPanel({
             }}
             placeholder="Ask about this note…"
             className="min-h-20 resize-none"
-            disabled={!context || sending || !aiReady}
+            disabled={!context || sending || !aiReady || !ownsSharedConversation}
           />
           <div className="mt-2 flex items-center justify-between">
             <Button
@@ -1147,7 +1251,7 @@ export function AiPanel({
               size="sm"
               className="h-8 gap-1.5 px-2 text-muted-foreground"
               onClick={() => imageInputRef.current?.click()}
-              disabled={!context || sending || !aiReady || preparingImages || pendingAttachments.length >= MAX_CHAT_IMAGES}
+              disabled={!context || sending || !aiReady || !ownsSharedConversation || preparingImages || pendingAttachments.length >= MAX_CHAT_IMAGES}
               title={`Attach images (up to ${MAX_CHAT_IMAGES})`}
             >
               {preparingImages ? (
@@ -1161,7 +1265,7 @@ export function AiPanel({
               size="sm"
               className="h-8 gap-1.5"
               onClick={() => void sendMessage()}
-              disabled={!context || sending || !aiReady || preparingImages || (!draft.trim() && pendingAttachments.length === 0)}
+              disabled={!context || sending || !aiReady || !ownsSharedConversation || preparingImages || (!draft.trim() && pendingAttachments.length === 0)}
             >
               <Send size={14} />
               Send

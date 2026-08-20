@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-cloud-ai-models"
+description = "Enables the cloud_ai_models command without any pre-configured scope."
+commands.allow = ["cloud_ai_models"]
+
+[[permission]]
+identifier = "deny-cloud-ai-models"
+description = "Denies the cloud_ai_models command without any pre-configured scope."
+commands.deny = ["cloud_ai_models"]

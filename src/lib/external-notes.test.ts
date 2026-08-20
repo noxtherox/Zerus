@@ -8,6 +8,7 @@ import {
   normalizeFsPath,
   noteAbsolutePath,
   noteContainingFolder,
+  noteTypePath,
   parseTypePath,
   reorderTypeTree,
 } from "./note-utils";
@@ -72,6 +73,22 @@ describe("external notes", () => {
       "Work",
       "Client Projects",
     ]);
+  });
+
+  it("preserves deeply nested type paths", () => {
+    const deepPath = ["work", "clients", "acme", "projects", "website"];
+    const deepNote = {
+      ...vaultNote,
+      path: `${deepPath.join("/")}/Plan.md`,
+    };
+
+    expect(parseTypePath(deepPath.join("/"))).toEqual(deepPath);
+    expect(noteTypePath(deepNote)).toEqual(deepPath);
+    expect(getAllTypePaths([deepNote])).toContainEqual(deepPath);
+    expect(
+      buildTypeTree([deepNote])[0].children[0].children[0].children[0]
+        .children[0].path,
+    ).toEqual(deepPath);
   });
 
   it("orders types at each level and only reorders siblings", () => {

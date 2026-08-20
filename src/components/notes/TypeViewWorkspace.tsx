@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
+  Folder,
   GripVertical,
   LayoutGrid,
   LayoutKanban,
@@ -41,6 +42,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -113,11 +115,15 @@ function propertyLabel(value: PropertyValue | undefined): string {
 export function TypeViewSwitcher({
   typeName,
   mode,
+  hideSubtypeNotes,
   onChange,
+  onHideSubtypeNotesChange,
 }: {
   typeName: string;
   mode: NoteViewMode;
+  hideSubtypeNotes: boolean;
   onChange: (mode: NoteViewMode) => void;
+  onHideSubtypeNotesChange: (hidden: boolean) => void;
 }) {
   const current = viewDefinition(mode);
   const CurrentIcon = current.icon;
@@ -152,6 +158,23 @@ export function TypeViewSwitcher({
             )}
           </DropdownMenuItem>
         ))}
+        <DropdownMenuSeparator />
+        <div className="flex min-h-10 items-center gap-2 rounded-sm px-2.5 text-sm">
+          <Folder size={17} className="text-muted-foreground" />
+          <label
+            htmlFor="hide-subfolder-notes"
+            className="flex-1 cursor-pointer whitespace-nowrap"
+          >
+            Hide subfolder notes
+          </label>
+          <Switch
+            id="hide-subfolder-notes"
+            checked={hideSubtypeNotes}
+            onCheckedChange={onHideSubtypeNotesChange}
+            aria-label="Hide subfolder notes"
+            className="h-5 w-9 [&>span]:h-4 [&>span]:w-4 [&>span]:data-[state=checked]:translate-x-4"
+          />
+        </div>
         <DropdownMenuSeparator />
         <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -239,6 +262,10 @@ function GalleryView({
   groupBy: string | null;
   onOpen: (id: string) => void;
 }) {
+  const galleryId = useId();
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
+    () => new Set(),
+  );
   const groups = useMemo(() => {
     const grouped = new Map<string, Note[]>();
     for (const note of notes) {
@@ -252,27 +279,58 @@ function GalleryView({
     return [...grouped];
   }, [groupBy, notes]);
 
+  useEffect(() => {
+    setCollapsedGroups(new Set());
+  }, [groupBy]);
+
+  const toggleGroup = (label: string) => {
+    setCollapsedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  };
+
   if (!notes.length) return <EmptyView message="No notes match this view." />;
   return (
     <div className="space-y-8 p-6">
-      {groups.map(([label, groupNotes]) => (
-        <section key={label}>
-          {(groupBy || groups.length > 1) && (
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-              <ChevronDown size={15} />
-              {label}
-              <span className="text-xs font-normal text-muted-foreground">
-                {groupNotes.length}
-              </span>
-            </div>
-          )}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-            {groupNotes.map((note) => (
-              <NoteCard key={note.id} note={note} onOpen={onOpen} />
-            ))}
-          </div>
-        </section>
-      ))}
+      {groups.map(([label, groupNotes], index) => {
+        const collapsed = collapsedGroups.has(label);
+        const contentId = `${galleryId}-group-${index}`;
+        return (
+          <section key={label}>
+            {(groupBy || groups.length > 1) && (
+              <button
+                type="button"
+                className="mb-3 flex items-center gap-2 rounded-sm text-sm font-semibold hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={!collapsed}
+                aria-controls={contentId}
+                onClick={() => toggleGroup(label)}
+              >
+                <ChevronDown
+                  size={15}
+                  className={cn("transition-transform", collapsed && "-rotate-90")}
+                />
+                {label}
+                <span className="text-xs font-normal text-muted-foreground">
+                  {groupNotes.length}
+                </span>
+              </button>
+            )}
+            {!collapsed && (
+              <div
+                id={contentId}
+                className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3"
+              >
+                {groupNotes.map((note) => (
+                  <NoteCard key={note.id} note={note} onOpen={onOpen} />
+                ))}
+              </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -704,10 +762,12 @@ interface TypeViewWorkspaceProps {
   config: TypeViewConfig;
   isRefreshing: boolean;
   editorOpen: boolean;
+  hideSubtypeNotes: boolean;
   editor: ReactNode;
   onOpenNote: (id: string) => void;
   onCreateNote: () => void;
   onConfigChange: (patch: Partial<TypeViewConfig>) => void;
+  onHideSubtypeNotesChange: (hidden: boolean) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }
 
@@ -718,17 +778,23 @@ export function TypeViewWorkspace({
   config,
   isRefreshing,
   editorOpen,
+  hideSubtypeNotes,
   editor,
   onOpenNote,
   onCreateNote,
   onConfigChange,
+  onHideSubtypeNotesChange,
   onSetProperty,
 }: TypeViewWorkspaceProps) {
   const [search, setSearch] = useState("");
   const typeName = typePath.join(" / ");
   const typeFilter = useMemo<NoteFilter>(
-    () => ({ kind: "type", path: typeName.split(" / ") }),
-    [typeName],
+    () => ({
+      kind: "type",
+      path: typePath,
+      includeSubtypes: !hideSubtypeNotes,
+    }),
+    [hideSubtypeNotes, typePath],
   );
   const filteredNotes = useMemo(
     () => filterNotes(notes, typeFilter, search, config.filters),
@@ -785,7 +851,13 @@ export function TypeViewWorkspace({
           </Button>
         </div>
         <div className="flex min-h-10 items-center gap-3 border-t border-border/40 px-4">
-          <TypeViewSwitcher typeName={typeName} mode={config.mode} onChange={(mode) => onConfigChange({ mode })} />
+          <TypeViewSwitcher
+            typeName={typeName}
+            mode={config.mode}
+            hideSubtypeNotes={hideSubtypeNotes}
+            onChange={(mode) => onConfigChange({ mode })}
+            onHideSubtypeNotesChange={onHideSubtypeNotesChange}
+          />
           {(config.mode === "gallery" || config.mode === "board") && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               Group by

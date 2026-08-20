@@ -43,8 +43,30 @@ if ! port_is_live "${TAURI_CLI_PORT:-}"; then
 fi
 
 if ! port_is_live "${TAURI_CLI_PORT:-}"; then
-  echo "error: No live Tauri iOS development coordinator was found. Run 'pnpm tauri ios dev --open' and keep that terminal open." >&2
-  exit 1
+  script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+  project_dir="$(dirname "$script_dir")"
+  tauri_dir="$project_dir/src-tauri"
+  case "${SDK_NAME:-}" in
+    iphonesimulator*) rust_target=aarch64-apple-ios-sim ;;
+    *) rust_target=aarch64-apple-ios ;;
+  esac
+
+  echo "warning: No live Tauri iOS coordinator found; compiling the native library directly for $rust_target." >&2
+  TAURI_CONFIG='{}' \
+  TAURI_ENV_PLATFORM=ios \
+  TAURI_ENV_ARCH=arm64 \
+  TAURI_ENV_FAMILY=unix \
+  TAURI_ENV_TARGET_TRIPLE="$rust_target" \
+    cargo build \
+      --package app \
+      --manifest-path "$tauri_dir/Cargo.toml" \
+      --target "$rust_target" \
+      --lib
+
+  /bin/mkdir -p "$tauri_dir/gen/apple/Externals/arm64/debug"
+  /bin/cp "$tauri_dir/target/$rust_target/debug/libapp_lib.a" \
+    "$tauri_dir/gen/apple/Externals/arm64/debug/libapp.a"
+  exit 0
 fi
 
 exec pnpm tauri ios xcode-script -v \

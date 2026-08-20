@@ -1,8 +1,15 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "pnpm build && pnpm cli:bundle && pnpm macos:sign-binaries"
+  },
   "bundle": {
     "resources": [
       "binaries/*"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)",
+      "entitlements": "entitlements.macos.plist"
+    }
   }
 }

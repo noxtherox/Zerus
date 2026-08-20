@@ -100,6 +100,8 @@ interface NoteListProps {
   onOpenExternalNotes: () => void;
   viewMode?: NoteViewMode;
   onViewModeChange?: (mode: NoteViewMode) => void;
+  hideSubtypeNotes: boolean;
+  onHideSubtypeNotesChange: (hidden: boolean) => void;
 }
 
 export function NoteList({
@@ -120,6 +122,8 @@ export function NoteList({
   onOpenExternalNotes,
   viewMode,
   onViewModeChange,
+  hideSubtypeNotes,
+  onHideSubtypeNotesChange,
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
@@ -192,7 +196,9 @@ export function NoteList({
           <TypeViewSwitcher
             typeName={heading}
             mode={viewMode}
+            hideSubtypeNotes={hideSubtypeNotes}
             onChange={onViewModeChange}
+            onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
         )}
         {inTrash ? (

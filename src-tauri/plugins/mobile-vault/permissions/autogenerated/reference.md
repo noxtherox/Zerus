@@ -13,7 +13,10 @@ Default permissions for the plugin
 - `allow-open-file`
 - `allow-cloud-ai-status`
 - `allow-configure-cloud-ai`
+- `allow-connect-openrouter`
+- `allow-cloud-ai-models`
 - `allow-generate-cloud-ai`
+- `allow-stop-cloud-ai`
 - `allow-start-speech-recognition`
 - `allow-speech-recognition-progress`
 - `allow-stop-speech-recognition`
@@ -84,6 +87,32 @@ Denies the clear_vault_folder command without any pre-configured scope.
 <tr>
 <td>
 
+`mobile-vault:allow-cloud-ai-models`
+
+</td>
+<td>
+
+Enables the cloud_ai_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-cloud-ai-models`
+
+</td>
+<td>
+
+Denies the cloud_ai_models command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `mobile-vault:allow-cloud-ai-status`
 
 </td>
@@ -129,6 +158,32 @@ Enables the configure_cloud_ai command without any pre-configured scope.
 <td>
 
 Denies the configure_cloud_ai command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-connect-openrouter`
+
+</td>
+<td>
+
+Enables the connect_openrouter command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-connect-openrouter`
+
+</td>
+<td>
+
+Denies the connect_openrouter command without any pre-configured scope.
 
 </td>
 </tr>
@@ -389,6 +444,32 @@ Enables the start_speech_recognition command without any pre-configured scope.
 <td>
 
 Denies the start_speech_recognition command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-stop-cloud-ai`
+
+</td>
+<td>
+
+Enables the stop_cloud_ai command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-stop-cloud-ai`
+
+</td>
+<td>
+
+Denies the stop_cloud_ai command without any pre-configured scope.
 
 </td>
 </tr>

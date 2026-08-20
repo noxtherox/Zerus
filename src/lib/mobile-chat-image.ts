@@ -7,6 +7,18 @@ export interface PreparedChatImage extends NewChatImageAttachment {
   previewUrl: string;
 }
 
+type ClipboardImageItem = Pick<DataTransferItem, "kind" | "type" | "getAsFile">;
+
+export function imageFilesFromClipboard(
+  items: ArrayLike<ClipboardImageItem>,
+): File[] {
+  return Array.from(items).flatMap((item) => {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) return [];
+    const file = item.getAsFile();
+    return file ? [file] : [];
+  });
+}
+
 export function constrainedImageSize(
   width: number,
   height: number,

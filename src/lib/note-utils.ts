@@ -1,14 +1,14 @@
 import { getNoteProperties, noteBody } from "@/lib/frontmatter";
 
 export const TRASH_DIR = ".trash";
-export const MAX_TYPE_DEPTH = 3;
+export const MAX_TYPE_DEPTH = 8;
 export const DEFAULT_TYPE: string[] = ["inbox"];
 
 /**
  * A note is a markdown file inside the vault. `path` is its vault-relative
  * path (forward slashes); the folders it sits in are its type hierarchy:
- * type / sub-type / sub-sub-type. Trashed notes keep their original relative
- * path under `.trash/`.
+ * nested folder hierarchy. Trashed notes keep their original relative path
+ * under `.trash/`.
  */
 export interface Note {
   id: string; // stable for the session; the path may change on rename/move
@@ -214,7 +214,7 @@ export interface TypeNode {
 }
 
 /**
- * Builds the type tree (max 3 levels) from non-trashed notes, plus
+ * Builds the type tree from non-trashed notes, plus
  * `extraTypePaths` — types that exist as folders but hold no notes yet.
  */
 export function buildTypeTree(

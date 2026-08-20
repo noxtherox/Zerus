@@ -67,7 +67,7 @@ export function TypePicker({
           className="h-7 gap-1 rounded-full border-zerus-accent/35 bg-zerus-accent/5 px-2.5 text-xs font-medium text-zerus-accent hover:bg-zerus-accent/10 hover:text-zerus-accent"
           title={
             title ??
-            "Type — the folder this note lives in (type / sub-type / sub-sub-type)"
+            "Type — the nested folder this note lives in"
           }
         >
           <TypeIcon icon={typeIcons[typeKey(value)]} size={12} />

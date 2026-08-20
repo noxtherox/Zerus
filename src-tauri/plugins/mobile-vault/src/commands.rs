@@ -66,11 +66,30 @@ pub(crate) async fn configure_cloud_ai<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn connect_openrouter<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<CloudAiStatusResponse> {
+    app.mobile_vault().connect_openrouter()
+}
+
+#[command]
+pub(crate) async fn cloud_ai_models<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<CloudAiModelsResponse> {
+    app.mobile_vault().cloud_ai_models()
+}
+
+#[command]
 pub(crate) async fn generate_cloud_ai<R: Runtime>(
     app: AppHandle<R>,
     request: CloudAiGenerateRequest,
 ) -> Result<CloudAiGenerateResponse> {
     app.mobile_vault().generate_cloud_ai(request)
+}
+
+#[command]
+pub(crate) async fn stop_cloud_ai<R: Runtime>(app: AppHandle<R>) -> Result<()> {
+    app.mobile_vault().stop_cloud_ai()
 }
 
 #[command]

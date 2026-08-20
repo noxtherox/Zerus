@@ -103,6 +103,7 @@ function archiveMetadata(archive) {
   const embedded = {
     version: plistValue(appInfo, "CFBundleShortVersionString"),
     build: plistValue(appInfo, "CFBundleVersion"),
+    identifier: plistValue(appInfo, "CFBundleIdentifier"),
   };
   if (
     metadata.version !== embedded.version ||
@@ -112,26 +113,35 @@ function archiveMetadata(archive) {
       `archive metadata says ${metadata.version} (${metadata.build}), but its embedded app says ${embedded.version} (${embedded.build}). Rebuild the archive before exporting it.`,
     );
   }
-  return metadata;
+  return { ...metadata, identifier: embedded.identifier };
 }
 
 function configuredReleaseMetadata() {
   const config = JSON.parse(readFileSync(tauriConfig, "utf8"));
   const version = config.version;
   const build = config.bundle?.iOS?.bundleVersion;
+  const identifier = config.identifier;
   const project = readFileSync(generatedProject, "utf8");
   const generatedBuild = project.match(
     /\bCFBundleVersion:\s*["']?([^\s"']+)/,
   )?.[1];
-  if (!version || !build) {
-    fail("could not read the configured release version/build number");
+  const generatedIdentifier = project.match(
+    /\bPRODUCT_BUNDLE_IDENTIFIER:\s*([^\s]+)/,
+  )?.[1];
+  if (!version || !build || !identifier) {
+    fail("could not read the configured release version/build number or bundle identifier");
   }
   if (String(build) !== generatedBuild) {
     fail(
       `tauri.conf.json configures build ${build}, but generated project.yml configures ${generatedBuild ?? "no build number"}. Regenerate the iOS project before building.`,
     );
   }
-  return { version: String(version), build: String(build) };
+  if (identifier !== generatedIdentifier) {
+    fail(
+      `tauri.conf.json configures ${identifier}, but generated project.yml configures ${generatedIdentifier ?? "no bundle identifier"}. Regenerate the iOS project before building.`,
+    );
+  }
+  return { version: String(version), build: String(build), identifier };
 }
 
 function findIpa(path) {
@@ -163,6 +173,7 @@ function ipaMetadata(ipa) {
   return {
     version: extract("CFBundleShortVersionString"),
     build: extract("CFBundleVersion"),
+    identifier: extract("CFBundleIdentifier"),
   };
 }
 
@@ -240,6 +251,7 @@ function option(name) {
 const exportOnly = args.includes("--export-only");
 const skipValidation = args.includes("--skip-validation");
 let ipa = option("--ipa");
+const configured = configuredReleaseMetadata();
 
 if (ipa && !existsSync(ipa)) fail(`IPA does not exist: ${ipa}`);
 
@@ -247,13 +259,13 @@ if (!ipa) {
   const archive = option("--archive") ?? newestArchive();
   if (!existsSync(archive)) fail(`archive does not exist: ${archive}`);
   const metadata = archiveMetadata(archive);
-  const configured = configuredReleaseMetadata();
   if (
     metadata.version !== configured.version ||
-    metadata.build !== configured.build
+    metadata.build !== configured.build ||
+    metadata.identifier !== configured.identifier
   ) {
     fail(
-      `archive is ${metadata.version} (${metadata.build}), but the release configuration is ${configured.version} (${configured.build}). Rebuild, or use --ipa to intentionally retry an already-exported binary.`,
+      `archive is ${metadata.identifier} ${metadata.version} (${metadata.build}), but the release configuration is ${configured.identifier} ${configured.version} (${configured.build}). Rebuild, or use --ipa to intentionally retry an already-exported binary with the same bundle identifier.`,
     );
   }
   const exportPath = join(
@@ -272,6 +284,7 @@ if (!ipa) {
     console.log(`Exporting signed IPA to ${exportPath}`);
     run("xcodebuild", [
       "-exportArchive",
+      "-allowProvisioningUpdates",
       "-archivePath",
       archive,
       "-exportPath",
@@ -285,7 +298,12 @@ if (!ipa) {
 }
 
 const metadata = ipaMetadata(ipa);
-console.log(`Verified ${ipa} (version ${metadata.version}, build ${metadata.build})`);
+if (metadata.identifier !== configured.identifier) {
+  fail(
+    `IPA bundle identifier is ${metadata.identifier}, but this project is configured as ${configured.identifier}. Refusing to upload the wrong app.`,
+  );
+}
+console.log(`Verified ${ipa} (${metadata.identifier}, version ${metadata.version}, build ${metadata.build})`);
 
 if (exportOnly) {
   console.log("Export complete; upload was intentionally skipped.");

@@ -1,5 +1,6 @@
 import type { VaultBackend } from "@/lib/vault/backend";
 import type { NoteContextKind } from "@/lib/mobile-note-retrieval";
+import type { StoredAiMessage } from "@/lib/ai-conversations";
 
 export const CHAT_ROOT = ".zerus/chats";
 export const CHAT_TOMBSTONE_ROOT = ".zerus/chat-tombstones";
@@ -11,6 +12,11 @@ export interface ChatDevice {
   id: string;
   name: string;
 }
+
+export type ChatScope =
+  | { kind: "vault" }
+  | { kind: "type"; path: string[] }
+  | { kind: "note"; noteId: string; title: string };
 
 export interface ChatSourceSnapshot {
   noteId: string;
@@ -55,6 +61,8 @@ export interface ChatDescriptor {
   version: 1;
   id: string;
   createdAt: string;
+  scope?: ChatScope;
+  legacyKey?: string;
 }
 
 interface ChatEventBase {
@@ -95,6 +103,7 @@ export interface ChatConversation {
   summary: ChatSummary | null;
   archivedAt: string | null;
   deletedAt: string | null;
+  scope: ChatScope;
 }
 
 export interface NewAssistantMessage {
@@ -111,6 +120,15 @@ function uuid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
+function stableId(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 function eventPath(conversationId: string, eventId: string): string {
   return `${CHAT_ROOT}/${conversationId}/events/${eventId}.json`;
 }
@@ -118,21 +136,24 @@ function eventPath(conversationId: string, eventId: string): string {
 async function storeImageAttachment(
   backend: VaultBackend,
   conversationId: string,
-  image?: NewChatImageAttachment,
+  image?: NewChatImageAttachment | NewChatImageAttachment[],
 ): Promise<ChatImageAttachment[] | undefined> {
-  if (!image) return undefined;
-  const id = uuid();
-  const path = `${CHAT_ROOT}/${conversationId}/assets/${id}.jpg`;
-  await backend.writeBinary(path, image.bytes);
-  return [{
-    id,
-    path,
-    mimeType: image.mimeType,
-    width: image.width,
-    height: image.height,
-    byteLength: image.bytes.byteLength,
-    name: image.name,
-  }];
+  const images = (Array.isArray(image) ? image : image ? [image] : []).slice(0, 4);
+  if (!images.length) return undefined;
+  return Promise.all(images.map(async (entry) => {
+    const id = uuid();
+    const path = `${CHAT_ROOT}/${conversationId}/assets/${id}.jpg`;
+    await backend.writeBinary(path, entry.bytes);
+    return {
+      id,
+      path,
+      mimeType: entry.mimeType,
+      width: entry.width,
+      height: entry.height,
+      byteLength: entry.bytes.byteLength,
+      name: entry.name,
+    };
+  }));
 }
 
 function compareEvents(a: ChatEvent, b: ChatEvent): number {
@@ -221,6 +242,7 @@ export function foldChatEvents(
     } : null,
     archivedAt,
     deletedAt,
+    scope: descriptor.scope ?? { kind: "vault" },
   };
 }
 
@@ -278,6 +300,73 @@ export async function loadChatConversations(backend: VaultBackend): Promise<Chat
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
 }
 
+export async function loadDesktopScopedConversation(
+  backend: VaultBackend,
+  legacyKey: string,
+): Promise<ChatConversation | null> {
+  const id = `desktop-${stableId(legacyKey)}`;
+  return (await loadChatConversations(backend)).find((conversation) => conversation.id === id) ?? null;
+}
+
+/** Mirrors the legacy desktop panel into the shared append-only chat store. */
+export async function syncDesktopConversation(
+  backend: VaultBackend,
+  legacyKey: string,
+  scope: ChatScope,
+  messages: StoredAiMessage[],
+  device: ChatDevice = { id: "desktop", name: "Desktop" },
+): Promise<void> {
+  if (!messages.length) return;
+  const id = `desktop-${stableId(legacyKey)}`;
+  const descriptorPath = `${CHAT_ROOT}/${id}/conversation.json`;
+  if (!(await backend.exists(descriptorPath))) {
+    const createdAt = new Date().toISOString();
+    const descriptor: ChatDescriptor = { version: 1, id, createdAt, scope, legacyKey };
+    await backend.writeNew(descriptorPath, JSON.stringify(descriptor, null, 2));
+    const ownership: ChatEvent = {
+      version: 1,
+      id: `${id}-owner-1`,
+      conversationId: id,
+      at: createdAt,
+      deviceId: device.id,
+      ownerGeneration: 1,
+      kind: "ownership",
+      owner: device,
+    };
+    await backend.writeNew(eventPath(id, ownership.id), JSON.stringify(ownership, null, 2));
+  }
+  const existing = await loadDesktopScopedConversation(backend, legacyKey);
+  if (existing && existing.owner.id !== device.id) return;
+  const start = existing?.messages.length ?? 0;
+  for (let index = start; index < messages.length; index += 1) {
+    const source = messages[index];
+    const at = new Date(Date.now() + index).toISOString();
+    const message: PersistedChatMessage = {
+      id: `${id}-message-${index}`,
+      turnId: `${id}-turn-${Math.floor(index / 2)}`,
+      role: source.role,
+      text: source.content,
+      createdAt: at,
+      deviceId: device.id,
+      ownerGeneration: existing?.ownerGeneration ?? 1,
+      attachments: source.attachments?.map((attachment) => ({ ...attachment })),
+    };
+    const event: ChatEvent = {
+      version: 1,
+      id: `${id}-event-${index}`,
+      conversationId: id,
+      at,
+      deviceId: device.id,
+      ownerGeneration: existing?.ownerGeneration ?? 1,
+      kind: "message",
+      message,
+    };
+    if (!(await backend.exists(eventPath(id, event.id)))) {
+      await backend.writeNew(eventPath(id, event.id), JSON.stringify(event, null, 2));
+    }
+  }
+}
+
 async function writeEvent(backend: VaultBackend, event: ChatEvent): Promise<void> {
   await backend.writeNew(eventPath(event.conversationId, event.id), JSON.stringify(event, null, 2));
 }
@@ -297,12 +386,13 @@ export async function createChatWithUserMessage(
   backend: VaultBackend,
   device: ChatDevice,
   text: string,
-  image?: NewChatImageAttachment,
+  image?: NewChatImageAttachment | NewChatImageAttachment[],
+  scope: ChatScope = { kind: "vault" },
 ): Promise<{ conversationId: string; turnId: string }> {
   const conversationId = uuid();
   const turnId = uuid();
   const createdAt = new Date().toISOString();
-  const descriptor: ChatDescriptor = { version: 1, id: conversationId, createdAt };
+  const descriptor: ChatDescriptor = { version: 1, id: conversationId, createdAt, scope };
   const ownership: ChatEvent = {
     version: 1,
     id: uuid(),
@@ -339,7 +429,7 @@ export async function appendUserMessage(
   conversation: ChatConversation,
   device: ChatDevice,
   text: string,
-  image?: NewChatImageAttachment,
+  image?: NewChatImageAttachment | NewChatImageAttachment[],
 ): Promise<string> {
   const event = baseEvent(conversation, device);
   const turnId = uuid();

@@ -83,12 +83,14 @@ import {
 } from "@/lib/note-preferences";
 import {
   addFileLocation,
+  clearVaultVersionHistory,
   fileLocationUsages,
   getFileLocationMappings,
   mapFileLocation,
   refreshVaultFromDisk,
   removeFileLocation,
   renameFileLocation,
+  updateVersionHistorySettings,
   useVault,
 } from "@/store/notes-store";
 
@@ -174,7 +176,8 @@ export function ThemeSettingsDialog({
     "success",
   );
   const [cliInstallConfirmOpen, setCliInstallConfirmOpen] = useState(false);
-  const { fileLocations, isDesktop, location, notes } = useVault();
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
+  const { fileLocations, historyError, historySettings, isDesktop, location, notes } = useVault();
   const locationMappings = getFileLocationMappings();
 
   useEffect(() => {
@@ -592,6 +595,37 @@ export function ThemeSettingsDialog({
               </SelectContent>
             </Select>
           </div>
+          <p className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Version history
+          </p>
+          <div className="mb-5 space-y-4 rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <label htmlFor="history-enabled" className="text-sm font-medium">Record version history</label>
+                <p className="mt-0.5 text-xs text-muted-foreground">Every content autosave is recorded. Turning this off preserves existing versions.</p>
+              </div>
+              <Switch id="history-enabled" checked={historySettings.enabled} onCheckedChange={(enabled) => void updateVersionHistorySettings({ ...historySettings, enabled })} />
+            </div>
+            <div className="grid grid-cols-[1fr_110px] items-end gap-3">
+              <div>
+                <label htmlFor="history-checkpoints" className="text-sm font-medium">Retained checkpoints</label>
+                <p className="mt-0.5 text-xs text-muted-foreground">One checkpoint represents up to 50 versions. Kept versions are exempt.</p>
+              </div>
+              {historySettings.checkpointLimit === null ? (
+                <Button variant="outline" size="sm" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: 10 })}>Unlimited</Button>
+              ) : (
+                <Input key={historySettings.checkpointLimit} id="history-checkpoints" type="number" min={1} max={100} defaultValue={historySettings.checkpointLimit} onBlur={(event) => {
+                  const checkpointLimit = Math.max(1, Math.min(100, Number(event.target.value) || 1));
+                  void updateVersionHistorySettings({ ...historySettings, checkpointLimit });
+                }} />
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <Button variant="ghost" size="sm" className="px-0 text-xs text-muted-foreground" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: historySettings.checkpointLimit === null ? 10 : null })}>{historySettings.checkpointLimit === null ? "Use a fixed limit" : "Keep unlimited checkpoints"}</Button>
+              <Button variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={() => setClearHistoryConfirmOpen(true)}>Clear all history</Button>
+            </div>
+            {historyError && <p className="text-xs text-destructive">{historyError}</p>}
+          </div>
           </TabsContent>
 
           <TabsContent value="appearance" className="mt-4">
@@ -873,6 +907,12 @@ export function ThemeSettingsDialog({
               Install CLI
             </AlertDialogAction>
           </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={clearHistoryConfirmOpen} onOpenChange={setClearHistoryConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader><AlertDialogTitle>Clear all version history?</AlertDialogTitle><AlertDialogDescription>This permanently deletes automatic and kept versions for every note in this vault. Current notes and live images are not changed.</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => void clearVaultVersionHistory().then(() => setClearHistoryConfirmOpen(false))}>Clear all history</AlertDialogAction></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
     </>

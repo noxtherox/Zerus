@@ -30,6 +30,21 @@ const empty: NoteListFilters = {
 };
 
 describe("note list filters", () => {
+  it("searches the complete note collection regardless of type-tree batching", () => {
+    const manyNotes = Array.from({ length: 35 }, (_, index) =>
+      note(
+        `note-${index + 1}`,
+        `type-${index + 1}/note-${index + 1}.md`,
+        "status: active",
+        "2026-07-16T08:00:00.000Z",
+      ),
+    );
+
+    expect(filterNotes(manyNotes, { kind: "all" }, "note-35")).toEqual([
+      manyNotes[34],
+    ]);
+  });
+
   it("hides archived notes until the archived toggle is enabled", () => {
     const archived = { ...notes[0], id: "archived", archived: true };
 

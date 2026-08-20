@@ -319,6 +319,18 @@
           "markdownDescription": "Denies the clear_vault_folder command without any pre-configured scope."
         },
         {
+          "description": "Enables the cloud_ai_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-cloud-ai-models",
+          "markdownDescription": "Enables the cloud_ai_models command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the cloud_ai_models command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-cloud-ai-models",
+          "markdownDescription": "Denies the cloud_ai_models command without any pre-configured scope."
+        },
+        {
           "description": "Enables the cloud_ai_status command without any pre-configured scope.",
           "type": "string",
           "const": "allow-cloud-ai-status",
@@ -341,6 +353,18 @@
           "type": "string",
           "const": "deny-configure-cloud-ai",
           "markdownDescription": "Denies the configure_cloud_ai command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the connect_openrouter command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-connect-openrouter",
+          "markdownDescription": "Enables the connect_openrouter command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the connect_openrouter command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-connect-openrouter",
+          "markdownDescription": "Denies the connect_openrouter command without any pre-configured scope."
         },
         {
           "description": "Enables the device_name command without any pre-configured scope.",
@@ -463,6 +487,18 @@
           "markdownDescription": "Denies the start_speech_recognition command without any pre-configured scope."
         },
         {
+          "description": "Enables the stop_cloud_ai command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-stop-cloud-ai",
+          "markdownDescription": "Enables the stop_cloud_ai command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the stop_cloud_ai command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-stop-cloud-ai",
+          "markdownDescription": "Denies the stop_cloud_ai command without any pre-configured scope."
+        },
+        {
           "description": "Enables the stop_speech_recognition command without any pre-configured scope.",
           "type": "string",
           "const": "allow-stop-speech-recognition",
@@ -475,10 +511,10 @@
           "markdownDescription": "Denies the stop_speech_recognition command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-generate-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`",
+          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-generate-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`"
+          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`"
         }
       ]
     }

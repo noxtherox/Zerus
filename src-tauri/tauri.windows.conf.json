@@ -1,6 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "build": {
+    "beforeBuildCommand": "pnpm build && pnpm cli:bundle"
+  },
   "bundle": {
+    "resources": [
+      "binaries/*"
+    ],
     "targets": [
       "nsis"
     ],

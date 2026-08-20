@@ -79,6 +79,24 @@ function archiveVersion(archive) {
   );
 }
 
+function verifySignedArchive(archive) {
+  const team = run(
+    "/usr/libexec/PlistBuddy",
+    ["-c", "Print :ApplicationProperties:Team", join(archive, "Info.plist")],
+    true,
+  );
+  if (!team) {
+    fail("archive has no signing team");
+  }
+
+  const applicationsDir = join(archive, "Products/Applications");
+  const appName = readdirSync(applicationsDir).find((name) => name.endsWith(".app"));
+  if (!appName) {
+    fail("archive does not contain an application bundle");
+  }
+  run("/usr/bin/codesign", ["--verify", "--deep", "--strict", join(applicationsDir, appName)]);
+}
+
 function copyToXcodeOrganizer(archive, version, build) {
   const date = new Date().toLocaleDateString("en-CA", {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -101,6 +119,16 @@ function copyToXcodeOrganizer(archive, version, build) {
 
 const configText = readFileSync(tauriConfigPath, "utf8");
 const config = JSON.parse(configText);
+const configuredIdentifier = config.identifier;
+const projectText = readFileSync(projectPath, "utf8");
+const generatedIdentifier = projectText.match(
+  /\bPRODUCT_BUNDLE_IDENTIFIER:\s*([^\s]+)/,
+)?.[1];
+if (!configuredIdentifier || generatedIdentifier !== configuredIdentifier) {
+  fail(
+    `tauri.conf.json configures ${configuredIdentifier ?? "no bundle identifier"}, but generated project.yml configures ${generatedIdentifier ?? "no bundle identifier"}. Reconcile the iOS project before building.`,
+  );
+}
 const configuredBuild = Number(config.bundle?.iOS?.bundleVersion);
 if (!Number.isSafeInteger(configuredBuild) || configuredBuild < 1) {
   fail("bundle.iOS.bundleVersion must be a positive integer");
@@ -137,7 +165,6 @@ writeFileSync(
   ),
 );
 
-const projectText = readFileSync(projectPath, "utf8");
 const projectMatch = /(\bCFBundleVersion:\s*[\"']?)([^\s\"']+)([\"']?)/;
 if (!projectMatch.test(projectText)) {
   fail("could not locate CFBundleVersion in project.yml");
@@ -156,23 +183,35 @@ run("/usr/libexec/PlistBuddy", [
   infoPlistPath,
 ]);
 
-run("pnpm", [
-  "tauri",
-  "ios",
-  "build",
-  "--ci",
-  "--archive-only",
-  "--export-method",
-  "app-store-connect",
+run("pnpm", ["build"]);
+const completedArchive = join(
+  archiveRoot,
+  `Zerus-${targetBuild}-${Date.now()}.xcarchive`,
+);
+run("xcodebuild", [
+  "archive",
+  "-project",
+  join(root, "src-tauri/gen/apple/app.xcodeproj"),
+  "-scheme",
+  "app_iOS",
+  "-configuration",
+  "release",
+  "-destination",
+  "generic/platform=iOS",
+  "-archivePath",
+  completedArchive,
+  "-allowProvisioningUpdates",
+  `DEVELOPMENT_TEAM=TX9RYY52XR`,
+  "CODE_SIGN_STYLE=Automatic",
 ]);
 
-const completedArchive = newestArchive();
 const completedBuild = archiveBuild(completedArchive);
 if (completedBuild !== targetBuild) {
   fail(
     `build completed, but newest archive is ${completedBuild ?? "missing"} instead of ${targetBuild}`,
   );
 }
+verifySignedArchive(completedArchive);
 
 copyToXcodeOrganizer(completedArchive, archiveVersion(completedArchive), targetBuild);
 

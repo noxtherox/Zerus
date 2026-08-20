@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import CryptoKit
 
 struct CloudAIStatusResponse: Encodable {
   let endpoint: String
@@ -13,14 +14,28 @@ struct CloudAIConfigureRequest: Decodable {
   let apiKey: String?
 }
 
+struct CloudAIImageRequest: Decodable {
+  let bytes: [UInt8]
+  let mimeType: String
+}
+
 struct CloudAIGenerateRequest: Decodable {
   let prompt: String
-  let imageBytes: [UInt8]?
-  let imageMimeType: String?
+  let images: [CloudAIImageRequest]?
+  let streamId: String
 }
 
 struct CloudAIGenerateResponse: Encodable {
   let answer: String
+}
+
+struct CloudAIModelResponse: Encodable {
+  let id: String
+  let name: String
+}
+
+struct CloudAIModelsResponse: Encodable {
+  let models: [CloudAIModelResponse]
 }
 
 final class CloudAIManager {
@@ -53,7 +68,44 @@ final class CloudAIManager {
     return status()
   }
 
-  func generate(_ request: CloudAIGenerateRequest) async throws -> String {
+  func connectOpenRouter(code: String, verifier: String) async throws -> CloudAIStatusResponse {
+    var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/auth/keys")!)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: [
+      "code": code,
+      "code_verifier": verifier,
+      "code_challenge_method": "S256",
+    ])
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let key = json["key"] as? String, !key.isEmpty else {
+      throw CloudAIError.oauthFailed
+    }
+    UserDefaults.standard.set(defaultEndpoint, forKey: endpointKey)
+    try saveAPIKey(key, endpoint: defaultEndpoint)
+    return status()
+  }
+
+  func models() async throws -> CloudAIModelsResponse {
+    let endpoint = storedEndpoint()
+    guard let apiKey = try readAPIKey(endpoint: endpoint), !apiKey.isEmpty,
+          let url = URL(string: "\(endpoint)/models") else { throw CloudAIError.missingAPIKey }
+    var request = URLRequest(url: url)
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let entries = json["data"] as? [[String: Any]] else { throw CloudAIError.invalidResponse }
+    let models = entries.compactMap { entry -> CloudAIModelResponse? in
+      guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
+      return CloudAIModelResponse(id: id, name: (entry["name"] as? String) ?? id)
+    }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    return CloudAIModelsResponse(models: models)
+  }
+
+  func generate(_ request: CloudAIGenerateRequest, onDelta: @escaping (String) -> Void) async throws -> String {
     let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty else { throw CloudAIError.emptyPrompt }
     let endpoint = storedEndpoint()
@@ -62,33 +114,67 @@ final class CloudAIManager {
     }
 
     var content: [[String: Any]] = [["type": "text", "text": prompt]]
-    if let imageBytes = request.imageBytes, !imageBytes.isEmpty {
-      let mimeType = request.imageMimeType ?? "image/jpeg"
-      let dataURL = "data:\(mimeType);base64,\(Data(imageBytes).base64EncodedString())"
+    for image in (request.images ?? []).prefix(4) where !image.bytes.isEmpty {
+      let dataURL = "data:\(image.mimeType);base64,\(Data(image.bytes).base64EncodedString())"
       content.append(["type": "image_url", "image_url": ["url": dataURL]])
     }
     let body: [String: Any] = [
       "model": storedModel(),
       "messages": [["role": "user", "content": content]],
-      "stream": false,
+      "stream": true,
     ]
-    let json = try await performRequest(body: body, apiKey: apiKey, baseEndpoint: endpoint)
-    guard let choices = json["choices"] as? [[String: Any]],
-          let message = choices.first?["message"] as? [String: Any]
-    else { throw CloudAIError.emptyResponse }
-
-    let text: String
-    if let value = message["content"] as? String {
-      text = value
-    } else if let blocks = message["content"] as? [[String: Any]] {
-      text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
-    } else {
-      text = ""
-    }
+    let text = try await performStreamingRequest(
+      body: body,
+      apiKey: apiKey,
+      baseEndpoint: endpoint,
+      onDelta: onDelta
+    )
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
       throw CloudAIError.emptyResponse
     }
     return text
+  }
+
+  private func performStreamingRequest(
+    body: [String: Any],
+    apiKey: String,
+    baseEndpoint: String,
+    onDelta: @escaping (String) -> Void
+  ) async throws -> String {
+    let base = try normalizedEndpoint(baseEndpoint)
+    guard let endpoint = URL(string: "\(base)/chat/completions") else {
+      throw CloudAIError.invalidEndpoint
+    }
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    request.timeoutInterval = 120
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+    guard let http = response as? HTTPURLResponse else { throw CloudAIError.invalidResponse }
+    guard (200..<300).contains(http.statusCode) else {
+      throw CloudAIError.requestFailed(
+        status: http.statusCode,
+        message: HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+      )
+    }
+    var answer = ""
+    for try await line in bytes.lines {
+      try Task.checkCancellation()
+      guard line.hasPrefix("data:") else { continue }
+      let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+      if payload == "[DONE]" { break }
+      guard let data = payload.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let choices = json["choices"] as? [[String: Any]],
+            let delta = choices.first?["delta"] as? [String: Any],
+            let text = delta["content"] as? String,
+            !text.isEmpty else { continue }
+      answer += text
+      onDelta(text)
+    }
+    return answer
   }
 
   private func performRequest(
@@ -140,25 +226,45 @@ final class CloudAIManager {
   }
 
   private func saveAPIKey(_ apiKey: String, endpoint: String) throws {
+    let account = credentialAccount(endpoint: endpoint)
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: keychainService,
-      kSecAttrAccount as String: endpoint,
+      kSecAttrAccount as String: account,
+      kSecAttrSynchronizable as String: true,
     ]
     SecItemDelete(query as CFDictionary)
     var insert = query
     insert[kSecValueData as String] = apiKey.data(using: .utf8)
-    insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    insert[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
     guard SecItemAdd(insert as CFDictionary, nil) == errSecSuccess else {
       throw CloudAIError.keychainFailure
     }
   }
 
   private func readAPIKey(endpoint: String) throws -> String? {
+    if let synchronized = try readAPIKey(account: credentialAccount(endpoint: endpoint), synchronized: true) {
+      return synchronized
+    }
+    // Migrate the device-only v1 entry, whose account was the raw endpoint.
+    if let legacy = try readAPIKey(account: endpoint, synchronized: false) {
+      try saveAPIKey(legacy, endpoint: endpoint)
+      return legacy
+    }
+    return nil
+  }
+
+  private func credentialAccount(endpoint: String) -> String {
+    let digest = SHA256.hash(data: Data(endpoint.utf8))
+    return "provider-" + digest.map { String(format: "%02x", $0) }.joined()
+  }
+
+  private func readAPIKey(account: String, synchronized: Bool) throws -> String? {
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: keychainService,
-      kSecAttrAccount as String: endpoint,
+      kSecAttrAccount as String: account,
+      kSecAttrSynchronizable as String: synchronized,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
@@ -180,6 +286,7 @@ private enum CloudAIError: LocalizedError {
   case invalidResponse
   case keychainFailure
   case missingAPIKey
+  case oauthFailed
   case requestFailed(status: Int, message: String)
 
   var errorDescription: String? {
@@ -191,6 +298,7 @@ private enum CloudAIError: LocalizedError {
     case .invalidResponse: "The cloud endpoint returned an invalid response."
     case .keychainFailure: "The API key could not be saved or read from the iOS Keychain."
     case .missingAPIKey: "Add your cloud API key in Chat settings."
+    case .oauthFailed: "OpenRouter sign-in could not be completed."
     case .requestFailed(let status, let message): "Cloud request failed (\(status)): \(message)"
     }
   }

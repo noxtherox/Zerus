@@ -15,6 +15,17 @@ export function isReservedZerusProperty(key: string): boolean {
   return key.trim().toLowerCase().startsWith("zerus-");
 }
 
+/** Removes all app-owned frontmatter while preserving user properties and body. */
+export function stripZerusMetadata(content: string): string {
+  let next = content;
+  for (const key of Object.keys(getNoteProperties(content))) {
+    if (isReservedZerusProperty(key)) {
+      next = setContentProperty(next, key, null);
+    }
+  }
+  return next;
+}
+
 export function readZerusMetadata(content: string) {
   const properties = getNoteProperties(content);
   const id = properties[ZERUS_METADATA_KEYS.id];

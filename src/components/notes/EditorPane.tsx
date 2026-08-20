@@ -9,6 +9,7 @@ import {
   Ellipsis,
   FileUp,
   FolderSearch,
+  History,
   Link2,
   Link2Off,
   Loader2,
@@ -64,6 +65,7 @@ import {
 import { ZerusLogo } from "@/components/ZerusLogo";
 import { TypePicker } from "./TypePicker";
 import { BacklinksPanel } from "./BacklinksPanel";
+import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import { getBacklinksGroupedByType } from "@/lib/links";
 import {
   type Note,
@@ -256,6 +258,7 @@ export function EditorPane({
   onNavigateForward,
 }: EditorPaneProps) {
   const [showBacklinks, setShowBacklinks] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [externalImportMode, setExternalImportMode] =
     useState<ExternalImportMode>("copy");
   const [expandBacklinks, setExpandBacklinks] = useState(false);
@@ -277,6 +280,7 @@ export function EditorPane({
 
   useEffect(() => {
     setExternalImportMode("copy");
+    setHistoryOpen(false);
   }, [note?.id]);
 
   useEffect(() => {
@@ -362,6 +366,7 @@ export function EditorPane({
   }
 
   const external = isExternalNote(note);
+  const trashed = isTrashed(note);
   const linkHub = getLinkHubReference(note);
   const absolutePath = noteAbsolutePath(note, vaultLocation);
   const backlinkCount = external || linkHub
@@ -459,6 +464,9 @@ export function EditorPane({
           expanded={expandBacklinks}
           onToggleExpanded={() => setExpandBacklinks((open) => !open)}
         />
+      )}
+      {!external && historyOpen && (
+        <VersionHistoryPanel note={note} onClose={() => setHistoryOpen(false)} />
       )}
     </div>
   );
@@ -595,6 +603,15 @@ export function EditorPane({
                   <Search className="mr-2" size={14} />
                   Find in note
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setShowBacklinks(false);
+                    setHistoryOpen(true);
+                  }}
+                >
+                  <History className="mr-2" size={14} />
+                  Version history
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={() => void revealNoteInDesktop(note.id)}
@@ -632,14 +649,14 @@ export function EditorPane({
                     </DropdownMenuItem>
                   </>
                 )}
-                {!fileHub && !isTrashed(note) && (
+                {!fileHub && !trashed && (
                   <DropdownMenuItem onSelect={() => void startFileHubAttach()}>
                     <FileUp className="mr-2" size={14} />
                     Attach file to note
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                {isTrashed(note) ? (
+                {trashed ? (
                   <DropdownMenuItem
                     onSelect={() => void restoreNote(note.id)}
                   >
@@ -690,7 +707,10 @@ export function EditorPane({
                 showBacklinks && "bg-muted text-zerus-accent",
               )}
               title="properties and backlinks"
-              onClick={() => setShowBacklinks((open) => !open)}
+              onClick={() => {
+                setHistoryOpen(false);
+                setShowBacklinks((open) => !open);
+              }}
             >
               <Link2 size={15} />
               {backlinkCount > 0 && (
@@ -709,6 +729,27 @@ export function EditorPane({
           onToggleFocusMode={onToggleFocusMode}
         />
       </div>
+      {trashed && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs"
+          role="status"
+        >
+          <Trash2 className="shrink-0 text-amber-600" size={16} />
+          <span className="min-w-0 flex-1 font-medium">
+            This note is in Trash.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 text-xs"
+            disabled={isBusy}
+            onClick={() => void restoreNote(note.id)}
+          >
+            <Undo2 size={14} />
+            Restore
+          </Button>
+        </div>
+      )}
       {conflict && (
         <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs">
           <AlertTriangle className="shrink-0 text-amber-600" size={16} />
