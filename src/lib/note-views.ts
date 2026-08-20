@@ -3,6 +3,7 @@ import {
   type NoteDateFilter,
   type NoteListFilters,
   type NotePropertyFilter,
+  type NoteSort,
 } from "@/lib/filters";
 import type { PropertyValue } from "@/lib/frontmatter";
 
@@ -50,6 +51,15 @@ function isViewMode(value: unknown): value is NoteViewMode {
 
 function isDateFilter(value: unknown): value is NoteDateFilter {
   return value === "today" || value === "last-7-days" || value === "last-30-days";
+}
+
+function isNoteSort(value: unknown): value is NoteSort {
+  return (
+    value === "updated-desc" ||
+    value === "updated-asc" ||
+    value === "title-asc" ||
+    value === "title-desc"
+  );
 }
 
 function normalizePropertyFilters(value: unknown): NotePropertyFilter[] {
@@ -128,6 +138,7 @@ export function normalizeTypeViewConfig(value: unknown): TypeViewConfig {
         ? candidate.dateProperty.trim()
         : null,
     filters: {
+      sort: isNoteSort(filters.sort) ? filters.sort : fallback.filters.sort,
       date: isDateFilter(filters.date) ? filters.date : null,
       showArchived: filters.showArchived === true,
       typeKeys: [],

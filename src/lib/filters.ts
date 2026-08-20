@@ -5,6 +5,7 @@ import {
   isSavedLinkNote,
   isTrashed,
   noteMatchesSearch,
+  noteTitle,
   noteTypePath,
   typeKey,
 } from "@/lib/note-utils";
@@ -21,6 +22,11 @@ export type NoteFilter =
   | { kind: "trash" };
 
 export type NoteDateFilter = "today" | "last-7-days" | "last-30-days";
+export type NoteSort =
+  | "updated-desc"
+  | "updated-asc"
+  | "title-asc"
+  | "title-desc";
 
 export interface NotePropertyFilter {
   name: string;
@@ -29,6 +35,7 @@ export interface NotePropertyFilter {
 }
 
 export interface NoteListFilters {
+  sort: NoteSort;
   date: NoteDateFilter | null;
   showArchived: boolean;
   typeKeys: string[];
@@ -37,6 +44,7 @@ export interface NoteListFilters {
 }
 
 export const EMPTY_NOTE_LIST_FILTERS: NoteListFilters = {
+  sort: "updated-desc",
   date: null,
   showArchived: false,
   typeKeys: [],
@@ -75,6 +83,31 @@ function propertyMatches(
 
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function sortTitle(note: Note, filter: NoteFilter): string {
+  if (filter.kind === "files") {
+    return getFileHubReference(note)?.name ?? noteTitle(note);
+  }
+  return noteTitle(note);
+}
+
+function compareNotes(a: Note, b: Note, filter: NoteFilter, sort: NoteSort): number {
+  if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+  if (sort === "updated-asc") return a.updatedAt.localeCompare(b.updatedAt);
+  if (sort === "title-asc") {
+    return sortTitle(a, filter).localeCompare(sortTitle(b, filter), undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
+  }
+  if (sort === "title-desc") {
+    return sortTitle(b, filter).localeCompare(sortTitle(a, filter), undefined, {
+      sensitivity: "base",
+      numeric: true,
+    });
+  }
+  return b.updatedAt.localeCompare(a.updatedAt);
 }
 
 function matchesDateFilter(
@@ -163,8 +196,5 @@ export function filterNotes(
       }
       return true;
     })
-    .sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.updatedAt.localeCompare(a.updatedAt);
-    });
+    .sort((a, b) => compareNotes(a, b, filter, listFilters.sort));
 }

@@ -1,5 +1,14 @@
 import { useMemo } from "react";
-import { Archive, CalendarDays, FileType, Filter, Tag, X } from "@/lib/icons";
+import {
+  Archive,
+  ArrowUpDown,
+  CalendarDays,
+  ChevronDown,
+  FileType,
+  Filter,
+  Tag,
+  X,
+} from "@/lib/icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +35,7 @@ import {
 import {
   type NoteDateFilter,
   type NoteListFilters as NoteListFilterState,
+  type NoteSort,
   propertyValueKey,
   propertyValueLabel,
 } from "@/lib/filters";
@@ -38,6 +48,13 @@ const DATE_OPTIONS: { value: NoteDateFilter; label: string }[] = [
   { value: "last-30-days", label: "Last 30 days" },
 ];
 
+const SORT_OPTIONS: { value: NoteSort; label: string }[] = [
+  { value: "updated-desc", label: "Recently updated" },
+  { value: "updated-asc", label: "Least recently updated" },
+  { value: "title-asc", label: "Title: A–Z" },
+  { value: "title-desc", label: "Title: Z–A" },
+];
+
 const NO_PROPERTY_FILTER = "__no_property_filter__";
 const HAS_PROPERTY = "__has_property__";
 
@@ -47,6 +64,7 @@ interface NoteListFiltersProps {
   showFileTypes: boolean;
   showArchivedToggle: boolean;
   filters: NoteListFilterState;
+  triggerClassName?: string;
   onChange: (filters: NoteListFilterState) => void;
 }
 
@@ -56,6 +74,7 @@ export function NoteListFilters({
   showFileTypes,
   showArchivedToggle,
   filters,
+  triggerClassName,
   onChange,
 }: NoteListFiltersProps) {
   const typeOptions = useMemo(() => {
@@ -139,12 +158,17 @@ export function NoteListFilters({
         <PopoverTrigger asChild>
           <Button
             variant={activeCount ? "secondary" : "outline"}
-            size="icon"
-            className="relative h-8 w-8 shrink-0"
-            title="Filter notes"
-            aria-label="Filter notes"
+            size="sm"
+            className={cn(
+              "relative h-8 shrink-0 gap-1.5 px-2.5",
+              triggerClassName,
+            )}
+            title="Sort and filter notes"
+            aria-label="Sort and filter notes"
           >
             <Filter size={14} />
+            <span className="text-xs">Sort &amp; filter</span>
+            <ChevronDown size={13} className="text-muted-foreground" />
             {activeCount > 0 && (
               <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-zerus-accent px-1 text-[9px] font-semibold text-white">
                 {activeCount}
@@ -157,7 +181,7 @@ export function NoteListFilters({
           className="max-h-[70vh] w-80 overflow-y-auto p-0"
         >
           <div className="flex items-center justify-between px-3 py-2.5">
-            <span className="text-sm font-semibold">Filter notes</span>
+            <span className="text-sm font-semibold">Sort &amp; filter</span>
             {activeCount > 0 && (
               <Button
                 variant="ghost"
@@ -165,6 +189,7 @@ export function NoteListFilters({
                 className="h-7 px-2 text-xs"
                 onClick={() =>
                   onChange({
+                    sort: filters.sort,
                     date: null,
                     showArchived: false,
                     typeKeys: [],
@@ -173,10 +198,33 @@ export function NoteListFilters({
                   })
                 }
               >
-                Clear all
+                Clear filters
               </Button>
             )}
           </div>
+          <Separator />
+          <section className="space-y-2 p-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <ArrowUpDown size={13} /> Sort by
+            </div>
+            <Select
+              value={filters.sort}
+              onValueChange={(sort) =>
+                onChange({ ...filters, sort: sort as NoteSort })
+              }
+            >
+              <SelectTrigger className="h-8 px-2 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </section>
           <Separator />
           {showArchivedToggle && (
             <>

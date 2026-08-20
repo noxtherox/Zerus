@@ -252,7 +252,7 @@ export function NoteList({
       </div>
       <div
         className={cn(
-          "grid grid-cols-[minmax(0,1fr)_auto] gap-2 px-3 py-2",
+          "grid grid-cols-1 gap-2 px-3 py-2",
           isRefreshing && "pointer-events-none opacity-70",
         )}
       >
@@ -276,6 +276,7 @@ export function NoteList({
           showFileTypes={inFiles}
           showArchivedToggle={!inTrash && !inExternal}
           filters={listFilters}
+          triggerClassName="w-full justify-between"
           onChange={onListFiltersChange}
         />
       </div>

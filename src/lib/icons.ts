@@ -14,6 +14,7 @@ export {
   IconArrowLeftRight as ArrowLeftRight,
   IconArrowRight as ArrowRight,
   IconArrowUp as ArrowUp,
+  IconArrowsSort as ArrowUpDown,
   IconBold as Bold,
   IconRobot as Bot,
   IconCalendar as Calendar,
