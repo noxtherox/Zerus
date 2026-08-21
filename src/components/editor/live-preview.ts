@@ -391,6 +391,17 @@ function buildDecorations(view: EditorView): DecorationSet {
                   },
                 }).range(line.from),
               );
+              // Keep the hanging indent on the Markdown prefix rather than
+              // shifting the whole editable line with `text-indent`.
+              // WKWebView can leave a stale native caret behind when that
+              // property changes during Tab/Shift+Tab, which looks like a
+              // duplicated caret overlapping the bullet.
+              decos.push(
+                Decoration.mark({ class: "cm-list-item-prefix" }).range(
+                  line.from,
+                  node.to,
+                ),
+              );
               decoratedListLines.add(line.from);
             }
 
@@ -530,7 +541,9 @@ function externalLinkClickExtension(onOpen: (url: string) => void): Extension {
 const livePreviewTheme = EditorView.theme({
   ".cm-list-item-line": {
     paddingLeft: "var(--cm-list-indent)",
-    textIndent: "calc(-1 * var(--cm-list-indent))",
+  },
+  ".cm-list-item-prefix": {
+    marginLeft: "calc(-1 * var(--cm-list-indent))",
   },
   ".cm-blockquote-line": {
     borderLeft: "3px solid rgb(var(--zerus-text) / 0.22)",
