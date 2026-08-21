@@ -53,6 +53,8 @@ import { insertMarkdownTable } from "./markdown-table";
 import { TableSizeDialog } from "./TableSizeDialog";
 import { openExternalUrl } from "@/lib/external-links";
 import { findInNoteExtension, openFindInNote } from "./find-in-note";
+import { inlineMarkupEdit } from "./inline-markup";
+import { richCopyExtension } from "./rich-copy";
 
 interface MarkdownEditorProps {
   noteId: string;
@@ -78,30 +80,16 @@ function toggleInlineMarkup(
   marker: string,
   placeholder: string,
 ) {
-  const { from, to } = view.state.selection.main;
+  const { from, to, anchor, head } = view.state.selection.main;
   const selectedText = view.state.sliceDoc(from, to);
-  const hasMarkup =
-    selectedText.startsWith(marker) &&
-    selectedText.endsWith(marker) &&
-    selectedText.length >= marker.length * 2;
+  const edit = inlineMarkupEdit(selectedText, marker, placeholder);
+  const selectionAnchor = from + (anchor <= head ? edit.selectionFrom : edit.selectionTo);
+  const selectionHead = from + (anchor <= head ? edit.selectionTo : edit.selectionFrom);
 
-  if (hasMarkup) {
-    const unwrappedText = selectedText.slice(marker.length, -marker.length);
-    view.dispatch({
-      changes: { from, to, insert: unwrappedText },
-      selection: EditorSelection.range(from, from + unwrappedText.length),
-    });
-  } else {
-    const content = selectedText || placeholder;
-    const wrappedText = `${marker}${content}${marker}`;
-    view.dispatch({
-      changes: { from, to, insert: wrappedText },
-      selection: EditorSelection.range(
-        from + marker.length,
-        from + marker.length + content.length,
-      ),
-    });
-  }
+  view.dispatch({
+    changes: { from, to, insert: edit.insert },
+    selection: EditorSelection.range(selectionAnchor, selectionHead),
+  });
 
   view.focus();
 }
@@ -307,6 +295,7 @@ export function MarkdownEditor({
         wikilinkAutocomplete(() => callbacksRef.current.getLinkableTitles()),
         imagePreviewExtension(getImageUrl),
         imagePasteExtension(savePastedImage),
+        richCopyExtension(firstLineIsTitle),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternalContentRef.current) {
             callbacksRef.current.onChange(update.state.doc.toString());
