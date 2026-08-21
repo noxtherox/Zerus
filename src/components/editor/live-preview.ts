@@ -22,6 +22,11 @@ import { tableDecoration } from "./markdown-table";
 
 const ACCENT = "rgb(var(--zerus-accent))";
 
+// The editor uses a proportional UI font, where a space is roughly 0.25em
+// wide. Keep this in sync with the rendered leading whitespace so wrapped
+// list text starts under the item's text instead of drifting farther right.
+const PROPORTIONAL_SPACE_WIDTH_EM = 0.25;
+
 const toggleEffect = StateEffect.define<boolean>();
 
 const INLINE_MARKS: Record<string, string> = {
@@ -39,6 +44,20 @@ interface ExternalLinkMatch {
   url: string;
   from: number;
   to: number;
+}
+
+export function listItemIndentEm(
+  leadingWhitespace: number,
+  marker: string,
+  isTaskItem: boolean,
+): number {
+  const markerIndent = isTaskItem
+    ? 1.35
+    : /^[-*+]$/.test(marker)
+      ? 0.8
+      : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
+
+  return leadingWhitespace * PROPORTIONAL_SPACE_WIDTH_EM + markerIndent;
 }
 
 function trimLinkPunctuation(value: string): string {
@@ -358,12 +377,11 @@ function buildDecorations(view: EditorView): DecorationSet {
                 .match(/^\s*/)?.[0].length ?? 0;
               const marker = state.sliceDoc(node.from, node.to);
               const isTaskItem = node.node.nextSibling?.name === "Task";
-              const markerIndent = isTaskItem
-                ? 1.35
-                : /^[-*+]$/.test(marker)
-                  ? 0.8
-                  : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
-              const indent = leadingWhitespace * 0.5 + markerIndent;
+              const indent = listItemIndentEm(
+                leadingWhitespace,
+                marker,
+                isTaskItem,
+              );
 
               decos.push(
                 Decoration.line({
