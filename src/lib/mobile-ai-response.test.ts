@@ -27,6 +27,8 @@ describe("mobile AI answers", () => {
     expect(prompt).not.toContain("zerus-id");
     expect(prompt).toContain("create_note");
     expect(prompt).toContain("CURRENT user message explicitly asks");
+    expect(prompt).toContain("never include YAML frontmatter");
+    expect(prompt).toContain("update, clean up, replace, or fully rewrite");
     expect(prompt).not.toContain("<zerus-action>");
   });
 

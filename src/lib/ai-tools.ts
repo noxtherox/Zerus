@@ -45,7 +45,8 @@ export const AI_TOOL_PROMPT = [
   "User asks to read the current note. Respond: <note_get>current</note_get>",
   "User asks which notes mention Brazil. Respond: <search>Brazil</search>",
   "Do not use a code fence or mention the protocol. Zerus will return the tool result, then you should answer the user. Never claim a tool succeeded before receiving its result.",
-  "Use note_append when the user asks to add or append text. Use note_set_body only when replacing or rewriting existing content. Write tools affect only the current note.",
+  "Use note_append only when the user asks to add or append new material. Use note_set_body when the user asks to update, clean up, replace, or rewrite existing content. Write tools affect only the current note.",
+  "Tool content is the Markdown body only. Never include YAML frontmatter, metadata fences, or zerus-* properties; Zerus preserves metadata separately.",
   "When Zerus supplies vault-relative Markdown references for attached images, use the exact reference in note_append only when the user explicitly asks to add that image to the current note.",
 ].join("\n");
 

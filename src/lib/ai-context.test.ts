@@ -75,6 +75,24 @@ describe("buildAiContext", () => {
     expect(messages[1].content).toBe("What is this note?");
   });
 
+  it("keeps frontmatter and internal metadata out of AI context", () => {
+    const privateAlpha = note(
+      "alpha",
+      "projects/alpha.md",
+      "---\nzerus-id: private-id\nstatus: draft\n---\n# Alpha\nCurrent body",
+    );
+    const context = buildAiContext(
+      privateAlpha,
+      [privateAlpha],
+      "/vault/projects",
+      vault,
+    );
+
+    expect(context?.sessionContext).toContain("# Alpha\nCurrent body");
+    expect(context?.sessionContext).not.toContain("private-id");
+    expect(context?.sessionContext).not.toContain("status: draft");
+  });
+
   it("supports a folder-only session", () => {
     const context = buildAiContext(
       null,
