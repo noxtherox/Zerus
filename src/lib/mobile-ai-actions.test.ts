@@ -72,6 +72,34 @@ describe("mobile AI note actions", () => {
     expect(updateNoteBody).toHaveBeenCalledWith(existing.id, "# Project Atlas\n\nOriginal text\n\nNew text\n");
   });
 
+  it("strips echoed frontmatter from created, replaced, and appended bodies", async () => {
+    const metadata = "---\nzerus-id: private-id\nstatus: draft\n---\nRewritten text";
+    const existing = note();
+    const createNote = vi.fn(async (_type: string[], content: string) => note(content));
+    const updateNoteBody = vi.fn();
+
+    await executeMobileAIActions(
+      [{ action: "create_note", title: "Safe", body: metadata }],
+      { getNotes: () => [], createNote, updateNoteBody },
+    );
+    expect(createNote).toHaveBeenCalledWith(["inbox"], "# Safe\n\nRewritten text\n");
+
+    await executeMobileAIActions(
+      [{ action: "set_note_body", noteId: existing.id, revision: chatContentRevision(existing.content), body: metadata }],
+      { getNotes: () => [existing], createNote, updateNoteBody },
+    );
+    expect(updateNoteBody).toHaveBeenLastCalledWith(existing.id, "# Project Atlas\n\nRewritten text\n");
+
+    await executeMobileAIActions(
+      [{ action: "append_note", noteId: existing.id, revision: chatContentRevision(existing.content), text: metadata }],
+      { getNotes: () => [existing], createNote, updateNoteBody },
+    );
+    expect(updateNoteBody).toHaveBeenLastCalledWith(
+      existing.id,
+      "# Project Atlas\n\nOriginal text\n\nRewritten text\n",
+    );
+  });
+
   it("makes a guarded, focused text replacement", async () => {
     const existing = note();
     const updateNoteBody = vi.fn();

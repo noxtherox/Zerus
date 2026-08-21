@@ -1,3 +1,5 @@
+import { noteBody } from "@/lib/frontmatter";
+
 export type AiNoteAction =
   | { type: "append"; text: string }
   | { type: "replace_body"; body: string };
@@ -103,7 +105,12 @@ export function applyAiNoteAction(
   currentBody: string,
   action: AiNoteAction,
 ): string {
-  if (action.type === "replace_body") return action.body;
-  if (!currentBody.trim()) return action.text.trim();
-  return `${currentBody.trimEnd()}\n\n${action.text.trim()}`;
+  // Model-generated edits occasionally echo the note's YAML envelope. The
+  // editor owns that envelope, so only ever apply the body portion here.
+  const bodyOnly = noteBody(
+    action.type === "replace_body" ? action.body : action.text,
+  );
+  if (action.type === "replace_body") return bodyOnly;
+  if (!currentBody.trim()) return bodyOnly.trim();
+  return `${currentBody.trimEnd()}\n\n${bodyOnly.trim()}`;
 }

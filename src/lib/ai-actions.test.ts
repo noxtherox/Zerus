@@ -77,4 +77,15 @@ describe("applyAiNoteAction", () => {
       applyAiNoteAction("old", { type: "replace_body", body: "new" }),
     ).toBe("new");
   });
+
+  it("strips echoed frontmatter from replacement and append edits", () => {
+    const echoed = "---\nzerus-id: private-id\nstatus: draft\n---\n# Clean note\n\nRewritten";
+
+    expect(
+      applyAiNoteAction("# Old", { type: "replace_body", body: echoed }),
+    ).toBe("# Clean note\n\nRewritten");
+    expect(
+      applyAiNoteAction("# Existing", { type: "append", text: echoed }),
+    ).toBe("# Existing\n\n# Clean note\n\nRewritten");
+  });
 });

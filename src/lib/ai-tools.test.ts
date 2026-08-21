@@ -20,6 +20,8 @@ describe("parseAiToolResponse", () => {
   it("gives the AI provider concrete tool-call examples", () => {
     expect(AI_TOOL_PROMPT).toContain("<note_append>Brazil</note_append>");
     expect(AI_TOOL_PROMPT).toContain("<note_get>current</note_get>");
+    expect(AI_TOOL_PROMPT).toContain("Never include YAML frontmatter");
+    expect(AI_TOOL_PROMPT).toContain("update, clean up, replace, or rewrite");
   });
 
   it("parses the supported typed tool tags", () => {
