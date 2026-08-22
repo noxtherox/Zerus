@@ -59,7 +59,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
-import { PropertiesSection } from "@/components/notes/PropertiesSection";
+import {
+  PropertiesSection,
+  RelationsSection,
+} from "@/components/notes/PropertiesSection";
 import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
@@ -941,6 +944,15 @@ function NoteView({
               }}
               expanded
             />
+            <RelationsSection
+              note={note}
+              allNotes={allNotes}
+              onOpenNote={(id) => {
+                setPropertiesOpen(false);
+                onOpenNote(id);
+              }}
+              expanded
+            />
             <section className="border-t border-white/[0.07] px-4 py-4">
               <div className="mb-3 flex items-center gap-2">
                 <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#9b9893]">
@@ -971,7 +983,15 @@ function NoteView({
                             onClick={() => { setPropertiesOpen(false); onOpenNote(backlink.id); }}
                             className="block min-h-12 w-full border-b border-white/[0.07] px-3 py-2 text-left text-sm font-medium last:border-0"
                           >
-                            {noteTitle(backlink)}
+                            <span className="flex items-center gap-2">
+                              <ArrowLeft
+                                className="h-3.5 w-3.5 shrink-0 text-[#ef6b62]"
+                                aria-label="Backlink"
+                              />
+                              <span className="truncate">
+                                {noteTitle(backlink)}
+                              </span>
+                            </span>
                           </button>
                         ))}
                       </div>

@@ -81,6 +81,10 @@ const TYPE_ICONS: Record<PropertyType, typeof TypeIcon> = {
   relation: Link,
 };
 
+const PROPERTY_DEFINITION_TYPES = PROPERTY_TYPES.map(
+  ({ value }) => value,
+).filter((type) => type !== "relation");
+
 // ---- value editors -----------------------------------------------------------
 
 interface ValueEditorProps {
@@ -323,11 +327,18 @@ function RelationChip({
           {title}
         </span>
       )}
-      {reciprocal && (
+      {reciprocal ? (
         <ArrowLeftRight
           size={10}
           className="shrink-0 opacity-70"
           aria-label="Linked both ways"
+          title="Bidirectional relation"
+        />
+      ) : (
+        <Link
+          size={10}
+          className="shrink-0 opacity-70"
+          aria-label="Relation"
         />
       )}
       <button
@@ -534,6 +545,7 @@ interface DefFormProps {
   initial?: PropertyDef;
   submitLabel: string;
   existingTypePaths: string[][];
+  allowedTypes?: PropertyType[];
   onSubmit: (def: PropertyDef) => void;
   onDelete?: () => void;
 }
@@ -612,11 +624,17 @@ function DefForm({
   initial,
   submitLabel,
   existingTypePaths,
+  allowedTypes,
   onSubmit,
   onDelete,
 }: DefFormProps) {
+  const availableTypes = PROPERTY_TYPES.filter(
+    (option) => !allowedTypes || allowedTypes.includes(option.value),
+  );
   const [name, setName] = useState(initial?.name ?? "");
-  const [type, setType] = useState<PropertyType>(initial?.type ?? "text");
+  const [type, setType] = useState<PropertyType>(
+    initial?.type ?? availableTypes[0]?.value ?? "text",
+  );
   const [relationTypeKey, setRelationTypeKey] = useState(
     initial?.relationTypeKey ?? "",
   );
@@ -663,17 +681,19 @@ function DefForm({
         className="h-7 text-xs"
         onChange={(e) => setName(e.target.value)}
       />
-      <select
-        value={type}
-        onChange={(e) => setType(e.target.value as PropertyType)}
-        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
-      >
-        {PROPERTY_TYPES.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {availableTypes.length > 1 && (
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as PropertyType)}
+          className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+        >
+          {availableTypes.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
       {type === "relation" && (
         <>
           <select
@@ -783,6 +803,9 @@ export function PropertiesSection({
     schemas,
   ).filter(({ def }) => !isReservedZerusProperty(def.name));
   const effective = effectiveEntries.map(({ def }) => def);
+  const propertyEntries = effectiveEntries.filter(
+    ({ def }) => def.type !== "relation",
+  );
   const values = getNoteProperties(note.content);
   const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
 
@@ -812,14 +835,14 @@ export function PropertiesSection({
         </span>
       </div>
       <div className="space-y-0.5 px-3 py-2.5">
-        {effective.length === 0 && extras.length === 0 && (
+        {propertyEntries.length === 0 && extras.length === 0 && (
           <p className="px-1 pb-1 text-xs text-muted-foreground">
             Properties added here apply to every{" "}
             <span className="font-medium">{currentLabel}</span> note, including
             sub-types.
           </p>
         )}
-        {effectiveEntries.map(({ def, ownerKey }) => {
+        {propertyEntries.map(({ def, ownerKey }) => {
           const Icon = TYPE_ICONS[def.type];
           const ownerLabel = ownerKey || "unfiled";
           return (
@@ -851,6 +874,7 @@ export function PropertiesSection({
                     initial={def}
                     submitLabel="Save"
                     existingTypePaths={existingTypePaths}
+                    allowedTypes={PROPERTY_DEFINITION_TYPES}
                     onSubmit={(next) => {
                       updateTypeProperty(ownerKey, def.name, next);
                       setEditing(null);
@@ -997,6 +1021,163 @@ export function PropertiesSection({
             <DefForm
               submitLabel="Add"
               existingTypePaths={existingTypePaths}
+              allowedTypes={PROPERTY_DEFINITION_TYPES}
+              onSubmit={(def) => {
+                addTypeProperty(selectedAddOwnerKey, def);
+                setAddOpen(false);
+              }}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
+    </div>
+  );
+}
+
+export function RelationsSection({
+  note,
+  allNotes,
+  onOpenNote,
+  expanded,
+}: PropertiesSectionProps) {
+  const nameColumnClass = expanded ? "w-48" : "w-28";
+  const { schemas, extraTypes } = useVault();
+  const [addOpen, setAddOpen] = useState(false);
+  const [addOwnerKey, setAddOwnerKey] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+
+  const typePath = noteTypePath(note);
+  const currentKey = schemaKeyFor(typePath);
+  const availableOwnerKeys = typePath.length
+    ? typePath.map((_, index) => typePath.slice(0, index + 1).join("/"))
+    : [""];
+  const selectedAddOwnerKey = availableOwnerKeys.includes(addOwnerKey)
+    ? addOwnerKey
+    : currentKey;
+  const selectedAddOwnerLabel = selectedAddOwnerKey || "unfiled";
+  const relationEntries = effectivePropertyDefinitions(typePath, schemas).filter(
+    ({ def }) => def.type === "relation" && !isReservedZerusProperty(def.name),
+  );
+  const values = getNoteProperties(note.content);
+  const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
+  const valueFor = (name: string): PropertyValue | undefined => {
+    const match = Object.keys(values).find(
+      (key) => key.toLowerCase() === name.toLowerCase(),
+    );
+    return match === undefined ? undefined : values[match];
+  };
+
+  return (
+    <div className="border-b border-border/60">
+      <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        <Link size={13} />
+        Relations
+      </div>
+      <div className="space-y-0.5 px-3 py-2.5">
+        {relationEntries.map(({ def, ownerKey }) => {
+          const ownerLabel = ownerKey || "unfiled";
+          return (
+            <div key={`${ownerKey}:${def.name}`} className="flex items-start gap-1">
+              <Popover
+                open={editing === `def:${def.name}`}
+                onOpenChange={(open) =>
+                  setEditing(open ? `def:${def.name}` : null)
+                }
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    className={`flex ${nameColumnClass} shrink-0 items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground`}
+                    title={`Defined on "${ownerLabel}" — applies to it and all its sub-types`}
+                  >
+                    <Link size={12} className="shrink-0 opacity-70" />
+                    <span className="truncate">{def.name}</span>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-3" align="start">
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Edits apply to all{" "}
+                    <span className="font-medium">{ownerLabel}</span> notes.
+                  </p>
+                  <DefForm
+                    initial={def}
+                    submitLabel="Save"
+                    existingTypePaths={existingTypePaths}
+                    allowedTypes={["relation"]}
+                    onSubmit={(next) => {
+                      updateTypeProperty(ownerKey, def.name, next);
+                      setEditing(null);
+                    }}
+                    onDelete={() => {
+                      removeTypeProperty(ownerKey, def.name);
+                      setEditing(null);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <div className="min-w-0 flex-1">
+                <RelationValueEditor
+                  def={def}
+                  value={valueFor(def.name)}
+                  allNotes={allNotes}
+                  currentNote={note}
+                  schemas={schemas}
+                  onOpenNote={onOpenNote}
+                  onCommit={(value) =>
+                    setNoteProperty(note.id, def.name, value)
+                  }
+                />
+              </div>
+            </div>
+          );
+        })}
+        {relationEntries.length === 0 && (
+          <p className="px-1 pb-1 text-xs text-muted-foreground">
+            Connect this note to another note with a typed relation.
+          </p>
+        )}
+        <Popover
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (open) setAddOwnerKey(currentKey);
+          }}
+        >
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Plus size={12} />
+              Add relation
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-3" align="start">
+            <p className="mb-2 text-xs text-muted-foreground">
+              Added to every{" "}
+              <span className="font-medium">{selectedAddOwnerLabel}</span> note,
+              including sub-types.
+            </p>
+            {availableOwnerKeys.length > 1 && (
+              <label className="mb-2 block text-xs text-muted-foreground">
+                Apply to
+                <select
+                  value={selectedAddOwnerKey}
+                  onChange={(event) => setAddOwnerKey(event.target.value)}
+                  className="mt-1 h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                >
+                  {[...availableOwnerKeys].reverse().map((ownerKey) => (
+                    <option key={ownerKey} value={ownerKey}>
+                      {ownerKey || "unfiled"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <DefForm
+              submitLabel="Add"
+              existingTypePaths={existingTypePaths}
+              allowedTypes={["relation"]}
               onSubmit={(def) => {
                 addTypeProperty(selectedAddOwnerKey, def);
                 setAddOpen(false);

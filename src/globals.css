@@ -54,12 +54,12 @@
        theme settings (src/lib/theme.ts). Keep defaults in sync with
        DEFAULT_THEME there. */
     --zerus-accent: 216 75 64;
-    --zerus-link: 11 106 205;
-    --zerus-text: 2 8 23;
+    --zerus-link: 37 99 235;
+    --zerus-text: 31 41 55;
     --zerus-editor-bg: 255 255 255;
-    --zerus-surface: 249 248 246;
-    --zerus-sidebar-bg: 31 31 35;
-    --zerus-sidebar-fg: 228 228 231;
+    --zerus-surface: 244 245 247;
+    --zerus-sidebar-bg: 233 235 239;
+    --zerus-sidebar-fg: 39 48 63;
     --zerus-note-width: 75%;
     --zerus-note-margin-inline: auto;
   }

@@ -1,8 +1,15 @@
 import { useState } from "react";
-import { Archive, Folder, Link2, Maximize2, Minimize2 } from "@/lib/icons";
+import {
+  Archive,
+  ArrowLeft,
+  Folder,
+  Link2,
+  Maximize2,
+  Minimize2,
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { PropertiesSection } from "./PropertiesSection";
+import { PropertiesSection, RelationsSection } from "./PropertiesSection";
 import { getBacklinksGroupedByType } from "@/lib/links";
 import { type Note, isTrashed, noteSnippet, noteTitle } from "@/lib/note-utils";
 import type { PropertySchemas } from "@/lib/properties";
@@ -56,12 +63,20 @@ export function BacklinksPanel({
         </Button>
       </div>
       {!isTrashed(note) && (
-        <PropertiesSection
-          note={note}
-          allNotes={allNotes}
-          onOpenNote={onOpenNote}
-          expanded={expanded}
-        />
+        <>
+          <PropertiesSection
+            note={note}
+            allNotes={allNotes}
+            onOpenNote={onOpenNote}
+            expanded={expanded}
+          />
+          <RelationsSection
+            note={note}
+            allNotes={allNotes}
+            onOpenNote={onOpenNote}
+            expanded={expanded}
+          />
+        </>
       )}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -117,8 +132,15 @@ export function BacklinksPanel({
                         onClick={() => onOpenNote(linkingNote.id)}
                         className="block h-full w-full rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
                       >
-                        <span className="block truncate text-sm font-medium text-zerus-link">
-                          {noteTitle(linkingNote)}
+                        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-zerus-link">
+                          <ArrowLeft
+                            size={12}
+                            className="shrink-0"
+                            aria-label="Backlink"
+                          />
+                          <span className="truncate">
+                            {noteTitle(linkingNote)}
+                          </span>
                         </span>
                         {noteSnippet(linkingNote) && (
                           <span
