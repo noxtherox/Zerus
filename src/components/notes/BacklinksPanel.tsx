@@ -10,8 +10,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { PropertiesSection, RelationsSection } from "./PropertiesSection";
-import { getBacklinksGroupedByType } from "@/lib/links";
-import { type Note, isTrashed, noteSnippet, noteTitle } from "@/lib/note-utils";
+import {
+  getBacklinksGroupedByType,
+  getOutgoingRelationTitles,
+} from "@/lib/links";
+import {
+  type Note,
+  isTrashed,
+  noteSnippet,
+  noteTitle,
+  noteTypePath,
+} from "@/lib/note-utils";
 import type { PropertySchemas } from "@/lib/properties";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +52,12 @@ export function BacklinksPanel({
     (sum, group) => sum + group.length,
     0,
   );
+  const relationTotal = getOutgoingRelationTitles(
+    note.content,
+    noteTypePath(note),
+    schemas,
+  ).length;
+  const connectionTotal = total + relationTotal;
 
   return (
     <aside
@@ -70,21 +85,15 @@ export function BacklinksPanel({
             onOpenNote={onOpenNote}
             expanded={expanded}
           />
-          <RelationsSection
-            note={note}
-            allNotes={allNotes}
-            onOpenNote={onOpenNote}
-            expanded={expanded}
-          />
         </>
       )}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Link2 size={13} />
-          Backlinks
-          {total > 0 && (
+          Relations & backlinks
+          {connectionTotal > 0 && (
             <span className="rounded-full bg-muted px-1.5 tabular-nums">
-              {total}
+              {connectionTotal}
             </span>
           )}
         </div>
@@ -100,7 +109,15 @@ export function BacklinksPanel({
         </label>
       </div>
       <div className="min-h-0 flex-1 px-4 py-3">
-        {total === 0 ? (
+        {!isTrashed(note) && (
+          <RelationsSection
+            note={note}
+            allNotes={allNotes}
+            onOpenNote={onOpenNote}
+            expanded={expanded}
+          />
+        )}
+        {total === 0 && relationTotal === 0 ? (
           <p className="text-xs text-muted-foreground">
             No notes link here yet. Reference this note elsewhere with{" "}
             <code className="rounded bg-muted px-1">
@@ -108,8 +125,8 @@ export function BacklinksPanel({
             </code>{" "}
             or a relation property.
           </p>
-        ) : (
-          <div className="space-y-4">
+        ) : total > 0 ? (
+          <div className={cn("space-y-4", relationTotal > 0 && "mt-4")}>
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>
                 <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
@@ -159,7 +176,7 @@ export function BacklinksPanel({
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </aside>
   );

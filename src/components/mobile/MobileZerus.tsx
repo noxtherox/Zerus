@@ -92,7 +92,10 @@ import {
 } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
-import { getBacklinksGroupedByType } from "@/lib/links";
+import {
+  getBacklinksGroupedByType,
+  getOutgoingRelationTitles,
+} from "@/lib/links";
 import type { PropertySchemas } from "@/lib/properties";
 import {
   loadDefaultNoteType,
@@ -813,6 +816,11 @@ function NoteView({
     [allNotes, note, schemas, showArchivedBacklinks],
   );
   const backlinkTotal = [...backlinkGroups.values()].reduce((total, group) => total + group.length, 0);
+  const relationTotal = getOutgoingRelationTitles(
+    note.content,
+    noteTypePath(note),
+    schemas,
+  ).length;
   const linkableNotes = () => getNotes().filter(
     (candidate) =>
       !isExternalNote(candidate) &&
@@ -944,19 +952,13 @@ function NoteView({
               }}
               expanded
             />
-            <RelationsSection
-              note={note}
-              allNotes={allNotes}
-              onOpenNote={(id) => {
-                setPropertiesOpen(false);
-                onOpenNote(id);
-              }}
-              expanded
-            />
             <section className="border-t border-white/[0.07] px-4 py-4">
               <div className="mb-3 flex items-center gap-2">
                 <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#9b9893]">
-                  Backlinks{backlinkTotal ? ` · ${backlinkTotal}` : ""}
+                  Relations & backlinks
+                  {backlinkTotal + relationTotal
+                    ? ` · ${backlinkTotal + relationTotal}`
+                    : ""}
                 </h2>
                 <label className="flex items-center gap-2 text-xs text-[#9b9893]">
                   <input
@@ -968,10 +970,19 @@ function NoteView({
                   Archived
                 </label>
               </div>
-              {backlinkTotal === 0 ? (
+              <RelationsSection
+                note={note}
+                allNotes={allNotes}
+                onOpenNote={(id) => {
+                  setPropertiesOpen(false);
+                  onOpenNote(id);
+                }}
+                expanded
+              />
+              {backlinkTotal === 0 && relationTotal === 0 ? (
                 <p className="text-sm text-[#77777d]">No notes link here yet.</p>
-              ) : (
-                <div className="space-y-4">
+              ) : backlinkTotal > 0 ? (
+                <div className={cn("space-y-4", relationTotal > 0 && "mt-4")}>
                   {[...backlinkGroups.entries()].map(([type, notes]) => (
                     <div key={type}>
                       <p className="mb-1.5 text-xs font-semibold text-[#ef6b62]">{type ? type.split("/").join(" / ") : "Inbox"}</p>
@@ -998,7 +1009,7 @@ function NoteView({
                     </div>
                   ))}
                 </div>
-              )}
+              ) : null}
             </section>
           </div>
         </div>

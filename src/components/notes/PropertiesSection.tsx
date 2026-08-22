@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowLeftRight,
+  ArrowRight,
   Calendar,
   CheckSquare,
   ExternalLink,
@@ -30,6 +31,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { type PropertyValue, getNoteProperties } from "@/lib/frontmatter";
 import {
   PROPERTY_TYPES,
@@ -295,55 +301,61 @@ function RelationChip({
   title,
   note,
   reciprocal,
+  expanded,
   onOpenNote,
   onRemove,
 }: {
   title: string;
   note: Note | undefined;
   reciprocal: boolean;
+  expanded?: boolean;
   onOpenNote: (id: string) => void;
   onRemove: () => void;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs",
+        "flex min-h-10 min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-sm",
         note
-          ? "border-zerus-link/30 text-zerus-link hover:bg-zerus-link/10"
-          : "border-dashed border-muted-foreground/40 text-muted-foreground",
+          ? "border-border/50 bg-zerus-editor text-zerus-link transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
+          : "border-dashed border-muted-foreground/40 bg-zerus-editor text-muted-foreground",
+        expanded && "h-full",
       )}
     >
+      {reciprocal ? (
+        <ArrowLeftRight
+          size={13}
+          className="shrink-0 opacity-80"
+          aria-label="Bidirectional relation"
+          title="Bidirectional relation"
+        />
+      ) : (
+        <ArrowRight
+          size={13}
+          className="shrink-0 opacity-80"
+          aria-label="Outgoing relation"
+        />
+      )}
       {note ? (
         <button
           type="button"
-          className="truncate"
+          className="min-w-0 flex-1 truncate text-left font-medium"
           title={`Open "${title}"`}
           onClick={() => onOpenNote(note.id)}
         >
           {title}
         </button>
       ) : (
-        <span className="truncate italic" title="No note matches this title">
+        <span
+          className="min-w-0 flex-1 truncate italic"
+          title="No note matches this title"
+        >
           {title}
         </span>
       )}
-      {reciprocal ? (
-        <ArrowLeftRight
-          size={10}
-          className="shrink-0 opacity-70"
-          aria-label="Linked both ways"
-          title="Bidirectional relation"
-        />
-      ) : (
-        <Link
-          size={10}
-          className="shrink-0 opacity-70"
-          aria-label="Relation"
-        />
-      )}
       <button
         type="button"
-        className="shrink-0 opacity-60 hover:opacity-100"
+        className="shrink-0 rounded p-0.5 opacity-60 hover:bg-muted hover:opacity-100"
         title="Remove"
         onClick={onRemove}
       >
@@ -361,6 +373,7 @@ function RelationValueEditor({
   schemas,
   onOpenNote,
   onCommit,
+  expanded,
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
@@ -369,6 +382,7 @@ function RelationValueEditor({
   schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
+  expanded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -405,34 +419,26 @@ function RelationValueEditor({
   const showAdd = def.relationMultiple || titles.length === 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-1 px-0.5 py-0.5">
-      {titles.map((title) => {
-        const linkedNote = findNoteByTitle(title, allNotes);
-        return (
-          <RelationChip
-            key={title}
-            title={title}
-            note={linkedNote}
-            reciprocal={
-              linkedNote ? hasRelationTo(linkedNote, currentNote, schemas) : false
-            }
-            onOpenNote={onOpenNote}
-            onRemove={() => remove(title)}
-          />
-        );
-      })}
+    <div className="relative space-y-1.5">
       {showAdd && (
         <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-            >
-              <Plus size={10} />
-              Link
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-0" align="start">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="absolute right-0 -top-7 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  aria-label={`Add a link to ${def.name}`}
+                >
+                  <Plus size={13} />
+                </button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              Add a link to {def.name}
+            </TooltipContent>
+          </Tooltip>
+          <PopoverContent className="w-64 p-0" align="end">
             <Command>
               <CommandInput
                 placeholder={
@@ -461,6 +467,37 @@ function RelationValueEditor({
           </PopoverContent>
         </Popover>
       )}
+      <div
+        className={cn(
+          expanded
+            ? "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3"
+            : "space-y-1",
+        )}
+      >
+        {titles.map((title) => {
+          const linkedNote = findNoteByTitle(title, allNotes);
+          return (
+            <RelationChip
+              key={title}
+              title={title}
+              note={linkedNote}
+              reciprocal={
+                linkedNote
+                  ? hasRelationTo(linkedNote, currentNote, schemas)
+                  : false
+              }
+              expanded={expanded}
+              onOpenNote={onOpenNote}
+              onRemove={() => remove(title)}
+            />
+          );
+        })}
+      </div>
+      {titles.length === 0 && (
+        <p className="py-1 text-xs text-muted-foreground">
+          No {def.name} linked
+        </p>
+      )}
     </div>
   );
 }
@@ -485,6 +522,7 @@ function ValueEditor({
         schemas={schemas}
         onOpenNote={onOpenNote}
         onCommit={onCommit}
+        expanded={false}
       />
     );
   }
@@ -1040,7 +1078,6 @@ export function RelationsSection({
   onOpenNote,
   expanded,
 }: PropertiesSectionProps) {
-  const nameColumnClass = expanded ? "w-48" : "w-28";
   const { schemas, extraTypes } = useVault();
   const [addOpen, setAddOpen] = useState(false);
   const [addOwnerKey, setAddOwnerKey] = useState("");
@@ -1068,16 +1105,17 @@ export function RelationsSection({
   };
 
   return (
-    <div className="border-b border-border/60">
-      <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        <Link size={13} />
-        Relations
-      </div>
-      <div className="space-y-0.5 px-3 py-2.5">
+    <div className="space-y-4">
         {relationEntries.map(({ def, ownerKey }) => {
           const ownerLabel = ownerKey || "unfiled";
+          const rawValue = valueFor(def.name);
+          const relationCount = Array.isArray(rawValue)
+            ? rawValue.length
+            : rawValue == null || rawValue === ""
+              ? 0
+              : 1;
           return (
-            <div key={`${ownerKey}:${def.name}`} className="flex items-start gap-1">
+            <div key={`${ownerKey}:${def.name}`}>
               <Popover
                 open={editing === `def:${def.name}`}
                 onOpenChange={(open) =>
@@ -1086,11 +1124,16 @@ export function RelationsSection({
               >
                 <PopoverTrigger asChild>
                   <button
-                    className={`flex ${nameColumnClass} shrink-0 items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-muted-foreground hover:bg-muted/60 hover:text-foreground`}
+                    className="mb-1.5 flex items-center gap-1 rounded text-left text-xs font-medium text-zerus-accent hover:underline"
                     title={`Defined on "${ownerLabel}" — applies to it and all its sub-types`}
                   >
-                    <Link size={12} className="shrink-0 opacity-70" />
+                    <ArrowRight size={12} className="shrink-0" />
                     <span className="truncate">{def.name}</span>
+                    {relationCount > 0 && (
+                      <span className="text-muted-foreground">
+                        · {relationCount}
+                      </span>
+                    )}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent className="w-56 p-3" align="start">
@@ -1114,27 +1157,19 @@ export function RelationsSection({
                   />
                 </PopoverContent>
               </Popover>
-              <div className="min-w-0 flex-1">
-                <RelationValueEditor
-                  def={def}
-                  value={valueFor(def.name)}
-                  allNotes={allNotes}
-                  currentNote={note}
-                  schemas={schemas}
-                  onOpenNote={onOpenNote}
-                  onCommit={(value) =>
-                    setNoteProperty(note.id, def.name, value)
-                  }
-                />
-              </div>
+              <RelationValueEditor
+                def={def}
+                value={rawValue}
+                allNotes={allNotes}
+                currentNote={note}
+                schemas={schemas}
+                onOpenNote={onOpenNote}
+                onCommit={(value) => setNoteProperty(note.id, def.name, value)}
+                expanded={expanded}
+              />
             </div>
           );
         })}
-        {relationEntries.length === 0 && (
-          <p className="px-1 pb-1 text-xs text-muted-foreground">
-            Connect this note to another note with a typed relation.
-          </p>
-        )}
         <Popover
           open={addOpen}
           onOpenChange={(open) => {
@@ -1185,7 +1220,6 @@ export function RelationsSection({
             />
           </PopoverContent>
         </Popover>
-      </div>
     </div>
   );
 }
