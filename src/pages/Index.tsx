@@ -48,6 +48,7 @@ import {
   type NoteListFilters,
 } from "@/lib/filters";
 import { DEFAULT_TYPE, noteContainingFolder, typeKey } from "@/lib/note-utils";
+import { noteCreationType } from "@/lib/note-creation";
 import { typeViewConfigFor } from "@/lib/note-views";
 import {
   loadDefaultNoteType,
@@ -358,12 +359,7 @@ const Index = () => {
 
   const handleCreateNote = async () => {
     if (vault.isRefreshing) return;
-    const typePath =
-      filter.kind === "type"
-        ? filter.path
-        : filter.kind === "all"
-          ? defaultNoteType
-          : DEFAULT_TYPE;
+    const typePath = noteCreationType(filter, defaultNoteType);
     const note = await createNote(typePath);
     if (!note) return;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);

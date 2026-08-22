@@ -90,6 +90,7 @@ import {
   type Note,
   type TypeNode,
 } from "@/lib/note-utils";
+import { noteCreationType } from "@/lib/note-creation";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
 import {
@@ -1522,7 +1523,7 @@ export function MobileZerus() {
     return buildTypeTree(vault.notes, vault.extraTypes, typeOrder);
   }, [typeOrder, vault.extraTypes, vault.isNotePaginationEnabled, vault.notes, vault.typeNoteCounts]);
   const creationType = useMemo(
-    () => scope.kind === "type" ? scope.path : defaultNoteType,
+    () => noteCreationType(scope, defaultNoteType),
     [defaultNoteType, scope],
   );
   const scopeTitle = scope.kind === "all"

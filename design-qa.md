@@ -1,46 +1,52 @@
-# Design QA: relation add-link action
+**Comparison Target**
 
-- Source visual truth: `/Users/tiagopereira/.codex/attachments/835a47b1-d2a3-42e7-86f7-7c6e4b138094/codex-clipboard-8498e7bb-4a8a-4e3b-bec0-75de05136e2e.png`
-- Implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-relation-link-button.png`
-- Focused implementation crop: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-implementation-crop.png`
-- Viewport: 1280 × 720 CSS px, device scale factor 1
-- Source pixels: 610 × 726 at approximately 2× density; normalized comparison: 305 × 363
-- Implementation pixels: 1280 × 720; focused comparison crop: 287 × 365
-- State: light theme, empty `User Stories` relation, add-link action hovered with tooltip visible
+- Source visual truth: `/Users/tiagopereira/.codex/attachments/12ee7bf0-bf0e-4d57-8d80-f2d9c9b6c82d/codex-clipboard-ba0241cf-45e1-4b5e-9dc8-b86d3ef8e47b.png`
+- Implementation screenshot: `/tmp/zerus-breadcrumb-implementation.png`
+- Combined comparison: `/tmp/zerus-breadcrumb-comparison.png`
+- Viewport: 898 × 458 CSS px, light theme, nested `work / projects` type in Kanban view.
+- Source pixels: 896 × 458 at the supplied density. Implementation pixels: 898 × 458 at device scale factor 1. No density normalization was needed for the focused header comparison; the two-pixel width difference is immaterial.
 
-## Full-view comparison evidence
+**Full-view Comparison Evidence**
 
-The implementation preserves the existing right-panel hierarchy and places the relation action at the right edge of its relation-group header. The former `+ Link` row is absent. The relation group continues to share the Relations & Backlinks card area.
+- The combined comparison shows the supplied desktop-app reference beside the browser demo at the same height. App chrome, sample vault content, sidebar width, and capitalization differ because the reference and the available demo are different runtime states; these are outside the requested header refinement.
+- The relevant header region is clearly readable in both halves: the source uses a single heavy `Work / Epics` title, while the implementation establishes hierarchy with a muted ancestor, chevron separator, and stronger current location.
 
-## Focused comparison evidence
+**Focused Region Comparison Evidence**
 
-The normalized source and focused implementation crop were opened together. The implemented empty relation group shows `No User Stories linked`, a standalone plus icon aligned to the header's right edge, and the tooltip `Add a link to User Stories`. Existing relations remain cards beneath their group labels.
+- A separate crop was not required because both breadcrumb regions are fully legible in the original-size combined comparison.
+- Fonts and typography: the implementation keeps Zerus's existing system font and current-page weight while lowering the ancestor's emphasis.
+- Spacing and layout rhythm: the breadcrumb stays aligned to the existing header row and does not disturb search, filters, New, or the secondary view toolbar.
+- Colors and visual tokens: ancestor and separator use existing muted foreground tokens; the current page uses the existing foreground token.
+- Image quality and asset fidelity: no new image assets are involved; the existing icon set and logo remain unchanged.
+- Copy and content: path segments are rendered individually from the existing type path, so nested type names remain accurate.
 
-## Required fidelity surfaces
+**Findings**
 
-- Fonts and typography: Existing Zerus typography and hierarchy are preserved; the empty state uses the established muted small-text treatment.
-- Spacing and layout rhythm: The plus action is aligned with the relation heading and the empty state occupies the former link-row position without adding card chrome.
-- Colors and visual tokens: Existing accent, foreground, muted, hover, and tooltip tokens are used in both light and dark themes.
-- Image quality and asset fidelity: No raster assets are required; the plus action uses the project's existing icon library.
-- Copy and content: Tooltip and empty-state copy match the requested type-specific wording.
+- No actionable P0, P1, or P2 mismatch was found for the requested breadcrumb refinement.
 
-## Interaction verification
+**Open Questions**
 
-- Hovering the plus action displays the type-specific tooltip.
-- Clicking the plus action opens the existing note-search picker.
-- The empty-state copy remains visible until a relation is selected.
-- Browser console errors: none.
+- None. Parent segments are intentionally presentational in this scoped change; navigation behavior was not added.
 
-## Findings
+**Implementation Checklist**
 
-No actionable P0, P1, or P2 differences remain for the requested component change.
+- [x] Render each ancestor as a subdued breadcrumb segment.
+- [x] Use the shared breadcrumb separator and semantic breadcrumb navigation.
+- [x] Preserve truncation and the surrounding header controls.
+- [x] Verify the nested type, view switcher, light theme, and 898 × 458 layout in the browser.
+- [x] Check browser console warnings and errors; none were present.
 
-## Comparison history
+**Comparison History**
 
-- Initial implementation comparison: passed. The requested action placement, empty state, tooltip, and picker behavior were all present; no corrective iteration was required.
+- Pass 1: no P0/P1/P2 findings. No visual fixes were required after the browser-rendered comparison.
 
-## Follow-up polish
+**Primary Interactions Tested**
 
-No P3 follow-ups identified.
+- Expanded the `work` type, selected the nested `projects` type, opened the view menu, and changed List to Kanban.
+- Opened Appearance settings, changed the theme to Light for reference parity, and closed the dialog.
+
+**Follow-up Polish**
+
+- No P3 items are necessary for this scoped refinement.
 
 final result: passed
