@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   CheckSquare,
+  ArrowUpDown,
   Link2,
   Search,
   SlidersHorizontal,
@@ -9,6 +10,17 @@ import {
 } from "@/lib/icons";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { ListValueEditor } from "@/components/notes/PropertiesSection";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -35,15 +47,18 @@ import {
   type Note,
   typeKey,
 } from "@/lib/note-utils";
-import { tasksForView, type Task, type TaskPatch, type TaskView } from "@/lib/tasks";
+import { tasksForView, type Task, type TaskPatch, type TaskSort, type TaskView } from "@/lib/tasks";
 
 interface TasksWorkspaceProps {
   tasks: Task[];
+  categoryOptions: string[];
   notes: Note[];
   selectedTaskId: string | null;
   onSelectedTaskChange: (id: string | null) => void;
   onCreateTask: (title: string) => Task | null;
   onUpdateTask: (id: string, patch: TaskPatch) => void;
+  onCategoryOptionsChange: (options: string[]) => void;
+  onDeleteCategory: (category: string) => void;
   onOpenNote: (id: string) => void;
   initialView?: TaskView;
 }
@@ -52,6 +67,13 @@ const views: { value: TaskView; label: string }[] = [
   { value: "all", label: "All Tasks" },
   { value: "today", label: "Today" },
   { value: "completed", label: "Completed" },
+];
+
+const sorts: { value: TaskSort; label: string }[] = [
+  { value: "recently-completed", label: "Most recently completed" },
+  { value: "recently-created", label: "Most recently created" },
+  { value: "title-asc", label: "Title A–Z" },
+  { value: "title-desc", label: "Title Z–A" },
 ];
 
 const ALL_TYPES = "__all_types__";
@@ -202,14 +224,18 @@ function LinkNoteDialog({
 function TaskDetails({
   task,
   notes,
-  categories,
+  categoryOptions,
   onUpdate,
+  onCategoryOptionsChange,
+  onDeleteCategory,
   onOpenNote,
 }: {
   task: Task;
   notes: Note[];
-  categories: string[];
+  categoryOptions: string[];
   onUpdate: (patch: TaskPatch) => void;
+  onCategoryOptionsChange: (options: string[]) => void;
+  onDeleteCategory: (category: string) => void;
   onOpenNote: (id: string) => void;
 }) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -228,19 +254,21 @@ function TaskDetails({
             onChange={(event) => onUpdate({ title: event.target.value })}
           />
         </label>
-        <label className="block text-xs text-muted-foreground">
-          Category
-          <Input
-            className="mt-1 h-8"
-            list="task-categories"
-            value={task.category ?? ""}
-            placeholder="None"
-            onChange={(event) => onUpdate({ category: event.target.value.trim() || null })}
-          />
-          <datalist id="task-categories">
-            {categories.map((category) => <option key={category} value={category} />)}
-          </datalist>
-        </label>
+        <div className="block text-xs text-muted-foreground">
+          <span>Category</span>
+          <div className="mt-1 min-h-8 rounded-md border border-input bg-background px-1 py-0.5 text-foreground">
+            <ListValueEditor
+              def={{ name: "Category", type: "list", listOptions: categoryOptions, listMultiple: false }}
+              value={task.category ?? undefined}
+              onCommit={(value) => onUpdate({ category: typeof value === "string" ? value : null })}
+              onCreateOption={(option) => onCategoryOptionsChange([...categoryOptions, option])}
+              onDeleteOption={onDeleteCategory}
+              emptyPickerLabel="Create category"
+              selectedPickerLabel="Change"
+              searchPlaceholder="Search or create category…"
+            />
+          </div>
+        </div>
         <label className="block text-xs text-muted-foreground">
           Priority
           <select
@@ -327,30 +355,121 @@ function TaskDetails({
 
 export function TasksWorkspace({
   tasks,
+  categoryOptions,
   notes,
   selectedTaskId,
   onSelectedTaskChange,
   onCreateTask,
   onUpdateTask,
+  onCategoryOptionsChange,
+  onDeleteCategory,
   onOpenNote,
   initialView = "all",
 }: TasksWorkspaceProps) {
   const [view, setView] = useState<TaskView>(initialView);
+  const [sort, setSort] = useState<TaskSort>("recently-created");
   const [draft, setDraft] = useState("");
-  const visibleTasks = useMemo(() => tasksForView(tasks, view), [tasks, view]);
+  const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const visibleTasks = useMemo(() => tasksForView(tasks, view, undefined, sort), [tasks, view, sort]);
   const linkableNotes = useMemo(
     () => notes.filter((note) => !isExternalNote(note) && !isTrashed(note)),
     [notes],
   );
-  const categories = useMemo(
-    () => [...new Set(tasks.flatMap((task) => task.category ? [task.category] : []))].sort(),
-    [tasks],
-  );
+  const allTaskGroups = useMemo(() => [
+    { label: "To Do", tasks: visibleTasks.filter((task) => !task.completed) },
+    { label: "Completed", tasks: visibleTasks.filter((task) => task.completed) },
+  ], [visibleTasks]);
+  const deleteCategoryUseCount = categoryToDelete
+    ? tasks.filter((task) => task.category?.toLowerCase() === categoryToDelete.toLowerCase()).length
+    : 0;
+  const requestCategoryDelete = (category: string) => {
+    const useCount = tasks.filter(
+      (task) => task.category?.toLowerCase() === category.toLowerCase(),
+    ).length;
+    if (useCount === 0) {
+      onDeleteCategory(category);
+      return;
+    }
+    setCategoryToDelete(category);
+  };
   const submit = () => {
     const created = onCreateTask(draft);
     if (!created) return;
     setDraft("");
-    onSelectedTaskChange(created.id);
+  };
+
+  const renderTask = (task: Task) => {
+    const isExpanded = selectedTaskId === task.id;
+    return (
+      <div
+        key={task.id}
+        className={cn(
+          "group overflow-hidden rounded-lg border bg-background/80 transition-colors",
+          isExpanded ? "border-border shadow-sm" : "border-transparent hover:border-border/60 hover:bg-background",
+        )}
+      >
+        <div
+          className="flex cursor-pointer items-center gap-3 px-3 py-2.5"
+          onClick={() => onSelectedTaskChange(isExpanded ? null : task.id)}
+        >
+          <span
+            className="flex h-4 w-4 shrink-0 items-center justify-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Checkbox
+              checked={task.completed}
+              onCheckedChange={(checked) => onUpdateTask(task.id, { completed: checked === true })}
+              aria-label={task.completed ? `Mark ${task.title} active` : `Complete ${task.title}`}
+            />
+          </span>
+          <span className={cn("min-w-0 flex-1 truncate text-sm", task.completed && "text-muted-foreground line-through")}>
+            {task.title || "Untitled task"}
+          </span>
+          {task.category && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{task.category}</span>
+          )}
+          {task.priority !== "none" && (
+            <span className={cn("text-[11px] capitalize", task.priority === "high" ? "text-destructive" : "text-muted-foreground")}>
+              {task.priority}
+            </span>
+          )}
+          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            <Calendar size={12} />
+            {task.date}
+          </span>
+          {task.linkedNoteIds.length > 0 && (
+            <span className="flex items-center gap-1 text-[11px] text-muted-foreground" aria-label={`${task.linkedNoteIds.length} linked notes`}>
+              <Link2 size={13} />
+              {task.linkedNoteIds.length > 1 && task.linkedNoteIds.length}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn("h-7 w-7", isExpanded ? "text-foreground" : "opacity-60 group-hover:opacity-100")}
+            aria-label={isExpanded ? `Close ${task.title} details` : `Edit ${task.title}`}
+            aria-expanded={isExpanded}
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelectedTaskChange(isExpanded ? null : task.id);
+            }}
+          >
+            <SlidersHorizontal size={14} />
+          </Button>
+        </div>
+        {isExpanded && (
+          <TaskDetails
+            task={task}
+            notes={linkableNotes}
+            categoryOptions={categoryOptions}
+            onUpdate={(patch) => onUpdateTask(task.id, patch)}
+            onCategoryOptionsChange={onCategoryOptionsChange}
+            onDeleteCategory={requestCategoryDelete}
+            onOpenNote={onOpenNote}
+          />
+        )}
+      </div>
+    );
   };
 
   return (
@@ -370,95 +489,59 @@ export function TasksWorkspace({
           />
           <Button onClick={submit} disabled={!draft.trim()}>Add</Button>
         </div>
-        <div className="mt-4 flex gap-1" role="tablist">
-          {views.map((item) => (
-            <button
-              key={item.value}
-              role="tab"
-              aria-selected={view === item.value}
-              onClick={() => setView(item.value)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm",
-                view === item.value
-                  ? "bg-zerus-accent/15 text-zerus-accent"
-                  : "text-muted-foreground hover:bg-muted",
-              )}
-            >
-              {item.label}
-            </button>
-          ))}
+        <div className="mt-4 flex max-w-3xl items-center justify-between gap-3">
+          <div className="flex gap-1" role="tablist">
+            {views.map((item) => (
+              <button
+                key={item.value}
+                role="tab"
+                aria-selected={view === item.value}
+                onClick={() => setView(item.value)}
+                className={cn(
+                  "rounded-md px-3 py-1.5 text-sm",
+                  view === item.value
+                    ? "bg-zerus-accent/15 text-zerus-accent"
+                    : "text-muted-foreground hover:bg-muted",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <Select value={sort} onValueChange={(value) => setSort(value as TaskSort)}>
+            <SelectTrigger className="h-8 w-52 text-xs" aria-label="Sort tasks">
+              <ArrowUpDown size={13} className="mr-1 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {sorts.map((item) => (
+                <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-        <div className="max-w-3xl space-y-1.5">
-          {visibleTasks.map((task) => {
-            const isExpanded = selectedTaskId === task.id;
-            return (
-              <div
-                key={task.id}
-                className={cn(
-                  "group overflow-hidden rounded-lg border bg-background/80 transition-colors",
-                  isExpanded ? "border-border shadow-sm" : "border-transparent hover:border-border/60 hover:bg-background",
-                )}
-              >
-                <div
-                  className="flex cursor-pointer items-center gap-3 px-3 py-2.5"
-                  onClick={() => onSelectedTaskChange(isExpanded ? null : task.id)}
-                >
-                  <span onClick={(event) => event.stopPropagation()}>
-                    <Checkbox
-                      checked={task.completed}
-                      onCheckedChange={(checked) => onUpdateTask(task.id, { completed: checked === true })}
-                      aria-label={task.completed ? `Mark ${task.title} active` : `Complete ${task.title}`}
-                    />
-                  </span>
-                  <span className={cn("min-w-0 flex-1 truncate text-sm", task.completed && "text-muted-foreground line-through")}>
-                    {task.title || "Untitled task"}
-                  </span>
-                  {task.category && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{task.category}</span>
-                  )}
-                  {task.priority !== "none" && (
-                    <span className={cn("text-[11px] capitalize", task.priority === "high" ? "text-destructive" : "text-muted-foreground")}>
-                      {task.priority}
-                    </span>
-                  )}
-                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <Calendar size={12} />
-                    {task.date}
-                  </span>
-                  {task.linkedNoteIds.length > 0 && (
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground" aria-label={`${task.linkedNoteIds.length} linked notes`}>
-                      <Link2 size={13} />
-                      {task.linkedNoteIds.length > 1 && task.linkedNoteIds.length}
-                    </span>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className={cn("h-7 w-7", isExpanded ? "text-foreground" : "opacity-60 group-hover:opacity-100")}
-                    aria-label={isExpanded ? `Close ${task.title} details` : `Edit ${task.title}`}
-                    aria-expanded={isExpanded}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onSelectedTaskChange(isExpanded ? null : task.id);
-                    }}
+        <div className="max-w-3xl">
+          {view === "all" && visibleTasks.length > 0 ? (
+            <div className="space-y-5">
+              {allTaskGroups.map((group) => (
+                <section key={group.label} aria-labelledby={`tasks-${group.label.toLowerCase().replace(" ", "-")}`}>
+                  <h3
+                    id={`tasks-${group.label.toLowerCase().replace(" ", "-")}`}
+                    className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                   >
-                    <SlidersHorizontal size={14} />
-                  </Button>
-                </div>
-                {isExpanded && (
-                  <TaskDetails
-                    task={task}
-                    notes={linkableNotes}
-                    categories={categories}
-                    onUpdate={(patch) => onUpdateTask(task.id, patch)}
-                    onOpenNote={onOpenNote}
-                  />
-                )}
-              </div>
-            );
-          })}
+                    {group.label}
+                  </h3>
+                  <div className="space-y-1.5">
+                    {group.tasks.map(renderTask)}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-1.5">{visibleTasks.map(renderTask)}</div>
+          )}
           {visibleTasks.length === 0 && (
             <p className="py-12 text-center text-sm text-muted-foreground">
               {view === "completed"
@@ -470,6 +553,32 @@ export function TasksWorkspace({
           )}
         </div>
       </div>
+      <AlertDialog
+        open={categoryToDelete !== null}
+        onOpenChange={(open) => { if (!open) setCategoryToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{categoryToDelete}” category?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This category is used by {deleteCategoryUseCount} {deleteCategoryUseCount === 1 ? "task" : "tasks"}.
+              Deleting it will remove the category from {deleteCategoryUseCount === 1 ? "that task" : "those tasks"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (categoryToDelete) onDeleteCategory(categoryToDelete);
+                setCategoryToDelete(null);
+              }}
+            >
+              Delete category
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

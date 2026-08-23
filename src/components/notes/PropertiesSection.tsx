@@ -44,6 +44,8 @@ import {
   type PropertyType,
   effectivePropertyDefinitions,
   inferPropertyType,
+  listOptionToCreate,
+  listPickerLabel,
   listPropertyValue,
   listSelections,
   normalizeListOptions,
@@ -150,23 +152,37 @@ function WrapTextarea({
   );
 }
 
-function ListValueEditor({
+export function ListValueEditor({
   def,
   value,
   onCommit,
+  onCreateOption,
+  onDeleteOption,
+  emptyPickerLabel = "Select",
+  selectedPickerLabel = "Add",
+  searchPlaceholder = "Search options…",
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
   onCommit: (value: PropertyValue | null) => void;
+  onCreateOption?: (option: string) => void;
+  onDeleteOption?: (option: string) => void;
+  emptyPickerLabel?: string;
+  selectedPickerLabel?: string;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const selected = listSelections(value);
   const selectedKeys = new Set(selected.map((item) => item.toLowerCase()));
   const options = normalizeListOptions(def.listOptions ?? []);
-  const available = options.filter(
-    (option) => !selectedKeys.has(option.toLowerCase()),
-  );
+  const available = onDeleteOption
+    ? options
+    : options.filter((option) => !selectedKeys.has(option.toLowerCase()));
   const multiple = def.listMultiple === true;
+  const optionToCreate = onCreateOption
+    ? listOptionToCreate(query, options)
+    : null;
 
   const remove = (option: string) => {
     const next = selected.filter(
@@ -179,9 +195,16 @@ function ListValueEditor({
     const next = multiple ? [...selected, option] : [option];
     onCommit(listPropertyValue(next, multiple));
     setOpen(false);
+    setQuery("");
   };
 
-  const showPicker = multiple || selected.length === 0;
+  const createAndPick = () => {
+    if (!optionToCreate || !onCreateOption) return;
+    onCreateOption(optionToCreate);
+    pick(optionToCreate);
+  };
+
+  const showPicker = multiple || selected.length === 0 || Boolean(onDeleteOption);
 
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-1 px-0.5 py-0.5">
@@ -203,33 +226,76 @@ function ListValueEditor({
         </span>
       ))}
       {showPicker && (
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen);
+            if (!nextOpen) setQuery("");
+          }}
+        >
           <PopoverTrigger asChild>
             <button
               type="button"
               className="flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             >
               <Plus size={10} />
-              {selected.length ? "Add" : "Select"}
+              {selected.length && onDeleteOption
+                ? selectedPickerLabel
+                : listPickerLabel(selected.length, options.length, emptyPickerLabel)}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-56 p-0" align="start">
             <Command>
-              <CommandInput placeholder="Search options…" />
+              <CommandInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder={searchPlaceholder}
+              />
               <CommandList>
                 <CommandEmpty>
-                  {options.length
-                    ? "No matching options."
-                    : "No options configured."}
+                  {onCreateOption
+                    ? "Type a new option to create it."
+                    : options.length
+                      ? "No matching options."
+                      : "No options configured."}
                 </CommandEmpty>
                 <CommandGroup>
+                  {optionToCreate && (
+                    <CommandItem
+                      value={`create ${optionToCreate}`}
+                      onSelect={createAndPick}
+                    >
+                      <Plus size={13} className="mr-1.5" />
+                      Create “{optionToCreate}”
+                    </CommandItem>
+                  )}
                   {available.map((option) => (
                     <CommandItem
                       key={option.toLowerCase()}
                       value={option}
                       onSelect={() => pick(option)}
                     >
-                      {option}
+                      <span className="min-w-0 flex-1 truncate">{option}</span>
+                      {onDeleteOption && (
+                        <button
+                          type="button"
+                          className="ml-2 shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Delete ${option} option`}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setOpen(false);
+                            setQuery("");
+                            onDeleteOption(option);
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -588,7 +654,7 @@ interface DefFormProps {
   onDelete?: () => void;
 }
 
-function ListOptionsField({
+export function ListOptionsField({
   options,
   onChange,
 }: {

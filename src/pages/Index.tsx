@@ -44,8 +44,11 @@ import {
 } from "@/store/notes-store";
 import {
   createTask,
+  deleteTaskCategory,
   loadTasks,
+  updateTaskCategoryOptions,
   updateTask,
+  useTaskCategoryOptions,
   useTasks,
 } from "@/store/tasks-store";
 import {
@@ -135,6 +138,7 @@ function navigationEntriesEqual(
 const Index = () => {
   const vault = useVault();
   const tasks = useTasks();
+  const taskCategoryOptions = useTaskCategoryOptions();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [navigation, setNavigation] = useState(() =>
     createNavigationHistory(INITIAL_NAVIGATION_ENTRY),
@@ -879,11 +883,14 @@ const Index = () => {
               {filter.kind === "tasks" ? (
                 <TasksWorkspace
                   tasks={tasks}
+                  categoryOptions={taskCategoryOptions}
                   notes={notes}
                   selectedTaskId={selectedTaskId}
                   onSelectedTaskChange={setSelectedTaskId}
                   onCreateTask={createTask}
                   onUpdateTask={updateTask}
+                  onCategoryOptionsChange={updateTaskCategoryOptions}
+                  onDeleteCategory={deleteTaskCategory}
                   onOpenNote={handleOpenNote}
                 />
               ) : structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (
