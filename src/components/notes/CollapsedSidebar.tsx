@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileStack, Files, Link2, Notebook, Settings, Trash2 } from "@/lib/icons";
+import { CheckSquare, FileStack, Files, Link2, Notebook, Settings, Trash2 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
 import type { NoteFilter } from "@/lib/filters";
 import {
@@ -181,6 +181,15 @@ export function CollapsedSidebar({
           className={iconButtonClass(filter.kind === "all")}
         >
           <Notebook size={16} />
+        </button>
+        <button
+          type="button"
+          onClick={() => onFilterChange({ kind: "tasks" })}
+          title="Tasks"
+          aria-label="Tasks"
+          className={iconButtonClass(filter.kind === "tasks")}
+        >
+          <CheckSquare size={16} />
         </button>
 
         {isDesktop && (

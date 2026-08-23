@@ -24,12 +24,15 @@ import {
 import type { PropertySchemas } from "@/lib/properties";
 import { cn } from "@/lib/utils";
 import { AttachmentsSection } from "./AttachmentsSection";
+import type { Task } from "@/lib/tasks";
 
 interface BacklinksPanelProps {
   note: Note;
   allNotes: Note[];
+  tasks: Task[];
   schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
+  onOpenTask: (id: string) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
 }
@@ -37,8 +40,10 @@ interface BacklinksPanelProps {
 export function BacklinksPanel({
   note,
   allNotes,
+  tasks,
   schemas,
   onOpenNote,
+  onOpenTask,
   expanded,
   onToggleExpanded,
 }: BacklinksPanelProps) {
@@ -58,7 +63,8 @@ export function BacklinksPanel({
     noteTypePath(note),
     schemas,
   ).length;
-  const connectionTotal = total + relationTotal;
+  const linkedTasks = tasks.filter((task) => task.linkedNoteIds.includes(note.id));
+  const connectionTotal = total + relationTotal + linkedTasks.length;
 
   return (
     <aside
@@ -123,7 +129,24 @@ export function BacklinksPanel({
         <AttachmentsSection note={note} expanded={expanded} />
       )}
       <div className="min-h-0 flex-1 px-4 py-3">
-        {total === 0 && relationTotal === 0 ? (
+        {linkedTasks.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
+              Tasks <span className="text-muted-foreground">· {linkedTasks.length}</span>
+            </div>
+            <ul className="space-y-1">
+              {linkedTasks.map((task) => (
+                <li key={task.id}>
+                  <button onClick={() => onOpenTask(task.id)} className="flex w-full items-center gap-2 rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left text-sm transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5">
+                    <span aria-hidden className={cn("flex h-4 w-4 items-center justify-center rounded border text-[10px]", task.completed && "border-zerus-accent bg-zerus-accent text-white")}>{task.completed ? "✓" : ""}</span>
+                    <span className={cn("truncate font-medium text-zerus-link", task.completed && "text-muted-foreground line-through")}>{task.title || "Untitled task"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {total === 0 && relationTotal === 0 && linkedTasks.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No notes link here yet. Reference this note elsewhere with{" "}
             <code className="rounded bg-muted px-1">
@@ -132,7 +155,7 @@ export function BacklinksPanel({
             or a relation property.
           </p>
         ) : total > 0 ? (
-          <div className={cn("space-y-4", relationTotal > 0 && "mt-4")}>
+            <div className={cn("space-y-4", (relationTotal > 0 || linkedTasks.length > 0) && "mt-4")}>
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>
                 <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">

@@ -1534,6 +1534,8 @@ export function MobileZerus() {
         ? "Files"
         : scope.kind === "links"
           ? "Links"
+        : scope.kind === "tasks"
+          ? "Tasks"
         : scope.kind === "trash"
           ? "Recently Deleted"
           : scope.path.join(" / ");
