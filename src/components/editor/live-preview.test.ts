@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   livePreviewExtension,
   externalLinkAt,
+  listItemIndentEm,
   moveCursorPastClosingMarkup,
 } from "./live-preview";
 
@@ -81,5 +82,17 @@ describe("external links", () => {
 
     expect(externalLinkAt(state, 5)).toBeNull();
     expect(externalLinkAt(state, 20)?.url).toBe("https://www.start.gg/");
+  });
+});
+
+describe("list item indentation", () => {
+  it("aligns wrapped nested bullet text with the first line", () => {
+    expect(listItemIndentEm(4, "-", false)).toBe(1.8);
+  });
+
+  it("preserves marker-specific spacing", () => {
+    expect(listItemIndentEm(0, "-", false)).toBe(0.8);
+    expect(listItemIndentEm(0, "10.", false)).toBeCloseTo(1.65);
+    expect(listItemIndentEm(0, "-", true)).toBe(1.35);
   });
 });

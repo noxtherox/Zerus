@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -33,6 +33,13 @@ import {
 import { badgeVariants } from "@/components/ui/badge";
 import { boardCollisionDetection } from "@/lib/board-dnd";
 import { Button } from "@/components/ui/button";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -788,6 +795,8 @@ export function TypeViewWorkspace({
 }: TypeViewWorkspaceProps) {
   const [search, setSearch] = useState("");
   const typeName = typePath.join(" / ");
+  const typeParentPath = typePath.slice(0, -1);
+  const currentTypeName = typePath.at(-1) ?? "Notes";
   const typeFilter = useMemo<NoteFilter>(
     () => ({
       kind: "type",
@@ -833,7 +842,25 @@ export function TypeViewWorkspace({
     <div className={cn("flex h-full min-w-0 flex-col bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}>
       <header className="shrink-0 border-b border-border/60">
         <div className="flex items-center gap-2 px-4 py-3">
-          <h1 className="mr-auto truncate text-lg font-semibold">{typeName}</h1>
+          <Breadcrumb className="mr-auto min-w-0">
+            <BreadcrumbList className="flex-nowrap gap-1.5 overflow-hidden text-base sm:gap-1.5">
+              {typeParentPath.map((segment, index) => (
+                <Fragment key={typePath.slice(0, index + 1).join("/")}>
+                  <BreadcrumbItem className="min-w-0">
+                    <span className="truncate font-medium text-muted-foreground">
+                      {segment}
+                    </span>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="shrink-0 text-muted-foreground/60" />
+                </Fragment>
+              ))}
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="truncate text-lg font-semibold">
+                  {currentTypeName}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
           <div className="relative w-52">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this view…" className="h-8 bg-zerus-surface pl-8 text-xs" />

@@ -20,6 +20,7 @@ import { Sidebar } from "@/components/notes/Sidebar";
 import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
 import { TypeViewWorkspace } from "@/components/notes/TypeViewWorkspace";
+import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { NoteTabs } from "@/components/notes/NoteTabs";
 import { EditorPane } from "@/components/notes/EditorPane";
 import { ZerusLogo } from "@/components/ZerusLogo";
@@ -42,12 +43,22 @@ import {
   useVault,
 } from "@/store/notes-store";
 import {
+  createTask,
+  deleteTaskCategory,
+  loadTasks,
+  updateTaskCategoryOptions,
+  updateTask,
+  useTaskCategoryOptions,
+  useTasks,
+} from "@/store/tasks-store";
+import {
   EMPTY_NOTE_LIST_FILTERS,
   filterNotes,
   type NoteFilter,
   type NoteListFilters,
 } from "@/lib/filters";
 import { DEFAULT_TYPE, noteContainingFolder, typeKey } from "@/lib/note-utils";
+import { noteCreationType } from "@/lib/note-creation";
 import { typeViewConfigFor } from "@/lib/note-views";
 import {
   loadDefaultNoteType,
@@ -126,6 +137,9 @@ function navigationEntriesEqual(
 
 const Index = () => {
   const vault = useVault();
+  const tasks = useTasks();
+  const taskCategoryOptions = useTaskCategoryOptions();
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [navigation, setNavigation] = useState(() =>
     createNavigationHistory(INITIAL_NAVIGATION_ENTRY),
   );
@@ -163,6 +177,11 @@ const Index = () => {
     setNoteTabs(INITIAL_NOTE_TABS_STATE);
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
+  }, [vault.location]);
+
+  useEffect(() => {
+    void loadTasks(vault.location);
+    setSelectedTaskId(null);
   }, [vault.location]);
 
   useEffect(() => {
@@ -358,12 +377,7 @@ const Index = () => {
 
   const handleCreateNote = async () => {
     if (vault.isRefreshing) return;
-    const typePath =
-      filter.kind === "type"
-        ? filter.path
-        : filter.kind === "all"
-          ? defaultNoteType
-          : DEFAULT_TYPE;
+    const typePath = noteCreationType(filter, defaultNoteType);
     const note = await createNote(typePath);
     if (!note) return;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
@@ -371,6 +385,7 @@ const Index = () => {
     navigate({
       filter:
         filter.kind === "trash" ||
+        filter.kind === "tasks" ||
         filter.kind === "external" ||
         filter.kind === "files" ||
         filter.kind === "links"
@@ -427,6 +442,13 @@ const Index = () => {
       openNoteInActiveTab(tabs, id, { kind: "all" }),
     );
     void prioritizeNoteLoad(id);
+  };
+
+  const handleOpenTask = (id: string) => {
+    setNoteTabs((tabs) => clearActiveTab(tabs));
+    navigate({ filter: { kind: "tasks" }, selectedNoteId: null });
+    setSelectedTaskId(id);
+    setExpandedEditorOpen(false);
   };
 
   const handleSelectNote = (id: string) => {
@@ -692,6 +714,7 @@ const Index = () => {
           <EditorPane
             note={selectedNote}
             allNotes={notes}
+            tasks={tasks}
             extraTypes={vault.extraTypes}
             schemas={vault.schemas}
             typeIcons={vault.typeIcons}
@@ -704,6 +727,7 @@ const Index = () => {
             }
             isRefreshing={vault.isRefreshing}
             onOpenNote={handleOpenNote}
+            onOpenTask={handleOpenTask}
             onCopyExternalToVault={(id, typePath) =>
               void handleCopyExternalToVault(id, typePath)
             }
@@ -856,7 +880,20 @@ const Index = () => {
               />
             )}
             <div className="min-h-0 min-w-0 flex-1">
-              {structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (
+              {filter.kind === "tasks" ? (
+                <TasksWorkspace
+                  tasks={tasks}
+                  categoryOptions={taskCategoryOptions}
+                  notes={notes}
+                  selectedTaskId={selectedTaskId}
+                  onSelectedTaskChange={setSelectedTaskId}
+                  onCreateTask={createTask}
+                  onUpdateTask={updateTask}
+                  onCategoryOptionsChange={updateTaskCategoryOptions}
+                  onDeleteCategory={deleteTaskCategory}
+                  onOpenNote={handleOpenNote}
+                />
+              ) : structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (
                 <TypeViewWorkspace
                   typePath={filter.path}
                   notes={notes}

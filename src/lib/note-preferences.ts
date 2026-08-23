@@ -5,6 +5,15 @@ const TYPE_ORDER_STORAGE_PREFIX = "zerus.noteTypeOrder.";
 const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
 const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
 const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
+const FILE_HUB_EXPANSION_STORAGE_KEY = "zerus.fileHubExpansion.v1";
+const HTML_PREVIEW_MODE_STORAGE_KEY = "zerus.htmlPreviewMode.v1";
+
+export type FileHubExpandedSection = "preview" | "markdown";
+export type HtmlPreviewMode = "link" | "safe" | "full";
+export interface HtmlPreviewPreference {
+  mode: HtmlPreviewMode;
+  fingerprint: string | null;
+}
 
 export const NOTE_WIDTH_OPTIONS = [100, 85, 75, 60] as const;
 export type NoteWidth = (typeof NOTE_WIDTH_OPTIONS)[number];
@@ -31,6 +40,96 @@ function isNoteWidth(value: unknown): value is NoteWidth {
 
 function isNoteAlignment(value: unknown): value is NoteAlignment {
   return NOTE_ALIGNMENT_OPTIONS.some((option) => option === value);
+}
+
+function fileHubExpansionPreferences(): Record<string, FileHubExpandedSection> {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(FILE_HUB_EXPANSION_STORAGE_KEY) ?? "{}",
+    ) as unknown;
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(
+      Object.entries(saved).filter(
+        (entry): entry is [string, FileHubExpandedSection] =>
+          entry[1] === "preview" || entry[1] === "markdown",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function htmlPreviewPreferences(): Record<string, HtmlPreviewPreference> {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(HTML_PREVIEW_MODE_STORAGE_KEY) ?? "{}",
+    ) as unknown;
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+    return Object.fromEntries(Object.entries(saved).flatMap(([id, value]) => {
+      if (value === "link" || value === "safe" || value === "full") {
+        return [[id, { mode: value, fingerprint: null }]];
+      }
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const candidate = value as { mode?: unknown; fingerprint?: unknown };
+      if (candidate.mode !== "link" && candidate.mode !== "safe" && candidate.mode !== "full") return [];
+      return [[id, {
+        mode: candidate.mode,
+        fingerprint: typeof candidate.fingerprint === "string" ? candidate.fingerprint : null,
+      }]];
+    }));
+  } catch {
+    return {};
+  }
+}
+
+export function loadHtmlPreviewMode(fileHubId: string): HtmlPreviewMode | null {
+  return loadHtmlPreviewPreference(fileHubId)?.mode ?? null;
+}
+
+export function loadHtmlPreviewPreference(fileHubId: string): HtmlPreviewPreference | null {
+  return htmlPreviewPreferences()[fileHubId] ?? null;
+}
+
+export function saveHtmlPreviewMode(
+  fileHubId: string,
+  mode: HtmlPreviewMode,
+  fingerprint: string | null = null,
+): void {
+  if (!fileHubId) return;
+  try {
+    localStorage.setItem(
+      HTML_PREVIEW_MODE_STORAGE_KEY,
+      JSON.stringify({
+        ...htmlPreviewPreferences(),
+        [fileHubId]: { mode, fingerprint: mode === "full" ? fingerprint : null },
+      }),
+    );
+  } catch {
+    // Persistence is best-effort; the selected preview still applies this session.
+  }
+}
+
+/** Loads which half of a PDF or HTML file hub is expanded on this device. */
+export function loadFileHubExpandedSection(
+  fileHubId: string,
+): FileHubExpandedSection | null {
+  return fileHubExpansionPreferences()[fileHubId] ?? null;
+}
+
+/** Persists the expansion independently for each attached file. */
+export function saveFileHubExpandedSection(
+  fileHubId: string,
+  section: FileHubExpandedSection | null,
+): void {
+  if (!fileHubId) return;
+  try {
+    const saved = fileHubExpansionPreferences();
+    if (section) saved[fileHubId] = section;
+    else delete saved[fileHubId];
+    localStorage.setItem(FILE_HUB_EXPANSION_STORAGE_KEY, JSON.stringify(saved));
+  } catch {
+    // Persistence is best-effort; the selected expansion still applies this session.
+  }
 }
 
 /** Loads the app-wide note column width saved on this device. */

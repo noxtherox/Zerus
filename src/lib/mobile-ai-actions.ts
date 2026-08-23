@@ -109,7 +109,7 @@ function assertCurrentRevision(note: Note, revision: string) {
 
 function titledBody(title: string, body: string): string {
   const cleanTitle = title.replace(/[\r\n]+/g, " ").trim();
-  const cleanBody = body.trim();
+  const cleanBody = noteBody(body).trim();
   return `# ${cleanTitle}${cleanBody ? `\n\n${cleanBody}\n` : "\n"}`;
 }
 
@@ -154,7 +154,8 @@ export async function executeMobileAIActions(
       summaries.push(`Updated “${noteTitle(note)}”.`);
     } else if (action.action === "append_note") {
       const currentBody = noteBody(note.content).trimEnd();
-      operations.updateNoteBody(note.id, `${currentBody}${currentBody ? "\n\n" : ""}${action.text.trim()}\n`);
+      const appendedBody = noteBody(action.text).trim();
+      operations.updateNoteBody(note.id, `${currentBody}${currentBody && appendedBody ? "\n\n" : ""}${appendedBody}${appendedBody ? "\n" : ""}`);
       summaries.push(`Added to “${noteTitle(note)}”.`);
     } else {
       const currentBody = noteBody(note.content);

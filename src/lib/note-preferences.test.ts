@@ -5,11 +5,16 @@ import {
   DEFAULT_NOTE_ALIGNMENT,
   DEFAULT_NOTE_WIDTH,
   loadDefaultNoteType,
+  loadFileHubExpandedSection,
+  loadHtmlPreviewMode,
+  loadHtmlPreviewPreference,
   loadHideSubtypeNotes,
   loadNoteAlignment,
   loadNoteWidth,
   loadNoteTypeOrder,
   saveDefaultNoteType,
+  saveFileHubExpandedSection,
+  saveHtmlPreviewMode,
   saveHideSubtypeNotes,
   saveNoteAlignment,
   saveNoteWidth,
@@ -71,6 +76,47 @@ describe("default note type preference", () => {
       "Client-Projects",
     ]);
     expect(loadDefaultNoteType("/vault/two")).toEqual(["inbox"]);
+  });
+});
+
+describe("file hub expansion preference", () => {
+  it("saves preview and Markdown expansion independently for each file hub", () => {
+    saveFileHubExpandedSection("file-a", "preview");
+    saveFileHubExpandedSection("file-b", "markdown");
+
+    expect(loadFileHubExpandedSection("file-a")).toBe("preview");
+    expect(loadFileHubExpandedSection("file-b")).toBe("markdown");
+  });
+
+  it("clears a saved expansion without affecting other file hubs", () => {
+    saveFileHubExpandedSection("file-a", "preview");
+    saveFileHubExpandedSection("file-b", "markdown");
+    saveFileHubExpandedSection("file-a", null);
+
+    expect(loadFileHubExpandedSection("file-a")).toBeNull();
+    expect(loadFileHubExpandedSection("file-b")).toBe("markdown");
+  });
+});
+
+describe("HTML preview preference", () => {
+  it("remembers a separate preview mode for each HTML file hub", () => {
+    saveHtmlPreviewMode("file-a", "safe");
+    saveHtmlPreviewMode("file-b", "full");
+    saveHtmlPreviewMode("file-c", "link");
+
+    expect(loadHtmlPreviewMode("file-a")).toBe("safe");
+    expect(loadHtmlPreviewMode("file-b")).toBe("full");
+    expect(loadHtmlPreviewMode("file-c")).toBe("link");
+    expect(loadHtmlPreviewMode("unknown")).toBeNull();
+  });
+
+  it("binds full-preview approval to the approved file fingerprint", () => {
+    saveHtmlPreviewMode("file-a", "full", "sha256-value");
+
+    expect(loadHtmlPreviewPreference("file-a")).toEqual({
+      mode: "full",
+      fingerprint: "sha256-value",
+    });
   });
 });
 

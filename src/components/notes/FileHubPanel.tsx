@@ -10,6 +10,11 @@ import { Button } from "@/components/ui/button";
 import { fileManagerName } from "@/lib/desktop-platform";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import type { Note } from "@/lib/note-utils";
+import type { HtmlPreviewMode } from "@/lib/note-preferences";
+import {
+  MAX_HTML_PREVIEW_BYTES,
+  type HtmlPreviewAnalysis,
+} from "@/lib/html-preview";
 import {
   getFileHubStatus,
   mapFileLocation,
@@ -25,6 +30,14 @@ const PdfViewer = lazy(() =>
   })),
 );
 
+const HtmlViewer = lazy(() =>
+  import("@/components/notes/HtmlViewer").then((module) => ({
+    default: module.HtmlViewer,
+  })),
+);
+
+export type FileHubPreviewType = "pdf" | "html" | null;
+
 function formatBytes(bytes: number | null): string {
   if (bytes === null) return "Unknown size";
   if (bytes < 1024) return `${bytes} B`;
@@ -35,14 +48,20 @@ function formatBytes(bytes: number | null): string {
 
 export function FileHubPanel({
   note,
-  showPdf,
-  isPdfFullHeight = false,
-  onTogglePdfFullHeight,
+  previewType,
+  htmlPreviewMode = "safe",
+  htmlApprovedFingerprint,
+  onHtmlApprovalExpired,
+  isPreviewFullHeight = false,
+  onTogglePreviewFullHeight,
 }: {
   note: Note;
-  showPdf: boolean;
-  isPdfFullHeight?: boolean;
-  onTogglePdfFullHeight?: () => void;
+  previewType: FileHubPreviewType;
+  htmlPreviewMode?: Exclude<HtmlPreviewMode, "link">;
+  htmlApprovedFingerprint?: string | null;
+  onHtmlApprovalExpired?: (analysis: HtmlPreviewAnalysis, fingerprint: string) => void;
+  isPreviewFullHeight?: boolean;
+  onTogglePreviewFullHeight?: () => void;
 }) {
   const reference = getFileHubReference(note);
   const [status, setStatus] = useState<FileHubStatus | null>(null);
@@ -61,7 +80,13 @@ export function FileHubPanel({
     return () => window.removeEventListener("focus", onFocus);
   }, [note.content, refresh]);
 
-  const loadBytes = useCallback(() => readFileHubBytes(note.id), [note.id]);
+  const loadBytes = useCallback(
+    () => readFileHubBytes(
+      note.id,
+      previewType === "html" ? MAX_HTML_PREVIEW_BYTES : undefined,
+    ),
+    [note.id, previewType],
+  );
   if (!reference) return null;
   const locationLabel =
     reference.kind === "vault"
@@ -81,7 +106,7 @@ export function FileHubPanel({
       <div className="shrink-0 border-b border-border/60 bg-background/70 p-3">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 rounded-md bg-muted p-2 text-zerus-accent">
-            {showPdf ? <FileSearch size={20} /> : <File size={20} />}
+            {previewType ? <FileSearch size={20} /> : <File size={20} />}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{reference.name}</p>
@@ -113,27 +138,39 @@ export function FileHubPanel({
           </div>
         </div>
       </div>
-      {showPdf && status?.exists && (
+      {previewType && status?.exists && (
         <div className="min-h-0 flex-1">
           <Suspense
             fallback={
               <div className="flex h-full min-h-36 items-center justify-center text-sm text-muted-foreground">
-                Loading PDF preview…
+                Loading {previewType === "pdf" ? "PDF" : "HTML"} preview…
               </div>
             }
           >
-            <PdfViewer
-              loadBytes={loadBytes}
-              version={version}
-              isFullHeight={isPdfFullHeight}
-              onToggleFullHeight={onTogglePdfFullHeight}
-            />
+            {previewType === "pdf" ? (
+              <PdfViewer
+                loadBytes={loadBytes}
+                version={version}
+                isFullHeight={isPreviewFullHeight}
+                onToggleFullHeight={onTogglePreviewFullHeight}
+              />
+            ) : (
+              <HtmlViewer
+                loadBytes={loadBytes}
+                version={version}
+                mode={htmlPreviewMode}
+                approvedFingerprint={htmlApprovedFingerprint}
+                onApprovalExpired={onHtmlApprovalExpired}
+                isFullHeight={isPreviewFullHeight}
+                onToggleFullHeight={onTogglePreviewFullHeight}
+              />
+            )}
           </Suspense>
         </div>
       )}
-      {showPdf && status && !status.exists && (
+      {previewType && status && !status.exists && (
         <div className="flex min-h-36 flex-1 items-center justify-center p-6 text-center text-sm text-muted-foreground">
-          This PDF is unavailable on this device. Configure its location or locate the file to restore the preview.
+          This {previewType === "pdf" ? "PDF" : "HTML file"} is unavailable on this device. Configure its location or locate the file to restore the preview.
         </div>
       )}
     </div>

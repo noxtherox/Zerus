@@ -15,6 +15,7 @@ import { getLinkHubReference } from "@/lib/link-hubs";
 
 export type NoteFilter =
   | { kind: "all" }
+  | { kind: "tasks" }
   | { kind: "external" }
   | { kind: "files" }
   | { kind: "links" }
@@ -132,6 +133,7 @@ export function filterNotes(
   now = new Date(),
 ): Note[] {
   const visible = notes.filter((note) => {
+    if (filter.kind === "tasks") return false;
     if (filter.kind === "external") return isExternalNote(note);
     if (filter.kind === "trash") return !isExternalNote(note) && isTrashed(note);
     if (isArchived(note) && !listFilters.showArchived) return false;
