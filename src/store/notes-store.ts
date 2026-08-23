@@ -33,6 +33,11 @@ import {
   typeKey,
 } from "@/lib/note-utils";
 import {
+  type NoteAttachment,
+  getNoteAttachments,
+  setNoteAttachments,
+} from "@/lib/note-attachments";
+import {
   type PropertyValue,
   getNoteProperties,
   renameContentProperty,
@@ -441,7 +446,7 @@ function setFileLocationMapping(id: string, path: string | null) {
   setState({});
 }
 
-function setFileHubMapping(id: string, path: string | null) {
+export function setFileHubMapping(id: string, path: string | null) {
   const mappings = getFileHubMappings();
   if (path) mappings[id] = path;
   else delete mappings[id];
@@ -2428,6 +2433,17 @@ export async function chooseDocumentFile(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+export async function chooseAttachmentFiles(): Promise<string[]> {
+  if (!isTauri()) return [];
+  if (isIOSRuntime()) return (await pickMobileFiles()).map((file) => file.path);
+  const picked = await openDialog({
+    multiple: true,
+    title: "Attach files to note",
+  });
+  if (!picked) return [];
+  return typeof picked === "string" ? [picked] : picked;
+}
+
 /** Creates a note for a document selected from the Files section. */
 export async function createFileNote(
   typePath: string[],
@@ -2744,10 +2760,21 @@ export async function revealFileHub(id: string): Promise<void> {
   }
 }
 
-export async function readFileHubBytes(id: string): Promise<Uint8Array> {
+export async function readFileHubBytes(
+  id: string,
+  maximumBytes?: number,
+): Promise<Uint8Array> {
   const note = state.notes.find((candidate) => candidate.id === id);
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) throw new Error("The file location is not configured on this device.");
+  if (maximumBytes !== undefined) {
+    const info = await stat(path);
+    if (info.size > maximumBytes) {
+      throw new Error(
+        `This HTML file is too large to preview safely (${Math.ceil(info.size / 1024 / 1024)} MB). The limit is ${Math.floor(maximumBytes / 1024 / 1024)} MB.`,
+      );
+    }
+  }
   return readFile(path);
 }
 
@@ -2802,6 +2829,186 @@ export function removeFileLocation(id: string): boolean {
   saveFileLocations(state.fileLocations.filter((location) => location.id !== id));
   setFileLocationMapping(id, null);
   return true;
+}
+
+// ---- note attachments -------------------------------------------------------
+
+export type NoteAttachmentMode = "copy" | "external";
+
+function attachmentAbsolutePath(attachment: NoteAttachment): string | null {
+  if (attachment.kind === "vault" && attachment.path) {
+    return backend?.absolutePath?.(attachment.path) ?? null;
+  }
+  return getFileHubMappings()[attachment.id] ?? null;
+}
+
+async function copyAttachmentIntoVault(
+  note: Note,
+  source: string,
+): Promise<string> {
+  if (!state.location) throw new Error("The vault is unavailable");
+  const directory = `.zerus/attachments/${note.id}`;
+  await backend?.mkDir(directory);
+  return invoke<string>("copy_file_into_vault", {
+    source,
+    root: state.location,
+    relativeDirectory: directory,
+    fileName: fileNameFromPath(source),
+  });
+}
+
+/** Adds files to a note and returns the references to insert into its body. */
+export async function addNoteAttachments(
+  noteId: string,
+  selectedPaths: string[],
+  mode: NoteAttachmentMode,
+): Promise<NoteAttachment[]> {
+  const initial = state.notes.find((candidate) => candidate.id === noteId);
+  if (!initial || isExternalNote(initial) || isTrashed(initial) || !isTauri()) {
+    return [];
+  }
+
+  const added: NoteAttachment[] = [];
+  try {
+    for (const selectedPath of selectedPaths) {
+      const canonical = await canonicalizeFsPath(selectedPath);
+      const current = state.notes.find((candidate) => candidate.id === noteId);
+      if (!current) break;
+      const existing = getNoteAttachments(current).find((attachment) => {
+        const path = attachmentAbsolutePath(attachment);
+        const originalPath = getFileHubMappings()[attachment.id];
+        return [path, originalPath].some(
+          (candidate) =>
+            candidate &&
+            normalizeFsPath(candidate) === normalizeFsPath(canonical),
+        );
+      });
+      if (existing) {
+        added.push(existing);
+        continue;
+      }
+
+      const id = crypto.randomUUID();
+      // Preserve the source mapping even for vault copies so switching back to
+      // an external link can restore the original without deleting anything.
+      setFileHubMapping(id, canonical);
+      const attachment: NoteAttachment =
+        mode === "copy"
+          ? {
+              id,
+              name: fileNameFromPath(canonical),
+              kind: "vault",
+              path: await copyAttachmentIntoVault(current, canonical),
+              managed: true,
+            }
+          : {
+              id,
+              name: fileNameFromPath(canonical),
+              kind: "external",
+              managed: false,
+            };
+      const latest = state.notes.find((candidate) => candidate.id === noteId);
+      if (!latest) break;
+      updateNoteContent(
+        noteId,
+        setNoteAttachments(latest.content, [
+          ...getNoteAttachments(latest),
+          attachment,
+        ]),
+      );
+      added.push(attachment);
+    }
+  } catch (error) {
+    reportError("attach file", error);
+  }
+  return added;
+}
+
+export async function convertNoteAttachment(
+  noteId: string,
+  attachmentId: string,
+  mode: NoteAttachmentMode,
+): Promise<boolean> {
+  const note = state.notes.find((candidate) => candidate.id === noteId);
+  if (!note) return false;
+  const attachments = getNoteAttachments(note);
+  const index = attachments.findIndex((attachment) => attachment.id === attachmentId);
+  if (index < 0) return false;
+  const current = attachments[index];
+  if (
+    (mode === "copy" && current.kind === "vault") ||
+    (mode === "external" && current.kind === "external")
+  ) {
+    return true;
+  }
+
+  try {
+    let next: NoteAttachment;
+    if (mode === "copy") {
+      const source = attachmentAbsolutePath(current);
+      if (!source) throw new Error("The external file is not available on this device.");
+      next = {
+        ...current,
+        kind: "vault",
+        path: await copyAttachmentIntoVault(note, source),
+        managed: true,
+      };
+    } else {
+      const mappedSource = getFileHubMappings()[current.id];
+      const vaultSource = attachmentAbsolutePath(current);
+      const source = mappedSource ?? vaultSource;
+      if (!source) throw new Error("The attached file is not available on this device.");
+      setFileHubMapping(current.id, source);
+      next = { ...current, kind: "external", path: undefined, managed: false };
+    }
+    const latest = state.notes.find((candidate) => candidate.id === noteId);
+    if (!latest) return false;
+    const latestAttachments = getNoteAttachments(latest);
+    const latestIndex = latestAttachments.findIndex(
+      (attachment) => attachment.id === attachmentId,
+    );
+    if (latestIndex < 0) return false;
+    latestAttachments[latestIndex] = next;
+    updateNoteContent(noteId, setNoteAttachments(latest.content, latestAttachments));
+    return true;
+  } catch (error) {
+    reportError("change attachment location", error);
+    return false;
+  }
+}
+
+export async function openNoteAttachment(
+  noteId: string,
+  attachmentId: string,
+): Promise<void> {
+  const note = state.notes.find((candidate) => candidate.id === noteId);
+  const attachment = note
+    ? getNoteAttachments(note).find((candidate) => candidate.id === attachmentId)
+    : null;
+  const path = attachment ? attachmentAbsolutePath(attachment) : null;
+  if (!path) return;
+  try {
+    await openPath(path);
+  } catch (error) {
+    reportError("open attachment", error);
+  }
+}
+
+export async function revealNoteAttachment(
+  noteId: string,
+  attachmentId: string,
+): Promise<void> {
+  const note = state.notes.find((candidate) => candidate.id === noteId);
+  const attachment = note
+    ? getNoteAttachments(note).find((candidate) => candidate.id === attachmentId)
+    : null;
+  const path = attachment ? attachmentAbsolutePath(attachment) : null;
+  if (!path) return;
+  try {
+    await invoke("reveal_in_file_manager", { path });
+  } catch (error) {
+    reportError("reveal attachment", error);
+  }
 }
 
 // ---- images ------------------------------------------------------------------

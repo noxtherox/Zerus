@@ -22,6 +22,11 @@ import { tableDecoration } from "./markdown-table";
 
 const ACCENT = "rgb(var(--zerus-accent))";
 
+// The editor uses a proportional UI font, where a space is roughly 0.25em
+// wide. Keep this in sync with the rendered leading whitespace so wrapped
+// list text starts under the item's text instead of drifting farther right.
+const PROPORTIONAL_SPACE_WIDTH_EM = 0.25;
+
 const toggleEffect = StateEffect.define<boolean>();
 
 const INLINE_MARKS: Record<string, string> = {
@@ -39,6 +44,20 @@ interface ExternalLinkMatch {
   url: string;
   from: number;
   to: number;
+}
+
+export function listItemIndentEm(
+  leadingWhitespace: number,
+  marker: string,
+  isTaskItem: boolean,
+): number {
+  const markerIndent = isTaskItem
+    ? 1.35
+    : /^[-*+]$/.test(marker)
+      ? 0.8
+      : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
+
+  return leadingWhitespace * PROPORTIONAL_SPACE_WIDTH_EM + markerIndent;
 }
 
 function trimLinkPunctuation(value: string): string {
@@ -358,12 +377,11 @@ function buildDecorations(view: EditorView): DecorationSet {
                 .match(/^\s*/)?.[0].length ?? 0;
               const marker = state.sliceDoc(node.from, node.to);
               const isTaskItem = node.node.nextSibling?.name === "Task";
-              const markerIndent = isTaskItem
-                ? 1.35
-                : /^[-*+]$/.test(marker)
-                  ? 0.8
-                  : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
-              const indent = leadingWhitespace * 0.5 + markerIndent;
+              const indent = listItemIndentEm(
+                leadingWhitespace,
+                marker,
+                isTaskItem,
+              );
 
               decos.push(
                 Decoration.line({
@@ -372,6 +390,17 @@ function buildDecorations(view: EditorView): DecorationSet {
                     style: `--cm-list-indent: ${indent}em`,
                   },
                 }).range(line.from),
+              );
+              // Keep the hanging indent on the Markdown prefix rather than
+              // shifting the whole editable line with `text-indent`.
+              // WKWebView can leave a stale native caret behind when that
+              // property changes during Tab/Shift+Tab, which looks like a
+              // duplicated caret overlapping the bullet.
+              decos.push(
+                Decoration.mark({ class: "cm-list-item-prefix" }).range(
+                  line.from,
+                  node.to,
+                ),
               );
               decoratedListLines.add(line.from);
             }
@@ -512,7 +541,9 @@ function externalLinkClickExtension(onOpen: (url: string) => void): Extension {
 const livePreviewTheme = EditorView.theme({
   ".cm-list-item-line": {
     paddingLeft: "var(--cm-list-indent)",
-    textIndent: "calc(-1 * var(--cm-list-indent))",
+  },
+  ".cm-list-item-prefix": {
+    marginLeft: "calc(-1 * var(--cm-list-indent))",
   },
   ".cm-blockquote-line": {
     borderLeft: "3px solid rgb(var(--zerus-text) / 0.22)",

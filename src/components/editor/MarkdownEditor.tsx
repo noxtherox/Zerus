@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { EditorView, placeholder, keymap } from "@codemirror/view";
 import {
   ChangeSpec,
@@ -27,6 +29,10 @@ import {
   wikilinkAutocomplete,
 } from "./markdown-extensions";
 import { imagePasteExtension, imagePreviewExtension } from "./image-extension";
+import {
+  type AttachmentAction,
+  attachmentCardExtension,
+} from "./attachment-extension";
 import { livePreviewExtension } from "./live-preview";
 import { getImageUrl, savePastedImage } from "@/store/notes-store";
 import { Button } from "@/components/ui/button";
@@ -44,6 +50,7 @@ import {
   ListOrdered,
   Maximize,
   Minimize,
+  Paperclip,
   Quote,
   Search,
   Strikethrough,
@@ -53,6 +60,13 @@ import { insertMarkdownTable } from "./markdown-table";
 import { TableSizeDialog } from "./TableSizeDialog";
 import { openExternalUrl } from "@/lib/external-links";
 import { findInNoteExtension, openFindInNote } from "./find-in-note";
+import { inlineMarkupEdit } from "./inline-markup";
+import { richCopyExtension } from "./rich-copy";
+import { markdownListIndentation } from "./list-indentation";
+import {
+  isImageAttachmentPath,
+  type NoteAttachment,
+} from "@/lib/note-attachments";
 
 interface MarkdownEditorProps {
   noteId: string;
@@ -70,7 +84,11 @@ interface MarkdownEditorProps {
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
   findRequest?: number;
-  insertTextRequest?: { id: number; text: string } | null;
+  insertTextRequest?: { id: number; text: string; at?: number } | null;
+  attachments?: NoteAttachment[];
+  onAttachmentAction?: (id: string, action: AttachmentAction) => void;
+  onAttachmentDrop?: (paths: string[], at: number) => void;
+  onRequestAttachments?: () => void;
 }
 
 function toggleInlineMarkup(
@@ -78,30 +96,16 @@ function toggleInlineMarkup(
   marker: string,
   placeholder: string,
 ) {
-  const { from, to } = view.state.selection.main;
+  const { from, to, anchor, head } = view.state.selection.main;
   const selectedText = view.state.sliceDoc(from, to);
-  const hasMarkup =
-    selectedText.startsWith(marker) &&
-    selectedText.endsWith(marker) &&
-    selectedText.length >= marker.length * 2;
+  const edit = inlineMarkupEdit(selectedText, marker, placeholder);
+  const selectionAnchor = from + (anchor <= head ? edit.selectionFrom : edit.selectionTo);
+  const selectionHead = from + (anchor <= head ? edit.selectionTo : edit.selectionFrom);
 
-  if (hasMarkup) {
-    const unwrappedText = selectedText.slice(marker.length, -marker.length);
-    view.dispatch({
-      changes: { from, to, insert: unwrappedText },
-      selection: EditorSelection.range(from, from + unwrappedText.length),
-    });
-  } else {
-    const content = selectedText || placeholder;
-    const wrappedText = `${marker}${content}${marker}`;
-    view.dispatch({
-      changes: { from, to, insert: wrappedText },
-      selection: EditorSelection.range(
-        from + marker.length,
-        from + marker.length + content.length,
-      ),
-    });
-  }
+  view.dispatch({
+    changes: { from, to, insert: edit.insert },
+    selection: EditorSelection.range(selectionAnchor, selectionHead),
+  });
 
   view.focus();
 }
@@ -224,6 +228,10 @@ export function MarkdownEditor({
   onToggleFullHeight,
   findRequest = 0,
   insertTextRequest = null,
+  attachments = [],
+  onAttachmentAction,
+  onAttachmentDrop,
+  onRequestAttachments,
 }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -237,12 +245,18 @@ export function MarkdownEditor({
     isTitleResolved,
     onChange,
     onFollowLink,
+    attachments,
+    onAttachmentAction,
+    onAttachmentDrop,
   });
   callbacksRef.current = {
     getLinkableTitles,
     isTitleResolved,
     onChange,
     onFollowLink,
+    attachments,
+    onAttachmentAction,
+    onAttachmentDrop,
   };
 
   useEffect(() => {
@@ -288,6 +302,7 @@ export function MarkdownEditor({
           codeLanguages: languages,
           extensions: GFM,
         }),
+        markdownListIndentation,
         markdownHighlighting,
         firstLineIsTitle ? titleLineExtension : [],
         livePreviewExtension((url) => void openExternalUrl(url)),
@@ -307,6 +322,15 @@ export function MarkdownEditor({
         wikilinkAutocomplete(() => callbacksRef.current.getLinkableTitles()),
         imagePreviewExtension(getImageUrl),
         imagePasteExtension(savePastedImage),
+        attachmentCardExtension({
+          getAttachment: (id) =>
+            callbacksRef.current.attachments.find(
+              (attachment) => attachment.id === id,
+            ) ?? null,
+          onAction: (id, action) =>
+            callbacksRef.current.onAttachmentAction?.(id, action),
+        }),
+        richCopyExtension(firstLineIsTitle),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternalContentRef.current) {
             callbacksRef.current.onChange(update.state.doc.toString());
@@ -376,6 +400,53 @@ export function MarkdownEditor({
   }, [readOnly]);
 
   useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow()
+      .onDragDropEvent(async ({ payload }) => {
+        if (
+          payload.type !== "drop" ||
+          !callbacksRef.current.onAttachmentDrop ||
+          viewRef.current?.state.readOnly
+        ) {
+          return;
+        }
+        const paths = payload.paths.filter(
+          (path) => !isImageAttachmentPath(path),
+        );
+        if (!paths.length) return;
+        const view = viewRef.current;
+        const container = containerRef.current;
+        if (!view || !container) return;
+        const scale = await getCurrentWindow().scaleFactor();
+        const point = {
+          x: payload.position.x / scale,
+          y: payload.position.y / scale,
+        };
+        const bounds = container.getBoundingClientRect();
+        if (
+          point.x < bounds.left ||
+          point.x > bounds.right ||
+          point.y < bounds.top ||
+          point.y > bounds.bottom
+        ) {
+          return;
+        }
+        const at = view.posAtCoords(point) ?? view.state.selection.main.from;
+        callbacksRef.current.onAttachmentDrop(paths, at);
+      })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const handleFindShortcut = (event: KeyboardEvent) => {
       if (
         event.defaultPrevented ||
@@ -409,7 +480,11 @@ export function MarkdownEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !insertTextRequest || view.state.readOnly) return;
-    const { from, to } = view.state.selection.main;
+    const requestedAt = insertTextRequest.at;
+    const position = Math.min(requestedAt ?? 0, view.state.doc.length);
+    const { from, to } = requestedAt == null
+      ? view.state.selection.main
+      : { from: position, to: position };
     view.dispatch({
       changes: { from, to, insert: insertTextRequest.text },
       selection: EditorSelection.cursor(from + insertTextRequest.text.length),
@@ -530,6 +605,20 @@ export function MarkdownEditor({
             <Icon size={15} />
           </Button>
         ))}
+        {onRequestAttachments && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground"
+            title="Attach files"
+            aria-label="Attach files"
+            disabled={readOnly}
+            onClick={onRequestAttachments}
+          >
+            <Paperclip size={15} />
+          </Button>
+        )}
         <Button
           type="button"
           variant="ghost"

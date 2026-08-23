@@ -3,6 +3,8 @@ import {
   effectiveProperties,
   effectivePropertyDefinitions,
   listPropertyValue,
+  listOptionToCreate,
+  listPickerLabel,
   listSelections,
   normalizeListOptions,
   propertyDefinitionOwner,
@@ -30,6 +32,18 @@ describe("list properties", () => {
       "Done",
     ]);
     expect(listPropertyValue([], true)).toBeNull();
+  });
+
+  it("offers a normalized typed option only when it does not already exist", () => {
+    expect(listOptionToCreate("  Deep Work  ", ["Personal"])).toBe("Deep Work");
+    expect(listOptionToCreate("work", ["Work", "Personal"])).toBeNull();
+    expect(listOptionToCreate("   ", [])).toBeNull();
+  });
+
+  it("invites creation when a creatable selector has no options", () => {
+    expect(listPickerLabel(0, 0, "Create category")).toBe("Create category");
+    expect(listPickerLabel(0, 2, "Create category")).toBe("Select");
+    expect(listPickerLabel(1, 2, "Create category")).toBe("Add");
   });
 });
 

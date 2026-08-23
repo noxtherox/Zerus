@@ -1,18 +1,38 @@
 import { useState } from "react";
-import { Archive, Folder, Link2, Maximize2, Minimize2 } from "@/lib/icons";
+import {
+  Archive,
+  ArrowLeft,
+  Folder,
+  Link2,
+  Maximize2,
+  Minimize2,
+} from "@/lib/icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { PropertiesSection } from "./PropertiesSection";
-import { getBacklinksGroupedByType } from "@/lib/links";
-import { type Note, isTrashed, noteSnippet, noteTitle } from "@/lib/note-utils";
+import { PropertiesSection, RelationsSection } from "./PropertiesSection";
+import {
+  getBacklinksGroupedByType,
+  getOutgoingRelationTitles,
+} from "@/lib/links";
+import {
+  type Note,
+  isTrashed,
+  noteSnippet,
+  noteTitle,
+  noteTypePath,
+} from "@/lib/note-utils";
 import type { PropertySchemas } from "@/lib/properties";
 import { cn } from "@/lib/utils";
+import { AttachmentsSection } from "./AttachmentsSection";
+import type { Task } from "@/lib/tasks";
 
 interface BacklinksPanelProps {
   note: Note;
   allNotes: Note[];
+  tasks: Task[];
   schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
+  onOpenTask: (id: string) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
 }
@@ -20,8 +40,10 @@ interface BacklinksPanelProps {
 export function BacklinksPanel({
   note,
   allNotes,
+  tasks,
   schemas,
   onOpenNote,
+  onOpenTask,
   expanded,
   onToggleExpanded,
 }: BacklinksPanelProps) {
@@ -36,6 +58,13 @@ export function BacklinksPanel({
     (sum, group) => sum + group.length,
     0,
   );
+  const relationTotal = getOutgoingRelationTitles(
+    note.content,
+    noteTypePath(note),
+    schemas,
+  ).length;
+  const linkedTasks = tasks.filter((task) => task.linkedNoteIds.includes(note.id));
+  const connectionTotal = total + relationTotal + linkedTasks.length;
 
   return (
     <aside
@@ -56,20 +85,22 @@ export function BacklinksPanel({
         </Button>
       </div>
       {!isTrashed(note) && (
-        <PropertiesSection
-          note={note}
-          allNotes={allNotes}
-          onOpenNote={onOpenNote}
-          expanded={expanded}
-        />
+        <>
+          <PropertiesSection
+            note={note}
+            allNotes={allNotes}
+            onOpenNote={onOpenNote}
+            expanded={expanded}
+          />
+        </>
       )}
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Link2 size={13} />
-          Backlinks
-          {total > 0 && (
+          Relations & backlinks
+          {connectionTotal > 0 && (
             <span className="rounded-full bg-muted px-1.5 tabular-nums">
-              {total}
+              {connectionTotal}
             </span>
           )}
         </div>
@@ -84,8 +115,38 @@ export function BacklinksPanel({
           />
         </label>
       </div>
+      <div className="px-4 py-3">
+        {!isTrashed(note) && (
+          <RelationsSection
+            note={note}
+            allNotes={allNotes}
+            onOpenNote={onOpenNote}
+            expanded={expanded}
+          />
+        )}
+      </div>
+      {!isTrashed(note) && (
+        <AttachmentsSection note={note} expanded={expanded} />
+      )}
       <div className="min-h-0 flex-1 px-4 py-3">
-        {total === 0 ? (
+        {linkedTasks.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
+              Tasks <span className="text-muted-foreground">· {linkedTasks.length}</span>
+            </div>
+            <ul className="space-y-1">
+              {linkedTasks.map((task) => (
+                <li key={task.id}>
+                  <button onClick={() => onOpenTask(task.id)} className="flex w-full items-center gap-2 rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left text-sm transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5">
+                    <span aria-hidden className={cn("flex h-4 w-4 items-center justify-center rounded border text-[10px]", task.completed && "border-zerus-accent bg-zerus-accent text-white")}>{task.completed ? "✓" : ""}</span>
+                    <span className={cn("truncate font-medium text-zerus-link", task.completed && "text-muted-foreground line-through")}>{task.title || "Untitled task"}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {total === 0 && relationTotal === 0 && linkedTasks.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No notes link here yet. Reference this note elsewhere with{" "}
             <code className="rounded bg-muted px-1">
@@ -93,8 +154,8 @@ export function BacklinksPanel({
             </code>{" "}
             or a relation property.
           </p>
-        ) : (
-          <div className="space-y-4">
+        ) : total > 0 ? (
+            <div className={cn("space-y-4", (relationTotal > 0 || linkedTasks.length > 0) && "mt-4")}>
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>
                 <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
@@ -117,8 +178,15 @@ export function BacklinksPanel({
                         onClick={() => onOpenNote(linkingNote.id)}
                         className="block h-full w-full rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
                       >
-                        <span className="block truncate text-sm font-medium text-zerus-link">
-                          {noteTitle(linkingNote)}
+                        <span className="flex items-center gap-1.5 truncate text-sm font-medium text-zerus-link">
+                          <ArrowLeft
+                            size={12}
+                            className="shrink-0"
+                            aria-label="Backlink"
+                          />
+                          <span className="truncate">
+                            {noteTitle(linkingNote)}
+                          </span>
                         </span>
                         {noteSnippet(linkingNote) && (
                           <span
@@ -137,7 +205,7 @@ export function BacklinksPanel({
               </div>
             ))}
           </div>
-        )}
+        ) : null}
       </div>
     </aside>
   );

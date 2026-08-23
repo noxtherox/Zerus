@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
+  CheckSquare,
   FileStack,
   FilePlus2,
   Files,
@@ -725,6 +726,12 @@ export function Sidebar({
           icon={<Notebook size={15} />}
           label="All Notes"
           count={activeCount}
+        />
+        <SidebarRow
+          active={filter.kind === "tasks"}
+          onClick={() => onFilterChange({ kind: "tasks" })}
+          icon={<CheckSquare size={15} />}
+          label="Tasks"
         />
         {isDesktop && (
           <>

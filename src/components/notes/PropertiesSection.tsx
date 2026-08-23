@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ArrowLeftRight,
+  ArrowRight,
   Calendar,
   CheckSquare,
   ExternalLink,
@@ -30,6 +31,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { type PropertyValue, getNoteProperties } from "@/lib/frontmatter";
 import {
   PROPERTY_TYPES,
@@ -38,6 +44,8 @@ import {
   type PropertyType,
   effectivePropertyDefinitions,
   inferPropertyType,
+  listOptionToCreate,
+  listPickerLabel,
   listPropertyValue,
   listSelections,
   normalizeListOptions,
@@ -80,6 +88,10 @@ const TYPE_ICONS: Record<PropertyType, typeof TypeIcon> = {
   list: List,
   relation: Link,
 };
+
+const PROPERTY_DEFINITION_TYPES = PROPERTY_TYPES.map(
+  ({ value }) => value,
+).filter((type) => type !== "relation");
 
 // ---- value editors -----------------------------------------------------------
 
@@ -140,23 +152,37 @@ function WrapTextarea({
   );
 }
 
-function ListValueEditor({
+export function ListValueEditor({
   def,
   value,
   onCommit,
+  onCreateOption,
+  onDeleteOption,
+  emptyPickerLabel = "Select",
+  selectedPickerLabel = "Add",
+  searchPlaceholder = "Search options…",
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
   onCommit: (value: PropertyValue | null) => void;
+  onCreateOption?: (option: string) => void;
+  onDeleteOption?: (option: string) => void;
+  emptyPickerLabel?: string;
+  selectedPickerLabel?: string;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const selected = listSelections(value);
   const selectedKeys = new Set(selected.map((item) => item.toLowerCase()));
   const options = normalizeListOptions(def.listOptions ?? []);
-  const available = options.filter(
-    (option) => !selectedKeys.has(option.toLowerCase()),
-  );
+  const available = onDeleteOption
+    ? options
+    : options.filter((option) => !selectedKeys.has(option.toLowerCase()));
   const multiple = def.listMultiple === true;
+  const optionToCreate = onCreateOption
+    ? listOptionToCreate(query, options)
+    : null;
 
   const remove = (option: string) => {
     const next = selected.filter(
@@ -169,9 +195,16 @@ function ListValueEditor({
     const next = multiple ? [...selected, option] : [option];
     onCommit(listPropertyValue(next, multiple));
     setOpen(false);
+    setQuery("");
   };
 
-  const showPicker = multiple || selected.length === 0;
+  const createAndPick = () => {
+    if (!optionToCreate || !onCreateOption) return;
+    onCreateOption(optionToCreate);
+    pick(optionToCreate);
+  };
+
+  const showPicker = multiple || selected.length === 0 || Boolean(onDeleteOption);
 
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-1 px-0.5 py-0.5">
@@ -193,33 +226,76 @@ function ListValueEditor({
         </span>
       ))}
       {showPicker && (
-        <Popover open={open} onOpenChange={setOpen}>
+        <Popover
+          open={open}
+          onOpenChange={(nextOpen) => {
+            setOpen(nextOpen);
+            if (!nextOpen) setQuery("");
+          }}
+        >
           <PopoverTrigger asChild>
             <button
               type="button"
               className="flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             >
               <Plus size={10} />
-              {selected.length ? "Add" : "Select"}
+              {selected.length && onDeleteOption
+                ? selectedPickerLabel
+                : listPickerLabel(selected.length, options.length, emptyPickerLabel)}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-56 p-0" align="start">
             <Command>
-              <CommandInput placeholder="Search options…" />
+              <CommandInput
+                value={query}
+                onValueChange={setQuery}
+                placeholder={searchPlaceholder}
+              />
               <CommandList>
                 <CommandEmpty>
-                  {options.length
-                    ? "No matching options."
-                    : "No options configured."}
+                  {onCreateOption
+                    ? "Type a new option to create it."
+                    : options.length
+                      ? "No matching options."
+                      : "No options configured."}
                 </CommandEmpty>
                 <CommandGroup>
+                  {optionToCreate && (
+                    <CommandItem
+                      value={`create ${optionToCreate}`}
+                      onSelect={createAndPick}
+                    >
+                      <Plus size={13} className="mr-1.5" />
+                      Create “{optionToCreate}”
+                    </CommandItem>
+                  )}
                   {available.map((option) => (
                     <CommandItem
                       key={option.toLowerCase()}
                       value={option}
                       onSelect={() => pick(option)}
                     >
-                      {option}
+                      <span className="min-w-0 flex-1 truncate">{option}</span>
+                      {onDeleteOption && (
+                        <button
+                          type="button"
+                          className="ml-2 shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                          aria-label={`Delete ${option} option`}
+                          onPointerDown={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            setOpen(false);
+                            setQuery("");
+                            onDeleteOption(option);
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -291,48 +367,61 @@ function RelationChip({
   title,
   note,
   reciprocal,
+  expanded,
   onOpenNote,
   onRemove,
 }: {
   title: string;
   note: Note | undefined;
   reciprocal: boolean;
+  expanded?: boolean;
   onOpenNote: (id: string) => void;
   onRemove: () => void;
 }) {
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs",
+        "flex min-h-10 min-w-0 items-center gap-2 rounded-md border px-3 py-2 text-sm",
         note
-          ? "border-zerus-link/30 text-zerus-link hover:bg-zerus-link/10"
-          : "border-dashed border-muted-foreground/40 text-muted-foreground",
+          ? "border-border/50 bg-zerus-editor text-zerus-link transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
+          : "border-dashed border-muted-foreground/40 bg-zerus-editor text-muted-foreground",
+        expanded && "h-full",
       )}
     >
+      {reciprocal ? (
+        <ArrowLeftRight
+          size={13}
+          className="shrink-0 opacity-80"
+          aria-label="Bidirectional relation"
+          title="Bidirectional relation"
+        />
+      ) : (
+        <ArrowRight
+          size={13}
+          className="shrink-0 opacity-80"
+          aria-label="Outgoing relation"
+        />
+      )}
       {note ? (
         <button
           type="button"
-          className="truncate"
+          className="min-w-0 flex-1 truncate text-left font-medium"
           title={`Open "${title}"`}
           onClick={() => onOpenNote(note.id)}
         >
           {title}
         </button>
       ) : (
-        <span className="truncate italic" title="No note matches this title">
+        <span
+          className="min-w-0 flex-1 truncate italic"
+          title="No note matches this title"
+        >
           {title}
         </span>
       )}
-      {reciprocal && (
-        <ArrowLeftRight
-          size={10}
-          className="shrink-0 opacity-70"
-          aria-label="Linked both ways"
-        />
-      )}
       <button
         type="button"
-        className="shrink-0 opacity-60 hover:opacity-100"
+        className="shrink-0 rounded p-0.5 opacity-60 hover:bg-muted hover:opacity-100"
         title="Remove"
         onClick={onRemove}
       >
@@ -350,6 +439,7 @@ function RelationValueEditor({
   schemas,
   onOpenNote,
   onCommit,
+  expanded,
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
@@ -358,6 +448,7 @@ function RelationValueEditor({
   schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
+  expanded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -394,34 +485,26 @@ function RelationValueEditor({
   const showAdd = def.relationMultiple || titles.length === 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-1 px-0.5 py-0.5">
-      {titles.map((title) => {
-        const linkedNote = findNoteByTitle(title, allNotes);
-        return (
-          <RelationChip
-            key={title}
-            title={title}
-            note={linkedNote}
-            reciprocal={
-              linkedNote ? hasRelationTo(linkedNote, currentNote, schemas) : false
-            }
-            onOpenNote={onOpenNote}
-            onRemove={() => remove(title)}
-          />
-        );
-      })}
+    <div className="relative space-y-1.5">
       {showAdd && (
         <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[11px] text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-            >
-              <Plus size={10} />
-              Link
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64 p-0" align="start">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="absolute right-0 -top-7 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  aria-label={`Add a link to ${def.name}`}
+                >
+                  <Plus size={13} />
+                </button>
+              </PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              Add a link to {def.name}
+            </TooltipContent>
+          </Tooltip>
+          <PopoverContent className="w-64 p-0" align="end">
             <Command>
               <CommandInput
                 placeholder={
@@ -450,6 +533,37 @@ function RelationValueEditor({
           </PopoverContent>
         </Popover>
       )}
+      <div
+        className={cn(
+          expanded
+            ? "grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3"
+            : "space-y-1",
+        )}
+      >
+        {titles.map((title) => {
+          const linkedNote = findNoteByTitle(title, allNotes);
+          return (
+            <RelationChip
+              key={title}
+              title={title}
+              note={linkedNote}
+              reciprocal={
+                linkedNote
+                  ? hasRelationTo(linkedNote, currentNote, schemas)
+                  : false
+              }
+              expanded={expanded}
+              onOpenNote={onOpenNote}
+              onRemove={() => remove(title)}
+            />
+          );
+        })}
+      </div>
+      {titles.length === 0 && (
+        <p className="py-1 text-xs text-muted-foreground">
+          No {def.name} linked
+        </p>
+      )}
     </div>
   );
 }
@@ -474,6 +588,7 @@ function ValueEditor({
         schemas={schemas}
         onOpenNote={onOpenNote}
         onCommit={onCommit}
+        expanded={false}
       />
     );
   }
@@ -534,11 +649,12 @@ interface DefFormProps {
   initial?: PropertyDef;
   submitLabel: string;
   existingTypePaths: string[][];
+  allowedTypes?: PropertyType[];
   onSubmit: (def: PropertyDef) => void;
   onDelete?: () => void;
 }
 
-function ListOptionsField({
+export function ListOptionsField({
   options,
   onChange,
 }: {
@@ -612,11 +728,17 @@ function DefForm({
   initial,
   submitLabel,
   existingTypePaths,
+  allowedTypes,
   onSubmit,
   onDelete,
 }: DefFormProps) {
+  const availableTypes = PROPERTY_TYPES.filter(
+    (option) => !allowedTypes || allowedTypes.includes(option.value),
+  );
   const [name, setName] = useState(initial?.name ?? "");
-  const [type, setType] = useState<PropertyType>(initial?.type ?? "text");
+  const [type, setType] = useState<PropertyType>(
+    initial?.type ?? availableTypes[0]?.value ?? "text",
+  );
   const [relationTypeKey, setRelationTypeKey] = useState(
     initial?.relationTypeKey ?? "",
   );
@@ -663,17 +785,19 @@ function DefForm({
         className="h-7 text-xs"
         onChange={(e) => setName(e.target.value)}
       />
-      <select
-        value={type}
-        onChange={(e) => setType(e.target.value as PropertyType)}
-        className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
-      >
-        {PROPERTY_TYPES.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+      {availableTypes.length > 1 && (
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value as PropertyType)}
+          className="h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+        >
+          {availableTypes.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )}
       {type === "relation" && (
         <>
           <select
@@ -783,6 +907,9 @@ export function PropertiesSection({
     schemas,
   ).filter(({ def }) => !isReservedZerusProperty(def.name));
   const effective = effectiveEntries.map(({ def }) => def);
+  const propertyEntries = effectiveEntries.filter(
+    ({ def }) => def.type !== "relation",
+  );
   const values = getNoteProperties(note.content);
   const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
 
@@ -812,14 +939,14 @@ export function PropertiesSection({
         </span>
       </div>
       <div className="space-y-0.5 px-3 py-2.5">
-        {effective.length === 0 && extras.length === 0 && (
+        {propertyEntries.length === 0 && extras.length === 0 && (
           <p className="px-1 pb-1 text-xs text-muted-foreground">
             Properties added here apply to every{" "}
             <span className="font-medium">{currentLabel}</span> note, including
             sub-types.
           </p>
         )}
-        {effectiveEntries.map(({ def, ownerKey }) => {
+        {propertyEntries.map(({ def, ownerKey }) => {
           const Icon = TYPE_ICONS[def.type];
           const ownerLabel = ownerKey || "unfiled";
           return (
@@ -851,6 +978,7 @@ export function PropertiesSection({
                     initial={def}
                     submitLabel="Save"
                     existingTypePaths={existingTypePaths}
+                    allowedTypes={PROPERTY_DEFINITION_TYPES}
                     onSubmit={(next) => {
                       updateTypeProperty(ownerKey, def.name, next);
                       setEditing(null);
@@ -997,6 +1125,7 @@ export function PropertiesSection({
             <DefForm
               submitLabel="Add"
               existingTypePaths={existingTypePaths}
+              allowedTypes={PROPERTY_DEFINITION_TYPES}
               onSubmit={(def) => {
                 addTypeProperty(selectedAddOwnerKey, def);
                 setAddOpen(false);
@@ -1005,6 +1134,158 @@ export function PropertiesSection({
           </PopoverContent>
         </Popover>
       </div>
+    </div>
+  );
+}
+
+export function RelationsSection({
+  note,
+  allNotes,
+  onOpenNote,
+  expanded,
+}: PropertiesSectionProps) {
+  const { schemas, extraTypes } = useVault();
+  const [addOpen, setAddOpen] = useState(false);
+  const [addOwnerKey, setAddOwnerKey] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
+
+  const typePath = noteTypePath(note);
+  const currentKey = schemaKeyFor(typePath);
+  const availableOwnerKeys = typePath.length
+    ? typePath.map((_, index) => typePath.slice(0, index + 1).join("/"))
+    : [""];
+  const selectedAddOwnerKey = availableOwnerKeys.includes(addOwnerKey)
+    ? addOwnerKey
+    : currentKey;
+  const selectedAddOwnerLabel = selectedAddOwnerKey || "unfiled";
+  const relationEntries = effectivePropertyDefinitions(typePath, schemas).filter(
+    ({ def }) => def.type === "relation" && !isReservedZerusProperty(def.name),
+  );
+  const values = getNoteProperties(note.content);
+  const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
+  const valueFor = (name: string): PropertyValue | undefined => {
+    const match = Object.keys(values).find(
+      (key) => key.toLowerCase() === name.toLowerCase(),
+    );
+    return match === undefined ? undefined : values[match];
+  };
+
+  return (
+    <div className="space-y-4">
+        {relationEntries.map(({ def, ownerKey }) => {
+          const ownerLabel = ownerKey || "unfiled";
+          const rawValue = valueFor(def.name);
+          const relationCount = Array.isArray(rawValue)
+            ? rawValue.length
+            : rawValue == null || rawValue === ""
+              ? 0
+              : 1;
+          return (
+            <div key={`${ownerKey}:${def.name}`}>
+              <Popover
+                open={editing === `def:${def.name}`}
+                onOpenChange={(open) =>
+                  setEditing(open ? `def:${def.name}` : null)
+                }
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    className="mb-1.5 flex items-center gap-1 rounded text-left text-xs font-medium text-zerus-accent hover:underline"
+                    title={`Defined on "${ownerLabel}" — applies to it and all its sub-types`}
+                  >
+                    <ArrowRight size={12} className="shrink-0" />
+                    <span className="truncate">{def.name}</span>
+                    {relationCount > 0 && (
+                      <span className="text-muted-foreground">
+                        · {relationCount}
+                      </span>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-3" align="start">
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Edits apply to all{" "}
+                    <span className="font-medium">{ownerLabel}</span> notes.
+                  </p>
+                  <DefForm
+                    initial={def}
+                    submitLabel="Save"
+                    existingTypePaths={existingTypePaths}
+                    allowedTypes={["relation"]}
+                    onSubmit={(next) => {
+                      updateTypeProperty(ownerKey, def.name, next);
+                      setEditing(null);
+                    }}
+                    onDelete={() => {
+                      removeTypeProperty(ownerKey, def.name);
+                      setEditing(null);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+              <RelationValueEditor
+                def={def}
+                value={rawValue}
+                allNotes={allNotes}
+                currentNote={note}
+                schemas={schemas}
+                onOpenNote={onOpenNote}
+                onCommit={(value) => setNoteProperty(note.id, def.name, value)}
+                expanded={expanded}
+              />
+            </div>
+          );
+        })}
+        <Popover
+          open={addOpen}
+          onOpenChange={(open) => {
+            setAddOpen(open);
+            if (open) setAddOwnerKey(currentKey);
+          }}
+        >
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Plus size={12} />
+              Add relation
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-3" align="start">
+            <p className="mb-2 text-xs text-muted-foreground">
+              Added to every{" "}
+              <span className="font-medium">{selectedAddOwnerLabel}</span> note,
+              including sub-types.
+            </p>
+            {availableOwnerKeys.length > 1 && (
+              <label className="mb-2 block text-xs text-muted-foreground">
+                Apply to
+                <select
+                  value={selectedAddOwnerKey}
+                  onChange={(event) => setAddOwnerKey(event.target.value)}
+                  className="mt-1 h-7 w-full rounded-md border border-input bg-background px-2 text-xs text-foreground"
+                >
+                  {[...availableOwnerKeys].reverse().map((ownerKey) => (
+                    <option key={ownerKey} value={ownerKey}>
+                      {ownerKey || "unfiled"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <DefForm
+              submitLabel="Add"
+              existingTypePaths={existingTypePaths}
+              allowedTypes={["relation"]}
+              onSubmit={(def) => {
+                addTypeProperty(selectedAddOwnerKey, def);
+                setAddOpen(false);
+              }}
+            />
+          </PopoverContent>
+        </Popover>
     </div>
   );
 }

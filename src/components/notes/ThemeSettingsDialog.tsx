@@ -48,18 +48,21 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  DEFAULT_THEME,
+  DEFAULT_DARK_THEME,
+  DEFAULT_LIGHT_THEME,
   MAX_SAVED_THEME_NAME_LENGTH,
+  type AppearanceMode,
+  type ThemeSlot,
   type ZerusTheme,
   THEME_PRESETS,
   THEME_TOKENS,
-  applyTheme,
   deleteSavedTheme,
   isValidHex,
   loadSavedThemes,
-  loadTheme,
+  loadThemePreferences,
+  resolveThemeSlot,
   saveNamedTheme,
-  saveTheme,
+  saveThemePreferences,
 } from "@/lib/theme";
 import {
   DEFAULT_INTERFACE_ZOOM,
@@ -158,7 +161,12 @@ export function ThemeSettingsDialog({
   onDefaultNoteTypeChange,
   onHideSubtypeNotesChange,
 }: ThemeSettingsDialogProps) {
-  const [theme, setTheme] = useState<ZerusTheme>(loadTheme);
+  const [themePreferences, setThemePreferences] = useState(
+    loadThemePreferences,
+  );
+  const [editingTheme, setEditingTheme] = useState<ThemeSlot>(() =>
+    resolveThemeSlot(loadThemePreferences().mode),
+  );
   const [savedThemes, setSavedThemes] = useState(loadSavedThemes);
   const [themeName, setThemeName] = useState("");
   const [interfaceZoom, setInterfaceZoom] =
@@ -182,7 +190,9 @@ export function ThemeSettingsDialog({
 
   useEffect(() => {
     if (open) {
-      setTheme(loadTheme());
+      const preferences = loadThemePreferences();
+      setThemePreferences(preferences);
+      setEditingTheme(resolveThemeSlot(preferences.mode));
       setSavedThemes(loadSavedThemes());
       setInterfaceZoom(loadInterfaceZoom());
       setNoteWidth(loadNoteWidth());
@@ -204,12 +214,27 @@ export function ThemeSettingsDialog({
 
   // Changes apply immediately so you can preview them behind the dialog
   const update = (patch: Partial<ZerusTheme>) => {
-    setTheme((previous) => {
-      const next = { ...previous, ...patch };
-      applyTheme(next);
-      saveTheme(next);
+    setThemePreferences((previous) => {
+      const key = editingTheme === "light" ? "lightTheme" : "darkTheme";
+      const next = {
+        ...previous,
+        [key]: { ...previous[key], ...patch },
+      };
+      saveThemePreferences(next);
       return next;
     });
+  };
+
+  const theme =
+    editingTheme === "light"
+      ? themePreferences.lightTheme
+      : themePreferences.darkTheme;
+
+  const setAppearanceMode = (mode: AppearanceMode) => {
+    const next = { ...themePreferences, mode };
+    setThemePreferences(next);
+    saveThemePreferences(next);
+    setEditingTheme(resolveThemeSlot(mode));
   };
 
   const defaultTypeKey = typeKey(defaultNoteType);
@@ -633,9 +658,28 @@ export function ThemeSettingsDialog({
             Appearance
           </p>
           <div className="mb-5 rounded-lg border border-border p-3">
+            <label htmlFor="appearance-mode" className="block text-sm font-medium">
+              Theme
+            </label>
+            <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+              Choose a fixed appearance or follow your system setting.
+            </p>
+            <Select
+              value={themePreferences.mode}
+              onValueChange={(value: AppearanceMode) => setAppearanceMode(value)}
+            >
+              <SelectTrigger id="appearance-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light</SelectItem>
+                <SelectItem value="dark">Dark</SelectItem>
+                <SelectItem value="system">Match system</SelectItem>
+              </SelectContent>
+            </Select>
             <label
               htmlFor="interface-zoom"
-              className="block text-sm font-medium"
+              className="mt-4 block text-sm font-medium"
             >
               Interface zoom
             </label>
@@ -714,6 +758,29 @@ export function ThemeSettingsDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="mb-4 rounded-lg border border-border p-3">
+            <label htmlFor="theme-to-customize" className="block text-sm font-medium">
+              Customize theme
+            </label>
+            <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
+              Pick the palette Zerus uses for each system appearance.
+            </p>
+            <Select
+              value={editingTheme}
+              onValueChange={(value: ThemeSlot) => setEditingTheme(value)}
+            >
+              <SelectTrigger id="theme-to-customize">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="light">Light theme</SelectItem>
+                <SelectItem value="dark">Dark theme</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="pb-2 text-xs font-medium text-muted-foreground">
+            Presets for the {editingTheme} theme
+          </p>
           <div className="flex flex-wrap gap-2 pb-4">
             {THEME_PRESETS.map((preset) => (
               <button
@@ -867,7 +934,14 @@ export function ThemeSettingsDialog({
               size="sm"
               className="gap-1.5"
               onClick={() => {
-                update(DEFAULT_THEME);
+                const preferences = {
+                  mode: "system" as const,
+                  lightTheme: { ...DEFAULT_LIGHT_THEME },
+                  darkTheme: { ...DEFAULT_DARK_THEME },
+                };
+                setThemePreferences(preferences);
+                saveThemePreferences(preferences);
+                setEditingTheme(resolveThemeSlot(preferences.mode));
                 setInterfaceZoom(DEFAULT_INTERFACE_ZOOM);
                 saveInterfaceZoom(DEFAULT_INTERFACE_ZOOM);
                 setNoteWidth(DEFAULT_NOTE_WIDTH);

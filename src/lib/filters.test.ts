@@ -22,6 +22,7 @@ const notes = [
 ];
 
 const empty: NoteListFilters = {
+  sort: "updated-desc",
   date: null,
   showArchived: false,
   typeKeys: [],
@@ -95,6 +96,23 @@ describe("note list filters", () => {
   it("filters by updated date from the local start of day", () => {
     const filtered = filterNotes(notes, { kind: "all" }, "", { ...empty, date: "last-7-days" }, new Date(2026, 6, 16, 12));
     expect(filtered.map((item) => item.id)).toEqual(["one", "nested", "two"]);
+  });
+
+  it("sorts by update time or title while keeping pinned notes first", () => {
+    const pinned = { ...notes[2], pinned: true };
+
+    expect(
+      filterNotes(notes, { kind: "all" }, "", {
+        ...empty,
+        sort: "updated-asc",
+      }).map((item) => item.id),
+    ).toEqual(["three", "two", "nested", "one"]);
+    expect(
+      filterNotes([notes[0], notes[1], pinned], { kind: "all" }, "", {
+        ...empty,
+        sort: "title-desc",
+      }).map((item) => item.id),
+    ).toEqual(["three", "two", "one"]);
   });
 
   it("shows only active notes with attached documents in the files section", () => {

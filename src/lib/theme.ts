@@ -29,15 +29,37 @@ export interface SavedTheme {
   theme: ZerusTheme;
 }
 
-export const DEFAULT_THEME: ZerusTheme = {
+export type AppearanceMode = "light" | "dark" | "system";
+export type ThemeSlot = "light" | "dark";
+
+export interface ThemePreferences {
+  mode: AppearanceMode;
+  lightTheme: ZerusTheme;
+  darkTheme: ZerusTheme;
+}
+
+export const DEFAULT_LIGHT_THEME: ZerusTheme = {
   accent: "#d84b40",
-  link: "#0b6acd",
-  text: "#020817",
+  link: "#2563eb",
+  text: "#1f2937",
   editorBg: "#ffffff",
-  surface: "#f9f8f6",
-  sidebarBg: "#1f1f23",
-  sidebarFg: "#e4e4e7",
+  surface: "#f4f5f7",
+  sidebarBg: "#e9ebef",
+  sidebarFg: "#27303f",
 };
+
+export const DEFAULT_DARK_THEME: ZerusTheme = {
+  accent: "#a78bfa",
+  link: "#8ab4f8",
+  text: "#e2ddf0",
+  editorBg: "#171522",
+  surface: "#1c1930",
+  sidebarBg: "#100e1a",
+  sidebarFg: "#d5cfe8",
+};
+
+/** Kept as the public default for saved-theme compatibility. */
+export const DEFAULT_THEME = DEFAULT_LIGHT_THEME;
 
 export const THEME_TOKENS: {
   key: keyof ZerusTheme;
@@ -54,7 +76,18 @@ export const THEME_TOKENS: {
 ];
 
 export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
-  { name: "Zerus", theme: DEFAULT_THEME },
+  {
+    name: "Zerus",
+    theme: {
+      accent: "#d84b40",
+      link: "#0b6acd",
+      text: "#020817",
+      editorBg: "#ffffff",
+      surface: "#f9f8f6",
+      sidebarBg: "#1f1f23",
+      sidebarFg: "#e4e4e7",
+    },
+  },
   {
     name: "Ember",
     theme: {
@@ -93,15 +126,7 @@ export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
   },
   {
     name: "Paper",
-    theme: {
-      accent: "#d84b40",
-      link: "#2563eb",
-      text: "#1f2937",
-      editorBg: "#ffffff",
-      surface: "#f4f5f7",
-      sidebarBg: "#e9ebef",
-      sidebarFg: "#27303f",
-    },
+    theme: DEFAULT_LIGHT_THEME,
   },
   {
     name: "Parchment",
@@ -153,15 +178,7 @@ export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
   },
   {
     name: "Nightshade",
-    theme: {
-      accent: "#a78bfa",
-      link: "#8ab4f8",
-      text: "#e2ddf0",
-      editorBg: "#171522",
-      surface: "#1c1930",
-      sidebarBg: "#100e1a",
-      sidebarFg: "#d5cfe8",
-    },
+    theme: DEFAULT_DARK_THEME,
   },
   {
     name: "Cocoa",
@@ -178,6 +195,7 @@ export const THEME_PRESETS: { name: string; theme: ZerusTheme }[] = [
 ];
 
 const STORAGE_KEY = "zerus-theme";
+const THEME_PREFERENCES_STORAGE_KEY = "zerus-theme-preferences";
 const SAVED_THEMES_STORAGE_KEY = "zerus-saved-themes";
 export const MAX_SAVED_THEME_NAME_LENGTH = 40;
 
@@ -273,10 +291,39 @@ export function applyTheme(theme: ZerusTheme): void {
   setHsl("--ring", mix(text, editor, 0.6));
 }
 
+function systemThemeSlot(): ThemeSlot {
+  return typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+export function resolveThemeSlot(mode: AppearanceMode): ThemeSlot {
+  return mode === "system" ? systemThemeSlot() : mode;
+}
+
+export function applyThemePreferences(preferences: ThemePreferences): void {
+  const slot = resolveThemeSlot(preferences.mode);
+  const root = document.documentElement;
+  root.classList.toggle("dark", slot === "dark");
+  root.dataset.zerusAppearance = slot;
+  root.style.colorScheme = slot;
+  applyTheme(slot === "dark" ? preferences.darkTheme : preferences.lightTheme);
+}
+
 export function loadTheme(): ZerusTheme {
+  const preferences = loadThemePreferences();
+  return {
+    ...(resolveThemeSlot(preferences.mode) === "dark"
+      ? preferences.darkTheme
+      : preferences.lightTheme),
+  };
+}
+
+function loadLegacyTheme(): ZerusTheme | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_THEME };
+    if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<ZerusTheme>;
     const theme = { ...DEFAULT_THEME };
     for (const key of Object.keys(CSS_VARS) as (keyof ZerusTheme)[]) {
@@ -285,7 +332,7 @@ export function loadTheme(): ZerusTheme {
     }
     return theme;
   } catch {
-    return { ...DEFAULT_THEME };
+    return null;
   }
 }
 
@@ -299,6 +346,61 @@ function parseCompleteTheme(value: unknown): ZerusTheme | null {
     theme[key] = color.trim();
   }
   return theme;
+}
+
+function isAppearanceMode(value: unknown): value is AppearanceMode {
+  return value === "light" || value === "dark" || value === "system";
+}
+
+function isDarkTheme(theme: ZerusTheme): boolean {
+  const background = hexToRgb(theme.editorBg);
+  if (!background) return false;
+  return (background[0] * 299 + background[1] * 587 + background[2] * 114) /
+    1000 < 128;
+}
+
+export function loadThemePreferences(): ThemePreferences {
+  try {
+    const raw = localStorage.getItem(THEME_PREFERENCES_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<ThemePreferences>;
+      const lightTheme = parseCompleteTheme(parsed.lightTheme);
+      const darkTheme = parseCompleteTheme(parsed.darkTheme);
+      if (isAppearanceMode(parsed.mode) && lightTheme && darkTheme) {
+        return { mode: parsed.mode, lightTheme, darkTheme };
+      }
+    }
+  } catch {
+    // Fall through to defaults or migration from the previous single theme.
+  }
+
+  const legacy = loadLegacyTheme();
+  if (legacy) {
+    const legacyIsDark = isDarkTheme(legacy);
+    return {
+      mode: legacyIsDark ? "dark" : "light",
+      lightTheme: legacyIsDark ? { ...DEFAULT_LIGHT_THEME } : legacy,
+      darkTheme: legacyIsDark ? legacy : { ...DEFAULT_DARK_THEME },
+    };
+  }
+
+  return {
+    mode: "system",
+    lightTheme: { ...DEFAULT_LIGHT_THEME },
+    darkTheme: { ...DEFAULT_DARK_THEME },
+  };
+}
+
+export function saveThemePreferences(preferences: ThemePreferences): void {
+  try {
+    localStorage.setItem(
+      THEME_PREFERENCES_STORAGE_KEY,
+      JSON.stringify(preferences),
+    );
+  } catch {
+    // Persistence is best-effort; the themes still apply for this session.
+  }
+  applyThemePreferences(preferences);
 }
 
 export function loadSavedThemes(): SavedTheme[] {
@@ -371,14 +473,22 @@ export function deleteSavedTheme(name: string): SavedTheme[] {
 }
 
 export function saveTheme(theme: ZerusTheme): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(theme));
-  } catch {
-    // Persistence is best-effort; the theme still applies for this session.
-  }
+  const preferences = loadThemePreferences();
+  const slot = resolveThemeSlot(preferences.mode);
+  saveThemePreferences({
+    ...preferences,
+    [slot === "dark" ? "darkTheme" : "lightTheme"]: { ...theme },
+  });
 }
 
 /** Apply whatever theme is saved (call once on startup). */
 export function initTheme(): void {
-  applyTheme(loadTheme());
+  applyThemePreferences(loadThemePreferences());
+  if (typeof window === "undefined" || !window.matchMedia) return;
+
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  media.addEventListener("change", () => {
+    const preferences = loadThemePreferences();
+    if (preferences.mode === "system") applyThemePreferences(preferences);
+  });
 }
