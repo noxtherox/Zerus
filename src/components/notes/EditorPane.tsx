@@ -90,6 +90,7 @@ import {
 } from "@/lib/note-attachments";
 import type { PropertySchemas } from "@/lib/properties";
 import type { TypeIcons } from "@/lib/type-icons";
+import type { Task } from "@/lib/tasks";
 import {
   type NoteConflict,
   closeExternalNote,
@@ -140,6 +141,7 @@ import {
 interface EditorPaneProps {
   note: Note | null;
   allNotes: Note[];
+  tasks: Task[];
   /** Types that exist without notes — offered by the type picker too. */
   extraTypes: string[][];
   schemas: PropertySchemas;
@@ -147,6 +149,7 @@ interface EditorPaneProps {
   typeIcons: TypeIcons;
   vaultLocation: string | null;
   onOpenNote: (id: string) => void;
+  onOpenTask: (id: string) => void;
   onCopyExternalToVault: (id: string, typePath: string[]) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
   onMoveSavedLinkToVault: (id: string, typePath: string[]) => void;
@@ -263,11 +266,13 @@ type ExternalImportMode = "copy" | "move";
 export function EditorPane({
   note,
   allNotes,
+  tasks,
   extraTypes,
   schemas,
   typeIcons,
   vaultLocation,
   onOpenNote,
+  onOpenTask,
   onCopyExternalToVault,
   onMoveExternalToVault,
   onMoveSavedLinkToVault,
@@ -633,8 +638,10 @@ export function EditorPane({
     <BacklinksPanel
       note={note}
       allNotes={allNotes}
+      tasks={tasks}
       schemas={schemas}
       onOpenNote={onOpenNote}
+      onOpenTask={onOpenTask}
       expanded={expandBacklinks}
       onToggleExpanded={() => setExpandBacklinks((open) => !open)}
     />

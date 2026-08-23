@@ -128,6 +128,25 @@ export function normalizeListOptions(options: string[]): string[] {
   return normalized;
 }
 
+/** Returns a normalized typed option only when it is not already configured. */
+export function listOptionToCreate(input: string, options: string[]): string | null {
+  const [candidate] = normalizeListOptions([input]);
+  if (!candidate) return null;
+  const key = candidate.toLowerCase();
+  return options.some((option) => option.trim().toLowerCase() === key)
+    ? null
+    : candidate;
+}
+
+export function listPickerLabel(
+  selectedCount: number,
+  optionCount: number,
+  emptyLabel = "Select",
+): string {
+  if (selectedCount > 0) return "Add";
+  return optionCount > 0 ? "Select" : emptyLabel;
+}
+
 /** Reads either legacy scalar values or YAML arrays as list selections. */
 export function listSelections(
   value: PropertyValue | undefined,
