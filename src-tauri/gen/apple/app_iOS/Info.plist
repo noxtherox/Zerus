@@ -12,25 +12,21 @@
 				<string>md</string>
 				<string>markdown</string>
 			</array>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>net.daringfireball.markdown</string>
-			</array>
 			<key>CFBundleTypeName</key>
 			<string>Markdown document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>pdf</string>
-			</array>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.adobe.pdf</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>PDF document</string>
@@ -38,6 +34,10 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
@@ -56,26 +56,22 @@
 				<string>numbers</string>
 				<string>key</string>
 			</array>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.rtf</string>
-				<string>public.plain-text</string>
-			</array>
 			<key>CFBundleTypeName</key>
 			<string>Office document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.rtf</string>
+				<string>public.plain-text</string>
+			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>*</string>
-			</array>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.data</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>File</string>
@@ -83,6 +79,10 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.data</string>
+			</array>
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>

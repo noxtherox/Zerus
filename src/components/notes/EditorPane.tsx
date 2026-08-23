@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Copy,
   Ellipsis,
+  FileSearch,
   FileUp,
   FolderSearch,
   History,
@@ -55,7 +56,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
-import { FileHubPanel } from "./FileHubPanel";
+import { FileHubPanel, type FileHubPreviewType } from "./FileHubPanel";
+import { HtmlPreviewDialog } from "./HtmlPreviewDialog";
 import { LinkHubPanel } from "./LinkHubPanel";
 import {
   ResizableHandle,
@@ -81,21 +83,32 @@ import {
 import { noteBody } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference, withLinkMarkdown } from "@/lib/link-hubs";
+import {
+  formatAttachmentMarkdown,
+  getNoteAttachments,
+  isImageAttachmentPath,
+} from "@/lib/note-attachments";
 import type { PropertySchemas } from "@/lib/properties";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
   type NoteConflict,
   closeExternalNote,
   attachFileToNote,
+  addNoteAttachments,
   chooseDocumentFile,
+  chooseAttachmentFiles,
+  convertNoteAttachment,
   createNote,
   detachFileHub,
   getNotes,
   getFileHubStatus,
   locateFileHub,
+  openNoteAttachment,
+  readFileHubBytes,
   restoreNote,
   resolveNoteConflict,
   revealNoteInDesktop,
+  revealNoteAttachment,
   setNoteType,
   toggleNotePinned,
   toggleNoteArchived,
@@ -107,6 +120,22 @@ import {
   fileManagerName,
   primaryModifierLabel,
 } from "@/lib/desktop-platform";
+import {
+  loadFileHubExpandedSection,
+  loadHtmlPreviewPreference,
+  loadHtmlPreviewMode,
+  saveFileHubExpandedSection,
+  saveHtmlPreviewMode,
+  type FileHubExpandedSection,
+  type HtmlPreviewMode,
+} from "@/lib/note-preferences";
+import {
+  analyzeHtmlPreview,
+  htmlPreviewFingerprint,
+  htmlPreviewNeedsPermission,
+  MAX_HTML_PREVIEW_BYTES,
+  type HtmlPreviewAnalysis,
+} from "@/lib/html-preview";
 
 interface EditorPaneProps {
   note: Note | null;
@@ -229,7 +258,6 @@ function EditorContextControls({
   );
 }
 
-type ExpandedFileHubSection = "pdf" | "markdown";
 type ExternalImportMode = "copy" | "move";
 
 export function EditorPane({
@@ -272,15 +300,41 @@ export function EditorPane({
     useState(false);
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
   const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
+  const [pendingNoteAttachments, setPendingNoteAttachments] = useState<{
+    paths: string[];
+    at?: number;
+  } | null>(null);
+  const [attachmentInsertRequest, setAttachmentInsertRequest] = useState<{
+    id: number;
+    text: string;
+    at?: number;
+  } | null>(null);
   const [fileHubExists, setFileHubExists] = useState<boolean | null>(null);
   const [expandedFileHubSection, setExpandedFileHubSection] = useState<{
-    noteId: string;
-    section: ExpandedFileHubSection;
+    fileHubId: string;
+    section: FileHubExpandedSection | null;
   } | null>(null);
+  const [htmlPreviewState, setHtmlPreviewState] = useState<{
+    fileHubId: string;
+    mode: HtmlPreviewMode | null;
+    analysis: HtmlPreviewAnalysis | null;
+    fingerprint: string | null;
+    error: string | null;
+    approvalExpired: boolean;
+  } | null>(null);
+  const [htmlPreviewDialogOpen, setHtmlPreviewDialogOpen] = useState(false);
+  const activeFileHub = note ? getFileHubReference(note) : null;
+  const activeFileHubId = activeFileHub?.id ?? null;
+  const activeFileHubName = activeFileHub?.name ?? null;
+  const activeNoteId = note?.id ?? null;
+  const activeFileExtension = activeFileHub ? fileExtension(activeFileHub.name) : "";
+  const activeFileIsHtml = ["html", "htm"].includes(activeFileExtension);
 
   useEffect(() => {
     setExternalImportMode("copy");
     setHistoryOpen(false);
+    setPendingNoteAttachments(null);
+    setAttachmentInsertRequest(null);
   }, [note?.id]);
 
   useEffect(() => {
@@ -301,6 +355,89 @@ export function EditorPane({
       window.removeEventListener("focus", onFocus);
     };
   }, [note]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!activeNoteId || !activeFileHubId || !activeFileIsHtml) {
+      setHtmlPreviewState(null);
+      setHtmlPreviewDialogOpen(false);
+      return;
+    }
+
+    const savedPreference = loadHtmlPreviewPreference(activeFileHubId);
+    const savedMode = savedPreference?.mode ?? null;
+    setHtmlPreviewState({
+      fileHubId: activeFileHubId,
+      mode: savedMode,
+      analysis: null,
+      fingerprint: savedPreference?.fingerprint ?? null,
+      error: null,
+      approvalExpired: false,
+    });
+    void readFileHubBytes(activeNoteId, MAX_HTML_PREVIEW_BYTES)
+      .then(async (bytes) => {
+        if (cancelled) return;
+        const analysis = analyzeHtmlPreview(new TextDecoder("utf-8").decode(bytes));
+        const fingerprint = await htmlPreviewFingerprint(bytes);
+        if (cancelled) return;
+        let mode = savedMode;
+        if (
+          mode === "full" &&
+          savedPreference?.fingerprint !== fingerprint
+        ) {
+          mode = null;
+        }
+        if (!mode && !htmlPreviewNeedsPermission(analysis)) {
+          mode = "safe";
+          saveHtmlPreviewMode(activeFileHubId, mode);
+        }
+        setHtmlPreviewState({
+          fileHubId: activeFileHubId,
+          mode,
+          analysis,
+          fingerprint,
+          error: null,
+          approvalExpired:
+            mode === null &&
+            savedMode === "full" &&
+            savedPreference?.fingerprint !== fingerprint,
+        });
+        if (!mode && htmlPreviewNeedsPermission(analysis)) {
+          setHtmlPreviewDialogOpen(true);
+        }
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setHtmlPreviewState({
+          fileHubId: activeFileHubId,
+          mode: null,
+          analysis: null,
+          fingerprint: null,
+          error: cause instanceof Error ? cause.message : String(cause),
+          approvalExpired: false,
+        });
+        setHtmlPreviewDialogOpen(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFileHubId, activeFileHubName, activeFileIsHtml, activeNoteId]);
+
+  const expireHtmlFullPreview = useCallback((
+    analysis: HtmlPreviewAnalysis,
+    fingerprint: string,
+  ) => {
+    if (!activeFileHubId) return;
+    setHtmlPreviewState({
+      fileHubId: activeFileHubId,
+      mode: null,
+      analysis,
+      fingerprint,
+      error: null,
+      approvalExpired: true,
+    });
+    setHtmlPreviewDialogOpen(true);
+  }, [activeFileHubId]);
 
   if (!note) {
     return (
@@ -403,22 +540,105 @@ export function EditorPane({
     await attachFileToNote(note.id, path, "copy");
   };
 
-  const fileHub = getFileHubReference(note);
+  const queueNoteAttachments = (paths: string[], at?: number) => {
+    const supported = paths.filter((path) => !isImageAttachmentPath(path));
+    if (supported.length) setPendingNoteAttachments({ paths: supported, at });
+  };
+
+  const requestNoteAttachments = async () => {
+    queueNoteAttachments(await chooseAttachmentFiles());
+  };
+
+  const confirmNoteAttachments = async (mode: "copy" | "external") => {
+    const pending = pendingNoteAttachments;
+    if (!pending) return;
+    setPendingNoteAttachments(null);
+    const added = await addNoteAttachments(note.id, pending.paths, mode);
+    if (!added.length) return;
+    const text = added.map(formatAttachmentMarkdown).join("\n");
+    setAttachmentInsertRequest((current) => ({
+      id: (current?.id ?? 0) + 1,
+      text,
+      ...(pending.at === undefined ? {} : { at: pending.at }),
+    }));
+    setHistoryOpen(false);
+    setShowBacklinks(true);
+  };
+
+  const handleAttachmentAction = (
+    attachmentId: string,
+    action: "open" | "reveal" | "copy" | "external",
+  ) => {
+    if (action === "open") {
+      void openNoteAttachment(note.id, attachmentId);
+    } else if (action === "reveal") {
+      void revealNoteAttachment(note.id, attachmentId);
+    } else {
+      void convertNoteAttachment(note.id, attachmentId, action);
+    }
+  };
+
+  const fileHub = activeFileHub;
   const linkedFileType = fileHub
     ? fileExtension(fileHub.name).toUpperCase() || "FILE"
     : "FILE";
-  const pdfHub = fileHub ? fileExtension(fileHub.name) === "pdf" : false;
-  const expandedSection =
-    expandedFileHubSection?.noteId === note.id
-      ? expandedFileHubSection.section
+  const extension = activeFileExtension;
+  const htmlPreviewMode = fileHub && activeFileIsHtml
+    ? htmlPreviewState?.fileHubId === fileHub.id
+      ? htmlPreviewState.mode
+      : loadHtmlPreviewMode(fileHub.id)
+    : null;
+  const renderedHtmlPreviewMode =
+    htmlPreviewMode === "safe" || htmlPreviewMode === "full"
+      ? htmlPreviewMode
       : null;
-  const toggleExpandedSection = (section: ExpandedFileHubSection) => {
-    setExpandedFileHubSection((current) =>
-      current?.noteId === note.id && current.section === section
-        ? null
-        : { noteId: note.id, section },
-    );
+  const previewType: FileHubPreviewType =
+    extension === "pdf" ? "pdf" : renderedHtmlPreviewMode ? "html" : null;
+  const expandedSection = fileHub
+    ? expandedFileHubSection?.fileHubId === fileHub.id
+      ? expandedFileHubSection.section
+      : loadFileHubExpandedSection(fileHub.id)
+    : null;
+  const toggleExpandedSection = (section: FileHubExpandedSection) => {
+    if (!fileHub) return;
+    const next = expandedSection === section ? null : section;
+    saveFileHubExpandedSection(fileHub.id, next);
+    setExpandedFileHubSection({ fileHubId: fileHub.id, section: next });
   };
+  const chooseHtmlPreviewMode = (mode: HtmlPreviewMode) => {
+    if (!fileHub || !activeFileIsHtml) return;
+    const current = htmlPreviewState?.fileHubId === fileHub.id
+      ? htmlPreviewState
+      : null;
+    if (mode === "full" && !current?.fingerprint) return;
+    saveHtmlPreviewMode(fileHub.id, mode, current?.fingerprint ?? null);
+    setHtmlPreviewState((current) => ({
+      fileHubId: fileHub.id,
+      mode,
+      analysis: current?.fileHubId === fileHub.id ? current.analysis : null,
+      fingerprint: current?.fileHubId === fileHub.id ? current.fingerprint : null,
+      error: null,
+      approvalExpired: false,
+    }));
+    setHtmlPreviewDialogOpen(false);
+  };
+  const setHtmlPreviewDialogVisibility = (open: boolean) => {
+    if (!open && !htmlPreviewMode) {
+      chooseHtmlPreviewMode("link");
+      return;
+    }
+    setHtmlPreviewDialogOpen(open);
+  };
+  const backlinksPanel = !external && !linkHub && showBacklinks ? (
+    <BacklinksPanel
+      note={note}
+      allNotes={allNotes}
+      schemas={schemas}
+      onOpenNote={onOpenNote}
+      expanded={expandBacklinks}
+      onToggleExpanded={() => setExpandBacklinks((open) => !open)}
+    />
+  ) : null;
   const editorContent = (
     <div className="flex h-full min-h-0 flex-1">
       <div
@@ -450,21 +670,25 @@ export function EditorPane({
           readOnly={isBusy}
           isFullHeight={expandedSection === "markdown"}
           onToggleFullHeight={
-            pdfHub ? () => toggleExpandedSection("markdown") : undefined
+            previewType ? () => toggleExpandedSection("markdown") : undefined
           }
           findRequest={findRequest}
+          insertTextRequest={attachmentInsertRequest}
+          attachments={getNoteAttachments(note)}
+          onAttachmentAction={handleAttachmentAction}
+          onAttachmentDrop={
+            !external && !trashed && !linkHub
+              ? (paths, at) => queueNoteAttachments(paths, at)
+              : undefined
+          }
+          onRequestAttachments={
+            !external && !trashed && !linkHub
+              ? () => void requestNoteAttachments()
+              : undefined
+          }
         />
       </div>
-      {!external && !linkHub && showBacklinks && (
-        <BacklinksPanel
-          note={note}
-          allNotes={allNotes}
-          schemas={schemas}
-          onOpenNote={onOpenNote}
-          expanded={expandBacklinks}
-          onToggleExpanded={() => setExpandBacklinks((open) => !open)}
-        />
-      )}
+      {!previewType && backlinksPanel}
       {!external && historyOpen && (
         <VersionHistoryPanel note={note} onClose={() => setHistoryOpen(false)} />
       )}
@@ -639,6 +863,12 @@ export function EditorPane({
                         Copy into Vault
                       </DropdownMenuItem>
                     )}
+                    {activeFileIsHtml && (
+                      <DropdownMenuItem onSelect={() => setHtmlPreviewDialogOpen(true)}>
+                        <FileSearch className="mr-2" size={14} />
+                        Change file preview
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onSelect={() => void startFileHubAttach()}>
                       <RefreshCw className="mr-2" size={14} />
                       Replace linked {linkedFileType}
@@ -785,38 +1015,54 @@ export function EditorPane({
         </div>
       )}
       {fileHub ? (
-        pdfHub ? (
-          <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-            <ResizablePanel
-              defaultSize={58}
-              minSize={20}
-              collapsible
-              collapsedSize={8}
-              className={expandedSection === "markdown" ? "hidden" : undefined}
+        previewType ? (
+          <div className="flex min-h-0 flex-1">
+            <ResizablePanelGroup
+              direction="vertical"
+              className={cn(
+                "min-h-0 min-w-0 flex-1",
+                showBacklinks && expandBacklinks && "hidden",
+              )}
             >
-              <FileHubPanel
-                note={note}
-                showPdf
-                isPdfFullHeight={expandedSection === "pdf"}
-                onTogglePdfFullHeight={() => toggleExpandedSection("pdf")}
+              <ResizablePanel
+                defaultSize={58}
+                minSize={20}
+                collapsible
+                collapsedSize={8}
+                className={expandedSection === "markdown" ? "hidden" : undefined}
+              >
+                <FileHubPanel
+                  note={note}
+                  previewType={previewType}
+                  htmlPreviewMode={renderedHtmlPreviewMode ?? "safe"}
+                  htmlApprovedFingerprint={
+                    htmlPreviewState?.fileHubId === fileHub.id
+                      ? htmlPreviewState.fingerprint
+                      : loadHtmlPreviewPreference(fileHub.id)?.fingerprint ?? null
+                  }
+                  onHtmlApprovalExpired={expireHtmlFullPreview}
+                  isPreviewFullHeight={expandedSection === "preview"}
+                  onTogglePreviewFullHeight={() => toggleExpandedSection("preview")}
+                />
+              </ResizablePanel>
+              <ResizableHandle
+                withHandle
+                className={expandedSection ? "hidden" : undefined}
               />
-            </ResizablePanel>
-            <ResizableHandle
-              withHandle
-              className={expandedSection ? "hidden" : undefined}
-            />
-            <ResizablePanel
-              defaultSize={42}
-              minSize={20}
-              className={expandedSection === "pdf" ? "hidden" : undefined}
-            >
-              {editorContent}
-            </ResizablePanel>
-          </ResizablePanelGroup>
+              <ResizablePanel
+                defaultSize={42}
+                minSize={20}
+                className={expandedSection === "preview" ? "hidden" : undefined}
+              >
+                {editorContent}
+              </ResizablePanel>
+            </ResizablePanelGroup>
+            {backlinksPanel}
+          </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="shrink-0">
-              <FileHubPanel note={note} showPdf={false} />
+              <FileHubPanel note={note} previewType={null} />
             </div>
             {editorContent}
           </div>
@@ -877,6 +1123,33 @@ export function EditorPane({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {fileHub && activeFileIsHtml && (
+        <HtmlPreviewDialog
+          open={htmlPreviewDialogOpen}
+          onOpenChange={setHtmlPreviewDialogVisibility}
+          fileName={fileHub.name}
+          analysis={
+            htmlPreviewState?.fileHubId === fileHub.id
+              ? htmlPreviewState.analysis
+              : null
+          }
+          currentMode={htmlPreviewMode}
+          onChoose={chooseHtmlPreviewMode}
+          unavailableReason={
+            htmlPreviewState?.fileHubId === fileHub.id
+              ? htmlPreviewState.error
+              : null
+          }
+          fullPreviewReady={Boolean(
+            htmlPreviewState?.fileHubId === fileHub.id &&
+            htmlPreviewState.fingerprint,
+          )}
+          approvalExpired={Boolean(
+            htmlPreviewState?.fileHubId === fileHub.id &&
+            htmlPreviewState.approvalExpired,
+          )}
+        />
+      )}
       <Dialog
         open={pendingAttachPath !== null}
         onOpenChange={(open) => !open && setPendingAttachPath(null)}
@@ -912,6 +1185,43 @@ export function EditorPane({
                 setPendingAttachPath(null);
               }}
             >
+              Copy into Vault
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={pendingNoteAttachments !== null}
+        onOpenChange={(open) => !open && setPendingNoteAttachments(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {pendingNoteAttachments?.paths.length === 1
+                ? "How should this attachment be stored?"
+                : `How should these ${pendingNoteAttachments?.paths.length ?? 0} attachments be stored?`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-36 space-y-1 overflow-y-auto rounded-md bg-muted/60 p-3">
+            {pendingNoteAttachments?.paths.map((path) => (
+              <p key={path} className="truncate text-xs text-muted-foreground" title={path}>
+                {path.split(/[\\/]/).pop()}
+              </p>
+            ))}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            An external link leaves the file where it is and works on this
+            device. A vault copy travels with the vault. The source file is
+            never removed.
+          </p>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => void confirmNoteAttachments("external")}
+            >
+              Keep External Link
+            </Button>
+            <Button onClick={() => void confirmNoteAttachments("copy")}>
               Copy into Vault
             </Button>
           </DialogFooter>

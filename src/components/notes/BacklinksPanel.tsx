@@ -23,6 +23,7 @@ import {
 } from "@/lib/note-utils";
 import type { PropertySchemas } from "@/lib/properties";
 import { cn } from "@/lib/utils";
+import { AttachmentsSection } from "./AttachmentsSection";
 
 interface BacklinksPanelProps {
   note: Note;
@@ -108,7 +109,7 @@ export function BacklinksPanel({
           />
         </label>
       </div>
-      <div className="min-h-0 flex-1 px-4 py-3">
+      <div className="px-4 py-3">
         {!isTrashed(note) && (
           <RelationsSection
             note={note}
@@ -117,6 +118,11 @@ export function BacklinksPanel({
             expanded={expanded}
           />
         )}
+      </div>
+      {!isTrashed(note) && (
+        <AttachmentsSection note={note} expanded={expanded} />
+      )}
+      <div className="min-h-0 flex-1 px-4 py-3">
         {total === 0 && relationTotal === 0 ? (
           <p className="text-xs text-muted-foreground">
             No notes link here yet. Reference this note elsewhere with{" "}
