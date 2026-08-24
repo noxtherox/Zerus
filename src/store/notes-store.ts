@@ -40,6 +40,7 @@ import {
 import {
   type PropertyValue,
   getNoteProperties,
+  noteBody,
   renameContentProperty,
   setContentProperty,
   withBody,
@@ -76,7 +77,19 @@ import {
 } from "@/lib/mobile-vault-picker";
 import { showError } from "@/utils/toast";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
-import { loadDefaultNoteType } from "@/lib/note-preferences";
+import {
+  applySyncedEditorPreferences,
+  loadDefaultNoteType,
+  loadLocalEditorPreferenceSeed,
+  type SyncedEditorPreferenceValues,
+} from "@/lib/note-preferences";
+import {
+  DEFAULT_EDITOR_SETTINGS_VALUES,
+  newerEditorSettings,
+  readEditorSettings,
+  writeEditorSettings,
+  type EditorSettings,
+} from "@/lib/editor-settings";
 import {
   fileNameFromPath,
   getFileHubReference,
@@ -100,7 +113,7 @@ import {
   setLinkHubReference,
   withLinkMarkdown,
 } from "@/lib/link-hubs";
-import { normalizeExternalUrl } from "@/lib/external-links";
+import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
 import {
   normalizeTypeViewConfig,
   normalizeTypeViewConfigs,
@@ -127,6 +140,14 @@ import {
   saveHistorySettings,
   updateHistoryVersion,
 } from "@/lib/note-history";
+import { ImageUrlCache } from "@/lib/image-url-cache";
+import {
+  createImageMutationQueue,
+  imageReferenceCount,
+  loadedNotesShareImage,
+  moveImageWithRollback,
+  unloadedNotesReferenceImage,
+} from "@/lib/image-lifecycle";
 
 const VAULT_PATH_KEY = "zerus.vaultPath";
 const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
@@ -135,6 +156,7 @@ const FILE_HUB_MAPPINGS_KEY = "zerus.fileHubMappings.v1";
 const STARTUP_CACHE_KEY_PREFIX = "zerus.startupCache.v1.";
 const SAVED_LINKS_DIR = ".zerus/links";
 const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
+const TRASHED_IMAGES_INDEX_PATH = ".zerus/trashed-images.json";
 const FLUSH_DELAY_MS = 500;
 const MOBILE_NOTE_PAGE_SIZE = 30;
 
@@ -148,6 +170,8 @@ export interface VaultState {
   location: string | null;
   isDesktop: boolean;
   notes: Note[];
+  /** Recoverable image attachments currently held in Zerus Trash. */
+  trashedImages: TrashedImage[];
   /** Total non-trashed vault notes, including notes whose bodies are not loaded yet. */
   totalNoteCount: number;
   /** Direct note totals keyed by exact type path. */
@@ -174,8 +198,21 @@ export interface VaultState {
   /** Simultaneous editor and disk edits awaiting an explicit user choice. */
   conflicts: Readonly<Record<string, NoteConflict>>;
   historySettings: HistorySettings;
+  /** Markdown behavior shared through `.zerus/editor-settings.json`. */
+  editorSettings: EditorSettings;
   historyError: string | null;
   error: string | null;
+}
+
+export interface TrashedImage {
+  id: string;
+  name: string;
+  originalPath: string;
+  trashPath: string;
+  deletedAt: string;
+  /** Note and source used to reattach the image when restored from Trash. */
+  noteId?: string;
+  markdown?: string;
 }
 
 export interface NoteConflict {
@@ -191,6 +228,7 @@ let state: VaultState = {
   location: null,
   isDesktop: false,
   notes: [],
+  trashedImages: [],
   totalNoteCount: 0,
   typeNoteCounts: {},
   isNotePaginationEnabled: false,
@@ -206,6 +244,11 @@ let state: VaultState = {
   isRefreshing: false,
   conflicts: {},
   historySettings: DEFAULT_HISTORY_SETTINGS,
+  editorSettings: {
+    version: 1,
+    ...DEFAULT_EDITOR_SETTINGS_VALUES,
+    updatedAt: new Date(0).toISOString(),
+  },
   historyError: null,
   error: null,
 };
@@ -225,6 +268,9 @@ let desktopOpenHookInstalled = false;
 let desktopOpenDrain: Promise<void> | null = null;
 let desktopSyncTimer: ReturnType<typeof setInterval> | null = null;
 let desktopSyncInFlight = false;
+let editorSettingsSyncTimer: ReturnType<typeof setInterval> | null = null;
+let editorSettingsSyncInFlight = false;
+let editorSettingsWriteInFlight: Promise<void> = Promise.resolve();
 let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
@@ -347,6 +393,83 @@ async function recordHistorySafely(
 function setState(patch: Partial<VaultState>) {
   state = { ...state, ...patch };
   emit();
+}
+
+function applyVaultEditorSettings(settings: EditorSettings): void {
+  setState({ editorSettings: settings });
+  applySyncedEditorPreferences(settings, (patch) => {
+    void updateEditorSettings(patch);
+  });
+}
+
+async function loadOrSeedEditorSettings(
+  target: VaultBackend,
+): Promise<EditorSettings> {
+  const existing = await readEditorSettings(target);
+  if (existing) return existing;
+  return writeEditorSettings(target, loadLocalEditorPreferenceSeed());
+}
+
+/** Save the vault-scoped Markdown preferences and update open editors now. */
+export async function updateEditorSettings(
+  patch: Partial<SyncedEditorPreferenceValues>,
+): Promise<void> {
+  const target = backend;
+  if (!target) return;
+  const desired: SyncedEditorPreferenceValues = {
+    editorMode: patch.editorMode ?? state.editorSettings.editorMode,
+    markdownTypingEnabled:
+      patch.markdownTypingEnabled ??
+      state.editorSettings.markdownTypingEnabled,
+  };
+  const optimistic: EditorSettings = {
+    version: 1,
+    ...desired,
+    updatedAt: new Date().toISOString(),
+  };
+  applyVaultEditorSettings(optimistic);
+
+  editorSettingsWriteInFlight = editorSettingsWriteInFlight.then(async () => {
+    if (backend !== target) return;
+    try {
+      const saved = await writeEditorSettings(target, desired);
+      if (backend !== target) return;
+      // A newer local choice may already be queued; do not roll it back while
+      // this earlier write completes.
+      if (state.editorSettings.updatedAt <= optimistic.updatedAt) {
+        applyVaultEditorSettings(saved);
+      }
+    } catch (error) {
+      reportError("save editor settings", error);
+    }
+  });
+  await editorSettingsWriteInFlight;
+}
+
+async function refreshEditorSettingsFromVault(): Promise<void> {
+  if (editorSettingsSyncInFlight || !backend || state.status !== "ready") {
+    return;
+  }
+  editorSettingsSyncInFlight = true;
+  const target = backend;
+  try {
+    const candidate = await readEditorSettings(target);
+    if (!candidate || backend !== target) return;
+    if (newerEditorSettings(state.editorSettings, candidate) === candidate &&
+        candidate.updatedAt !== state.editorSettings.updatedAt) {
+      applyVaultEditorSettings(candidate);
+    }
+  } finally {
+    editorSettingsSyncInFlight = false;
+  }
+}
+
+function installEditorSettingsSync(): void {
+  if (editorSettingsSyncTimer) return;
+  editorSettingsSyncTimer = setInterval(
+    () => void refreshEditorSettingsFromVault(),
+    2_000,
+  );
 }
 
 function subscribe(listener: () => void): () => void {
@@ -902,6 +1025,7 @@ async function loadVault(nextBackend: VaultBackend) {
     location: nextBackend.location,
     isDesktop: nextBackend.kind === "desktop",
     notes: [],
+    trashedImages: [],
     totalNoteCount: 0,
     typeNoteCounts: {},
     isNotePaginationEnabled: false,
@@ -993,6 +1117,8 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       fileLocations,
       historySettings,
+      editorSettings,
+      trashedImages,
     ] = await Promise.all([
       canPage
         ? nextBackend.listNoteEntries!()
@@ -1009,6 +1135,8 @@ async function loadVault(nextBackend: VaultBackend) {
       loadTypeViews(nextBackend),
       loadFileLocations(nextBackend),
       loadHistorySettings(nextBackend),
+      loadOrSeedEditorSettings(nextBackend),
+      loadTrashedImages(nextBackend),
     ]);
     if (canPage) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
@@ -1105,10 +1233,13 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       fileLocations,
       historySettings,
+      editorSettings,
+      trashedImages,
       conflicts: restoredSession.conflicts,
       loadingNoteIds: new Set(),
       isRefreshing: false,
     });
+    applyVaultEditorSettings(editorSettings);
     startupEditedNoteIds.clear();
     for (const id of editedIds) {
       pendingFlush.set(
@@ -1209,6 +1340,7 @@ export async function loadAllNotes(): Promise<boolean> {
 export function initStore() {
   if (initialized) return;
   initialized = true;
+  installEditorSettingsSync();
   if (isTauri()) {
     if (isIOSRuntime()) {
       void (async () => {
@@ -1341,7 +1473,10 @@ export async function reloadVault() {
 
 /** Reconciles changes made outside Zerus when the desktop app regains focus. */
 export async function refreshVaultFromDisk() {
-  await synchronizeDesktopFiles();
+  await Promise.all([
+    synchronizeDesktopFiles(),
+    refreshEditorSettingsFromVault(),
+  ]);
 }
 
 function relativePathKey(path: string): string {
@@ -1935,6 +2070,7 @@ async function flushAll(
     )
   );
   await typeViewsWriteInFlight;
+  await editorSettingsWriteInFlight;
   return saved;
 }
 
@@ -3034,15 +3170,65 @@ const MIME_BY_EXT: Record<string, string> = {
   bmp: "image/bmp",
 };
 
-const imageUrlCache = new Map<string, Promise<string | null>>();
+const imageUrlCache = new ImageUrlCache();
+const serializeImageMutation = createImageMutationQueue();
+
+function isTrashedImage(value: unknown): value is TrashedImage {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<TrashedImage>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.originalPath === "string" &&
+    typeof candidate.trashPath === "string" &&
+    typeof candidate.deletedAt === "string"
+  );
+}
+
+async function loadTrashedImages(
+  source: VaultBackend,
+): Promise<TrashedImage[]> {
+  try {
+    const parsed = JSON.parse(
+      await source.readText(TRASHED_IMAGES_INDEX_PATH),
+    ) as unknown;
+    return Array.isArray(parsed) ? parsed.filter(isTrashedImage) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function persistTrashedImages(
+  images = state.trashedImages,
+  targetBackend = backend,
+) {
+  if (!targetBackend) return;
+  await targetBackend.write(
+    TRASHED_IMAGES_INDEX_PATH,
+    JSON.stringify(images, null, 2),
+  );
+}
+
+function imageFileName(path: string): string {
+  const encoded = path.split("/").pop() || "image";
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+}
+
+function imageMimeType(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  return MIME_BY_EXT[ext] ?? "image/png";
+}
 
 function clearImageUrlCache() {
-  for (const pending of imageUrlCache.values()) {
-    void pending.then((url) => {
-      if (url && url.startsWith("blob:")) URL.revokeObjectURL(url);
-    });
-  }
   imageUrlCache.clear();
+}
+
+function invalidateImageUrl(path: string) {
+  imageUrlCache.invalidate(path);
 }
 
 /**
@@ -3051,9 +3237,7 @@ function clearImageUrlCache() {
  */
 export function getImageUrl(path: string): Promise<string | null> {
   if (isRemoteUrl(path)) return Promise.resolve(path);
-  let cached = imageUrlCache.get(path);
-  if (!cached) {
-    cached = (async () => {
+  return imageUrlCache.get(path, async () => {
       if (!backend) return null;
       try {
         const bytes = await backend.readBinary(decodeURI(path));
@@ -3063,10 +3247,265 @@ export function getImageUrl(path: string): Promise<string | null> {
       } catch {
         return null;
       }
-    })();
-    imageUrlCache.set(path, cached);
+    });
+}
+
+/** Opens an embedded image in the platform's default app. */
+export async function openImageInDefaultApp(path: string): Promise<boolean> {
+  try {
+    if (isRemoteUrl(path)) {
+      await openExternalUrl(path);
+      return true;
+    }
+    const absolute = backend?.absolutePath?.(decodeURI(path));
+    if (absolute) {
+      await openPath(absolute);
+      return true;
+    }
+    const url = await getImageUrl(path);
+    if (!url) return false;
+    window.open(url, "_blank", "noopener,noreferrer");
+    return true;
+  } catch (error) {
+    reportError("open image", error);
+    return false;
   }
-  return cached;
+}
+
+/** Copies the actual image payload rather than its Markdown source. */
+export async function copyImageToClipboard(path: string): Promise<boolean> {
+  try {
+    const url = await getImageUrl(path);
+    if (!url || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
+      return false;
+    }
+    const response = await fetch(url);
+    const source = await response.blob();
+    const type = source.type.startsWith("image/")
+      ? source.type
+      : imageMimeType(path);
+    const blob = source.type === type ? source : new Blob([source], { type });
+    await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+    return true;
+  } catch (error) {
+    reportError("copy image", error);
+    return false;
+  }
+}
+
+export type TrashImageResult =
+  | { kind: "external" | "shared" }
+  | { kind: "trashed"; image: TrashedImage };
+
+async function imageIsShared(
+  targetBackend: VaultBackend,
+  noteId: string,
+  path: string,
+): Promise<boolean> {
+  if (loadedNotesShareImage(state.notes, noteId, path)) return true;
+  if (
+    targetBackend.kind !== "mobile" ||
+    !targetBackend.listNoteEntries ||
+    !targetBackend.loadFiles
+  ) {
+    return false;
+  }
+  const entries = await targetBackend.listNoteEntries();
+  const loadedPaths = new Set(
+    state.notes
+      .filter((note) => !isExternalNote(note))
+      .map((note) => note.path),
+  );
+  return unloadedNotesReferenceImage(
+    targetBackend,
+    entries,
+    loadedPaths,
+    path,
+    MOBILE_NOTE_PAGE_SIZE,
+  );
+}
+
+/** Moves an unshared vault image into recoverable Zerus Trash. */
+export function trashImageForNote(
+  noteId: string,
+  path: string,
+  markdown?: string,
+): Promise<TrashImageResult> {
+  return serializeImageMutation(() =>
+    performTrashImageForNote(noteId, path, markdown),
+  );
+}
+
+async function performTrashImageForNote(
+  noteId: string,
+  path: string,
+  markdown?: string,
+): Promise<TrashImageResult> {
+  const targetBackend = backend;
+  if (!targetBackend || isRemoteUrl(path)) return { kind: "external" };
+  if (await imageIsShared(targetBackend, noteId, path)) {
+    return { kind: "shared" };
+  }
+  if (backend !== targetBackend) throw new Error("Vault changed while removing image.");
+  const originalPath = decodeURI(path);
+  if (!(await targetBackend.exists(originalPath))) return { kind: "external" };
+
+  const name = imageFileName(path);
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  const extension = dot > 0 ? name.slice(dot) : "";
+  let trashPath = `${TRASH_DIR}/assets/${name}`;
+  for (
+    let suffix = 2;
+    await targetBackend.exists(trashPath);
+    suffix += 1
+  ) {
+    trashPath = `${TRASH_DIR}/assets/${stem}-${suffix}${extension}`;
+  }
+  if (backend !== targetBackend) throw new Error("Vault changed while removing image.");
+  const image: TrashedImage = {
+    id: crypto.randomUUID(),
+    name,
+    originalPath: path,
+    trashPath,
+    deletedAt: new Date().toISOString(),
+    noteId,
+    markdown,
+  };
+  const previousImages = state.trashedImages;
+  const trashedImages = [image, ...previousImages];
+  await moveImageWithRollback(
+    targetBackend,
+    originalPath,
+    trashPath,
+    () => persistTrashedImages(trashedImages, targetBackend),
+  );
+  if (backend !== targetBackend) {
+    await moveImageWithRollback(
+      targetBackend,
+      trashPath,
+      originalPath,
+      () => persistTrashedImages(previousImages, targetBackend),
+    );
+    throw new Error("Vault changed while removing image.");
+  }
+  invalidateImageUrl(path);
+  setState({ trashedImages });
+  return { kind: "trashed", image };
+}
+
+/** Restores a recoverable image to its original vault path. */
+export function restoreTrashedImage(
+  id: string,
+  options: { reattach?: boolean } = {},
+): Promise<boolean> {
+  return serializeImageMutation(() => performRestoreTrashedImage(id, options));
+}
+
+async function performRestoreTrashedImage(
+  id: string,
+  options: { reattach?: boolean },
+): Promise<boolean> {
+  const targetBackend = backend;
+  if (!targetBackend) return false;
+  const image = state.trashedImages.find((candidate) => candidate.id === id);
+  const originalPath = image ? decodeURI(image.originalPath) : "";
+  if (!image || (await targetBackend.exists(originalPath))) {
+    return false;
+  }
+  try {
+    const previousImages = state.trashedImages;
+    const trashedImages = state.trashedImages.filter(
+      (candidate) => candidate.id !== id,
+    );
+    await moveImageWithRollback(
+      targetBackend,
+      image.trashPath,
+      originalPath,
+      () => persistTrashedImages(trashedImages, targetBackend),
+    );
+    if (backend !== targetBackend) {
+      await moveImageWithRollback(
+        targetBackend,
+        originalPath,
+        image.trashPath,
+        () => persistTrashedImages(previousImages, targetBackend),
+      );
+      return false;
+    }
+    invalidateImageUrl(image.originalPath);
+    invalidateImageUrl(image.trashPath);
+    setState({ trashedImages });
+    if (options.reattach !== false && image.noteId && image.markdown) {
+      const note = state.notes.find((candidate) => candidate.id === image.noteId);
+      if (note && imageReferenceCount(note.content, image.originalPath) === 0) {
+        const body = noteBody(note.content);
+        const separator = body.length === 0 || body.endsWith("\n\n")
+          ? ""
+          : body.endsWith("\n")
+            ? "\n"
+            : "\n\n";
+        updateNoteContent(
+          note.id,
+          withBody(note.content, `${body}${separator}${image.markdown}`),
+        );
+      }
+    }
+    return true;
+  } catch (error) {
+    reportError("restore image", error);
+    return false;
+  }
+}
+
+export function deleteTrashedImageForever(id: string): Promise<boolean> {
+  return serializeImageMutation(() => performDeleteTrashedImageForever(id));
+}
+
+async function performDeleteTrashedImageForever(
+  id: string,
+): Promise<boolean> {
+  const targetBackend = backend;
+  if (!targetBackend) return false;
+  const image = state.trashedImages.find((candidate) => candidate.id === id);
+  if (!image) return false;
+  try {
+    if (await targetBackend.exists(image.trashPath)) {
+      await targetBackend.removeFile(image.trashPath);
+    }
+    const trashedImages = state.trashedImages.filter(
+      (candidate) => candidate.id !== id,
+    );
+    await persistTrashedImages(trashedImages, targetBackend);
+    if (backend !== targetBackend) return false;
+    invalidateImageUrl(image.trashPath);
+    setState({ trashedImages });
+    return true;
+  } catch (error) {
+    reportError("delete image", error);
+    return false;
+  }
+}
+
+/** Permanently removes a newly saved image that never made it into a note. */
+export function discardUnsavedImage(path: string): Promise<void> {
+  return serializeImageMutation(() => performDiscardUnsavedImage(path));
+}
+
+async function performDiscardUnsavedImage(path: string): Promise<void> {
+  try {
+    const targetBackend = backend;
+    if (!targetBackend || isRemoteUrl(path)) return;
+    if (await imageIsShared(targetBackend, "", path)) return;
+    if (backend !== targetBackend) return;
+    const decodedPath = decodeURI(path);
+    if (await targetBackend.exists(decodedPath)) {
+      await targetBackend.removeFile(decodedPath);
+    }
+    invalidateImageUrl(path);
+  } catch (error) {
+    reportError("discard unsaved image", error);
+  }
 }
 
 /** Reads a vault-relative image for a provider request. */
@@ -3694,17 +4133,23 @@ export async function deleteNoteForever(id: string) {
   }
 }
 
-export async function emptyTrash() {
-  if (!backend) return;
+export function emptyTrash(): Promise<void> {
+  return serializeImageMutation(performEmptyTrash);
+}
+
+async function performEmptyTrash() {
+  const targetBackend = backend;
+  if (!targetBackend) return;
   const trashed = state.notes.filter((note) => isTrashed(note));
+  const trashedImages = [...state.trashedImages];
   for (const note of trashed) {
     try {
       const reference = getFileHubReference(note);
       if (reference?.managed && reference.kind === "vault" && reference.path) {
-        await backend.removeFile(reference.path);
+        await targetBackend.removeFile(reference.path);
       }
-      await backend.removeFile(note.path);
-      await clearStoredNoteHistory(backend, note.id).catch((error) =>
+      await targetBackend.removeFile(note.path);
+      await clearStoredNoteHistory(targetBackend, note.id).catch((error) =>
         reportError("delete note history", error),
       );
     } catch (error) {
@@ -3712,7 +4157,26 @@ export async function emptyTrash() {
       return;
     }
   }
-  setState({ notes: state.notes.filter((note) => !isTrashed(note)) });
+  for (const image of trashedImages) {
+    try {
+      if (await targetBackend.exists(image.trashPath)) {
+        await targetBackend.removeFile(image.trashPath);
+      }
+    } catch (error) {
+      reportError("empty image trash", error);
+      return;
+    }
+  }
+  await persistTrashedImages([], targetBackend);
+  if (backend !== targetBackend) return;
+  for (const image of trashedImages) {
+    invalidateImageUrl(image.trashPath);
+    invalidateImageUrl(image.originalPath);
+  }
+  setState({
+    notes: state.notes.filter((note) => !isTrashed(note)),
+    trashedImages: [],
+  });
   for (const note of trashed) {
     diskSnapshots.delete(note.id);
     clearNoteConflict(note.id);

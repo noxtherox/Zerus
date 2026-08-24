@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  forgetDesktopVault,
   loadDesktopVaults,
   rememberDesktopVault,
   vaultNameFromPath,
@@ -44,5 +45,17 @@ describe("desktop vault registry", () => {
   it("names POSIX and Windows vault folders", () => {
     expect(vaultNameFromPath("/Users/me/Notes/")).toBe("Notes");
     expect(vaultNameFromPath("C:\\Users\\me\\Notes\\")).toBe("Notes");
+  });
+
+  it("forgets a vault without affecting the other saved vaults", () => {
+    rememberDesktopVault("/Users/me/Notes");
+    rememberDesktopVault("/Users/me/Work");
+
+    expect(forgetDesktopVault("/Users/me/Notes")).toEqual([
+      { name: "Work", path: "/Users/me/Work" },
+    ]);
+    expect(loadDesktopVaults()).toEqual([
+      { name: "Work", path: "/Users/me/Work" },
+    ]);
   });
 });

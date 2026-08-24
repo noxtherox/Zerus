@@ -22,6 +22,30 @@ export default defineConfig(() => ({
         codeSplitting: {
           groups: [
             {
+              name: "markdown-renderer",
+              test: /node_modules[\\/](react-markdown|remark-|rehype-|unified|micromark|mdast-util|hast-util)/,
+              maxSize: 450 * 1024,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "vault-store",
+              test: /src[\\/]store[\\/]notes-store\.ts$/,
+              maxSize: 450 * 1024,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "editor-ui",
+              test: /src[\\/]components[\\/]editor[\\/]/,
+              maxSize: 450 * 1024,
+              includeDependenciesRecursively: false,
+            },
+            {
+              name: "code-editor",
+              test: /node_modules[\\/](@codemirror|@lezer)[\\/]/,
+              maxSize: 450 * 1024,
+              includeDependenciesRecursively: false,
+            },
+            {
               name: "tabler-icons",
               test: /node_modules[\\/]@tabler[\\/]icons-react[\\/]dist[\\/]esm[\\/]icons[\\/]/,
               maxSize: 900 * 1024,

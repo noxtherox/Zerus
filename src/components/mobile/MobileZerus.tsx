@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowDown,
   ArrowUp,
+  Check,
   ChevronRight,
   Cloud,
   Copy,
@@ -99,10 +100,18 @@ import {
 } from "@/lib/links";
 import type { PropertySchemas } from "@/lib/properties";
 import {
+  loadEditorMode,
+  loadMarkdownTypingEnabled,
+  MARKDOWN_TYPING_DESCRIPTION,
+  EDITOR_MODE_CHANGE_EVENT,
+  MARKDOWN_TYPING_CHANGE_EVENT,
   loadDefaultNoteType,
   loadNoteTypeOrder,
+  saveEditorMode,
+  saveMarkdownTypingEnabled,
   saveDefaultNoteType,
   saveNoteTypeOrder,
+  type EditorMode,
 } from "@/lib/note-preferences";
 import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
 import {
@@ -126,6 +135,7 @@ import {
   deleteType,
   detachFileHub,
   emptyTrash,
+  deleteTrashedImageForever,
   getFileHubStatus,
   getNotes,
   attachFileToNote,
@@ -139,6 +149,8 @@ import {
   renameFileLocation,
   renameType,
   restoreNote,
+  restoreTrashedImage,
+  openImageInDefaultApp,
   savePastedImage,
   setNoteType,
   setTypeIcon,
@@ -550,13 +562,15 @@ interface NoteActionSheetProps {
   onDetachFile: () => void;
   onMoveToTrash: () => void;
   onFind: () => void;
+  onInterpretMarkdown: () => void;
+  canInterpretMarkdown: boolean;
   onInsertImage: () => void;
   onMoveType: () => void;
   onChat: () => void;
   onShowHistory: () => void;
 }
 
-function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInterpretMarkdown, canInterpretMarkdown, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
   const archived = isArchived(note);
   const trashed = isTrashed(note);
   const external = isExternalNote(note);
@@ -566,13 +580,16 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
     icon: ReactNode,
     run: () => void,
     destructive = false,
+    disabled = false,
   ) => (
     <button
       type="button"
+      disabled={disabled}
       onClick={() => { onClose(); run(); }}
       className={cn(
         "flex min-h-[56px] w-full items-center gap-3 border-b border-white/[0.08] px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05]",
         destructive && "text-[#ff6961]",
+        disabled && "opacity-40",
       )}
     >
       <span className="flex h-8 w-8 items-center justify-center">{icon}</span>
@@ -601,6 +618,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
           {action("Chat about this note", <Sparkles className="h-5 w-5" />, onChat)}
           {action("Find in note", <Search className="h-5 w-5" />, onFind)}
+          {action("Interpret as Markdown", <Sparkles className="h-5 w-5" />, onInterpretMarkdown, false, !canInterpretMarkdown)}
           {!external && action("Version history", <History className="h-5 w-5" />, onShowHistory)}
           {!external && !trashed && action("Insert image", <ImagePlus className="h-5 w-5" />, onInsertImage)}
           {!external && !trashed && action("Move to folder", <FolderCog className="h-5 w-5" />, onMoveType)}
@@ -679,6 +697,8 @@ function NoteView({
   }, [presentedNote.body, presentedNote.title]);
   const [moveTypeOpen, setMoveTypeOpen] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
+  const [interpretMarkdownRequest, setInterpretMarkdownRequest] = useState(0);
+  const [hasTextSelection, setHasTextSelection] = useState(false);
   const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string } | null>(null);
   const [fileExists, setFileExists] = useState<boolean | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -761,6 +781,15 @@ function NoteView({
 
   const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     if (isSettling) return;
+    if (
+      event.target instanceof Element &&
+      event.target.closest(
+        ".cm-editor, input, textarea, select, button, [contenteditable]",
+      )
+    ) {
+      touchStart.current = null;
+      return;
+    }
     const touch = event.touches[0];
     if (!touch) return;
     touchStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
@@ -904,9 +933,9 @@ function NoteView({
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
             <ExternalLink className="h-4 w-4 shrink-0 text-[#77777d]" />
         </button>}
-        <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden [&_[role=toolbar]]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-28 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
+        <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden [&_.cm-editor-toolbar]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-28 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
           <MarkdownEditor
-            noteId={`mobile-${presentedNote.id}`}
+            noteId={note.id}
             initialContent={draft}
             getLinkableTitles={() => linkableNotes().map((candidate) => noteTitle(candidate))}
             isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
@@ -920,6 +949,8 @@ function NoteView({
             firstLineIsTitle={false}
             followLinksOnClick
             findRequest={findRequest}
+            interpretMarkdownRequest={interpretMarkdownRequest}
+            onTextSelectionChange={setHasTextSelection}
             insertTextRequest={insertTextRequest}
           />
         </div>
@@ -1030,6 +1061,8 @@ function NoteView({
           onDetachFile={() => setDetachConfirmOpen(true)}
           onMoveToTrash={() => setTrashConfirmOpen(true)}
           onFind={() => setFindRequest((value) => value + 1)}
+          onInterpretMarkdown={() => setInterpretMarkdownRequest((value) => value + 1)}
+          canInterpretMarkdown={hasTextSelection}
           onInsertImage={() => imageInputRef.current?.click()}
           onMoveType={() => setMoveTypeOpen(true)}
           onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
@@ -1163,7 +1196,7 @@ function Composer({ onClose, onSave, typePath, allNotes }: ComposerProps) {
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-3">
           <Input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus placeholder="Note title" className="h-auto border-0 bg-transparent px-0 text-[36px] font-bold leading-[1.06] tracking-[-0.045em] shadow-none ring-offset-0 placeholder:text-[#c1bdb7] focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-[#f5f3ef] dark:placeholder:text-[#5e5b57] md:text-[36px]" />
-          <div className="mobile-note-editor -mx-6 mb-5 mt-3 h-[320px] overflow-hidden [&_[role=toolbar]]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-20 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
+          <div className="mobile-note-editor -mx-6 mb-5 mt-3 h-[320px] overflow-hidden [&_.cm-editor-toolbar]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-20 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
             <MarkdownEditor
               noteId="mobile-new-note"
               initialContent={body}
@@ -1202,6 +1235,23 @@ function MobileSettings({
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<EditorMode>(loadEditorMode);
+  const [markdownTypingEnabled, setMarkdownTypingEnabled] = useState(
+    loadMarkdownTypingEnabled,
+  );
+
+  useEffect(() => {
+    const handleMode = (event: Event) =>
+      setEditorMode((event as CustomEvent<EditorMode>).detail);
+    const handleTyping = (event: Event) =>
+      setMarkdownTypingEnabled((event as CustomEvent<boolean>).detail);
+    window.addEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
+    window.addEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
+    return () => {
+      window.removeEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
+      window.removeEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
+    };
+  }, []);
 
   const mapLocation = async (id: string) => {
     setBusyLocation(id);
@@ -1233,16 +1283,27 @@ function MobileSettings({
   };
 
   return (
-    <div className="absolute inset-0 z-50 flex items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Mobile settings">
-      <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 shadow-2xl">
-        <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
-        <header className="flex items-center justify-between py-4">
+    <div className="absolute inset-0 z-50 flex min-h-0 items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Mobile settings">
+      <section className="flex h-[92%] max-h-[92dvh] min-h-0 w-full flex-col overflow-hidden rounded-t-[28px] bg-[#1c1d1e] pt-3 shadow-2xl">
+        <div className="mx-auto h-1 w-10 shrink-0 rounded-full bg-white/20" />
+        <header className="flex shrink-0 items-center justify-between bg-[#1c1d1e] px-5 py-4">
           <div>
             <h2 className="text-[22px] font-bold tracking-[-0.03em]">Settings</h2>
             <p className="mt-0.5 text-xs text-[#8e8e93]">Markdown vault</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-9 w-9 rounded-full bg-white/[0.08]" aria-label="Close settings"><X className="h-5 w-5" /></Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-11 w-11 rounded-full bg-white/[0.08] text-[#ef6b62] hover:bg-white/[0.12] hover:text-[#ef6b62]"
+            aria-label="Close settings"
+          >
+            <Check className="h-5 w-5" strokeWidth={2.5} />
+          </Button>
         </header>
+
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] [-webkit-overflow-scrolling:touch]">
 
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Current vault</p>
         <div className="rounded-[16px] bg-[#292a2b] px-4 py-4">
@@ -1323,6 +1384,53 @@ function MobileSettings({
           {locationMessage && <p className="mt-3 rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{locationMessage}</p>}
         </div>
 
+        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Editor</p>
+        <div className="rounded-[16px] bg-[#292a2b] p-4">
+          <span className="block text-[15px] font-semibold">Editor experience</span>
+          <span className="mt-0.5 block text-xs leading-4 text-[#8e8e93]">
+            Clean renders formatting without showing its Markdown characters. Markdown-aware reveals them around the cursor.
+          </span>
+          <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Editor experience">
+            {(["clean", "markdown-aware"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={editorMode === mode}
+                className={cn(
+                  "h-10 rounded-[11px] px-3 text-xs font-semibold transition-colors",
+                  editorMode === mode
+                    ? "bg-[#df5149] text-white"
+                    : "bg-white/[0.07] text-[#c4c0bb]",
+                )}
+                onClick={() => {
+                  setEditorMode(mode);
+                  saveEditorMode(mode);
+                }}
+              >
+                {mode === "clean" ? "Clean" : "Markdown-aware"}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-4 border-t border-white/[0.08] pt-4">
+            <span className="min-w-0 flex-1">
+              <label htmlFor="mobile-markdown-typing-enabled" className="block text-[15px] font-semibold">
+                Format Markdown while typing
+              </label>
+              <span className="mt-0.5 block text-xs leading-4 text-[#8e8e93]">
+                {MARKDOWN_TYPING_DESCRIPTION}
+              </span>
+            </span>
+            <Switch
+              id="mobile-markdown-typing-enabled"
+              checked={markdownTypingEnabled}
+              onCheckedChange={(enabled) => {
+                setMarkdownTypingEnabled(enabled);
+                saveMarkdownTypingEnabled(enabled);
+              }}
+            />
+          </div>
+        </div>
+
         <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
         <div className="space-y-4 rounded-[16px] bg-[#292a2b] p-4">
           <div className="flex items-center justify-between gap-3">
@@ -1336,6 +1444,7 @@ function MobileSettings({
           <button type="button" className="text-left text-xs font-semibold text-[#ef6b62]" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: historySettings.checkpointLimit === null ? 10 : null })}>{historySettings.checkpointLimit === null ? "Use a fixed limit" : "Keep unlimited checkpoints"}</button>
           <button type="button" className="block border-t border-white/[0.08] pt-4 text-left text-sm font-semibold text-[#ff6961]" onClick={() => setClearHistoryOpen(true)}>Clear all version history</button>
           {historyError && <p className="rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{historyError}</p>}
+        </div>
         </div>
       </section>
       <AlertDialog open={clearHistoryOpen} onOpenChange={setClearHistoryOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Clear all version history?</AlertDialogTitle><AlertDialogDescription>This permanently deletes automatic and kept versions for every note in this vault. Current notes and live images are not changed.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => void clearVaultVersionHistory().then(() => setClearHistoryOpen(false))}>Clear all history</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
@@ -1424,6 +1533,7 @@ export function MobileZerus() {
   const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat">("notes");
   const [notesPreparationError, setNotesPreparationError] = useState<string | null>(null);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
+  const [deleteImageTargetId, setDeleteImageTargetId] = useState<string | null>(null);
   const [vaultSetupOpen, setVaultSetupOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<NoteFilter>({ kind: "all" });
@@ -1548,8 +1658,8 @@ export function MobileZerus() {
     all: vault.isNotePaginationEnabled ? vault.totalNoteCount : filterNotes(vault.notes, { kind: "all" }, "").length,
     external: filterNotes(vault.notes, { kind: "external" }, "").length,
     files: filterNotes(vault.notes, { kind: "files" }, "").length,
-    trash: filterNotes(vault.notes, { kind: "trash" }, "").length,
-  }), [vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount]);
+    trash: filterNotes(vault.notes, { kind: "trash" }, "").length + vault.trashedImages.length,
+  }), [vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount, vault.trashedImages.length]);
 
   const pushNavigation = (entry: MobileNavigationEntry) => {
     window.history.pushState(withMobileNavigationEntry(window.history.state, entry), "");
@@ -1820,7 +1930,7 @@ export function MobileZerus() {
           >
             <header className="sticky top-0 z-20 grid grid-cols-[44px_1fr_auto] items-center border-b border-white/[0.07] bg-[#1c1d1e]/90 px-4 pb-3 pt-1 backdrop-blur-xl">
               <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-[#2c2c2e] text-[#f5f5f7] hover:bg-[#363638]" aria-label="Open Zerus navigation"><Menu className="h-[21px] w-[21px]" /></Button>
-              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{filteredNotes.length} {scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
+              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-[#8e8e93]">{scope.kind === "trash" ? libraryCounts.trash : filteredNotes.length} {scope.kind === "trash" ? (libraryCounts.trash === 1 ? "Item" : "Items") : scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
               {scope.kind === "trash" && libraryCounts.trash > 0 ? (
                 <Button variant="ghost" onClick={() => setEmptyTrashConfirmOpen(true)} className="h-11 rounded-full px-3 text-[14px] font-semibold text-[#ff6961] hover:bg-[#363638] hover:text-[#ff6961]">Empty</Button>
               ) : (
@@ -1832,9 +1942,29 @@ export function MobileZerus() {
                 <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div> : <div className="rounded-[18px] bg-[#222324] px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-[#65625f]" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-[#8e8a85]">Try a different search.</p></div>}</section>
               ) : (
                 <div className="space-y-7">
+                  {scope.kind === "trash" && vault.trashedImages.length > 0 && (
+                    <section>
+                      <h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Deleted Images</h2>
+                      <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">
+                        {vault.trashedImages.map((image) => (
+                          <div key={image.id} className="flex items-center gap-3 border-b border-white/[0.065] px-1 py-3 last:border-b-0">
+                            <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => void openImageInDefaultApp(image.trashPath)}>
+                              <NoteCardImage path={image.trashPath} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[15px] font-semibold">{image.name}</span>
+                                <span className="mt-0.5 block text-xs text-[#8e8e93]">Image · Recently deleted</span>
+                              </span>
+                            </button>
+                            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full bg-white/[0.07] text-[#ef6b62]" aria-label={`Restore ${image.name}`} onClick={() => void restoreTrashedImage(image.id)}><Undo2 className="h-5 w-5" /></Button>
+                            <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full text-[#ff6961]" aria-label={`Delete ${image.name} forever`} onClick={() => setDeleteImageTargetId(image.id)}><Trash2 className="h-5 w-5" /></Button>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   {pinnedNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Pinned</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
                   {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
-                  {filteredNotes.length === 0 && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
+                  {filteredNotes.length === 0 && (scope.kind !== "trash" || vault.trashedImages.length === 0) && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
                     {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
                     <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
                     <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
@@ -1908,12 +2038,24 @@ export function MobileZerus() {
             <AlertDialogHeader>
               <AlertDialogTitle>Empty trash?</AlertDialogTitle>
               <AlertDialogDescription>
-                {libraryCounts.trash} deleted {libraryCounts.trash === 1 ? "note" : "notes"} will be permanently removed. This can’t be undone.
+                {libraryCounts.trash} deleted {libraryCounts.trash === 1 ? "item" : "items"} will be permanently removed. This can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction className={buttonVariants({ variant: "destructive" })} onClick={() => void emptyTrash()}>Empty trash</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={deleteImageTargetId !== null} onOpenChange={(open) => !open && setDeleteImageTargetId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Delete this image forever?</AlertDialogTitle>
+              <AlertDialogDescription>This can’t be undone.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction className={buttonVariants({ variant: "destructive" })} onClick={() => { if (deleteImageTargetId) void deleteTrashedImageForever(deleteImageTargetId); }}>Delete forever</AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>

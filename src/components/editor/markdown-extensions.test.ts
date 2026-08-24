@@ -1,6 +1,10 @@
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { shouldFollowWikilink, titleLineFrom } from "./markdown-extensions";
+import {
+  lineSelectionBetween,
+  shouldFollowWikilink,
+  titleLineFrom,
+} from "./markdown-extensions";
 
 describe("note title line", () => {
   it("uses the first line for a normal note", () => {
@@ -19,6 +23,24 @@ describe("note title line", () => {
     const state = EditorState.create({ doc: "" });
 
     expect(titleLineFrom(state)).toBe(0);
+  });
+});
+
+describe("line selection", () => {
+  it("stops before the following line break", () => {
+    const state = EditorState.create({ doc: "First line\nSecond line" });
+    const selection = lineSelectionBetween(state, 3);
+
+    expect(selection.from).toBe(0);
+    expect(selection.to).toBe("First line".length);
+    expect(state.sliceDoc(selection.from, selection.to)).toBe("First line");
+  });
+
+  it("can drag across lines without selecting past the final line", () => {
+    const state = EditorState.create({ doc: "First\nSecond\nThird" });
+    const selection = lineSelectionBetween(state, 2, 9);
+
+    expect(state.sliceDoc(selection.from, selection.to)).toBe("First\nSecond");
   });
 });
 

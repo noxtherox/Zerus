@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { richCopyHtml } from "./rich-copy";
+import { readableCopyText, richCopyHtml } from "./rich-copy";
 
 describe("richCopyHtml", () => {
   it("renders common Markdown and GFM as semantic HTML", () => {
@@ -32,5 +32,50 @@ describe("richCopyHtml", () => {
 
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+describe("readableCopyText", () => {
+  it("removes Markdown syntax while retaining readable structure", () => {
+    expect(
+      readableCopyText([
+        "## Update",
+        "",
+        "- **Ready** for [review](https://example.com)",
+        "- [x] Shipped",
+        "",
+        "> A useful quote",
+        "",
+        "Use `inline code` here.",
+      ].join("\n")),
+    ).toBe([
+      "Update",
+      "",
+      "• Ready for review",
+      "☑ Shipped",
+      "",
+      "› A useful quote",
+      "",
+      "Use inline code here.",
+    ].join("\n"));
+  });
+
+  it("turns a Markdown table into tab-separated readable text", () => {
+    expect(
+      readableCopyText(
+        "| Name | Status |\n| --- | --- |\n| Zerus | Ready |",
+      ),
+    ).toBe("Name\tStatus\nZerus\tReady");
+  });
+
+  it("keeps fenced code content but removes the fence", () => {
+    expect(readableCopyText("```ts\nconst answer = 42;\n```"))
+      .toBe("const answer = 42;");
+  });
+
+  it("copies escaped Markdown and repeated backslashes exactly as displayed", () => {
+    expect(
+      readableCopyText("\\*\\*literal\\*\\* and \\\\ path"),
+    ).toBe("**literal** and \\ path");
   });
 });

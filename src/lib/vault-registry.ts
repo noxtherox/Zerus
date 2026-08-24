@@ -50,3 +50,17 @@ export function rememberDesktopVault(path: string): DesktopVaultEntry[] {
   }
   return entries;
 }
+
+/** Forgets a desktop vault without changing anything in its folder. */
+export function forgetDesktopVault(path: string): DesktopVaultEntry[] {
+  const entries = loadDesktopVaults().filter((entry) => entry.path !== path);
+  try {
+    localStorage.setItem(
+      DESKTOP_VAULTS_KEY,
+      JSON.stringify(entries.map((entry) => entry.path)),
+    );
+  } catch {
+    // Keep the in-memory result useful when persistence is blocked.
+  }
+  return entries;
+}

@@ -189,10 +189,17 @@ export class BrowserVault implements VaultBackend {
 
   async move(from: string, to: string): Promise<void> {
     const file = this.files[from];
-    if (!file) return;
-    delete this.files[from];
-    this.files[to] = file;
-    this.persist();
+    if (file) {
+      delete this.files[from];
+      this.files[to] = file;
+      this.persist();
+      return;
+    }
+    const asset = this.assets[from];
+    if (asset === undefined) return;
+    delete this.assets[from];
+    this.assets[to] = asset;
+    this.persistAssets();
   }
 
   async removeFile(path: string): Promise<void> {

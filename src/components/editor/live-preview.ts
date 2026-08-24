@@ -11,6 +11,7 @@ import {
   EditorSelection,
   EditorState,
   type Extension,
+  Prec,
   type Range,
   StateEffect,
   StateField,
@@ -18,7 +19,10 @@ import {
 import { syntaxTree } from "@codemirror/language";
 import { WIKILINK_REGEX } from "@/lib/note-utils";
 import { normalizeExternalUrl } from "@/lib/external-links";
+import type { EditorMode } from "@/lib/note-preferences";
 import { tableDecoration } from "./markdown-table";
+import { escapedMarkdownBoundaryFrom } from "./editing-mechanics";
+import { markdownEscapeUnits } from "@/lib/markdown-escapes";
 
 const ACCENT = "rgb(var(--zerus-accent))";
 
@@ -37,7 +41,7 @@ function listMarkerIndentEm(marker: string, isTaskItem: boolean): number {
       : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
 }
 
-const toggleEffect = StateEffect.define<boolean>();
+const setModeEffect = StateEffect.define<EditorMode>();
 
 const INLINE_MARKS: Record<string, string> = {
   Emphasis: "EmphasisMark",
@@ -48,11 +52,22 @@ const INLINE_MARKS: Record<string, string> = {
 };
 
 const EXPLICIT_LINK_REGEX = /https?:\/\/[^\s<>{}[\]"]+/giu;
+const INLINE_TAG_REGEX = /(?:^|(?<=\s))(?:\\)?#[\p{L}\p{N}][\p{L}\p{N}/_-]*/gu;
 
-interface ExternalLinkMatch {
+export interface ExternalLinkMatch {
   url: string;
   from: number;
   to: number;
+  urlFrom: number;
+  urlTo: number;
+  labelFrom: number;
+  labelTo: number;
+  kind: "markdown" | "bare";
+}
+
+export interface AutoformatCancellation {
+  escapeAt: number[];
+  cursor: number;
 }
 
 export function listItemIndentEm(
@@ -102,6 +117,62 @@ function isTitleHeadingLine(
   );
 }
 
+/**
+ * Finds a just-completed Markdown pattern that Backspace may turn back into
+ * literal text. Callers track recency; this function only describes the edit.
+ */
+export function autoformatCancellationAt(
+  state: EditorState,
+): AutoformatCancellation | null {
+  const selection = state.selection.main;
+  if (!selection.empty) return null;
+  const cursor = selection.head;
+  const line = state.doc.lineAt(cursor);
+  if (cursor === line.to) {
+    const patterns: Array<{
+      expression: RegExp;
+      escapeOffset: (match: RegExpMatchArray) => number;
+    }> = [
+      { expression: /^(\s*)#{1,6} $/, escapeOffset: (match) => match[1].length },
+      { expression: /^(\s*)[-+*] $/, escapeOffset: (match) => match[1].length },
+      { expression: /^(\s*)[-+*] \[[ xX]\] $/, escapeOffset: (match) => match[1].length },
+      { expression: /^(\s*)> $/, escapeOffset: (match) => match[1].length },
+      {
+        expression: /^(\s*)(\d+)\. $/,
+        escapeOffset: (match) => match[1].length + match[2].length,
+      },
+    ];
+    for (const pattern of patterns) {
+      const match = line.text.match(pattern.expression);
+      if (match) {
+        return {
+          escapeAt: [line.from + pattern.escapeOffset(match)],
+          cursor,
+        };
+      }
+    }
+  }
+
+  for (const bias of [-1, 1] as const) {
+    let node = syntaxTree(state).resolveInner(cursor, bias);
+    for (; node; node = node.parent) {
+      if (node.to !== cursor) continue;
+      const markName = INLINE_MARKS[node.name];
+      if (!markName) continue;
+      const openingMark = node.getChildren(markName)[0];
+      if (!openingMark) continue;
+      return {
+        escapeAt: Array.from(
+          { length: openingMark.to - openingMark.from },
+          (_, index) => openingMark.from + index,
+        ),
+        cursor,
+      };
+    }
+  }
+  return null;
+}
+
 /** Resolve a rendered Markdown link or a pasted web address at a document position. */
 export function externalLinkAt(
   state: EditorState,
@@ -129,11 +200,37 @@ export function externalLinkAt(
         const url =
           urlNode &&
           normalizeEditorUrl(state.sliceDoc(urlNode.from, urlNode.to));
-        if (url) return { url, from: node.from, to: node.to };
+        if (url) {
+          const marks = node.getChildren("LinkMark");
+          const openingMark = marks[0];
+          const closingLabelMark = marks[1];
+          if (!openingMark || !closingLabelMark || !urlNode) return null;
+          return {
+            url,
+            from: node.from,
+            to: node.to,
+            urlFrom: urlNode.from,
+            urlTo: urlNode.to,
+            labelFrom: openingMark.to,
+            labelTo: closingLabelMark.from,
+            kind: "markdown",
+          };
+        }
       }
       if (node.name === "URL") {
         const url = normalizeEditorUrl(state.sliceDoc(node.from, node.to));
-        if (url) return { url, from: node.from, to: node.to };
+        if (url) {
+          return {
+            url,
+            from: node.from,
+            to: node.to,
+            urlFrom: node.from,
+            urlTo: node.to,
+            labelFrom: node.from,
+            labelTo: node.to,
+            kind: "bare",
+          };
+        }
       }
     }
   }
@@ -146,27 +243,50 @@ export function externalLinkAt(
     const to = from + raw.length;
     if (pos < from || pos > to) continue;
     const url = normalizeEditorUrl(raw);
-    if (url) return { url, from, to };
+    if (url) {
+      return {
+        url,
+        from,
+        to,
+        urlFrom: from,
+        urlTo: to,
+        labelFrom: from,
+        labelTo: to,
+        kind: "bare",
+      };
+    }
   }
   return null;
 }
 
-/** Whether syntax-hiding is active. Toggled with Mod-E (source mode). */
-export const livePreviewEnabled = StateField.define<boolean>({
-  create: () => true,
+/** Current editor presentation. Clean is the default; Mod-E toggles modes. */
+export const editorPresentationMode = StateField.define<EditorMode>({
+  create: () => "clean",
   update(value, tr) {
     for (const effect of tr.effects) {
-      if (effect.is(toggleEffect)) value = effect.value;
+      if (effect.is(setModeEffect)) value = effect.value;
     }
     return value;
   },
 });
 
-export function toggleLivePreview(view: EditorView): boolean {
+export function setEditorPresentationMode(
+  view: EditorView,
+  mode: EditorMode,
+): boolean {
   view.dispatch({
-    effects: toggleEffect.of(!view.state.field(livePreviewEnabled)),
+    effects: setModeEffect.of(mode),
   });
   return true;
+}
+
+export function toggleEditorPresentationMode(view: EditorView): EditorMode {
+  const next =
+    view.state.field(editorPresentationMode) === "clean"
+      ? "markdown-aware"
+      : "clean";
+  setEditorPresentationMode(view, next);
+  return next;
 }
 
 /**
@@ -219,31 +339,444 @@ export function moveCursorPastClosingMarkup(
     : selection;
 }
 
-const keepCursorOutsideClosingMarkup = EditorState.transactionFilter.of(
+/** Keep a clean-mode caret out of the source-only side of a hidden escape. */
+export function moveCursorBeforeEscapedMarkdownSymbol(
+  state: EditorState,
+  selection: EditorSelection,
+): EditorSelection {
+  let changed = false;
+  const ranges = selection.ranges.map((range) => {
+    if (!range.empty) return range;
+    const from = escapedMarkdownBoundaryFrom(state, range.head);
+    if (from == null) return range;
+    changed = true;
+    return EditorSelection.cursor(from, range.assoc);
+  });
+  return changed
+    ? EditorSelection.create(ranges, selection.mainIndex)
+    : selection;
+}
+
+/** Skip source-only escape positions while preserving visual arrow movement. */
+function moveCursorAcrossEscapedMarkdownSymbol(
+  state: EditorState,
+  previous: EditorSelection,
+  selection: EditorSelection,
+): EditorSelection {
+  let changed = false;
+  const ranges = selection.ranges.map((range, index) => {
+    const previousHead = previous.ranges[index]?.head ?? previous.main.head;
+    if (range.head === previousHead) return range;
+
+    let target = range.head;
+    if (target > previousHead) {
+      while (escapedMarkdownBoundaryFrom(state, target) != null) target += 1;
+    } else {
+      for (;;) {
+        const escapeFrom = escapedMarkdownBoundaryFrom(state, target);
+        if (escapeFrom == null) break;
+        target = escapeFrom;
+      }
+    }
+
+    if (target === range.head) return range;
+    changed = true;
+    return EditorSelection.range(range.anchor, target, range.assoc);
+  });
+  return changed
+    ? EditorSelection.create(ranges, selection.mainIndex)
+    : selection;
+}
+
+const keepCursorOutsideInlineMarkup = EditorState.transactionFilter.of(
   (transaction) => {
     if (
       !transaction.selection ||
       transaction.docChanged ||
-      !transaction.startState.field(livePreviewEnabled)
+      transaction.startState.field(editorPresentationMode) !== "clean"
     ) {
       return transaction;
     }
 
-    const selection = moveCursorPastClosingMarkup(
+    const previous = transaction.startState.selection.main;
+    const next = transaction.newSelection.main;
+    const keyboardCaretMove =
+      transaction.isUserEvent("select") &&
+      !transaction.isUserEvent("select.pointer") &&
+      previous.head !== next.head;
+
+    // Hidden formatting marks are atomic, so keyboard movement normally stays
+    // untouched. A literal symbol's hidden escape is different: landing
+    // between `\` and `*` has no visual position and makes an arrow key appear
+    // stuck. Skip that source-only boundary in the direction of travel.
+    if (keyboardCaretMove) {
+      const acrossEscape = moveCursorAcrossEscapedMarkdownSymbol(
+        transaction.state,
+        transaction.startState.selection,
+        transaction.newSelection,
+      );
+      return acrossEscape === transaction.newSelection
+        ? transaction
+        : [transaction, { selection: acrossEscape, sequential: true }];
+    }
+
+    const beforeEscape = moveCursorBeforeEscapedMarkdownSymbol(
       transaction.state,
       transaction.newSelection,
     );
-    return selection === transaction.newSelection
+    const beforeOpening = moveCursorBeforeOpeningMarkup(
+      transaction.state,
+      beforeEscape,
+    );
+    const outside = moveCursorPastClosingMarkup(
+      transaction.state,
+      beforeOpening,
+    );
+    return outside === transaction.newSelection
       ? transaction
-      : [transaction, { selection, sequential: true }];
+      : [transaction, { selection: outside, sequential: true }];
   },
 );
+
+/** Find the complete hidden opening syntax immediately before a caret. */
+export function openingInlineMarkupFrom(
+  state: EditorState,
+  cursor: number,
+): number | null {
+  const openings: Array<{ from: number; to: number }> = [];
+  const visited = new Set<string>();
+
+  for (const bias of [-1, 1] as const) {
+    for (
+      let node = syntaxTree(state).resolveInner(cursor, bias);
+      node;
+      node = node.parent
+    ) {
+      const markName = INLINE_MARKS[node.name];
+      if (!markName) continue;
+      const marks = node.getChildren(markName);
+      const opening = marks[0];
+      const closing = marks[marks.length - 1];
+      if (!opening || !closing || opening === closing) continue;
+      const key = `${opening.from}:${opening.to}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      openings.push({ from: opening.from, to: opening.to });
+    }
+  }
+
+  // A caret at the visual left edge of a replacement can map anywhere inside
+  // a multi-character opening mark (not just immediately after it). Normalize
+  // that platform-dependent position first. Nested markup can then have
+  // adjacent opening marks, as in `***text***`, so walk across all of them.
+  let from = openings
+    .filter((opening) => opening.from < cursor && cursor <= opening.to)
+    .reduce((earliest, opening) => Math.min(earliest, opening.from), cursor);
+  for (;;) {
+    const adjacent = openings.filter((opening) => opening.to === from);
+    if (!adjacent.length) break;
+    from = Math.min(...adjacent.map((opening) => opening.from));
+  }
+  return from === cursor ? null : from;
+}
+
+/** Move a visual left-edge caret before all hidden opening delimiters. */
+export function moveCursorBeforeOpeningMarkup(
+  state: EditorState,
+  selection: EditorSelection,
+): EditorSelection {
+  let changed = false;
+  const ranges = selection.ranges.map((range) => {
+    if (!range.empty) return range;
+    const from = openingInlineMarkupFrom(state, range.head);
+    if (from == null) return range;
+    changed = true;
+    return EditorSelection.cursor(from, range.assoc);
+  });
+  return changed
+    ? EditorSelection.create(ranges, selection.mainIndex)
+    : selection;
+}
+
+export interface InlineMarkupBoundary {
+  from: number;
+  to: number;
+  kind: string;
+  side: "opening" | "closing";
+}
+
+/** Finds a complete inline construct at either hidden visual boundary. */
+export function inlineMarkupBoundaryAt(
+  state: EditorState,
+  cursor: number,
+): InlineMarkupBoundary | null {
+  const candidates: Array<{ from: number; to: number; kind: string }> = [];
+  const visited = new Set<string>();
+  for (const bias of [-1, 1] as const) {
+    for (
+      let node = syntaxTree(state).resolveInner(cursor, bias);
+      node;
+      node = node.parent
+    ) {
+      const markName = INLINE_MARKS[node.name];
+      if (!markName) continue;
+      const marks = node.getChildren(markName);
+      if (marks.length < 2 || marks[0] === marks[marks.length - 1]) continue;
+      const key = `${node.from}:${node.to}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      candidates.push({ from: node.from, to: node.to, kind: node.name });
+    }
+  }
+
+  const openingFrom = openingInlineMarkupFrom(state, cursor);
+  if (openingFrom != null) {
+    const opening = candidates
+      .filter((candidate) => candidate.from === openingFrom)
+      .sort((a, b) => b.to - a.to)[0];
+    if (opening) return { ...opening, side: "opening" };
+  }
+
+  const closing = candidates
+    .filter((candidate) => candidate.to === cursor)
+    .sort((a, b) => a.from - b.from)[0];
+  return closing ? { ...closing, side: "closing" } : null;
+}
+
+/**
+ * At a line-start left edge, delete the preceding newline without entering the
+ * hidden opening syntax. At the right edge, remove the complete inline
+ * formatting construct atomically.
+ */
+export function handleInlineMarkupBoundaryBackspace(
+  view: EditorView,
+): boolean {
+  if (view.state.field(editorPresentationMode) !== "clean") return false;
+  const selection = view.state.selection.main;
+  if (!selection.empty) return false;
+
+  const boundary = inlineMarkupBoundaryAt(view.state, selection.head);
+  if (!boundary) return false;
+  if (boundary.side === "opening") {
+    const line = view.state.doc.lineAt(boundary.from);
+    const sourceBeforeMarkup = view.state.sliceDoc(line.from, boundary.from);
+    if (/^\\*#$/.test(sourceBeforeMarkup)) {
+      const escapedHashFrom = escapedMarkdownBoundaryFrom(
+        view.state,
+        boundary.from - 1,
+      );
+      const deleteFrom = escapedHashFrom ?? boundary.from - 1;
+      view.dispatch({
+        changes: { from: deleteFrom, to: boundary.from },
+        selection: EditorSelection.cursor(deleteFrom),
+        scrollIntoView: true,
+        userEvent: "delete.backward",
+      });
+      return true;
+    }
+    if (boundary.from !== line.from) {
+      view.dispatch({
+        changes: { from: boundary.from - 1, to: boundary.from },
+        selection: EditorSelection.cursor(boundary.from - 1),
+        scrollIntoView: true,
+        userEvent: "delete.backward",
+      });
+      return true;
+    }
+    if (line.number === 1) return true;
+    view.dispatch({
+      changes: { from: line.from - 1, to: line.from },
+      selection: EditorSelection.cursor(line.from - 1),
+      scrollIntoView: true,
+      userEvent: "delete.backward",
+    });
+    return true;
+  }
+
+  if (boundary.kind === "Link") {
+    const node = syntaxTree(view.state).resolveInner(boundary.from, 1);
+    let link = node;
+    while (link && link.name !== "Link") link = link.parent;
+    const marks = link?.getChildren("LinkMark") ?? [];
+    const labelFrom = marks[0]?.to;
+    const labelTo = marks[1]?.from;
+    if (labelFrom == null || labelTo == null) return true;
+    const label = view.state.sliceDoc(labelFrom, labelTo);
+    view.dispatch({
+      changes: { from: boundary.from, to: boundary.to, insert: label },
+      selection: EditorSelection.cursor(boundary.from + label.length),
+      scrollIntoView: true,
+      userEvent: "delete.backward",
+    });
+    return true;
+  }
+
+  const markerName = INLINE_MARKS[boundary.kind];
+  if (!markerName) return true;
+  const markers: Array<{ from: number; to: number }> = [];
+  syntaxTree(view.state).iterate({
+    from: boundary.from,
+    to: boundary.to,
+    enter: (node) => {
+      if (node.name === markerName) {
+        markers.push({ from: node.from, to: node.to });
+      }
+    },
+  });
+  if (!markers.length) return true;
+  const changes = view.state.changes(
+    markers.map((marker) => ({ from: marker.from, to: marker.to })),
+  );
+  view.dispatch({
+    changes,
+    selection: EditorSelection.cursor(changes.mapPos(selection.head, -1)),
+    scrollIntoView: true,
+    userEvent: "delete.backward",
+  });
+  return true;
+}
+
+/** Delete selected visible characters together with their hidden source escapes. */
+export function deleteCleanSelection(
+  view: EditorView,
+  direction: "backward" | "forward",
+): boolean {
+  if (view.state.field(editorPresentationMode) !== "clean") return false;
+  const selected = view.state.selection.ranges.filter((range) => !range.empty);
+  if (selected.length === 0) return false;
+  const units = markdownEscapeUnits(view.state.doc.toString());
+  const changes = selected.map((range) => {
+    const hidden = units
+      .filter(
+        (unit) =>
+          unit.visibleFrom >= range.from && unit.visibleFrom < range.to,
+      )
+      .map((unit) => unit.escapeFrom);
+    return {
+      from: hidden.length ? Math.min(range.from, ...hidden) : range.from,
+      to: range.to,
+    };
+  });
+  const changeSet = view.state.changes(changes);
+  view.dispatch({
+    changes: changeSet,
+    selection: EditorSelection.create(
+      view.state.selection.ranges.map((range) =>
+        EditorSelection.cursor(changeSet.mapPos(range.from, -1)),
+      ),
+      view.state.selection.mainIndex,
+    ),
+    scrollIntoView: true,
+    userEvent: `delete.${direction}`,
+  });
+  return true;
+}
+
+/** Insert a newline before hidden syntax instead of splitting it. */
+export function handleInlineMarkupBoundaryEnter(view: EditorView): boolean {
+  if (view.state.field(editorPresentationMode) !== "clean") return false;
+  const selection = view.state.selection.main;
+  if (!selection.empty) return false;
+
+  const escapeFrom = escapedMarkdownBoundaryFrom(
+    view.state,
+    selection.head,
+  );
+  if (escapeFrom != null) {
+    view.dispatch({
+      changes: { from: escapeFrom, insert: "\n" },
+      selection: EditorSelection.cursor(escapeFrom + 1),
+      scrollIntoView: true,
+      userEvent: "input",
+    });
+    return true;
+  }
+
+  const boundary = inlineMarkupBoundaryAt(view.state, selection.head);
+  if (!boundary || boundary.side !== "opening") return false;
+  view.dispatch({
+    changes: { from: boundary.from, insert: "\n" },
+    selection: EditorSelection.cursor(boundary.from + 1),
+    scrollIntoView: true,
+    userEvent: "input",
+  });
+  return true;
+}
+
+/** Insert whitespace after hidden closing syntax so formatting stays valid. */
+export function handleInlineMarkupBoundarySpace(view: EditorView): boolean {
+  if (view.state.field(editorPresentationMode) !== "clean") return false;
+  const selection = view.state.selection.main;
+  if (!selection.empty) return false;
+
+  // A caret at the visual left edge of a literal Markdown symbol can resolve
+  // between its hidden escape and the symbol (`\\|*`). Insert before the
+  // complete pair so Space indents the visible symbol instead of splitting the
+  // escape and exposing its backslash.
+  const escapeFrom = escapedMarkdownBoundaryFrom(
+    view.state,
+    selection.head,
+  );
+  if (escapeFrom != null) {
+    view.dispatch({
+      changes: { from: escapeFrom, insert: " " },
+      selection: EditorSelection.cursor(escapeFrom + 1),
+      scrollIntoView: true,
+      userEvent: "input.type",
+    });
+    return true;
+  }
+
+  const outside = moveCursorPastClosingMarkup(
+    view.state,
+    view.state.selection,
+  );
+  if (outside === view.state.selection) return false;
+
+  const insertAt = outside.main.head;
+  view.dispatch({
+    changes: { from: insertAt, insert: " " },
+    selection: EditorSelection.cursor(insertAt + 1),
+    scrollIntoView: true,
+    userEvent: "input.type",
+  });
+  return true;
+}
 
 /** True when any selection range touches [from, to], including boundaries. */
 function touches(state: EditorState, from: number, to: number): boolean {
   return state.selection.ranges.some(
     (range) => range.from <= to && range.to >= from,
   );
+}
+
+/** A one-line opening fence remains literal until Enter confirms it. */
+export function isConfirmedFencedCode(
+  state: EditorState,
+  from: number,
+  to: number,
+): boolean {
+  return state.doc.lineAt(from).number !== state.doc.lineAt(Math.max(from, to - 1)).number;
+}
+
+/** Markdown-aware mode exposes a table's source while its range is active. */
+export function shouldRenderTablePreview(
+  state: EditorState,
+  from: number,
+  to: number,
+): boolean {
+  return (
+    state.field(editorPresentationMode) === "clean" ||
+    !touches(state, from, to)
+  );
+}
+
+/** Structural Markdown remains visible until Space confirms the transform. */
+export function isSpaceConfirmedStructuralMark(
+  state: EditorState,
+  markTo: number,
+): boolean {
+  return state.sliceDoc(markTo, markTo + 1) === " ";
 }
 
 class BulletWidget extends WidgetType {
@@ -295,18 +828,40 @@ class CheckboxWidget extends WidgetType {
 }
 
 function buildDecorations(view: EditorView): DecorationSet {
-  if (!view.state.field(livePreviewEnabled)) return Decoration.none;
   const { state } = view;
+  const clean = state.field(editorPresentationMode) === "clean";
   const decos: Range<Decoration>[] = [];
   const decoratedListLines = new Set<number>();
 
   const hide = (from: number, to: number) => {
-    if (from < to) decos.push(Decoration.replace({}).range(from, to));
+    if (from < to) {
+      decos.push(Decoration.replace({ atomic: true }).range(from, to));
+    }
   };
   /** Hides [from, to] plus one trailing space, if present. */
   const hideWithSpace = (from: number, to: number) => {
     hide(from, to + (state.sliceDoc(to, to + 1) === " " ? 1 : 0));
   };
+
+  if (clean) {
+    // Decode CommonMark escape runs by parity. Hiding every slash in a run
+    // loses deliberately typed backslashes and makes deletion/copy disagree
+    // with what Clean mode displays.
+    const scannedLines = new Set<string>();
+    for (const range of view.visibleRanges) {
+      const lineFrom = state.doc.lineAt(range.from).from;
+      const lineTo = state.doc.lineAt(range.to).to;
+      const key = `${lineFrom}:${lineTo}`;
+      if (scannedLines.has(key)) continue;
+      scannedLines.add(key);
+      for (const unit of markdownEscapeUnits(
+        state.sliceDoc(lineFrom, lineTo),
+        lineFrom,
+      )) {
+        hide(unit.escapeFrom, unit.escapeFrom + 1);
+      }
+    }
+  }
 
   for (const { from, to } of view.visibleRanges) {
     for (const match of state.sliceDoc(from, to).matchAll(EXPLICIT_LINK_REGEX)) {
@@ -323,13 +878,25 @@ function buildDecorations(view: EditorView): DecorationSet {
       );
     }
 
+    if (clean) {
+      const visibleSource = state.sliceDoc(from, to);
+      for (const match of visibleSource.matchAll(INLINE_TAG_REGEX)) {
+        const start = from + (match.index ?? 0);
+        const hashFrom = start + (match[0].startsWith("\\") ? 1 : 0);
+        hide(hashFrom, hashFrom + 1);
+      }
+    }
+
     // [[wikilinks]]: hide the brackets, keep the title (styled elsewhere).
     const regex = new RegExp(WIKILINK_REGEX.source, "g");
     for (const match of state.sliceDoc(from, to).matchAll(regex)) {
       const start = from + (match.index ?? 0);
       const end = start + match[0].length;
-      if (touches(state, start, end)) continue;
-      hide(start, start + 2);
+      if (!clean && touches(state, start, end)) continue;
+      const titleOffset = match[0].indexOf(match[1]);
+      for (let index = 0; index < titleOffset; index += 1) {
+        if (match[0][index] === "[") hide(start + index, start + index + 1);
+      }
       hide(end - 2, end);
     }
 
@@ -340,31 +907,39 @@ function buildDecorations(view: EditorView): DecorationSet {
         const name = node.name;
 
         if (/^ATXHeading[1-6]$/.test(name)) {
+          const level = Number(name.slice(-1));
+          decos.push(
+            Decoration.line({ class: `cm-heading-line-${level}` }).range(
+              state.doc.lineAt(node.from).from,
+            ),
+          );
           // Reveal on the whole line: `#` governs the whole heading.
-          if (touches(state, node.from, node.to)) return;
+          if (!clean && touches(state, node.from, node.to)) return;
           const mark = node.node.getChild("HeaderMark");
-          if (mark) hideWithSpace(mark.from, mark.to);
+          if (mark && isSpaceConfirmedStructuralMark(state, mark.to)) {
+            hideWithSpace(mark.from, mark.to);
+          }
           return;
         }
 
         switch (name) {
           case "Emphasis":
           case "StrongEmphasis": {
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             for (const mark of node.node.getChildren("EmphasisMark")) {
               hide(mark.from, mark.to);
             }
             return;
           }
           case "InlineCode": {
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             for (const mark of node.node.getChildren("CodeMark")) {
               hide(mark.from, mark.to);
             }
             return;
           }
           case "Strikethrough": {
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             for (const mark of node.node.getChildren("StrikethroughMark")) {
               hide(mark.from, mark.to);
             }
@@ -380,9 +955,9 @@ function buildDecorations(view: EditorView): DecorationSet {
             ) {
               return;
             }
-            if (touches(state, node.from, node.to)) return false;
             const marks = node.node.getChildren("LinkMark");
             if (marks.length < 2) return false;
+            if (!clean && touches(state, node.from, node.to)) return false;
             decos.push(
               Decoration.mark({
                 class: "cm-external-link",
@@ -397,7 +972,20 @@ function buildDecorations(view: EditorView): DecorationSet {
             // The preview widget below the line does the showing; hide the
             // markdown itself unless the cursor is on its line.
             const line = state.doc.lineAt(node.from);
-            if (touches(state, line.from, line.to)) return false;
+            if (!clean && touches(state, line.from, line.to)) return false;
+            if (
+              !state.sliceDoc(line.from, node.from).trim() &&
+              !state.sliceDoc(node.to, line.to).trim()
+            ) {
+              // The block widget is the complete visual representation of a
+              // standalone image. Collapse its otherwise-empty source line so
+              // it does not leave a full text row above the preview.
+              decos.push(
+                Decoration.line({ class: "cm-image-source-line" }).range(
+                  line.from,
+                ),
+              );
+            }
             hide(node.from, node.to);
             return false;
           }
@@ -415,11 +1003,13 @@ function buildDecorations(view: EditorView): DecorationSet {
           }
           case "QuoteMark": {
             const line = state.doc.lineAt(node.from);
-            if (touches(state, line.from, line.to)) return;
+            if (!isSpaceConfirmedStructuralMark(state, node.to)) return;
+            if (!clean && touches(state, line.from, line.to)) return;
             hideWithSpace(node.from, node.to);
             return;
           }
           case "ListMark": {
+            if (!isSpaceConfirmedStructuralMark(state, node.to)) return;
             const line = state.doc.lineAt(node.from);
             if (!decoratedListLines.has(line.from)) {
               const leadingWhitespace = state
@@ -462,15 +1052,15 @@ function buildDecorations(view: EditorView): DecorationSet {
 
             if (node.node.nextSibling?.name === "Task") {
               // Task items get a checkbox; drop the bullet entirely.
-              if (touches(state, node.from, node.to)) return;
+              if (!clean && touches(state, node.from, node.to)) return;
               hideWithSpace(node.from, node.to);
               return;
             }
             const text = state.sliceDoc(node.from, node.to);
             if (!/^[-*+]$/.test(text)) return;
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             decos.push(
-              Decoration.replace({ widget: new BulletWidget() }).range(
+              Decoration.replace({ widget: new BulletWidget(), atomic: true }).range(
                 node.from,
                 node.to,
               ),
@@ -478,10 +1068,13 @@ function buildDecorations(view: EditorView): DecorationSet {
             return;
           }
           case "TaskMarker": {
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             const checked = /x/i.test(state.sliceDoc(node.from, node.to));
             decos.push(
-              Decoration.replace({ widget: new CheckboxWidget(checked) }).range(
+              Decoration.replace({
+                widget: new CheckboxWidget(checked),
+                atomic: true,
+              }).range(
                 node.from,
                 node.to,
               ),
@@ -490,9 +1083,9 @@ function buildDecorations(view: EditorView): DecorationSet {
           }
           case "HorizontalRule": {
             const line = state.doc.lineAt(node.from);
-            if (touches(state, line.from, line.to)) return;
+            if (!clean && touches(state, line.from, line.to)) return;
             decos.push(
-              Decoration.replace({ widget: new HrWidget() }).range(
+              Decoration.replace({ widget: new HrWidget(), atomic: true }).range(
                 node.from,
                 node.to,
               ),
@@ -500,16 +1093,25 @@ function buildDecorations(view: EditorView): DecorationSet {
             return;
           }
           case "FencedCode": {
+            if (!isConfirmedFencedCode(state, node.from, node.to)) return;
+            const firstLine = state.doc.lineAt(node.from);
+            const lastLine = state.doc.lineAt(Math.max(node.from, node.to - 1));
             for (let pos = node.from; pos <= node.to; ) {
               const line = state.doc.lineAt(pos);
+              const positionClass =
+                line.number === firstLine.number
+                  ? " cm-codeblock-first"
+                  : line.number === lastLine.number
+                    ? " cm-codeblock-last"
+                    : "";
               decos.push(
-                Decoration.line({ class: "cm-codeblock-line" }).range(
-                  line.from,
-                ),
+                Decoration.line({
+                  class: `cm-codeblock-line${positionClass}`,
+                }).range(line.from),
               );
               pos = line.to + 1;
             }
-            if (touches(state, node.from, node.to)) return;
+            if (!clean && touches(state, node.from, node.to)) return;
             const marks = node.node.getChildren("CodeMark");
             if (marks.length) {
               const info = node.node.getChild("CodeInfo");
@@ -530,17 +1132,19 @@ function buildDecorations(view: EditorView): DecorationSet {
 }
 
 function buildTableDecorations(state: EditorState): DecorationSet {
-  if (!state.field(livePreviewEnabled)) return Decoration.none;
-
   const decorations: Range<Decoration>[] = [];
+  const markdownAware =
+    state.field(editorPresentationMode) === "markdown-aware";
   syntaxTree(state).iterate({
     enter: (node) => {
       if (node.name !== "Table") return;
+      if (!shouldRenderTablePreview(state, node.from, node.to)) return false;
       decorations.push(
         tableDecoration(
           state.sliceDoc(node.from, node.to),
           node.from,
           state.readOnly,
+          markdownAware,
         ).range(node.from, node.to),
       );
       return false;
@@ -552,7 +1156,7 @@ function buildTableDecorations(state: EditorState): DecorationSet {
 // Block replacements must be supplied directly through the decorations facet;
 // CodeMirror rejects block decorations produced by a view plugin.
 const tablePreviewDecorations = EditorView.decorations.compute(
-  ["doc", "selection", livePreviewEnabled, EditorState.readOnly],
+  ["doc", "selection", editorPresentationMode, EditorState.readOnly],
   buildTableDecorations,
 );
 
@@ -567,8 +1171,8 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.viewportChanged ||
         update.selectionSet ||
-        update.startState.field(livePreviewEnabled) !==
-          update.state.field(livePreviewEnabled)
+        update.startState.field(editorPresentationMode) !==
+          update.state.field(editorPresentationMode)
       ) {
         this.decorations = buildDecorations(update.view);
       }
@@ -577,23 +1181,144 @@ const livePreviewPlugin = ViewPlugin.fromClass(
   { decorations: (instance) => instance.decorations },
 );
 
-function externalLinkClickExtension(onOpen: (url: string) => void): Extension {
+const reversibleAutoformatPlugin = ViewPlugin.fromClass(
+  class {
+    recent: AutoformatCancellation | null = null;
+
+    update(update: ViewUpdate) {
+      if (update.docChanged) {
+        const wasTyped = update.transactions.some((transaction) =>
+          transaction.isUserEvent("input"),
+        );
+        this.recent =
+          wasTyped && update.state.field(editorPresentationMode) === "clean"
+            ? autoformatCancellationAt(update.state)
+            : null;
+        return;
+      }
+
+      if (
+        update.selectionSet ||
+        update.startState.field(editorPresentationMode) !==
+          update.state.field(editorPresentationMode)
+      ) {
+        this.recent = null;
+      }
+    }
+  },
+);
+
+/** Restore the Markdown characters consumed by the latest clean-mode transform. */
+export function cancelRecentAutoformat(
+  view: EditorView,
+  markdownTypingEnabled = true,
+): boolean {
+  if (!markdownTypingEnabled) return false;
+  if (view.state.field(editorPresentationMode) !== "clean") return false;
+  const cancellation = view.plugin(reversibleAutoformatPlugin)?.recent;
+  if (
+    !cancellation ||
+    !view.state.selection.main.empty ||
+    view.state.selection.main.head !== cancellation.cursor
+  ) {
+    return false;
+  }
+
+  const changes = view.state.changes(
+    cancellation.escapeAt.map((from) => ({ from, insert: "\\" })),
+  );
+  view.dispatch({
+    changes,
+    selection: EditorSelection.cursor(changes.mapPos(cancellation.cursor, 1)),
+    userEvent: "input.escapeMarkdown",
+  });
+  return true;
+}
+
+const livePreviewAtomicRanges = EditorView.atomicRanges.of((view) => {
+  const decorations = view.plugin(livePreviewPlugin)?.decorations;
+  if (!decorations) return Decoration.none;
+  const ranges: Range<Decoration>[] = [];
+  decorations.between(0, view.state.doc.length, (from, to, value) => {
+    if (value.spec.atomic) ranges.push(value.range(from, to));
+  });
+  return Decoration.set(ranges, true);
+});
+
+interface ExternalLinkInteractionOptions {
+  onOpen: (url: string) => void;
+  initialMode?: EditorMode;
+  markdownTypingEnabled?: () => boolean;
+  onModeChange?: (mode: EditorMode) => void;
+  onSelect?: (
+    link: ExternalLinkMatch,
+    anchor: { element: HTMLElement },
+  ) => void;
+  onDismiss?: () => void;
+}
+
+export function shouldOpenExternalLink(
+  event: Pick<MouseEvent, "button" | "metaKey" | "ctrlKey" | "detail">,
+): boolean {
+  return (
+    event.button === 0 &&
+    (event.metaKey || event.ctrlKey || event.detail >= 2)
+  );
+}
+
+function externalLinkClickExtension(
+  options: ExternalLinkInteractionOptions,
+): Extension {
   return EditorView.domEventHandlers({
     mousedown: (event, view) => {
-      if (event.button !== 0 || !view.state.field(livePreviewEnabled)) return false;
+      if (event.button !== 0) return false;
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-      if (pos == null) return false;
+      if (pos == null) {
+        options.onDismiss?.();
+        return false;
+      }
       const link = externalLinkAt(view.state, pos);
-      if (!link || touches(view.state, link.from, link.to)) return false;
+      if (!link) {
+        options.onDismiss?.();
+        return false;
+      }
 
-      event.preventDefault();
-      onOpen(link.url);
-      return true;
+      if (shouldOpenExternalLink(event)) {
+        event.preventDefault();
+        options.onDismiss?.();
+        options.onOpen(link.url);
+        return true;
+      }
+
+      const element =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(".cm-external-link")
+          : null;
+      if (element) options.onSelect?.(link, { element });
+      return false;
     },
   });
 }
 
 const livePreviewTheme = EditorView.theme({
+  ".cm-heading-line-1": {
+    fontSize: "1.55em",
+    fontWeight: "700",
+    lineHeight: "1.3",
+  },
+  ".cm-heading-line-2": {
+    fontSize: "1.3em",
+    fontWeight: "700",
+    lineHeight: "1.4",
+  },
+  ".cm-heading-line-3": {
+    fontSize: "1.15em",
+    fontWeight: "600",
+    lineHeight: "1.45",
+  },
+  ".cm-heading-line-4, .cm-heading-line-5, .cm-heading-line-6": {
+    fontWeight: "600",
+  },
   ".cm-list-item-line": {
     paddingLeft: "var(--cm-list-indent)",
   },
@@ -609,6 +1334,14 @@ const livePreviewTheme = EditorView.theme({
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     fontSize: "0.9em",
     padding: "0 10px",
+  },
+  ".cm-codeblock-first": {
+    paddingTop: "8px",
+    borderRadius: "8px 8px 0 0",
+  },
+  ".cm-codeblock-last": {
+    paddingBottom: "8px",
+    borderRadius: "0 0 8px 8px",
   },
   ".cm-list-bullet": {
     color: ACCENT,
@@ -755,22 +1488,63 @@ const livePreviewTheme = EditorView.theme({
 });
 
 /**
- * Bear/Obsidian-style live preview: the document stays plain markdown, but
- * syntax marks are hidden until the cursor enters the construct they belong
- * to. Mod-E toggles raw source mode.
+ * The document always stays plain Markdown. Clean mode keeps completed syntax
+ * hidden; Markdown-aware mode reveals the construct around the cursor. Mod-E
+ * switches between the two presentations without replacing the editor.
  */
 export function livePreviewExtension(
-  onOpenExternalLink?: (url: string) => void,
+  externalLinks?: ((url: string) => void) | ExternalLinkInteractionOptions,
 ): Extension {
+  const externalLinkOptions =
+    typeof externalLinks === "function"
+      ? { onOpen: externalLinks }
+      : externalLinks;
   return [
-    livePreviewEnabled,
-    keepCursorOutsideClosingMarkup,
+    editorPresentationMode.init(
+      () => externalLinkOptions?.initialMode ?? "clean",
+    ),
+    keepCursorOutsideInlineMarkup,
     tablePreviewDecorations,
     livePreviewPlugin,
-    ...(onOpenExternalLink
-      ? [externalLinkClickExtension(onOpenExternalLink)]
+    reversibleAutoformatPlugin,
+    livePreviewAtomicRanges,
+    ...(externalLinkOptions
+      ? [externalLinkClickExtension(externalLinkOptions)]
       : []),
     livePreviewTheme,
-    keymap.of([{ key: "Mod-e", run: toggleLivePreview }]),
+    Prec.highest(
+      keymap.of([
+        {
+          key: "Space",
+          run: handleInlineMarkupBoundarySpace,
+        },
+        {
+          key: "Enter",
+          run: handleInlineMarkupBoundaryEnter,
+        },
+        {
+          key: "Backspace",
+          run: (view) =>
+            deleteCleanSelection(view, "backward") ||
+            handleInlineMarkupBoundaryBackspace(view) ||
+            cancelRecentAutoformat(
+              view,
+              externalLinkOptions?.markdownTypingEnabled?.() ?? true,
+            ),
+        },
+        {
+          key: "Delete",
+          run: (view) => deleteCleanSelection(view, "forward"),
+        },
+        {
+          key: "Mod-e",
+          run: (view) => {
+            const mode = toggleEditorPresentationMode(view);
+            externalLinkOptions?.onModeChange?.(mode);
+            return true;
+          },
+        },
+      ]),
+    ),
   ];
 }

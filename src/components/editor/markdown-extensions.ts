@@ -7,7 +7,11 @@ import {
   ViewUpdate,
 } from "@codemirror/view";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { type EditorState, type Extension } from "@codemirror/state";
+import {
+  EditorSelection,
+  type EditorState,
+  type Extension,
+} from "@codemirror/state";
 import { tags } from "@lezer/highlight";
 import {
   autocompletion,
@@ -49,8 +53,19 @@ export const editorTheme = EditorView.theme({
   // An explicit Markdown heading already has a syntax-highlight font size.
   // Let the title line own the size so `# Title` does not scale twice.
   ".cm-title-line *": { fontSize: "inherit !important" },
-  ".cm-cursor": { borderLeftColor: ACCENT, borderLeftWidth: "2px" },
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+  ".cm-cursor": {
+    borderLeftColor: ACCENT,
+    borderLeftWidth: "2px",
+    // CodeMirror sizes the caret to the full line box. Scaling around its
+    // centre keeps its height proportional to the active body/heading text
+    // without inheriting the line-height whitespace above and below glyphs.
+    transform: "scaleY(0.72)",
+    transformOrigin: "center",
+  },
+  // Use the platform's native selection painting. CodeMirror's drawSelection
+  // layer can briefly retain stale line geometry when live-preview replacement
+  // decorations change during a pointer selection, producing a full-line flash.
+  "::selection": {
     backgroundColor: "rgb(var(--zerus-accent) / 0.15) !important",
   },
   ".cm-wikilink": {
@@ -77,13 +92,29 @@ export const editorTheme = EditorView.theme({
   ".cm-image-preview": {
     position: "relative",
     boxSizing: "border-box",
-    width: "fit-content",
+    width: "100%",
     maxWidth: "100%",
     // CodeMirror does not include a block widget's vertical margins in its
     // height map. Internal spacing keeps coordinate mapping accurate for the
     // editable lines immediately before and after an image.
-    padding: "4px 0 10px",
+    padding: "0 0 6px",
     borderRadius: "6px",
+    outline: "none",
+  },
+  ".cm-image-preview-media": {
+    position: "relative",
+    width: "fit-content",
+    maxWidth: "100%",
+    borderRadius: "6px",
+  },
+  ".cm-image-preview:focus-visible .cm-image-preview-media": {
+    boxShadow: `0 0 0 2px ${ACCENT}`,
+  },
+  ".cm-image-preview.cm-image-selected .cm-image-preview-media": {
+    boxShadow: `0 0 0 2px ${ACCENT}`,
+  },
+  "&.cm-image-selection-active .cm-cursor": {
+    display: "none",
   },
   ".cm-image-preview img": {
     display: "block",
@@ -91,11 +122,23 @@ export const editorTheme = EditorView.theme({
     borderRadius: "6px",
     boxShadow: "0 1px 4px rgb(0 0 0 / 0.12)",
   },
-  ".cm-image-preview-missing": {
+  ".cm-image-source-line": {
+    display: "none",
+  },
+  ".cm-image-preview-missing .cm-image-preview-media": {
     padding: "6px 10px",
     fontSize: "12px",
     color: "rgb(var(--zerus-text) / 0.6)",
     backgroundColor: "rgb(var(--zerus-text) / 0.06)",
+  },
+  ".cm-image-after-hit-area": {
+    position: "absolute",
+    zIndex: "1",
+    left: "0",
+    bottom: "calc(-1.65em)",
+    width: "100%",
+    height: "1.65em",
+    cursor: "text",
   },
   ".cm-image-resize-handle": {
     position: "absolute",
@@ -241,6 +284,60 @@ export const markdownHighlighting = syntaxHighlighting(
   ]),
 );
 
+/** Selects logical lines without including the line break after the last line. */
+export function lineSelectionBetween(
+  state: EditorState,
+  anchorPosition: number,
+  headPosition = anchorPosition,
+) {
+  const anchorLine = state.doc.lineAt(anchorPosition);
+  const headLine = state.doc.lineAt(headPosition);
+
+  return anchorPosition <= headPosition
+    ? EditorSelection.range(anchorLine.from, headLine.to)
+    : EditorSelection.range(anchorLine.to, headLine.from);
+}
+
+/** Keeps CodeMirror's triple-click line selection out of the following line. */
+export const currentLineTripleClickSelection: Extension =
+  EditorView.mouseSelectionStyle.of((view, event) => {
+    if (event.button !== 0 || event.detail < 3) return null;
+
+    const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (position == null) return null;
+
+    let anchorPosition = position;
+    let initialSelection = view.state.selection;
+
+    return {
+      update(update) {
+        if (!update.docChanged) return;
+        anchorPosition = update.changes.mapPos(anchorPosition);
+        initialSelection = initialSelection.map(update.changes);
+      },
+      get(currentEvent, extend, multiple) {
+        const headPosition =
+          view.posAtCoords({
+            x: currentEvent.clientX,
+            y: currentEvent.clientY,
+          }) ?? anchorPosition;
+        const range = lineSelectionBetween(
+          view.state,
+          anchorPosition,
+          headPosition,
+        );
+
+        if (extend) {
+          return initialSelection.replaceRange(
+            initialSelection.main.extend(range.from, range.to, range.assoc),
+          );
+        }
+        if (multiple) return initialSelection.addRange(range);
+        return EditorSelection.create([range]);
+      },
+    };
+  });
+
 export function shouldFollowWikilink(
   event: Pick<MouseEvent, "metaKey" | "ctrlKey" | "button">,
   followOnClick = false,
@@ -310,7 +407,7 @@ export function wikilinkExtension(options: {
 /** Highlights Bear-style inline #tags. */
 export const inlineTagExtension = (() => {
   const decorator = new MatchDecorator({
-    regexp: /(?:^|(?<=\s))#[\p{L}\p{N}][\p{L}\p{N}/_-]*/gu,
+    regexp: /(?:^|(?<=\s))(?:\\)?#[\p{L}\p{N}][\p{L}\p{N}/_-]*/gu,
     decoration: () => Decoration.mark({ class: "cm-inline-tag" }),
   });
   return ViewPlugin.fromClass(

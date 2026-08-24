@@ -1,4 +1,8 @@
 import { getNoteProperties, noteBody } from "@/lib/frontmatter";
+import {
+  decodeMarkdownEscapes,
+  transformPreservingMarkdownEscapes,
+} from "@/lib/markdown-escapes";
 
 export const TRASH_DIR = ".trash";
 export const MAX_TYPE_DEPTH = 8;
@@ -22,7 +26,9 @@ export interface Note {
   updatedAt: string;
 }
 
-export const WIKILINK_REGEX = /\[\[([^[\]]+)\]\]/g;
+// Optional escapes preserve wikilinks typed by older versions while Markdown
+// auto-formatting was disabled. Zerus semantics still treat them as links.
+export const WIKILINK_REGEX = /\\?\[\\?\[([^[\]]+)\]\]/g;
 
 /**
  * Markdown image: `![alt](path)`. An optional `|width` suffix in the alt text
@@ -159,7 +165,10 @@ export function noteTitle(note: Note): string {
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   if (!firstLine) return fileStem(note.path) || "Untitled";
-  return firstLine.replace(/^#{1,6}\s+/, "").trim() || "Untitled";
+  return (
+    decodeMarkdownEscapes(firstLine.replace(/^#{1,6}\s+/, "")).trim() ||
+    "Untitled"
+  );
 }
 
 export function noteSnippet(note: Note): string {
@@ -167,13 +176,20 @@ export function noteSnippet(note: Note): string {
     .split("\n")
     .map((line) => line.trim());
   const firstIdx = lines.findIndex((line) => line.length > 0);
-  const rest = lines
+  const restSource = lines
     .slice(firstIdx + 1)
     .filter((line) => line.length > 0)
     .join(" ")
     .replace(IMAGE_MD_REGEX, "")
-    .replace(WIKILINK_REGEX, "$1")
-    .replace(/[#*_`>]/g, "")
+    .replace(WIKILINK_REGEX, "$1");
+  const rest = transformPreservingMarkdownEscapes(restSource, (value) =>
+    value
+      .replace(/(\*\*|__|~~)(?=\S)(.+?\S)\1/g, "$2")
+      .replace(/(`+)([^`]+?)\1/g, "$2")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/_([^_]+)_/g, "$1")
+      .replace(/^(?:#{1,6}|>+)\s+/u, ""),
+  )
     .trim();
   return rest.slice(0, 120);
 }
@@ -393,6 +409,7 @@ export function noteMatchesSearch(note: Note, query: string): boolean {
   if (!q) return true;
   return (
     note.content.toLowerCase().includes(q) ||
+    decodeMarkdownEscapes(note.content).toLowerCase().includes(q) ||
     String(getNoteProperties(note.content)["zerus-file-name"] ?? "")
       .toLowerCase()
       .includes(q) ||

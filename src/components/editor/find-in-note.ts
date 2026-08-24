@@ -21,6 +21,21 @@ import {
   searchPanelOpen,
   setSearchQuery,
 } from "@codemirror/search";
+import {
+  escapeMarkdownPlainText,
+  looksLikeMarkdown,
+} from "./paste-options";
+import { editorPresentationMode } from "./live-preview";
+import { decodeMarkdownEscapes } from "@/lib/markdown-escapes";
+
+export function editorSearchText(
+  value: string,
+  cleanMode: boolean,
+): string {
+  return cleanMode && looksLikeMarkdown(value)
+    ? escapeMarkdownPlainText(value)
+    : value;
+}
 
 function createButton(label: string, content: string, onClick: () => void) {
   const button = document.createElement("button");
@@ -96,11 +111,12 @@ function createFindPanel(view: EditorView): Panel {
 
   const updateQuery = () => {
     const current = getSearchQuery(view.state);
+    const clean = view.state.field(editorPresentationMode) === "clean";
     view.dispatch({
       effects: setSearchQuery.of(
         new SearchQuery({
-          search: input.value,
-          replace: replaceInput.value,
+          search: editorSearchText(input.value, clean),
+          replace: editorSearchText(replaceInput.value, clean),
           caseSensitive: current.caseSensitive,
           literal: current.literal,
           regexp: current.regexp,
@@ -156,9 +172,16 @@ function createFindPanel(view: EditorView): Panel {
     },
     update: (update: ViewUpdate) => {
       const query = getSearchQuery(update.state).search;
-      if (query !== input.value) input.value = query;
+      const clean = update.state.field(editorPresentationMode) === "clean";
+      if (query !== editorSearchText(input.value, clean)) {
+        input.value = clean ? decodeMarkdownEscapes(query) : query;
+      }
       const replacement = getSearchQuery(update.state).replace;
-      if (replacement !== replaceInput.value) replaceInput.value = replacement;
+      if (replacement !== editorSearchText(replaceInput.value, clean)) {
+        replaceInput.value = clean
+          ? decodeMarkdownEscapes(replacement)
+          : replacement;
+      }
       updateMatchCount();
     },
   };

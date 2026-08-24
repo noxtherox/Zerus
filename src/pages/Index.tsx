@@ -841,6 +841,7 @@ const Index = () => {
             <Sidebar
               notes={notes}
               taskCount={tasks.length}
+              trashedImageCount={vault.trashedImages.length}
               extraTypes={vault.extraTypes}
               typeIcons={vault.typeIcons}
               typeOrder={typeOrder}
@@ -929,6 +930,7 @@ const Index = () => {
                   >
                     <NoteList
                       notes={visibleNotes}
+                      trashedImages={vault.trashedImages}
                       filterOptions={filterOptions}
                       filter={filter}
                       listFilters={listFilters}
