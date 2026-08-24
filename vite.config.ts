@@ -28,20 +28,8 @@ export default defineConfig(() => ({
               includeDependenciesRecursively: false,
             },
             {
-              name: "vault-store",
-              test: /src[\\/]store[\\/]notes-store\.ts$/,
-              maxSize: 450 * 1024,
-              includeDependenciesRecursively: false,
-            },
-            {
               name: "editor-ui",
               test: /src[\\/]components[\\/]editor[\\/]/,
-              maxSize: 450 * 1024,
-              includeDependenciesRecursively: false,
-            },
-            {
-              name: "code-editor",
-              test: /node_modules[\\/](@codemirror|@lezer)[\\/]/,
               maxSize: 450 * 1024,
               includeDependenciesRecursively: false,
             },

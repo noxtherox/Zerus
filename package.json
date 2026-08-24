@@ -19,7 +19,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/verify-frontend-bundle.mjs",
     "cli:dev": "cargo build --manifest-path src-tauri/Cargo.toml -p zerus-cli",
     "cli:bundle": "cargo build --manifest-path src-tauri/Cargo.toml -p zerus-cli --release && node scripts/stage-cli.mjs",
     "macos:sign-binaries": "node scripts/sign-macos-binaries.mjs",
