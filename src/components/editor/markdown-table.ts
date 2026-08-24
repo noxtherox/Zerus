@@ -345,7 +345,11 @@ function createTableToolbar(
   return toolbar;
 }
 
-function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
+function installTableInteractions(
+  wrapper: HTMLDivElement,
+  view: EditorView,
+  markdownAware: boolean,
+) {
   const table = wrapper.querySelector<HTMLTableElement>("table");
   if (!table) return;
 
@@ -408,6 +412,25 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
     else wrapper.focus({ preventScroll: true });
     clearNativeSelection();
   };
+
+  wrapper.addEventListener("dblclick", (event) => {
+    if (
+      view.state.readOnly ||
+      !markdownAware
+    ) {
+      return;
+    }
+    const sourceFrom = Number(wrapper.dataset.sourceFrom);
+    const sourceTo = Number(wrapper.dataset.sourceTo);
+    if (!Number.isFinite(sourceFrom) || !Number.isFinite(sourceTo)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    view.dispatch({
+      selection: EditorSelection.cursor(Math.min(sourceTo, sourceFrom + 1)),
+      scrollIntoView: true,
+    });
+    view.focus();
+  });
 
   wrapper.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || !(event.target instanceof HTMLTableCellElement)) return;
@@ -507,7 +530,10 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
     const markdown = serializeMarkdownTable(dataFromTable(table, alignments));
     if (!Number.isFinite(from) || !Number.isFinite(to)) return;
     if (view.state.sliceDoc(from, to) === markdown) return;
-    view.dispatch({ changes: { from, to, insert: markdown }, userEvent: "input" });
+    view.dispatch({
+      changes: { from, to, insert: markdown },
+      userEvent: "input.type",
+    });
   });
 
   wrapper.addEventListener("keydown", (event) => {
@@ -519,9 +545,35 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
     let nextIndex: number | null = null;
 
     if (event.key === "Tab") {
+      if (!event.shiftKey && index === cells.length - 1) {
+        const alignments = JSON.parse(
+          wrapper.dataset.alignments ?? "[]",
+        ) as TableAlignment[];
+        const next = appendMarkdownTableRow(dataFromTable(table, alignments));
+        if (next) {
+          event.preventDefault();
+          replaceTable(wrapper, view, next, cells.length);
+        }
+        return;
+      }
       nextIndex = (index + (event.shiftKey ? -1 : 1) + cells.length) % cells.length;
     } else if (event.key === "Enter") {
-      nextIndex = Math.min(cells.length - 1, index + columnCount);
+      if (index + columnCount >= cells.length) {
+        const alignments = JSON.parse(
+          wrapper.dataset.alignments ?? "[]",
+        ) as TableAlignment[];
+        const next = appendMarkdownTableRow(dataFromTable(table, alignments));
+        if (next) {
+          event.preventDefault();
+          replaceTable(wrapper, view, next, index + columnCount);
+        } else {
+          // Table cells are deliberately single-line. At the row limit, keep
+          // Enter from inserting a browser-generated line break into the cell.
+          event.preventDefault();
+        }
+        return;
+      }
+      nextIndex = index + columnCount;
     } else if (event.key === "ArrowUp" && index >= columnCount) {
       nextIndex = index - columnCount;
     } else if (event.key === "ArrowDown" && index + columnCount < cells.length) {
@@ -542,7 +594,11 @@ function installTableInteractions(wrapper: HTMLDivElement, view: EditorView) {
       }
       event.preventDefault();
       const sourceTo = Number(wrapper.dataset.sourceTo);
-      view.dispatch({ selection: EditorSelection.cursor(sourceTo) });
+      view.dispatch({
+        selection: EditorSelection.cursor(
+          Math.min(view.state.doc.length, sourceTo + 1),
+        ),
+      });
       view.focus();
       return;
     }
@@ -559,6 +615,7 @@ export class MarkdownTableWidget extends WidgetType {
     private readonly markdown: string,
     private readonly sourcePosition: number,
     private readonly readOnly: boolean,
+    private readonly markdownAware: boolean,
   ) {
     super();
   }
@@ -567,7 +624,8 @@ export class MarkdownTableWidget extends WidgetType {
     return (
       other.markdown === this.markdown &&
       other.sourcePosition === this.sourcePosition &&
-      other.readOnly === this.readOnly
+      other.readOnly === this.readOnly &&
+      other.markdownAware === this.markdownAware
     );
   }
 
@@ -615,7 +673,7 @@ export class MarkdownTableWidget extends WidgetType {
     card.appendChild(scrollArea);
     card.appendChild(createTableToolbar(wrapper, view, data, this.readOnly));
     wrapper.appendChild(card);
-    installTableInteractions(wrapper, view);
+    installTableInteractions(wrapper, view, this.markdownAware);
     return wrapper;
   }
 
@@ -624,7 +682,12 @@ export class MarkdownTableWidget extends WidgetType {
     view: EditorView,
     from: this,
   ): boolean {
-    if (from.readOnly !== this.readOnly) return false;
+    if (
+      from.readOnly !== this.readOnly ||
+      from.markdownAware !== this.markdownAware
+    ) {
+      return false;
+    }
     const wrapper = dom as HTMLDivElement;
     const table = wrapper.querySelector<HTMLTableElement>("table");
     const data = parseMarkdownTable(this.markdown);
@@ -654,9 +717,15 @@ export function tableDecoration(
   markdown: string,
   sourcePosition: number,
   readOnly: boolean,
+  markdownAware: boolean,
 ) {
   return Decoration.replace({
-    widget: new MarkdownTableWidget(markdown, sourcePosition, readOnly),
+    widget: new MarkdownTableWidget(
+      markdown,
+      sourcePosition,
+      readOnly,
+      markdownAware,
+    ),
     block: true,
   });
 }

@@ -706,7 +706,7 @@ export function EditorPane({
     <div className="flex h-full flex-col bg-zerus-editor">
       <div
         className={cn(
-          "flex items-center gap-2 border-b border-border/60 px-4 py-2",
+          "relative z-20 flex items-center gap-2 border-b border-border/60 bg-zerus-editor px-4 py-2",
           isRefreshing && "pointer-events-none opacity-70",
         )}
       >

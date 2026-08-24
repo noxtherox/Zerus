@@ -1,7 +1,25 @@
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { SearchQuery } from "@codemirror/search";
 import { describe, expect, it } from "vitest";
-import { literalMatchRanges, searchMatchSummary } from "./find-in-note";
+import {
+  editorSearchText,
+  literalMatchRanges,
+  searchMatchSummary,
+} from "./find-in-note";
+
+describe("Clean-mode search source", () => {
+  it("maps visible literal Markdown to its escaped source", () => {
+    expect(editorSearchText("**literal**", true)).toBe(
+      "\\*\\*literal\\*\\*",
+    );
+    expect(editorSearchText("[label](url)", true)).toBe("\\[label](url)");
+  });
+
+  it("leaves prose and Markdown-aware queries unchanged", () => {
+    expect(editorSearchText("ordinary text", true)).toBe("ordinary text");
+    expect(editorSearchText("**source**", false)).toBe("**source**");
+  });
+});
 
 describe("find in rendered table text", () => {
   it("finds every case-insensitive literal match", () => {

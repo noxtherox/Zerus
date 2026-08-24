@@ -4,6 +4,10 @@ import {
   applyNoteWidth,
   DEFAULT_NOTE_ALIGNMENT,
   DEFAULT_NOTE_WIDTH,
+  DEFAULT_EDITOR_MODE,
+  DEFAULT_MARKDOWN_TYPING_ENABLED,
+  loadEditorMode,
+  loadMarkdownTypingEnabled,
   loadDefaultNoteType,
   loadFileHubExpandedSection,
   loadHtmlPreviewMode,
@@ -13,6 +17,8 @@ import {
   loadNoteWidth,
   loadNoteTypeOrder,
   saveDefaultNoteType,
+  saveEditorMode,
+  saveMarkdownTypingEnabled,
   saveFileHubExpandedSection,
   saveHtmlPreviewMode,
   saveHideSubtypeNotes,
@@ -184,5 +190,38 @@ describe("note alignment preference", () => {
         "--zerus-note-margin-inline",
       ),
     ).toBe("auto");
+  });
+});
+
+describe("editor mode preference", () => {
+  it("uses clean mode by default and ignores invalid values", () => {
+    expect(loadEditorMode()).toBe(DEFAULT_EDITOR_MODE);
+    values.set("zerus.editorMode", "source");
+    expect(loadEditorMode()).toBe(DEFAULT_EDITOR_MODE);
+  });
+
+  it("persists Markdown-aware mode", () => {
+    saveEditorMode("markdown-aware");
+
+    expect(loadEditorMode()).toBe("markdown-aware");
+  });
+});
+
+describe("Markdown typing preference", () => {
+  it("enables Markdown formatting while typing by default", () => {
+    expect(loadMarkdownTypingEnabled()).toBe(
+      DEFAULT_MARKDOWN_TYPING_ENABLED,
+    );
+    values.set("zerus.markdownTypingEnabled", "invalid");
+    expect(loadMarkdownTypingEnabled()).toBe(
+      DEFAULT_MARKDOWN_TYPING_ENABLED,
+    );
+  });
+
+  it("persists literal Markdown symbol typing globally", () => {
+    saveMarkdownTypingEnabled(false);
+
+    expect(loadMarkdownTypingEnabled()).toBe(false);
+    expect(values.get("zerus.markdownTypingEnabled")).toBe("false");
   });
 });

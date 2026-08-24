@@ -5,6 +5,7 @@ import {
   ArchiveRestore,
   FolderSearch,
   FileText,
+  ImageIcon,
   FilePlus2,
   Link2,
   Pin,
@@ -53,13 +54,17 @@ import {
 } from "@/components/ui/tooltip";
 import {
   closeExternalNote,
+  deleteTrashedImageForever,
   deleteNoteForever,
   emptyTrash,
   restoreNote,
+  restoreTrashedImage,
+  openImageInDefaultApp,
   revealNoteInDesktop,
   toggleNotePinned,
   toggleNoteArchived,
   trashNote,
+  type TrashedImage,
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
 import { TypeViewSwitcher } from "./TypeViewWorkspace";
@@ -84,6 +89,7 @@ function formatNoteDate(iso: string): string {
 
 interface NoteListProps {
   notes: Note[];
+  trashedImages: TrashedImage[];
   filterOptions: Note[];
   filter: NoteFilter;
   listFilters: NoteListFilterState;
@@ -106,6 +112,7 @@ interface NoteListProps {
 
 export function NoteList({
   notes,
+  trashedImages,
   filterOptions,
   filter,
   listFilters,
@@ -127,6 +134,7 @@ export function NoteList({
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+  const [deleteImageTarget, setDeleteImageTarget] = useState<TrashedImage | null>(null);
   const [closeExternalTarget, setCloseExternalTarget] = useState<Note | null>(
     null,
   );
@@ -202,7 +210,7 @@ export function NoteList({
           />
         )}
         {inTrash ? (
-          notes.length > 0 && (
+          notes.length + trashedImages.length > 0 && (
             <Button
               variant="ghost"
               size="sm"
@@ -281,7 +289,7 @@ export function NoteList({
         />
       </div>
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        {notes.length === 0 && (
+        {notes.length === 0 && (!inTrash || trashedImages.length === 0) && (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             {search ||
             listFilters.date ||
@@ -301,6 +309,44 @@ export function NoteList({
                 : "No notes here yet."}
           </p>
         )}
+        {inTrash && trashedImages.map((image) => (
+          <ContextMenu key={image.id}>
+            <ContextMenuTrigger asChild>
+              <button
+                type="button"
+                onClick={() => void openImageInDefaultApp(image.trashPath)}
+                className="block w-full border-b border-border/40 px-4 py-3 text-left transition-colors hover:bg-zerus-text/[0.03]"
+              >
+                <div className="flex items-center gap-1.5">
+                  <ImageIcon size={13} className="shrink-0 text-zerus-accent" />
+                  <span className="truncate text-sm font-medium">{image.name}</span>
+                </div>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  Deleted image
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <Badge variant="secondary" className="h-4 rounded px-1.5 text-[10px] font-normal">
+                    IMAGE
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">
+                    {formatNoteDate(image.deletedAt)}
+                  </span>
+                </div>
+              </button>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => void restoreTrashedImage(image.id)}>
+                <Undo2 size={14} className="mr-2" /> Restore
+              </ContextMenuItem>
+              <ContextMenuItem
+                className="text-destructive"
+                onClick={() => setDeleteImageTarget(image)}
+              >
+                <Trash2 size={14} className="mr-2" /> Delete forever
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        ))}
         {visibleNotes.map((note) => {
           const noteName = noteTitle(note);
           const external = isExternalNote(note);
@@ -444,6 +490,30 @@ export function NoteList({
           </div>
         )}
       </div>
+      <AlertDialog
+        open={deleteImageTarget !== null}
+        onOpenChange={(open) => !open && setDeleteImageTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete “{deleteImageTarget?.name ?? "this image"}” forever?
+            </AlertDialogTitle>
+            <AlertDialogDescription>This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => {
+                if (deleteImageTarget) void deleteTrashedImageForever(deleteImageTarget.id);
+              }}
+            >
+              Delete forever
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={trashTarget !== null}
         onOpenChange={(open) => {

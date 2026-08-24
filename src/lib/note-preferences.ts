@@ -5,6 +5,10 @@ const TYPE_ORDER_STORAGE_PREFIX = "zerus.noteTypeOrder.";
 const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
 const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
 const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
+const EDITOR_MODE_STORAGE_KEY = "zerus.editorMode";
+export const EDITOR_MODE_CHANGE_EVENT = "zerus-editor-mode-change";
+const MARKDOWN_TYPING_STORAGE_KEY = "zerus.markdownTypingEnabled";
+export const MARKDOWN_TYPING_CHANGE_EVENT = "zerus-markdown-typing-change";
 const FILE_HUB_EXPANSION_STORAGE_KEY = "zerus.fileHubExpansion.v1";
 const HTML_PREVIEW_MODE_STORAGE_KEY = "zerus.htmlPreviewMode.v1";
 
@@ -21,6 +25,22 @@ export const DEFAULT_NOTE_WIDTH: NoteWidth = 75;
 export const NOTE_ALIGNMENT_OPTIONS = ["left", "center"] as const;
 export type NoteAlignment = (typeof NOTE_ALIGNMENT_OPTIONS)[number];
 export const DEFAULT_NOTE_ALIGNMENT: NoteAlignment = "center";
+export const EDITOR_MODE_OPTIONS = ["clean", "markdown-aware"] as const;
+export type EditorMode = (typeof EDITOR_MODE_OPTIONS)[number];
+export const DEFAULT_EDITOR_MODE: EditorMode = "clean";
+export const DEFAULT_MARKDOWN_TYPING_ENABLED = true;
+export const MARKDOWN_TYPING_DESCRIPTION =
+  "When off, typed Markdown punctuation stays literal. Toolbar commands, shortcuts, rich paste, and Interpret as Markdown still create formatting.";
+
+export interface SyncedEditorPreferenceValues {
+  editorMode: EditorMode;
+  markdownTypingEnabled: boolean;
+}
+
+let syncedEditorPreferences: SyncedEditorPreferenceValues | null = null;
+let persistEditorPreference:
+  | ((patch: Partial<SyncedEditorPreferenceValues>) => void)
+  | null = null;
 
 function storageKey(vaultLocation: string | null): string {
   return `${DEFAULT_TYPE_STORAGE_PREFIX}${vaultLocation ?? "unknown"}`;
@@ -40,6 +60,10 @@ function isNoteWidth(value: unknown): value is NoteWidth {
 
 function isNoteAlignment(value: unknown): value is NoteAlignment {
   return NOTE_ALIGNMENT_OPTIONS.some((option) => option === value);
+}
+
+function isEditorMode(value: unknown): value is EditorMode {
+  return EDITOR_MODE_OPTIONS.some((option) => option === value);
 }
 
 function fileHubExpansionPreferences(): Record<string, FileHubExpandedSection> {
@@ -193,6 +217,115 @@ export function saveNoteAlignment(alignment: NoteAlignment): void {
 /** Applies the saved note alignment once during startup. */
 export function initNoteAlignment(): void {
   applyNoteAlignment(loadNoteAlignment());
+}
+
+/** Loads the current vault's editor presentation, with a local migration fallback. */
+export function loadEditorMode(): EditorMode {
+  if (syncedEditorPreferences) return syncedEditorPreferences.editorMode;
+  try {
+    const saved = localStorage.getItem(EDITOR_MODE_STORAGE_KEY);
+    return isEditorMode(saved) ? saved : DEFAULT_EDITOR_MODE;
+  } catch {
+    return DEFAULT_EDITOR_MODE;
+  }
+}
+
+/** Saves the editor presentation and updates every open editor immediately. */
+export function saveEditorMode(mode: EditorMode): void {
+  try {
+    localStorage.setItem(EDITOR_MODE_STORAGE_KEY, mode);
+  } catch {
+    // Persistence is best-effort; the selected mode still applies this session.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<EditorMode>(EDITOR_MODE_CHANGE_EVENT, { detail: mode }),
+    );
+  }
+  if (syncedEditorPreferences) {
+    syncedEditorPreferences = { ...syncedEditorPreferences, editorMode: mode };
+    persistEditorPreference?.({ editorMode: mode });
+  }
+}
+
+/** Loads whether typed Markdown punctuation should create formatting. */
+export function loadMarkdownTypingEnabled(): boolean {
+  if (syncedEditorPreferences) {
+    return syncedEditorPreferences.markdownTypingEnabled;
+  }
+  try {
+    const saved = localStorage.getItem(MARKDOWN_TYPING_STORAGE_KEY);
+    if (saved === "false") return false;
+    return DEFAULT_MARKDOWN_TYPING_ENABLED;
+  } catch {
+    return DEFAULT_MARKDOWN_TYPING_ENABLED;
+  }
+}
+
+/** Saves the vault Markdown typing preference and updates open editors. */
+export function saveMarkdownTypingEnabled(enabled: boolean): void {
+  try {
+    localStorage.setItem(MARKDOWN_TYPING_STORAGE_KEY, String(enabled));
+  } catch {
+    // Persistence is best-effort; open editors still receive the change.
+  }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<boolean>(MARKDOWN_TYPING_CHANGE_EVENT, {
+        detail: enabled,
+      }),
+    );
+  }
+  if (syncedEditorPreferences) {
+    syncedEditorPreferences = {
+      ...syncedEditorPreferences,
+      markdownTypingEnabled: enabled,
+    };
+    persistEditorPreference?.({ markdownTypingEnabled: enabled });
+  }
+}
+
+/** Local values are used exactly once to seed a vault without synced settings. */
+export function loadLocalEditorPreferenceSeed(): SyncedEditorPreferenceValues {
+  let editorMode = DEFAULT_EDITOR_MODE;
+  let markdownTypingEnabled = DEFAULT_MARKDOWN_TYPING_ENABLED;
+  try {
+    const savedMode = localStorage.getItem(EDITOR_MODE_STORAGE_KEY);
+    if (isEditorMode(savedMode)) editorMode = savedMode;
+    markdownTypingEnabled =
+      localStorage.getItem(MARKDOWN_TYPING_STORAGE_KEY) !== "false";
+  } catch {
+    // Defaults are a safe seed when local persistence is unavailable.
+  }
+  return { editorMode, markdownTypingEnabled };
+}
+
+/** Apply one vault's synchronized values and wire future updates to its writer. */
+export function applySyncedEditorPreferences(
+  values: SyncedEditorPreferenceValues,
+  persist: (patch: Partial<SyncedEditorPreferenceValues>) => void,
+): void {
+  const modeChanged = syncedEditorPreferences?.editorMode !== values.editorMode;
+  const typingChanged =
+    syncedEditorPreferences?.markdownTypingEnabled !==
+    values.markdownTypingEnabled;
+  syncedEditorPreferences = { ...values };
+  persistEditorPreference = persist;
+  if (typeof window === "undefined") return;
+  if (modeChanged) {
+    window.dispatchEvent(
+      new CustomEvent<EditorMode>(EDITOR_MODE_CHANGE_EVENT, {
+        detail: values.editorMode,
+      }),
+    );
+  }
+  if (typingChanged) {
+    window.dispatchEvent(
+      new CustomEvent<boolean>(MARKDOWN_TYPING_CHANGE_EVENT, {
+        detail: values.markdownTypingEnabled,
+      }),
+    );
+  }
 }
 
 /** Loads the type used for notes created from All Notes in this vault. */

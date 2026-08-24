@@ -100,6 +100,7 @@ import {
 interface SidebarProps {
   notes: Note[];
   taskCount: number;
+  trashedImageCount: number;
   /** Types that exist without notes (empty folders) — still shown in the tree. */
   extraTypes: string[][];
   /** Custom icon per type key — types without one get the folder glyph. */
@@ -477,6 +478,7 @@ function SortableTypeRow({
 export function Sidebar({
   notes,
   taskCount,
+  trashedImageCount,
   extraTypes,
   typeIcons,
   typeOrder,
@@ -513,7 +515,8 @@ export function Sidebar({
       !isTrashed(note) &&
       getLinkHubReference(note) !== null,
   ).length;
-  const trashCount = notes.filter((note) => isTrashed(note)).length;
+  const trashCount =
+    notes.filter((note) => isTrashed(note)).length + trashedImageCount;
   const typeSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },
