@@ -103,7 +103,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVGQjA4REU2RTAyMDlDM0MKUldROG5DRGc1bzJ3WDJpZDRJYTd2a04zMThCMkk0M2NkVE9kOUFPM1hnSFI3bERLRmw5cTEyUXgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3MTFGMjMwMDQ0QTMxQTUKUldTbE1Vb0VNUElSbC9vUWhHM200UWxmR1FZMEU1QjlGL0xtbWJnR0REZFdBSXhMQmpjY3N6VGEK",
       "endpoints": [
         "https://github.com/noxtherox/zerus/releases/latest/download/latest.json"
       ]

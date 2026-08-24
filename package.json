@@ -34,6 +34,7 @@
     "desktop:verify": "node scripts/verify-macos-build.mjs",
     "desktop:smoke": "node scripts/verify-macos-build.mjs --launch",
     "platform:verify": "node scripts/verify-platform-config.mjs",
+    "updater-key:verify": "node scripts/verify-updater-key.mjs",
     "ios:new-build": "node scripts/ios-new-build.mjs",
     "testflight": "node scripts/testflight.mjs",
     "windows:dev": "tauri dev",
