@@ -99,6 +99,7 @@ import {
 
 interface SidebarProps {
   notes: Note[];
+  taskCount: number;
   /** Types that exist without notes (empty folders) — still shown in the tree. */
   extraTypes: string[][];
   /** Custom icon per type key — types without one get the folder glyph. */
@@ -475,6 +476,7 @@ function SortableTypeRow({
 
 export function Sidebar({
   notes,
+  taskCount,
   extraTypes,
   typeIcons,
   typeOrder,
@@ -732,6 +734,7 @@ export function Sidebar({
           onClick={() => onFilterChange({ kind: "tasks" })}
           icon={<CheckSquare size={15} />}
           label="Tasks"
+          count={taskCount}
         />
         {isDesktop && (
           <>

@@ -1007,7 +1007,7 @@ export function AiPanel({
       style={{ width: `min(${width}px, 65vw)`, maxWidth: "calc(100% - 240px)" }}
     >
       <div
-        className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none"
+        className="absolute inset-y-0 -left-2 z-20 w-4 cursor-col-resize touch-none"
         onPointerDown={handleResizeStart}
         role="separator"
         aria-label="Resize AI panel"

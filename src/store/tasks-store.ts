@@ -71,6 +71,14 @@ export function updateTask(id: string, patch: TaskPatch): void {
   emit(); persist(tasks);
 }
 
+export function deleteTask(id: string): void {
+  const next = tasks.filter((task) => task.id !== id);
+  if (next.length === tasks.length) return;
+  tasks = next;
+  emit();
+  persist(tasks);
+}
+
 export function updateTaskCategoryOptions(options: string[]): void {
   const next = normalizeListOptions(options);
   if (next.length === categoryOptions.length && next.every((option, index) => option === categoryOptions[index])) return;

@@ -6,6 +6,7 @@ import {
   livePreviewExtension,
   externalLinkAt,
   listItemIndentEm,
+  listItemPrefixOffsetEm,
   moveCursorPastClosingMarkup,
 } from "./live-preview";
 
@@ -86,8 +87,14 @@ describe("external links", () => {
 });
 
 describe("list item indentation", () => {
-  it("aligns wrapped nested bullet text with the first line", () => {
-    expect(listItemIndentEm(4, "-", false)).toBe(1.8);
+  it("gives the first nesting level a clearly visible step", () => {
+    expect(listItemIndentEm(4, "-", false)).toBeCloseTo(2.9);
+    expect(listItemPrefixOffsetEm(4, "-", false)).toBe(1.8);
+  });
+
+  it("keeps later nesting steps even after the larger first step", () => {
+    expect(listItemIndentEm(8, "-", false)).toBeCloseTo(3.9);
+    expect(listItemIndentEm(12, "-", false)).toBeCloseTo(4.9);
   });
 
   it("preserves marker-specific spacing", () => {
