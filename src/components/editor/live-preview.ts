@@ -23,9 +23,19 @@ import { tableDecoration } from "./markdown-table";
 const ACCENT = "rgb(var(--zerus-accent))";
 
 // The editor uses a proportional UI font, where a space is roughly 0.25em
-// wide. Keep this in sync with the rendered leading whitespace so wrapped
-// list text starts under the item's text instead of drifting farther right.
+// wide. Markdown still needs four literal spaces per nesting level, but its
+// visual step should be more distinct than those narrow spaces alone.
 const PROPORTIONAL_SPACE_WIDTH_EM = 0.25;
+const LIST_NESTING_STEP_EM = 1;
+const FIRST_NESTING_OFFSET_EM = 1.1;
+
+function listMarkerIndentEm(marker: string, isTaskItem: boolean): number {
+  return isTaskItem
+    ? 1.35
+    : /^[-*+]$/.test(marker)
+      ? 0.8
+      : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
+}
 
 const toggleEffect = StateEffect.define<boolean>();
 
@@ -51,13 +61,24 @@ export function listItemIndentEm(
   marker: string,
   isTaskItem: boolean,
 ): number {
-  const markerIndent = isTaskItem
-    ? 1.35
-    : /^[-*+]$/.test(marker)
-      ? 0.8
-      : Math.max(1.1, marker.replace(/\D/g, "").length * 0.55 + 0.55);
+  const nestingLevel = leadingWhitespace / 4;
+  const firstNestingOffset = nestingLevel > 0 ? FIRST_NESTING_OFFSET_EM : 0;
+  return (
+    firstNestingOffset +
+    nestingLevel * LIST_NESTING_STEP_EM +
+    listMarkerIndentEm(marker, isTaskItem)
+  );
+}
 
-  return leadingWhitespace * PROPORTIONAL_SPACE_WIDTH_EM + markerIndent;
+export function listItemPrefixOffsetEm(
+  leadingWhitespace: number,
+  marker: string,
+  isTaskItem: boolean,
+): number {
+  return (
+    leadingWhitespace * PROPORTIONAL_SPACE_WIDTH_EM +
+    listMarkerIndentEm(marker, isTaskItem)
+  );
 }
 
 function trimLinkPunctuation(value: string): string {
@@ -382,12 +403,17 @@ function buildDecorations(view: EditorView): DecorationSet {
                 marker,
                 isTaskItem,
               );
+              const prefixOffset = listItemPrefixOffsetEm(
+                leadingWhitespace,
+                marker,
+                isTaskItem,
+              );
 
               decos.push(
                 Decoration.line({
                   class: "cm-list-item-line",
                   attributes: {
-                    style: `--cm-list-indent: ${indent}em`,
+                    style: `--cm-list-indent: ${indent}em; --cm-list-prefix-offset: ${prefixOffset}em`,
                   },
                 }).range(line.from),
               );
@@ -543,7 +569,7 @@ const livePreviewTheme = EditorView.theme({
     paddingLeft: "var(--cm-list-indent)",
   },
   ".cm-list-item-prefix": {
-    marginLeft: "calc(-1 * var(--cm-list-indent))",
+    marginLeft: "calc(-1 * var(--cm-list-prefix-offset))",
   },
   ".cm-blockquote-line": {
     borderLeft: "3px solid rgb(var(--zerus-text) / 0.22)",

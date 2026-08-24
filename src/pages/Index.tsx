@@ -44,6 +44,7 @@ import {
 } from "@/store/notes-store";
 import {
   createTask,
+  deleteTask,
   deleteTaskCategory,
   loadTasks,
   updateTaskCategoryOptions,
@@ -839,6 +840,7 @@ const Index = () => {
           >
             <Sidebar
               notes={notes}
+              taskCount={tasks.length}
               extraTypes={vault.extraTypes}
               typeIcons={vault.typeIcons}
               typeOrder={typeOrder}
@@ -889,6 +891,7 @@ const Index = () => {
                   onSelectedTaskChange={setSelectedTaskId}
                   onCreateTask={createTask}
                   onUpdateTask={updateTask}
+                  onDeleteTask={deleteTask}
                   onCategoryOptionsChange={updateTaskCategoryOptions}
                   onDeleteCategory={deleteTaskCategory}
                   onOpenNote={handleOpenNote}

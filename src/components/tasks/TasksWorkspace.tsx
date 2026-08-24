@@ -6,6 +6,7 @@ import {
   Link2,
   Search,
   SlidersHorizontal,
+  Trash2,
   X,
 } from "@/lib/icons";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -57,6 +58,7 @@ interface TasksWorkspaceProps {
   onSelectedTaskChange: (id: string | null) => void;
   onCreateTask: (title: string) => Task | null;
   onUpdateTask: (id: string, patch: TaskPatch) => void;
+  onDeleteTask: (id: string) => void;
   onCategoryOptionsChange: (options: string[]) => void;
   onDeleteCategory: (category: string) => void;
   onOpenNote: (id: string) => void;
@@ -228,6 +230,7 @@ function TaskDetails({
   onUpdate,
   onCategoryOptionsChange,
   onDeleteCategory,
+  onRequestDelete,
   onOpenNote,
 }: {
   task: Task;
@@ -236,6 +239,7 @@ function TaskDetails({
   onUpdate: (patch: TaskPatch) => void;
   onCategoryOptionsChange: (options: string[]) => void;
   onDeleteCategory: (category: string) => void;
+  onRequestDelete: () => void;
   onOpenNote: (id: string) => void;
 }) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
@@ -342,6 +346,18 @@ function TaskDetails({
           Completed {new Date(task.completedAt).toLocaleString()}
         </p>
       )}
+      <div className="mt-3 flex justify-end border-t border-border/60 pt-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={onRequestDelete}
+        >
+          <Trash2 size={14} />
+          Delete task
+        </Button>
+      </div>
       <LinkNoteDialog
         open={linkDialogOpen}
         onOpenChange={setLinkDialogOpen}
@@ -361,6 +377,7 @@ export function TasksWorkspace({
   onSelectedTaskChange,
   onCreateTask,
   onUpdateTask,
+  onDeleteTask,
   onCategoryOptionsChange,
   onDeleteCategory,
   onOpenNote,
@@ -370,6 +387,7 @@ export function TasksWorkspace({
   const [sort, setSort] = useState<TaskSort>("recently-created");
   const [draft, setDraft] = useState("");
   const [categoryToDelete, setCategoryToDelete] = useState<string | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const visibleTasks = useMemo(() => tasksForView(tasks, view, undefined, sort), [tasks, view, sort]);
   const linkableNotes = useMemo(
     () => notes.filter((note) => !isExternalNote(note) && !isTrashed(note)),
@@ -465,6 +483,7 @@ export function TasksWorkspace({
             onUpdate={(patch) => onUpdateTask(task.id, patch)}
             onCategoryOptionsChange={onCategoryOptionsChange}
             onDeleteCategory={requestCategoryDelete}
+            onRequestDelete={() => setTaskToDelete(task)}
             onOpenNote={onOpenNote}
           />
         )}
@@ -479,7 +498,7 @@ export function TasksWorkspace({
           <CheckSquare size={19} />
           <h2 className="text-lg font-semibold">Tasks</h2>
         </div>
-        <div className="mt-4 flex max-w-2xl gap-2">
+        <div className="mt-4 flex w-full gap-2">
           <Input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -489,7 +508,7 @@ export function TasksWorkspace({
           />
           <Button onClick={submit} disabled={!draft.trim()}>Add</Button>
         </div>
-        <div className="mt-4 flex max-w-3xl items-center justify-between gap-3">
+        <div className="mt-4 flex w-full items-center justify-between gap-3">
           <div className="flex gap-1" role="tablist">
             {views.map((item) => (
               <button
@@ -522,7 +541,7 @@ export function TasksWorkspace({
         </div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-        <div className="max-w-3xl">
+        <div className="w-full">
           {view === "all" && visibleTasks.length > 0 ? (
             <div className="space-y-5">
               {allTaskGroups.map((group) => (
@@ -553,6 +572,37 @@ export function TasksWorkspace({
           )}
         </div>
       </div>
+      <AlertDialog
+        open={taskToDelete !== null}
+        onOpenChange={(open) => { if (!open) setTaskToDelete(null); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete “{taskToDelete?.title || "Untitled task"}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the task
+              {taskToDelete?.linkedNoteIds.length
+                ? ` and removes its relation from ${taskToDelete.linkedNoteIds.length} linked ${taskToDelete.linkedNoteIds.length === 1 ? "note" : "notes"}`
+                : ""}.
+              {" "}This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (!taskToDelete) return;
+                onDeleteTask(taskToDelete.id);
+                if (selectedTaskId === taskToDelete.id) onSelectedTaskChange(null);
+                setTaskToDelete(null);
+              }}
+            >
+              Delete task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={categoryToDelete !== null}
         onOpenChange={(open) => { if (!open) setCategoryToDelete(null); }}

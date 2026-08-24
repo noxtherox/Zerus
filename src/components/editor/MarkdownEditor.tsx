@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { EditorView, placeholder, keymap } from "@codemirror/view";
+import {
+  drawSelection,
+  EditorView,
+  placeholder,
+  keymap,
+} from "@codemirror/view";
 import {
   ChangeSpec,
   Compartment,
@@ -306,6 +311,7 @@ export function MarkdownEditor({
         markdownHighlighting,
         firstLineIsTitle ? titleLineExtension : [],
         livePreviewExtension((url) => void openExternalUrl(url)),
+        drawSelection(),
         editorTheme,
         EditorView.lineWrapping,
         readOnlyCompartmentRef.current.of([
