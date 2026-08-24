@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdtempSync,
@@ -23,6 +23,7 @@ const config = JSON.parse(
   readFileSync(resolve(root, "src-tauri/tauri.conf.json"), "utf8"),
 );
 const launch = process.argv.includes("--launch");
+const requireNotarized = process.argv.includes("--require-notarized");
 const explicitAppIndex = process.argv.indexOf("--app");
 const explicitApp =
   explicitAppIndex === -1 ? undefined : process.argv[explicitAppIndex + 1];
@@ -61,6 +62,32 @@ const run = (command, args, options = {}) =>
 run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath], {
   stdio: "inherit",
 });
+if (requireNotarized) {
+  const signatureInspection = spawnSync(
+    "codesign",
+    ["-d", "--verbose=4", appPath],
+    { encoding: "utf8" },
+  );
+  if (signatureInspection.status !== 0) {
+    throw new Error(`Could not inspect the app signature: ${signatureInspection.stderr}`);
+  }
+  const signatureDetails = `${signatureInspection.stdout}${signatureInspection.stderr}`;
+  const expectedAuthority =
+    "Authority=Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)";
+  if (!signatureDetails.includes(expectedAuthority)) {
+    throw new Error("macOS artifact is not signed with the Zerus Developer ID identity");
+  }
+  if (!signatureDetails.includes("TeamIdentifier=TX9RYY52XR")) {
+    throw new Error("macOS artifact does not have the expected Apple Team ID");
+  }
+  if (!signatureDetails.includes("runtime")) {
+    throw new Error("macOS artifact does not have Hardened Runtime enabled");
+  }
+  run("xcrun", ["stapler", "validate", appPath], { stdio: "inherit" });
+  run("spctl", ["--assess", "--type", "execute", "--verbose=4", appPath], {
+    stdio: "inherit",
+  });
+}
 const entitlements = run("codesign", ["-d", "--entitlements", ":-", appPath], {
   stdio: ["ignore", "pipe", "ignore"],
 });
@@ -123,6 +150,14 @@ try {
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", copiedApp], {
     stdio: "inherit",
   });
+  if (requireNotarized) {
+    run("xcrun", ["stapler", "validate", copiedApp], { stdio: "inherit" });
+    run(
+      "spctl",
+      ["--assess", "--type", "execute", "--verbose=4", copiedApp],
+      { stdio: "inherit" },
+    );
+  }
 
   if (launch) {
     run("open", ["-n", copiedApp]);
