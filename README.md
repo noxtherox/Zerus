@@ -93,6 +93,11 @@ builds do not depend on Developer ID keychain access. To intentionally create a
 distribution-signed and notarized build, set `APPLE_SIGNING_IDENTITY` to the
 Developer ID Application identity before running the command.
 
+Official tagged releases import the Developer ID Application certificate in
+GitHub Actions, authenticate to Apple's notary service with a Team App Store
+Connect API key, and require both Gatekeeper acceptance and stapled
+notarization tickets before the draft release is published.
+
 ## Releases and automatic updates
 
 To publish a new Apple Silicon version, start from a clean, up-to-date `main`
