@@ -37,6 +37,12 @@ jobs:
       - name: Verify platform boundaries
         run: pnpm platform:verify
 
+      - name: Verify updater signing key
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: pnpm updater-key:verify
+
       - name: Verify release version
         run: |
           APP_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")

@@ -51,6 +51,7 @@ if (!isNewer) {
   throw new Error(`Version ${version} must be newer than ${currentVersion}.`);
 }
 
+run("pnpm", ["updater-key:verify"]);
 run("pnpm", ["build"]);
 run("pnpm", ["exec", "vitest", "run", "--exclude", ".claude/**"]);
 

@@ -38,6 +38,12 @@ execFileSync("node", ["scripts/verify-platform-config.mjs"], {
   stdio: "inherit",
 });
 
+execFileSync("node", ["scripts/verify-updater-key.mjs"], {
+  cwd: process.cwd(),
+  env: environment,
+  stdio: "inherit",
+});
+
 if (process.platform === "darwin" && environment.APPLE_SIGNING_IDENTITY === "-") {
   // Tauri automatically notarizes whenever Apple credentials are present.
   // An ad-hoc build cannot be notarized, so keep ambient release credentials
