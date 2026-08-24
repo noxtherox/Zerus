@@ -76,9 +76,13 @@ export const editorTheme = EditorView.theme({
   },
   ".cm-image-preview": {
     position: "relative",
+    boxSizing: "border-box",
     width: "fit-content",
     maxWidth: "100%",
-    margin: "4px 0 10px",
+    // CodeMirror does not include a block widget's vertical margins in its
+    // height map. Internal spacing keeps coordinate mapping accurate for the
+    // editable lines immediately before and after an image.
+    padding: "4px 0 10px",
     borderRadius: "6px",
   },
   ".cm-image-preview img": {

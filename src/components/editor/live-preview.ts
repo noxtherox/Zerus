@@ -47,8 +47,7 @@ const INLINE_MARKS: Record<string, string> = {
   Link: "LinkMark",
 };
 
-const BARE_LINK_REGEX =
-  /(?:https?:\/\/|www\.)[^\s<>{}[\]"]+|(?:[a-z\d](?:[a-z\d-]*[a-z\d])?\.)+[a-z]{2,}(?:\/[^\s<>{}[\]"]*)?/giu;
+const EXPLICIT_LINK_REGEX = /https?:\/\/[^\s<>{}[\]"]+/giu;
 
 interface ExternalLinkMatch {
   url: string;
@@ -85,6 +84,12 @@ function trimLinkPunctuation(value: string): string {
   return value.replace(/[.,!?;:]+$/g, "");
 }
 
+/** Editor links must declare the web protocol instead of guessing from text. */
+function normalizeEditorUrl(value: string): string | null {
+  const trimmed = value.trim().replace(/^<|>$/g, "");
+  return /^https?:\/\//i.test(trimmed) ? normalizeExternalUrl(trimmed) : null;
+}
+
 /** A bare domain in the first Markdown heading is title text, not an implicit URL. */
 function isTitleHeadingLine(
   state: EditorState,
@@ -102,19 +107,32 @@ export function externalLinkAt(
   state: EditorState,
   pos: number,
 ): ExternalLinkMatch | null {
+  // An image's URL is a source path for its preview, not a link to follow.
+  // Check the complete ancestry before inspecting individual URL nodes: when
+  // the pointer is over the destination, resolveInner starts at the URL child
+  // and would otherwise treat a relative image path as a bare web domain.
+  for (const bias of [-1, 1] as const) {
+    for (
+      let node = syntaxTree(state).resolveInner(pos, bias);
+      node;
+      node = node.parent
+    ) {
+      if (node.name === "Image") return null;
+    }
+  }
+
   for (const bias of [-1, 1] as const) {
     let node = syntaxTree(state).resolveInner(pos, bias);
     for (; node; node = node.parent) {
-      if (node.name === "Image") break;
       if (node.name === "Link") {
         const urlNode = node.getChild("URL");
         const url =
           urlNode &&
-          normalizeExternalUrl(state.sliceDoc(urlNode.from, urlNode.to));
+          normalizeEditorUrl(state.sliceDoc(urlNode.from, urlNode.to));
         if (url) return { url, from: node.from, to: node.to };
       }
       if (node.name === "URL") {
-        const url = normalizeExternalUrl(state.sliceDoc(node.from, node.to));
+        const url = normalizeEditorUrl(state.sliceDoc(node.from, node.to));
         if (url) return { url, from: node.from, to: node.to };
       }
     }
@@ -122,12 +140,12 @@ export function externalLinkAt(
 
   const line = state.doc.lineAt(pos);
   if (isTitleHeadingLine(state, line.from, line.text)) return null;
-  for (const match of line.text.matchAll(BARE_LINK_REGEX)) {
+  for (const match of line.text.matchAll(EXPLICIT_LINK_REGEX)) {
     const raw = trimLinkPunctuation(match[0]);
     const from = line.from + (match.index ?? 0);
     const to = from + raw.length;
     if (pos < from || pos > to) continue;
-    const url = normalizeExternalUrl(raw);
+    const url = normalizeEditorUrl(raw);
     if (url) return { url, from, to };
   }
   return null;
@@ -173,6 +191,12 @@ export function moveCursorPastClosingMarkup(
       for (; node; node = node.parent) {
         const markName = INLINE_MARKS[node.name];
         if (!markName) continue;
+        if (node.name === "Link") {
+          const url = node.getChild("URL");
+          if (!url || !normalizeEditorUrl(state.sliceDoc(url.from, url.to))) {
+            continue;
+          }
+        }
 
         const marks = node.getChildren(markName);
         // For links, the visual label ends at `]`, while the final mark is
@@ -285,12 +309,12 @@ function buildDecorations(view: EditorView): DecorationSet {
   };
 
   for (const { from, to } of view.visibleRanges) {
-    for (const match of state.sliceDoc(from, to).matchAll(BARE_LINK_REGEX)) {
+    for (const match of state.sliceDoc(from, to).matchAll(EXPLICIT_LINK_REGEX)) {
       const raw = trimLinkPunctuation(match[0]);
       const start = from + (match.index ?? 0);
       const line = state.doc.lineAt(start);
       if (isTitleHeadingLine(state, line.from, line.text)) continue;
-      if (!raw || !normalizeExternalUrl(raw)) continue;
+      if (!raw || !normalizeEditorUrl(raw)) continue;
       decos.push(
         Decoration.mark({
           class: "cm-external-link",
@@ -350,7 +374,12 @@ function buildDecorations(view: EditorView): DecorationSet {
             // Only true `[text](url)` links; bare `[ref]` (e.g. inside
             // wikilinks) has no URL child and is left alone.
             const url = node.node.getChild("URL");
-            if (!url) return;
+            if (
+              !url ||
+              !normalizeEditorUrl(state.sliceDoc(url.from, url.to))
+            ) {
+              return;
+            }
             if (touches(state, node.from, node.to)) return false;
             const marks = node.node.getChildren("LinkMark");
             if (marks.length < 2) return false;

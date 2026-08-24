@@ -55,6 +55,16 @@ class ImagePreviewWidget extends WidgetType {
     if (this.width) img.style.width = `${this.width}px`;
     wrap.appendChild(img);
 
+    // The image gets its intrinsic height after the block widget has already
+    // been mounted. Refresh CodeMirror's height map once that happens so
+    // pointer hit-testing and vertical cursor motion below the preview stay
+    // aligned with the rendered document.
+    const requestLayoutMeasure = () => {
+      if (wrap.isConnected) view.requestMeasure();
+    };
+    img.addEventListener("load", requestLayoutMeasure, { once: true });
+    img.addEventListener("error", requestLayoutMeasure, { once: true });
+
     void this.getUrl(this.path).then((url) => {
       if (url) {
         img.src = url;
@@ -63,6 +73,7 @@ class ImagePreviewWidget extends WidgetType {
       wrap.classList.add("cm-image-preview-missing");
       img.remove();
       wrap.textContent = `Image not found: ${this.path}`;
+      requestLayoutMeasure();
     });
 
     const handle = document.createElement("div");
