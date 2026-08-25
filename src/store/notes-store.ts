@@ -78,18 +78,8 @@ import {
 import { showError } from "@/utils/toast";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import {
-  applySyncedEditorPreferences,
   loadDefaultNoteType,
-  loadLocalEditorPreferenceSeed,
-  type SyncedEditorPreferenceValues,
 } from "@/lib/note-preferences";
-import {
-  DEFAULT_EDITOR_SETTINGS_VALUES,
-  newerEditorSettings,
-  readEditorSettings,
-  writeEditorSettings,
-  type EditorSettings,
-} from "@/lib/editor-settings";
 import {
   fileNameFromPath,
   getFileHubReference,
@@ -198,8 +188,6 @@ export interface VaultState {
   /** Simultaneous editor and disk edits awaiting an explicit user choice. */
   conflicts: Readonly<Record<string, NoteConflict>>;
   historySettings: HistorySettings;
-  /** Markdown behavior shared through `.zerus/editor-settings.json`. */
-  editorSettings: EditorSettings;
   historyError: string | null;
   error: string | null;
 }
@@ -244,11 +232,6 @@ let state: VaultState = {
   isRefreshing: false,
   conflicts: {},
   historySettings: DEFAULT_HISTORY_SETTINGS,
-  editorSettings: {
-    version: 1,
-    ...DEFAULT_EDITOR_SETTINGS_VALUES,
-    updatedAt: new Date(0).toISOString(),
-  },
   historyError: null,
   error: null,
 };
@@ -268,9 +251,6 @@ let desktopOpenHookInstalled = false;
 let desktopOpenDrain: Promise<void> | null = null;
 let desktopSyncTimer: ReturnType<typeof setInterval> | null = null;
 let desktopSyncInFlight = false;
-let editorSettingsSyncTimer: ReturnType<typeof setInterval> | null = null;
-let editorSettingsSyncInFlight = false;
-let editorSettingsWriteInFlight: Promise<void> = Promise.resolve();
 let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
@@ -393,83 +373,6 @@ async function recordHistorySafely(
 function setState(patch: Partial<VaultState>) {
   state = { ...state, ...patch };
   emit();
-}
-
-function applyVaultEditorSettings(settings: EditorSettings): void {
-  setState({ editorSettings: settings });
-  applySyncedEditorPreferences(settings, (patch) => {
-    void updateEditorSettings(patch);
-  });
-}
-
-async function loadOrSeedEditorSettings(
-  target: VaultBackend,
-): Promise<EditorSettings> {
-  const existing = await readEditorSettings(target);
-  if (existing) return existing;
-  return writeEditorSettings(target, loadLocalEditorPreferenceSeed());
-}
-
-/** Save the vault-scoped Markdown preferences and update open editors now. */
-export async function updateEditorSettings(
-  patch: Partial<SyncedEditorPreferenceValues>,
-): Promise<void> {
-  const target = backend;
-  if (!target) return;
-  const desired: SyncedEditorPreferenceValues = {
-    editorMode: patch.editorMode ?? state.editorSettings.editorMode,
-    markdownTypingEnabled:
-      patch.markdownTypingEnabled ??
-      state.editorSettings.markdownTypingEnabled,
-  };
-  const optimistic: EditorSettings = {
-    version: 1,
-    ...desired,
-    updatedAt: new Date().toISOString(),
-  };
-  applyVaultEditorSettings(optimistic);
-
-  editorSettingsWriteInFlight = editorSettingsWriteInFlight.then(async () => {
-    if (backend !== target) return;
-    try {
-      const saved = await writeEditorSettings(target, desired);
-      if (backend !== target) return;
-      // A newer local choice may already be queued; do not roll it back while
-      // this earlier write completes.
-      if (state.editorSettings.updatedAt <= optimistic.updatedAt) {
-        applyVaultEditorSettings(saved);
-      }
-    } catch (error) {
-      reportError("save editor settings", error);
-    }
-  });
-  await editorSettingsWriteInFlight;
-}
-
-async function refreshEditorSettingsFromVault(): Promise<void> {
-  if (editorSettingsSyncInFlight || !backend || state.status !== "ready") {
-    return;
-  }
-  editorSettingsSyncInFlight = true;
-  const target = backend;
-  try {
-    const candidate = await readEditorSettings(target);
-    if (!candidate || backend !== target) return;
-    if (newerEditorSettings(state.editorSettings, candidate) === candidate &&
-        candidate.updatedAt !== state.editorSettings.updatedAt) {
-      applyVaultEditorSettings(candidate);
-    }
-  } finally {
-    editorSettingsSyncInFlight = false;
-  }
-}
-
-function installEditorSettingsSync(): void {
-  if (editorSettingsSyncTimer) return;
-  editorSettingsSyncTimer = setInterval(
-    () => void refreshEditorSettingsFromVault(),
-    2_000,
-  );
 }
 
 function subscribe(listener: () => void): () => void {
@@ -1117,7 +1020,6 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       fileLocations,
       historySettings,
-      editorSettings,
       trashedImages,
     ] = await Promise.all([
       canPage
@@ -1135,7 +1037,6 @@ async function loadVault(nextBackend: VaultBackend) {
       loadTypeViews(nextBackend),
       loadFileLocations(nextBackend),
       loadHistorySettings(nextBackend),
-      loadOrSeedEditorSettings(nextBackend),
       loadTrashedImages(nextBackend),
     ]);
     if (canPage) {
@@ -1233,13 +1134,11 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       fileLocations,
       historySettings,
-      editorSettings,
       trashedImages,
       conflicts: restoredSession.conflicts,
       loadingNoteIds: new Set(),
       isRefreshing: false,
     });
-    applyVaultEditorSettings(editorSettings);
     startupEditedNoteIds.clear();
     for (const id of editedIds) {
       pendingFlush.set(
@@ -1340,7 +1239,6 @@ export async function loadAllNotes(): Promise<boolean> {
 export function initStore() {
   if (initialized) return;
   initialized = true;
-  installEditorSettingsSync();
   if (isTauri()) {
     if (isIOSRuntime()) {
       void (async () => {
@@ -1473,10 +1371,7 @@ export async function reloadVault() {
 
 /** Reconciles changes made outside Zerus when the desktop app regains focus. */
 export async function refreshVaultFromDisk() {
-  await Promise.all([
-    synchronizeDesktopFiles(),
-    refreshEditorSettingsFromVault(),
-  ]);
+  await synchronizeDesktopFiles();
 }
 
 function relativePathKey(path: string): string {
@@ -2070,7 +1965,6 @@ async function flushAll(
     )
   );
   await typeViewsWriteInFlight;
-  await editorSettingsWriteInFlight;
   return saved;
 }
 

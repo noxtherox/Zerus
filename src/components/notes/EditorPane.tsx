@@ -55,7 +55,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
+import { MarkdownEditor } from "@/components/editor/MdxMarkdownEditor";
 import { FileHubPanel, type FileHubPreviewType } from "./FileHubPanel";
 import { HtmlPreviewDialog } from "./HtmlPreviewDialog";
 import { LinkHubPanel } from "./LinkHubPanel";

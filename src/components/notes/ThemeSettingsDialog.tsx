@@ -75,20 +75,12 @@ import { DEFAULT_TYPE, noteTitle, typeKey } from "@/lib/note-utils";
 import {
   DEFAULT_NOTE_ALIGNMENT,
   DEFAULT_NOTE_WIDTH,
-  loadEditorMode,
-  loadMarkdownTypingEnabled,
-  MARKDOWN_TYPING_DESCRIPTION,
-  EDITOR_MODE_CHANGE_EVENT,
-  MARKDOWN_TYPING_CHANGE_EVENT,
   loadNoteAlignment,
   loadNoteWidth,
   NOTE_ALIGNMENT_OPTIONS,
   NOTE_WIDTH_OPTIONS,
   saveNoteAlignment,
-  saveEditorMode,
-  saveMarkdownTypingEnabled,
   saveNoteWidth,
-  type EditorMode,
   type NoteAlignment,
   type NoteWidth,
 } from "@/lib/note-preferences";
@@ -182,10 +174,6 @@ export function ThemeSettingsDialog({
   const [noteWidth, setNoteWidth] = useState<NoteWidth>(loadNoteWidth);
   const [noteAlignment, setNoteAlignment] =
     useState<NoteAlignment>(loadNoteAlignment);
-  const [editorMode, setEditorMode] = useState<EditorMode>(loadEditorMode);
-  const [markdownTypingEnabled, setMarkdownTypingEnabled] = useState(
-    loadMarkdownTypingEnabled,
-  );
   const [locationDraft, setLocationDraft] = useState("");
   const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
   const [migrationPreview, setMigrationPreview] =
@@ -201,19 +189,6 @@ export function ThemeSettingsDialog({
   const locationMappings = getFileLocationMappings();
 
   useEffect(() => {
-    const handleMode = (event: Event) =>
-      setEditorMode((event as CustomEvent<EditorMode>).detail);
-    const handleTyping = (event: Event) =>
-      setMarkdownTypingEnabled((event as CustomEvent<boolean>).detail);
-    window.addEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
-    window.addEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
-    return () => {
-      window.removeEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
-      window.removeEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
-    };
-  }, []);
-
-  useEffect(() => {
     if (open) {
       const preferences = loadThemePreferences();
       setThemePreferences(preferences);
@@ -222,8 +197,6 @@ export function ThemeSettingsDialog({
       setInterfaceZoom(loadInterfaceZoom());
       setNoteWidth(loadNoteWidth());
       setNoteAlignment(loadNoteAlignment());
-      setEditorMode(loadEditorMode());
-      setMarkdownTypingEnabled(loadMarkdownTypingEnabled());
       if (isDesktop) {
         void invoke<CliStatus>("cli_status").then(setCliStatus);
         if (location) {
@@ -704,52 +677,6 @@ export function ThemeSettingsDialog({
                 <SelectItem value="system">Match system</SelectItem>
               </SelectContent>
             </Select>
-            <label
-              htmlFor="editor-mode"
-              className="mt-4 block text-sm font-medium"
-            >
-              Editor experience
-            </label>
-            <p className="mb-3 mt-0.5 text-xs text-muted-foreground">
-              Clean renders formatting without showing its Markdown characters.
-              Markdown-aware reveals them around the cursor.
-            </p>
-            <Select
-              value={editorMode}
-              onValueChange={(value: EditorMode) => {
-                setEditorMode(value);
-                saveEditorMode(value);
-              }}
-            >
-              <SelectTrigger id="editor-mode">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="clean">Clean (default)</SelectItem>
-                <SelectItem value="markdown-aware">Markdown-aware</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="mt-4 flex items-center justify-between gap-4">
-              <div>
-                <label
-                  htmlFor="markdown-typing-enabled"
-                  className="text-sm font-medium"
-                >
-                  Format Markdown while typing
-                </label>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {MARKDOWN_TYPING_DESCRIPTION}
-                </p>
-              </div>
-              <Switch
-                id="markdown-typing-enabled"
-                checked={markdownTypingEnabled}
-                onCheckedChange={(enabled) => {
-                  setMarkdownTypingEnabled(enabled);
-                  saveMarkdownTypingEnabled(enabled);
-                }}
-              />
-            </div>
             <label
               htmlFor="interface-zoom"
               className="mt-4 block text-sm font-medium"
