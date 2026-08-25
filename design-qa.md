@@ -139,3 +139,58 @@ The combined full view verifies that no surrounding editor layout or persistent 
 No P3 follow-up is needed for this scoped behavior change.
 
 final result: passed
+
+---
+
+# Design QA
+
+- Source visual truth: `/Users/tiagopereira/.codex/attachments/c3081616-36c7-480a-ae3d-4b88acc9e666/codex-clipboard-fe425b5e-4554-4c64-8b6e-c87bc16462c2.png`
+- Implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-implementation-editor.png`
+- Combined comparison: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-title-heading-comparison.png`
+- Browser viewport: 1280 x 720 CSS px
+- Source pixels: 814 x 371
+- Implementation crop: 856 x 347 pixels from an 856 x 347 CSS-px editor region
+- Browser device pixel ratio: 2; browser screenshot output was normalized to CSS-pixel dimensions
+- State: dark theme, clean/live-preview editor, title line focused, rendered H1 below it
+
+## Full-view comparison evidence
+
+The combined comparison shows the requested hierarchy reversal: the implementation title is now the dominant 36px text and the rendered H1 is 23.25px. The source showed the inverse hierarchy. The existing editor layout, typeface, weight, colors, toolbar, and spacing remain unchanged.
+
+## Focused region comparison evidence
+
+The editor text region was inspected directly because typography is the only changed surface. Computed styles confirmed:
+
+- Title (`.cm-title-line`): 36px
+- Heading 1 (`.cm-heading-line-1`): 23.25px
+
+The H1 Markdown marker remains hidden after focus moves to the title, confirming the live-preview state. Title and H1 text both remain fully visible without clipping or wrapping.
+
+## Findings
+
+- No actionable P0, P1, or P2 findings.
+- Fonts and typography: requested title/H1 hierarchy is reversed; family and 700 weight remain consistent.
+- Spacing and layout rhythm: unchanged from the existing editor.
+- Colors and visual tokens: unchanged.
+- Image quality and asset fidelity: no image assets are involved in this change.
+- Copy and content: matches the supplied example.
+
+## Interaction and console checks
+
+- Opened a demo note, entered the supplied title and H1, and moved focus between lines to verify both editing and rendered live-preview states.
+- Browser console warnings/errors: none.
+
+## Comparison history
+
+- Initial issue: the H1 was effectively scaled twice, producing 36px text while the title was 23.25px.
+- Fix: assigned the existing 36px scale to the title and prevented nested H1 syntax spans from compounding the 23.25px line size; added a title-specific caret scale.
+- Post-fix evidence: computed 36px title and 23.25px H1 in the rendered editor, with no console errors.
+
+## Implementation checklist
+
+- [x] Reverse title and H1 visual sizes.
+- [x] Keep the H1 Markdown marker behavior intact.
+- [x] Match the caret scale to the larger title.
+- [x] Verify tests, type checking, production build, and browser render.
+
+final result: passed

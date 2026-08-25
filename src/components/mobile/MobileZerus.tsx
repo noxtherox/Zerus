@@ -59,7 +59,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { MarkdownEditor } from "@/components/editor/MarkdownEditor";
+import { MarkdownEditor } from "@/components/editor/MdxMarkdownEditor";
 import {
   PropertiesSection,
   RelationsSection,
@@ -100,18 +100,10 @@ import {
 } from "@/lib/links";
 import type { PropertySchemas } from "@/lib/properties";
 import {
-  loadEditorMode,
-  loadMarkdownTypingEnabled,
-  MARKDOWN_TYPING_DESCRIPTION,
-  EDITOR_MODE_CHANGE_EVENT,
-  MARKDOWN_TYPING_CHANGE_EVENT,
   loadDefaultNoteType,
   loadNoteTypeOrder,
-  saveEditorMode,
-  saveMarkdownTypingEnabled,
   saveDefaultNoteType,
   saveNoteTypeOrder,
-  type EditorMode,
 } from "@/lib/note-preferences";
 import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
 import {
@@ -562,15 +554,13 @@ interface NoteActionSheetProps {
   onDetachFile: () => void;
   onMoveToTrash: () => void;
   onFind: () => void;
-  onInterpretMarkdown: () => void;
-  canInterpretMarkdown: boolean;
   onInsertImage: () => void;
   onMoveType: () => void;
   onChat: () => void;
   onShowHistory: () => void;
 }
 
-function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInterpretMarkdown, canInterpretMarkdown, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
   const archived = isArchived(note);
   const trashed = isTrashed(note);
   const external = isExternalNote(note);
@@ -618,7 +608,6 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
           {action("Chat about this note", <Sparkles className="h-5 w-5" />, onChat)}
           {action("Find in note", <Search className="h-5 w-5" />, onFind)}
-          {action("Interpret as Markdown", <Sparkles className="h-5 w-5" />, onInterpretMarkdown, false, !canInterpretMarkdown)}
           {!external && action("Version history", <History className="h-5 w-5" />, onShowHistory)}
           {!external && !trashed && action("Insert image", <ImagePlus className="h-5 w-5" />, onInsertImage)}
           {!external && !trashed && action("Move to folder", <FolderCog className="h-5 w-5" />, onMoveType)}
@@ -697,8 +686,6 @@ function NoteView({
   }, [presentedNote.body, presentedNote.title]);
   const [moveTypeOpen, setMoveTypeOpen] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
-  const [interpretMarkdownRequest, setInterpretMarkdownRequest] = useState(0);
-  const [hasTextSelection, setHasTextSelection] = useState(false);
   const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string } | null>(null);
   const [fileExists, setFileExists] = useState<boolean | null>(null);
   const [dragX, setDragX] = useState(0);
@@ -784,7 +771,7 @@ function NoteView({
     if (
       event.target instanceof Element &&
       event.target.closest(
-        ".cm-editor, input, textarea, select, button, [contenteditable]",
+        "input, textarea, select, button, [contenteditable]",
       )
     ) {
       touchStart.current = null;
@@ -933,7 +920,7 @@ function NoteView({
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
             <ExternalLink className="h-4 w-4 shrink-0 text-[#77777d]" />
         </button>}
-        <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden [&_.cm-editor-toolbar]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-28 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
+        <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden">
           <MarkdownEditor
             noteId={note.id}
             initialContent={draft}
@@ -949,8 +936,6 @@ function NoteView({
             firstLineIsTitle={false}
             followLinksOnClick
             findRequest={findRequest}
-            interpretMarkdownRequest={interpretMarkdownRequest}
-            onTextSelectionChange={setHasTextSelection}
             insertTextRequest={insertTextRequest}
           />
         </div>
@@ -1061,8 +1046,6 @@ function NoteView({
           onDetachFile={() => setDetachConfirmOpen(true)}
           onMoveToTrash={() => setTrashConfirmOpen(true)}
           onFind={() => setFindRequest((value) => value + 1)}
-          onInterpretMarkdown={() => setInterpretMarkdownRequest((value) => value + 1)}
-          canInterpretMarkdown={hasTextSelection}
           onInsertImage={() => imageInputRef.current?.click()}
           onMoveType={() => setMoveTypeOpen(true)}
           onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
@@ -1196,7 +1179,7 @@ function Composer({ onClose, onSave, typePath, allNotes }: ComposerProps) {
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-3">
           <Input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus placeholder="Note title" className="h-auto border-0 bg-transparent px-0 text-[36px] font-bold leading-[1.06] tracking-[-0.045em] shadow-none ring-offset-0 placeholder:text-[#c1bdb7] focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0 dark:text-[#f5f3ef] dark:placeholder:text-[#5e5b57] md:text-[36px]" />
-          <div className="mobile-note-editor -mx-6 mb-5 mt-3 h-[320px] overflow-hidden [&_.cm-editor-toolbar]:hidden [&_.cm-content]:!px-6 [&_.cm-content]:!pb-20 [&_.cm-content]:!pt-3 [&_.cm-scroller]:overscroll-contain">
+          <div className="mobile-note-editor -mx-6 mb-5 mt-3 h-[320px] overflow-hidden">
             <MarkdownEditor
               noteId="mobile-new-note"
               initialContent={body}
@@ -1235,24 +1218,6 @@ function MobileSettings({
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
-  const [editorMode, setEditorMode] = useState<EditorMode>(loadEditorMode);
-  const [markdownTypingEnabled, setMarkdownTypingEnabled] = useState(
-    loadMarkdownTypingEnabled,
-  );
-
-  useEffect(() => {
-    const handleMode = (event: Event) =>
-      setEditorMode((event as CustomEvent<EditorMode>).detail);
-    const handleTyping = (event: Event) =>
-      setMarkdownTypingEnabled((event as CustomEvent<boolean>).detail);
-    window.addEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
-    window.addEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
-    return () => {
-      window.removeEventListener(EDITOR_MODE_CHANGE_EVENT, handleMode);
-      window.removeEventListener(MARKDOWN_TYPING_CHANGE_EVENT, handleTyping);
-    };
-  }, []);
-
   const mapLocation = async (id: string) => {
     setBusyLocation(id);
     setLocationMessage(null);
@@ -1382,53 +1347,6 @@ function MobileSettings({
             </Button>
           </div>
           {locationMessage && <p className="mt-3 rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{locationMessage}</p>}
-        </div>
-
-        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Editor</p>
-        <div className="rounded-[16px] bg-[#292a2b] p-4">
-          <span className="block text-[15px] font-semibold">Editor experience</span>
-          <span className="mt-0.5 block text-xs leading-4 text-[#8e8e93]">
-            Clean renders formatting without showing its Markdown characters. Markdown-aware reveals them around the cursor.
-          </span>
-          <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Editor experience">
-            {(["clean", "markdown-aware"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={editorMode === mode}
-                className={cn(
-                  "h-10 rounded-[11px] px-3 text-xs font-semibold transition-colors",
-                  editorMode === mode
-                    ? "bg-[#df5149] text-white"
-                    : "bg-white/[0.07] text-[#c4c0bb]",
-                )}
-                onClick={() => {
-                  setEditorMode(mode);
-                  saveEditorMode(mode);
-                }}
-              >
-                {mode === "clean" ? "Clean" : "Markdown-aware"}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 flex items-center justify-between gap-4 border-t border-white/[0.08] pt-4">
-            <span className="min-w-0 flex-1">
-              <label htmlFor="mobile-markdown-typing-enabled" className="block text-[15px] font-semibold">
-                Format Markdown while typing
-              </label>
-              <span className="mt-0.5 block text-xs leading-4 text-[#8e8e93]">
-                {MARKDOWN_TYPING_DESCRIPTION}
-              </span>
-            </span>
-            <Switch
-              id="mobile-markdown-typing-enabled"
-              checked={markdownTypingEnabled}
-              onCheckedChange={(enabled) => {
-                setMarkdownTypingEnabled(enabled);
-                saveMarkdownTypingEnabled(enabled);
-              }}
-            />
-          </div>
         </div>
 
         <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
