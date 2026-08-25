@@ -1234,9 +1234,11 @@ function MobileSettings({
 
   return (
     <div className="absolute inset-0 z-50 flex items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Mobile settings">
-      <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[28px] bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] pt-3 shadow-2xl">
-        <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
-        <header className="flex items-center justify-between py-4">
+      <section className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[28px] bg-[#1c1d1e] shadow-2xl">
+        <div className="shrink-0 px-5 pt-3">
+          <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
+        </div>
+        <header className="flex shrink-0 items-center justify-between px-5 py-4">
           <div>
             <h2 className="text-[22px] font-bold tracking-[-0.03em]">Settings</h2>
             <p className="mt-0.5 text-xs text-[#8e8e93]">Markdown vault</p>
@@ -1244,17 +1246,18 @@ function MobileSettings({
           <Button variant="ghost" size="icon" onClick={onClose} className="h-9 w-9 rounded-full bg-white/[0.08]" aria-label="Close settings"><X className="h-5 w-5" /></Button>
         </header>
 
-        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Current vault</p>
-        <div className="rounded-[16px] bg-[#292a2b] px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)]">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Current vault</p>
+          <div className="rounded-[16px] bg-[#292a2b] px-4 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><Folder className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
           </div>
           <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-white/[0.07] text-sm font-semibold text-[#ef6b62] hover:bg-white/[0.1] hover:text-[#ef6b62]">Change vault</Button>
-        </div>
+          </div>
 
-        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">File locations</p>
-        <div className="rounded-[16px] bg-[#292a2b] p-3">
+          <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">File locations</p>
+          <div className="rounded-[16px] bg-[#292a2b] p-3">
           <p className="px-1 pb-3 text-xs leading-4 text-[#8e8e93]">
             Map each synced location to its folder on this device. For Google Drive, select “My Drive”; saved relative paths such as “Documentos” resolve beneath it.
           </p>
@@ -1321,10 +1324,10 @@ function MobileSettings({
             </Button>
           </div>
           {locationMessage && <p className="mt-3 rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{locationMessage}</p>}
-        </div>
+          </div>
 
-        <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
-        <div className="space-y-4 rounded-[16px] bg-[#292a2b] p-4">
+          <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
+          <div className="space-y-4 rounded-[16px] bg-[#292a2b] p-4">
           <div className="flex items-center justify-between gap-3">
             <span><span className="block text-[15px] font-semibold">Record history</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Every content autosave</span></span>
             <Switch checked={historySettings.enabled} onCheckedChange={(enabled) => void updateVersionHistorySettings({ ...historySettings, enabled })} />
@@ -1336,6 +1339,7 @@ function MobileSettings({
           <button type="button" className="text-left text-xs font-semibold text-[#ef6b62]" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: historySettings.checkpointLimit === null ? 10 : null })}>{historySettings.checkpointLimit === null ? "Use a fixed limit" : "Keep unlimited checkpoints"}</button>
           <button type="button" className="block border-t border-white/[0.08] pt-4 text-left text-sm font-semibold text-[#ff6961]" onClick={() => setClearHistoryOpen(true)}>Clear all version history</button>
           {historyError && <p className="rounded-[11px] bg-[#df5149]/10 px-3 py-2 text-xs text-[#ef847d]">{historyError}</p>}
+          </div>
         </div>
       </section>
       <AlertDialog open={clearHistoryOpen} onOpenChange={setClearHistoryOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Clear all version history?</AlertDialogTitle><AlertDialogDescription>This permanently deletes automatic and kept versions for every note in this vault. Current notes and live images are not changed.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => void clearVaultVersionHistory().then(() => setClearHistoryOpen(false))}>Clear all history</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
