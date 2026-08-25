@@ -28,6 +28,7 @@ import {
   List,
   Plus,
   Search,
+  Sparkles,
   Table2,
 } from "@/lib/icons";
 import { badgeVariants } from "@/components/ui/badge";
@@ -768,11 +769,14 @@ interface TypeViewWorkspaceProps {
   schemas: PropertySchemas;
   config: TypeViewConfig;
   isRefreshing: boolean;
+  isDesktop: boolean;
+  aiOpen: boolean;
   editorOpen: boolean;
   hideSubtypeNotes: boolean;
   editor: ReactNode;
   onOpenNote: (id: string) => void;
   onCreateNote: () => void;
+  onToggleAi: () => void;
   onConfigChange: (patch: Partial<TypeViewConfig>) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
@@ -784,11 +788,14 @@ export function TypeViewWorkspace({
   schemas,
   config,
   isRefreshing,
+  isDesktop,
+  aiOpen,
   editorOpen,
   hideSubtypeNotes,
   editor,
   onOpenNote,
   onCreateNote,
+  onToggleAi,
   onConfigChange,
   onHideSubtypeNotesChange,
   onSetProperty,
@@ -873,6 +880,23 @@ export function TypeViewWorkspace({
             filters={config.filters}
             onChange={(filters) => onConfigChange({ filters })}
           />
+          {isDesktop && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                "h-8 shrink-0 gap-1.5 px-2.5 text-xs",
+                aiOpen && "bg-muted text-zerus-accent",
+              )}
+              title={aiOpen ? "Hide AI chat" : `Chat with ${currentTypeName}`}
+              aria-label={aiOpen ? "Hide AI chat" : `Chat with ${currentTypeName}`}
+              aria-pressed={aiOpen}
+              onClick={onToggleAi}
+            >
+              <Sparkles size={15} />
+              AI
+            </Button>
+          )}
           <Button size="sm" className="h-8 gap-1.5" onClick={onCreateNote}>
             <Plus size={15} /> New
           </Button>

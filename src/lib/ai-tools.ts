@@ -1,9 +1,14 @@
 import { noteBody } from "@/lib/frontmatter";
 import {
+  isExternalNote,
   isTrashed,
+  noteTypePath,
   noteTitle,
+  typeKey,
   type Note,
 } from "@/lib/note-utils";
+import { getFileHubReference } from "@/lib/file-hubs";
+import { getLinkHubReference } from "@/lib/link-hubs";
 import type { AiNoteAction } from "@/lib/ai-actions";
 
 export type AiToolCall =
@@ -23,6 +28,13 @@ export interface AiToolResult {
   ok: boolean;
   result: unknown;
   mutation?: { noteId: string; action: AiNoteAction };
+}
+
+export interface AiToolScopeOptions {
+  /** Notes outside a constrained type scope, used only to offer folder names. */
+  outsideNotes?: Note[];
+  scopeLabel?: string;
+  promptForExpansion?: boolean;
 }
 
 const TOOL_PATTERN = /<zerus_tool>\s*([\s\S]*?)\s*<\/zerus_tool>/gi;
@@ -276,10 +288,63 @@ function noteSummary(note: Note) {
   return { id: note.id, title: noteTitle(note), path: note.path };
 }
 
+function searchableText(note: Note): string {
+  const file = getFileHubReference(note);
+  const link = getLinkHubReference(note);
+  return [
+    noteTitle(note),
+    note.path,
+    noteBody(note.content),
+    file?.name,
+    file?.path,
+    link?.url,
+  ].filter(Boolean).join("\n").toLowerCase();
+}
+
+function contextLocation(note: Note): string {
+  if (isExternalNote(note)) return "External Notes";
+  if (getFileHubReference(note)) return "Files";
+  if (getLinkHubReference(note)) return "Links";
+  return typeKey(noteTypePath(note)) || "Main Zerus folder";
+}
+
+function outsideContextLocations(
+  call: Extract<AiToolCall, { name: "note_get" | "search" }>,
+  options: AiToolScopeOptions | undefined,
+): string[] {
+  if (!options?.promptForExpansion || !options.outsideNotes?.length) return [];
+  const needle = call.name === "search"
+    ? call.arguments.query.trim().toLowerCase()
+    : call.arguments.selector?.trim().toLowerCase();
+  if (!needle || needle === "current") return [];
+  return [...new Set(options.outsideNotes
+    .filter((note) => !isTrashed(note) && searchableText(note).includes(needle))
+    .map(contextLocation))]
+    .slice(0, 5);
+}
+
+function expansionResult(
+  call: Extract<AiToolCall, { name: "note_get" | "search" }>,
+  options: AiToolScopeOptions | undefined,
+): AiToolResult | null {
+  const locations = outsideContextLocations(call, options);
+  if (!locations.length) return null;
+  return {
+    ok: false,
+    result: {
+      error: `No matching context is available inside ${options.scopeLabel ?? "the active folder"}.`,
+      contextExpansionRequired: true,
+      availableInFolders: locations,
+      instruction: `Ask the user whether to expand context to ${locations.join(", ")}. Do not reveal or use the outside note content yet.`,
+    },
+  };
+}
+
 export function runAiTool(
   call: AiToolCall,
   notes: Note[],
   currentNoteId: string | null,
+  scopeOptions?: AiToolScopeOptions,
 ): AiToolResult {
   const available = notes.filter((note) => !isTrashed(note));
   if (call.name === "note_get") {
@@ -288,7 +353,10 @@ export function runAiTool(
       call.arguments.selector,
       currentNoteId,
     );
-    if (!resolved.note) return { ok: false, result: { error: resolved.error } };
+    if (!resolved.note) {
+      return expansionResult(call, scopeOptions) ??
+        { ok: false, result: { error: resolved.error } };
+    }
     return {
       ok: true,
       result: {
@@ -310,16 +378,27 @@ export function runAiTool(
   if (call.name === "search") {
     const query = call.arguments.query.toLowerCase();
     const matches = available
-      .filter((note) =>
-        `${noteTitle(note)}\n${note.path}\n${noteBody(note.content)}`
-          .toLowerCase()
-          .includes(query),
-      )
+      .filter((note) => searchableText(note).includes(query))
       .slice(0, call.arguments.limit ?? 10)
       .map((note) => ({
         ...noteSummary(note),
         excerpt: noteBody(note.content).slice(0, 500),
       }));
+    const outsideLocations = outsideContextLocations(call, scopeOptions);
+    if (matches.length && outsideLocations.length) {
+      return {
+        ok: true,
+        result: {
+          matches,
+          additionalContextAvailableIn: outsideLocations,
+          instruction: `Use the matches from ${scopeOptions?.scopeLabel ?? "the active folder"} first. If they do not support the requested answer, ask the user whether to expand context to ${outsideLocations.join(", ")}.`,
+        },
+      };
+    }
+    if (!matches.length) {
+      const expansion = expansionResult(call, scopeOptions);
+      if (expansion) return expansion;
+    }
     return { ok: true, result: matches };
   }
 

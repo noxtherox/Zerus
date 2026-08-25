@@ -393,7 +393,8 @@ struct CloudAiCredentials {
 #[derive(Default)]
 struct CloudAiState(Mutex<Option<CloudAiCredentials>>);
 
-const AI_TEMPERATURE: f64 = 0.2;
+const DEFAULT_AI_MAX_OUTPUT_TOKENS: u32 = 2_048;
+const MAX_AI_OUTPUT_TOKENS: u32 = 32_768;
 const CLOUD_AI_KEYRING_SERVICE: &str = "com.zerus.notes.cloud-ai";
 const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const OPENROUTER_OAUTH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -448,6 +449,10 @@ struct AiMessage {
 struct AiChatRequest {
     system_prompt: String,
     messages: Vec<AiMessage>,
+    #[serde(default)]
+    max_output_tokens: Option<u32>,
+    #[serde(default)]
+    temperature: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -723,6 +728,21 @@ fn codex_ai_prompt(request: &AiChatRequest) -> String {
     prompt
 }
 
+fn codex_thread_start_params(model: &str, request: &AiChatRequest) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "cwd": std::env::temp_dir().to_string_lossy(),
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "ephemeral": true,
+        "config": {
+            "web_search": "disabled",
+        },
+        "baseInstructions": request.system_prompt,
+        "developerInstructions": "You are the AI chat inside Zerus. Web and internet access are disabled: never browse, search the web, or open URLs. Do not call tools, inspect files, run commands, or change the environment. Use only the supplied conversation and images. If the user requests a Zerus tool action, emit the structured tool call exactly as the system instructions describe.",
+    })
+}
+
 struct CodexTempImages(Option<PathBuf>);
 
 impl Drop for CodexTempImages {
@@ -799,15 +819,7 @@ fn codex_ai_chat_impl(
     {
         return Err("Connect your ChatGPT account in Zerus before using Codex".to_string());
     }
-    let thread = server.request("thread/start", serde_json::json!({
-        "model": model,
-        "cwd": std::env::temp_dir().to_string_lossy(),
-        "approvalPolicy": "never",
-        "sandbox": "read-only",
-        "ephemeral": true,
-        "baseInstructions": request.system_prompt,
-        "developerInstructions": "You are the AI chat inside Zerus. Do not call tools, inspect files, run commands, or change the environment. Use only the supplied conversation and images. If the user requests a Zerus tool action, emit the structured tool call exactly as the system instructions describe.",
-    }))?;
+    let thread = server.request("thread/start", codex_thread_start_params(&model, &request))?;
     let thread_id = thread
         .pointer("/thread/id")
         .and_then(|value| value.as_str())
@@ -913,6 +925,16 @@ fn normalized_cloud_ai_base_url(value: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
+fn ai_model_uses_web_search(model: &str) -> bool {
+    let model = model.trim().to_ascii_lowercase();
+    model.ends_with(":online")
+        || model.contains("search-preview")
+        || model.contains("deep-research")
+        || model == "sonar"
+        || model.starts_with("sonar-")
+        || model.contains("/sonar")
+}
+
 fn cloud_ai_request_body(
     request: AiChatRequest,
     model: &str,
@@ -922,11 +944,27 @@ fn cloud_ai_request_body(
     if model.is_empty() || model.len() > 200 {
         return Err("Select a valid cloud model".to_string());
     }
+    if ai_model_uses_web_search(model) {
+        return Err(
+            "Web-enabled models are disabled in Zerus. Choose a model without online or search routing."
+                .to_string(),
+        );
+    }
     if request.system_prompt.trim().is_empty() {
         return Err("The AI context is empty".to_string());
     }
     if request.messages.is_empty() || request.messages.len() > 64 {
         return Err("The AI conversation has an invalid number of messages".to_string());
+    }
+    let max_output_tokens = request
+        .max_output_tokens
+        .unwrap_or(DEFAULT_AI_MAX_OUTPUT_TOKENS);
+    if !(1..=MAX_AI_OUTPUT_TOKENS).contains(&max_output_tokens) {
+        return Err("The AI output-token limit is invalid".to_string());
+    }
+    let temperature = request.temperature;
+    if temperature.is_some_and(|value| !value.is_finite() || !(0.0..=2.0).contains(&value)) {
+        return Err("The AI temperature is invalid".to_string());
     }
 
     let system_prompt = request.system_prompt;
@@ -1010,30 +1048,35 @@ fn cloud_ai_request_body(
         }));
     }
 
-    if provider == CloudAiProvider::Anthropic {
-        Ok(serde_json::json!({
+    let mut body = if provider == CloudAiProvider::Anthropic {
+        serde_json::json!({
             "model": model,
             "system": &system_prompt,
             "messages": messages,
-            "max_tokens": 2048,
+            "max_tokens": max_output_tokens,
             "stream": true,
-        }))
+        })
     } else if provider == CloudAiProvider::OpenAi {
-        Ok(serde_json::json!({
+        serde_json::json!({
             "model": model,
             "messages": messages,
-            "max_completion_tokens": 2048,
+            "max_completion_tokens": max_output_tokens,
             "stream": true,
-        }))
+        })
     } else {
-        Ok(serde_json::json!({
+        serde_json::json!({
             "model": model,
             "messages": messages,
-            "temperature": AI_TEMPERATURE,
-            "max_tokens": 2048,
+            "max_tokens": max_output_tokens,
             "stream": true,
-        }))
+        })
+    };
+    if let Some(temperature) = temperature {
+        body.as_object_mut()
+            .expect("AI request bodies are JSON objects")
+            .insert("temperature".to_string(), serde_json::json!(temperature));
     }
+    Ok(body)
 }
 
 fn cloud_ai_error(payload: &serde_json::Value, fallback: &str) -> String {
@@ -1694,6 +1737,9 @@ async fn cloud_ai_models(
             if id.is_empty() {
                 return None;
             }
+            if ai_model_uses_web_search(id) {
+                return None;
+            }
             let name = model
                 .get("name")
                 .or_else(|| model.get("display_name"))
@@ -2072,11 +2118,11 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        anthropic_stream_delta, chat_stream_delta, cli_export_skill, cloud_ai_keyring_account,
-        cloud_ai_request_body, codex_ai_prompt, codex_turn_input, copy_file_into_vault,
-        desktop_open_paths, normalized_cloud_ai_base_url, remove_legacy_model_directory,
-        sync_opened_vault_record, write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage,
-        CloudAiProvider,
+        ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_export_skill,
+        cloud_ai_keyring_account, cloud_ai_request_body, codex_ai_prompt,
+        codex_thread_start_params, codex_turn_input, copy_file_into_vault, desktop_open_paths,
+        normalized_cloud_ai_base_url, remove_legacy_model_directory, sync_opened_vault_record,
+        write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage, CloudAiProvider,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -2126,9 +2172,16 @@ mod tests {
                     images: Vec::new(),
                 },
             ],
+            max_output_tokens: None,
+            temperature: None,
         };
 
         assert!(codex_ai_prompt(&request).contains("USER:\nfirst\n\nASSISTANT:\nsecond"));
+        let params = codex_thread_start_params("test-model", &request);
+        assert_eq!(params["config"]["web_search"], "disabled");
+        assert!(params["developerInstructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.contains("never browse, search the web")));
     }
 
     #[test]
@@ -2143,6 +2196,8 @@ mod tests {
                     data: "YWJj".to_string(),
                 }],
             }],
+            max_output_tokens: None,
+            temperature: None,
         };
 
         let (input, guard) = codex_turn_input(&request).expect("prepare Codex input");
@@ -2178,6 +2233,8 @@ mod tests {
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
                 }],
+                max_output_tokens: Some(4_096),
+                temperature: Some(0.4),
             },
             "anthropic/claude-sonnet-4",
             CloudAiProvider::OpenRouter,
@@ -2187,7 +2244,27 @@ mod tests {
         assert_eq!(body["model"], "anthropic/claude-sonnet-4");
         assert_eq!(body["stream"], true);
         assert_eq!(body["messages"][0]["role"], "system");
+        assert_eq!(body["max_tokens"], 4_096);
+        assert_eq!(body["temperature"], 0.4);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("plugins").is_none());
         assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn web_enabled_cloud_models_are_blocked() {
+        for model in [
+            "openai/gpt-4o-search-preview",
+            "openai/o3-deep-research",
+            "perplexity/sonar-pro",
+            "anthropic/claude-sonnet-5:online",
+        ] {
+            assert!(
+                ai_model_uses_web_search(model),
+                "expected {model} to be blocked"
+            );
+        }
+        assert!(!ai_model_uses_web_search("openai/gpt-5.4-mini"));
     }
 
     #[test]
@@ -2200,6 +2277,8 @@ mod tests {
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
                 }],
+                max_output_tokens: None,
+                temperature: None,
             },
             "claude-sonnet-5",
             CloudAiProvider::Anthropic,
@@ -2240,6 +2319,8 @@ mod tests {
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
                 }],
+                max_output_tokens: None,
+                temperature: None,
             },
             "gpt-5.4-mini",
             CloudAiProvider::OpenAi,
@@ -2264,6 +2345,8 @@ mod tests {
                         data: "YWJj".to_string(),
                     }],
                 }],
+                max_output_tokens: None,
+                temperature: None,
             },
             "gpt-5.4-mini",
             CloudAiProvider::OpenAi,
@@ -2291,6 +2374,8 @@ mod tests {
                         data: "YWJj".to_string(),
                     }],
                 }],
+                max_output_tokens: None,
+                temperature: None,
             },
             "claude-sonnet-5",
             CloudAiProvider::Anthropic,

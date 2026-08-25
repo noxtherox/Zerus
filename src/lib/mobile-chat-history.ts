@@ -15,6 +15,9 @@ export interface ChatDevice {
 
 export type ChatScope =
   | { kind: "vault" }
+  | { kind: "external" }
+  | { kind: "files" }
+  | { kind: "links" }
   | { kind: "type"; path: string[] }
   | { kind: "note"; noteId: string; title: string };
 

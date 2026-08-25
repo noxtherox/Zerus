@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { noteIdFromAiHref } from "@/lib/ai-note-links";
 import { AiMarkdown } from "./AiMarkdown";
 
 describe("AiMarkdown", () => {
@@ -35,5 +36,17 @@ describe("AiMarkdown", () => {
 
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  it("keeps internal note citations clickable", () => {
+    const html = renderToStaticMarkup(
+      <AiMarkdown onOpenNote={() => undefined}>
+        {"Confirmed in [Project Alpha](zerus-note:project%2Falpha)."}
+      </AiMarkdown>,
+    );
+
+    expect(html).toContain('href="zerus-note:project%2Falpha"');
+    expect(noteIdFromAiHref("zerus-note:project%2Falpha")).toBe("project/alpha");
+    expect(noteIdFromAiHref("javascript:alert(1)")).toBeNull();
   });
 });

@@ -1893,7 +1893,13 @@ export function MobileZerus() {
             </main>
           </div>
         )}
-        {vault.status === "ready" && !selectedNote && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={() => openChat({ kind: "vault" })} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        {vault.status === "ready" && !selectedNote && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={() => openChat(
+          scope.kind === "type"
+            ? { kind: "type", path: scope.path }
+            : scope.kind === "external" || scope.kind === "files" || scope.kind === "links"
+              ? { kind: scope.kind }
+              : { kind: "vault" },
+        )} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
         {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet

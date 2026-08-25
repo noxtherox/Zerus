@@ -20,12 +20,13 @@ function canStartMdxTag(character: string | undefined): boolean {
 }
 
 /**
- * Shield literal less-than signs that MDX mistakes for the start of JSX.
+ * Normalize Markdown constructs that MDX otherwise mistakes for invalid JSX.
  *
  * Common medical and mathematical Markdown such as `K+ <1` is valid text,
  * but the MDX JSX tokenizer throws before the editor can open the note. A
- * CommonMark backslash escape preserves the visible character and makes the
- * source unambiguous. Code spans and fenced code blocks must remain verbatim.
+ * CommonMark backslash escapes preserve visible comparison characters, while
+ * HTML break tags are made self-closing. Code spans and fenced code blocks
+ * must remain verbatim.
  */
 export function prepareMarkdownForMdxEditor(source: string): string {
   let result = "";
@@ -59,6 +60,16 @@ export function prepareMarkdownForMdxEditor(source: string): string {
       index += ticks;
       lineStart = false;
       continue;
+    }
+
+    if (!fence && inlineCodeTicks === 0 && character === "<") {
+      const breakTag = source.slice(index).match(/^<br\s*>/iu);
+      if (breakTag) {
+        result += "<br />";
+        index += breakTag[0].length;
+        lineStart = false;
+        continue;
+      }
     }
 
     if (

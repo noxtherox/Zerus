@@ -269,7 +269,7 @@ export function MarkdownEditor({
   onChange,
   readOnly = false,
   autoFocus = true,
-  placeholderText = "Start writing… the first line becomes the title.",
+  placeholderText = "Title",
   firstLineIsTitle = true,
   isFullHeight = false,
   onToggleFullHeight,

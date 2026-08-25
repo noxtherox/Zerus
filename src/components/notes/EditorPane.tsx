@@ -334,6 +334,22 @@ export function EditorPane({
   const activeNoteId = note?.id ?? null;
   const activeFileExtension = activeFileHub ? fileExtension(activeFileHub.name) : "";
   const activeFileIsHtml = ["html", "htm"].includes(activeFileExtension);
+  const [editorReadyNoteId, setEditorReadyNoteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!activeNoteId || isLoading) {
+      setEditorReadyNoteId(null);
+      return;
+    }
+
+    // Let the loading state paint before mounting MDXEditor. Parsing a large
+    // document is synchronous, so mounting it in the selection render would
+    // otherwise make the app appear frozen with no visual feedback.
+    const frame = window.requestAnimationFrame(() => {
+      setEditorReadyNoteId(activeNoteId);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeNoteId, isLoading]);
 
   useEffect(() => {
     setExternalImportMode("copy");
@@ -478,7 +494,7 @@ export function EditorPane({
     );
   }
 
-  if (isLoading) {
+  if (isLoading || editorReadyNoteId !== activeNoteId) {
     return (
       <div className="flex h-full flex-col bg-zerus-editor">
         <div className="flex items-center gap-2 border-b border-border/60 px-4 py-2">
@@ -498,8 +514,12 @@ export function EditorPane({
           />
         </div>
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
+          <div
+            className="flex items-center gap-2 text-sm text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             Loading note…
           </div>
         </div>

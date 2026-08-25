@@ -1,19 +1,35 @@
 import type { ComponentPropsWithoutRef, MouseEvent } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openExternalUrl } from "@/lib/external-links";
+import { noteIdFromAiHref } from "@/lib/ai-note-links";
 import { cn } from "@/lib/utils";
 
 interface AiMarkdownProps {
   children: string;
   inverted?: boolean;
+  onOpenNote?: (noteId: string) => void;
 }
 
-export function AiMarkdown({ children, inverted = false }: AiMarkdownProps) {
+function aiUrlTransform(url: string): string {
+  return noteIdFromAiHref(url) ? url : defaultUrlTransform(url);
+}
+
+export function AiMarkdown({
+  children,
+  inverted = false,
+  onOpenNote,
+}: AiMarkdownProps) {
   const handleLinkClick = (
     event: MouseEvent<HTMLAnchorElement>,
     href: string | undefined,
   ) => {
+    const noteId = noteIdFromAiHref(href);
+    if (noteId) {
+      event.preventDefault();
+      onOpenNote?.(noteId);
+      return;
+    }
     if (!href || !/^https?:\/\//i.test(href)) return;
     event.preventDefault();
     void openExternalUrl(href);
@@ -22,6 +38,7 @@ export function AiMarkdown({ children, inverted = false }: AiMarkdownProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
+      urlTransform={aiUrlTransform}
       components={{
         h1: ({ children: content }) => (
           <h1 className="mb-2 mt-4 text-xl font-semibold first:mt-0">{content}</h1>

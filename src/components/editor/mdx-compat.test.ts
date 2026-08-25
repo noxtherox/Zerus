@@ -33,4 +33,20 @@ describe("MDX Markdown compatibility", () => {
       "```txt\n<1\n```\nK+ \\<1",
     );
   });
+
+  it.each([
+    ["First<br>Second", "First<br />Second"],
+    ["First<BR >Second", "First<br />Second"],
+    ["| First<br>Second | Other |", "| First<br />Second | Other |"],
+  ])("makes HTML break tags MDX-compatible: %s", (source, expected) => {
+    expect(prepareMarkdownForMdxEditor(source)).toBe(expected);
+  });
+
+  it.each([
+    "First<br />Second",
+    "inline `<br>` code",
+    "```html\n<br>\n```",
+  ])("does not rewrite compatible or verbatim break tags: %s", (source) => {
+    expect(prepareMarkdownForMdxEditor(source)).toBe(source);
+  });
 });
