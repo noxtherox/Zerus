@@ -4,6 +4,8 @@ import {
   injectAiSessionContext,
 } from "./ai-context";
 import type { Note } from "./note-utils";
+import { setFileHubReference } from "./file-hubs";
+import { setLinkHubReference } from "./link-hubs";
 
 function note(id: string, path: string, content: string): Note {
   return {
@@ -25,12 +27,16 @@ describe("buildAiContext", () => {
     const context = buildAiContext(
       alpha,
       [alpha, beta, elsewhere],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
 
     expect(context?.sessionContext).toContain("Title: Alpha");
+    expect(context?.sessionContext).toContain("Citation: [Alpha](zerus-note:alpha)");
+    expect(context?.sessionContext).toContain('<zerus_context kind="reference-data">');
+    expect(context?.sessionContext).toContain("</zerus_context>");
     expect(context?.sessionContext).toContain("### Beta");
+    expect(context?.sessionContext).toContain("Citation: [Beta](zerus-note:beta)");
     expect(context?.sessionContext).not.toContain("Lisbon");
   });
 
@@ -38,13 +44,13 @@ describe("buildAiContext", () => {
     const alphaContext = buildAiContext(
       alpha,
       [alpha, beta],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
     const betaContext = buildAiContext(
       beta,
       [alpha, beta],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
 
@@ -55,7 +61,7 @@ describe("buildAiContext", () => {
     const context = buildAiContext(
       alpha,
       [alpha, beta],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
     expect(context).not.toBeNull();
@@ -84,25 +90,72 @@ describe("buildAiContext", () => {
     const context = buildAiContext(
       privateAlpha,
       [privateAlpha],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
 
     expect(context?.sessionContext).toContain("# Alpha\nCurrent body");
     expect(context?.sessionContext).not.toContain("private-id");
     expect(context?.sessionContext).not.toContain("status: draft");
+    expect(context?.systemPrompt).toContain("Zerus agent policy version:");
   });
 
   it("supports a folder-only session", () => {
     const context = buildAiContext(
       null,
       [alpha, beta],
-      "/vault/projects",
+      { kind: "type", path: ["projects"] },
       vault,
     );
 
     expect(context?.noteId).toBeNull();
     expect(context?.sessionContext).toContain("No note is currently selected");
     expect(context?.sessionContext).toContain("### Alpha");
+  });
+
+  it("keeps type context constrained while vault context spans ordinary notes", () => {
+    const person = note("person", "People/Sarah.md", "# Sarah\nWorks at Acme");
+    const company = note("company", "Companies/Acme.md", "# Acme\nCompany profile");
+    const scoped = buildAiContext(
+      null,
+      [person, company],
+      { kind: "type", path: ["People"] },
+      vault,
+    );
+    const vaultWide = buildAiContext(
+      null,
+      [person, company],
+      { kind: "vault" },
+      vault,
+    );
+
+    expect(scoped?.scopedNoteIds).toEqual(["person"]);
+    expect(scoped?.systemPrompt).toContain("ask the user to expand the context");
+    expect(vaultWide?.scopedNoteIds).toEqual(["company", "person"]);
+  });
+
+  it("separates external notes, files, and links into callable scopes", () => {
+    const external = { ...note("external", "outside.md", "# Outside"), externalPath: "/elsewhere/outside.md" };
+    const file = note(
+      "file",
+      "inbox/proposal.md",
+      setFileHubReference("# Proposal\n", {
+        id: "file-1",
+        name: "proposal.pdf",
+        kind: "vault",
+        path: "files/proposal.pdf",
+        managed: true,
+      }),
+    );
+    const link = note(
+      "link",
+      ".zerus/links/example.md",
+      setLinkHubReference("# Example\n", { id: "link-1", url: "https://example.com" }),
+    );
+    const all = [alpha, external, file, link];
+
+    expect(buildAiContext(null, all, { kind: "external" }, vault)?.scopedNoteIds).toEqual(["external"]);
+    expect(buildAiContext(null, all, { kind: "files" }, vault)?.scopedNoteIds).toEqual(["file"]);
+    expect(buildAiContext(null, all, { kind: "links" }, vault)?.scopedNoteIds).toEqual(["link"]);
   });
 });

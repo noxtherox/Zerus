@@ -20,6 +20,7 @@ const retrieval: NoteRetrievalResult = {
 describe("mobile AI answers", () => {
   it("keeps note handles out of the visible-answer instructions", () => {
     const prompt = buildNotesPrompt(retrieval, [], "What is NAVSEA?");
+    expect(prompt).toContain("Web and internet access are disabled");
 
     expect(prompt).toContain("Start immediately with a natural-language answer");
     expect(prompt).toContain("Editable note handle: navsea");

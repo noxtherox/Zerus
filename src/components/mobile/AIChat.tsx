@@ -72,7 +72,8 @@ import {
   startOnDeviceSpeechRecognition,
   stopOnDeviceSpeechRecognition,
 } from "@/lib/mobile-speech-recognition";
-import { noteTypePath, type Note } from "@/lib/note-utils";
+import { type Note } from "@/lib/note-utils";
+import { notesInAiScope, type AiKnowledgeScope } from "@/lib/ai-context";
 import type { VaultBackend } from "@/lib/vault/backend";
 import { createNote, getNotes, getVaultBackend, trashNote, updateNoteBody } from "@/store/notes-store";
 import { noteBody } from "@/lib/frontmatter";
@@ -675,10 +676,7 @@ export function PersistentAIChat({
     const activeScope = conversation.scope;
     const scopedNotes = activeScope.kind === "note"
       ? notes.filter((note) => note.id === activeScope.noteId)
-      : activeScope.kind === "type"
-        ? notes.filter((note) =>
-          activeScope.path.every((part, index) => noteTypePath(note)[index] === part))
-        : notes;
+      : notesInAiScope(notes, activeScope as AiKnowledgeScope);
     const retrieval = retrieveNotes(scopedNotes, question);
     const previousMessages = conversation.messages.filter((message) => message.turnId !== turnId);
     const turnMessage = conversation.messages.find((message) =>

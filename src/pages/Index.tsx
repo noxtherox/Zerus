@@ -58,7 +58,8 @@ import {
   type NoteFilter,
   type NoteListFilters,
 } from "@/lib/filters";
-import { DEFAULT_TYPE, noteContainingFolder, typeKey } from "@/lib/note-utils";
+import { DEFAULT_TYPE, typeKey } from "@/lib/note-utils";
+import type { AiKnowledgeScope } from "@/lib/ai-context";
 import { noteCreationType } from "@/lib/note-creation";
 import { typeViewConfigFor } from "@/lib/note-views";
 import {
@@ -270,6 +271,23 @@ const Index = () => {
     () => filterNotes(notes, effectiveFilter, search, listFilters),
     [notes, effectiveFilter, search, listFilters],
   );
+  const aiKnowledgeScope = useMemo<AiKnowledgeScope>(() => {
+    if (effectiveFilter.kind === "type") {
+      return {
+        kind: "type",
+        path: effectiveFilter.path,
+        includeSubtypes: effectiveFilter.includeSubtypes,
+      };
+    }
+    if (
+      effectiveFilter.kind === "external" ||
+      effectiveFilter.kind === "files" ||
+      effectiveFilter.kind === "links"
+    ) {
+      return { kind: effectiveFilter.kind };
+    }
+    return { kind: "vault" };
+  }, [effectiveFilter]);
   const activeTypeKey = filter.kind === "type" ? typeKey(filter.path) : null;
   const activeTypeView = activeTypeKey
     ? typeViewConfigFor(vault.typeViews, activeTypeKey)
@@ -769,13 +787,10 @@ const Index = () => {
           open={aiOpen}
           note={selectedNote}
           notes={notes}
-          targetDirectory={
-            selectedNote
-              ? noteContainingFolder(selectedNote, vault.location)
-              : vault.location
-          }
+          scope={aiKnowledgeScope}
           vaultLocation={vault.location}
           onOpenChange={setAiOpen}
+          onOpenNote={handleOpenNote}
         />
       )}
     </div>
@@ -898,21 +913,39 @@ const Index = () => {
                   onOpenNote={handleOpenNote}
                 />
               ) : structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (
-                <TypeViewWorkspace
-                  typePath={filter.path}
-                  notes={notes}
-                  schemas={vault.schemas}
-                  config={activeTypeView}
-                  isRefreshing={vault.isRefreshing}
-                  editorOpen={expandedEditorOpen}
-                  hideSubtypeNotes={hideSubtypeNotes}
-                  editor={editorWorkspace}
-                  onOpenNote={handleOpenStructuredNote}
-                  onCreateNote={() => void handleCreateNote()}
-                  onConfigChange={handleTypeViewChange}
-                  onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
-                  onSetProperty={setNoteProperty}
-                />
+                <div className="flex h-full min-w-0">
+                  <div className="min-w-0 flex-1">
+                    <TypeViewWorkspace
+                      typePath={filter.path}
+                      notes={notes}
+                      schemas={vault.schemas}
+                      config={activeTypeView}
+                      isRefreshing={vault.isRefreshing}
+                      isDesktop={vault.isDesktop}
+                      aiOpen={aiOpen}
+                      editorOpen={expandedEditorOpen}
+                      hideSubtypeNotes={hideSubtypeNotes}
+                      editor={editorWorkspace}
+                      onOpenNote={handleOpenStructuredNote}
+                      onCreateNote={() => void handleCreateNote()}
+                      onToggleAi={() => setAiOpen((current) => !current)}
+                      onConfigChange={handleTypeViewChange}
+                      onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
+                      onSetProperty={setNoteProperty}
+                    />
+                  </div>
+                  {vault.isDesktop && !expandedEditorOpen && (
+                    <AiPanel
+                      open={aiOpen}
+                      note={null}
+                      notes={notes}
+                      scope={aiKnowledgeScope}
+                      vaultLocation={vault.location}
+                      onOpenChange={setAiOpen}
+                      onOpenNote={handleOpenNote}
+                    />
+                  )}
+                </div>
               ) : (
                 <ResizablePanelGroup
                   ref={workspacePanelGroupRef}

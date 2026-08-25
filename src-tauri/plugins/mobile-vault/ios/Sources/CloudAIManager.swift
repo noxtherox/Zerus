@@ -59,6 +59,7 @@ final class CloudAIManager {
     let endpoint = try normalizedEndpoint(request.endpoint)
     let model = request.model.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !model.isEmpty else { throw CloudAIError.emptyModel }
+    guard !modelUsesWebSearch(model) else { throw CloudAIError.webSearchDisabled }
 
     UserDefaults.standard.set(endpoint, forKey: endpointKey)
     UserDefaults.standard.set(model, forKey: modelKey)
@@ -100,6 +101,7 @@ final class CloudAIManager {
           let entries = json["data"] as? [[String: Any]] else { throw CloudAIError.invalidResponse }
     let models = entries.compactMap { entry -> CloudAIModelResponse? in
       guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
+      guard !modelUsesWebSearch(id) else { return nil }
       return CloudAIModelResponse(id: id, name: (entry["name"] as? String) ?? id)
     }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     return CloudAIModelsResponse(models: models)
@@ -112,6 +114,7 @@ final class CloudAIManager {
     guard let apiKey = try readAPIKey(endpoint: endpoint), !apiKey.isEmpty else {
       throw CloudAIError.missingAPIKey
     }
+    guard !modelUsesWebSearch(storedModel()) else { throw CloudAIError.webSearchDisabled }
 
     var content: [[String: Any]] = [["type": "text", "text": prompt]]
     for image in (request.images ?? []).prefix(4) where !image.bytes.isEmpty {
@@ -216,6 +219,16 @@ final class CloudAIManager {
     return value?.isEmpty == false ? value! : defaultModel
   }
 
+  private func modelUsesWebSearch(_ model: String) -> Bool {
+    let model = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return model.hasSuffix(":online")
+      || model.contains("search-preview")
+      || model.contains("deep-research")
+      || model == "sonar"
+      || model.hasPrefix("sonar-")
+      || model.contains("/sonar")
+  }
+
   private func normalizedEndpoint(_ endpoint: String) throws -> String {
     let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
       .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -288,6 +301,7 @@ private enum CloudAIError: LocalizedError {
   case missingAPIKey
   case oauthFailed
   case requestFailed(status: Int, message: String)
+  case webSearchDisabled
 
   var errorDescription: String? {
     switch self {
@@ -300,6 +314,7 @@ private enum CloudAIError: LocalizedError {
     case .missingAPIKey: "Add your cloud API key in Chat settings."
     case .oauthFailed: "OpenRouter sign-in could not be completed."
     case .requestFailed(let status, let message): "Cloud request failed (\(status)): \(message)"
+    case .webSearchDisabled: "Web-enabled models are disabled in Zerus. Choose a model without online or search routing."
     }
   }
 }

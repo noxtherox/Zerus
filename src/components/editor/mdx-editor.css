@@ -156,6 +156,10 @@
   line-height: 1.3;
 }
 
+.mdxeditor-root-contenteditable > .zerus-mdx-title-first-line {
+  color: rgb(var(--zerus-text) / 0.38);
+}
+
 .zerus-mdx-content h1 {
   font-size: 1.55em;
 }

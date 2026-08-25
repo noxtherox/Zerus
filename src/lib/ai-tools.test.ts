@@ -80,4 +80,24 @@ describe("runAiTool", () => {
       action: { type: "append", text: "More" },
     });
   });
+
+  it("offers folder expansion without exposing outside note content", () => {
+    const result = runAiTool(
+      { name: "search", arguments: { query: "Braskem", limit: 10 } },
+      [],
+      null,
+      {
+        outsideNotes: notes,
+        scopeLabel: "People",
+        promptForExpansion: true,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.result).toMatchObject({
+      contextExpansionRequired: true,
+      availableInFolders: ["Companies"],
+    });
+    expect(JSON.stringify(result.result)).not.toContain("Brazilian company");
+  });
 });

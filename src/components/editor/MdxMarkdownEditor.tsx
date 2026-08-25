@@ -50,6 +50,7 @@ import {
   consumeLocalMarkdownEcho,
   recordLocalMarkdownEcho,
 } from "./mdx-sync";
+import { prepareMarkdownForMdxEditor } from "./mdx-compat";
 import { toast } from "sonner";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
@@ -268,7 +269,7 @@ export function MarkdownEditor({
   onChange,
   readOnly = false,
   autoFocus = true,
-  placeholderText = "Start writing… the first line becomes the title.",
+  placeholderText = "Title",
   firstLineIsTitle = true,
   isFullHeight = false,
   onToggleFullHeight,
@@ -301,8 +302,9 @@ export function MarkdownEditor({
   useEffect(() => {
     if (consumeLocalMarkdownEcho(pendingLocalEchoes.current, initialContent)) return;
     const editor = editorRef.current;
-    if (!editor || editor.getMarkdown() === initialContent) return;
-    editor.setMarkdown(initialContent);
+    const compatibleMarkdown = prepareMarkdownForMdxEditor(initialContent);
+    if (!editor || editor.getMarkdown() === compatibleMarkdown) return;
+    editor.setMarkdown(compatibleMarkdown);
   }, [initialContent]);
 
   useEffect(() => {
@@ -315,7 +317,9 @@ export function MarkdownEditor({
     }
     lastInsertRequest.current = insertTextRequest.id;
     editorRef.current?.focus(() => {
-      editorRef.current?.insertMarkdown(insertTextRequest.text);
+      editorRef.current?.insertMarkdown(
+        prepareMarkdownForMdxEditor(insertTextRequest.text),
+      );
     });
   }, [insertTextRequest, readOnly]);
 
@@ -374,7 +378,7 @@ export function MarkdownEditor({
         <MDXEditor
           key={noteId}
           ref={editorRef}
-          markdown={initialContent}
+          markdown={prepareMarkdownForMdxEditor(initialContent)}
           plugins={editorPlugins}
           readOnly={readOnly}
           autoFocus={autoFocus}
