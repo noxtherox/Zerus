@@ -1,12 +1,15 @@
 import type { ImgHTMLAttributes } from "react";
-import { getLogoSrc } from "@/lib/branding";
+import { getLogoSrc, type LogoStyle } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 
-type ZerusLogoProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src">;
+type ZerusLogoProps = Omit<ImgHTMLAttributes<HTMLImageElement>, "src"> & {
+  tone?: LogoStyle | "auto";
+};
 
 export function ZerusLogo({
   alt = "",
   className,
+  tone = "auto",
   ...props
 }: ZerusLogoProps) {
   const accessibilityProps = alt
@@ -18,18 +21,24 @@ export function ZerusLogo({
       {...accessibilityProps}
       className={cn("relative inline-block", className)}
     >
-      <img
-        {...props}
-        src={getLogoSrc("graphite")}
-        alt=""
-        className="zerus-logo-light h-full w-full"
-      />
-      <img
-        {...props}
-        src={getLogoSrc("white")}
-        alt=""
-        className="zerus-logo-dark h-full w-full"
-      />
+      {tone === "auto" ? (
+        <>
+          <img
+            {...props}
+            src={getLogoSrc("graphite")}
+            alt=""
+            className="zerus-logo-light h-full w-full"
+          />
+          <img
+            {...props}
+            src={getLogoSrc("white")}
+            alt=""
+            className="zerus-logo-dark h-full w-full"
+          />
+        </>
+      ) : (
+        <img {...props} src={getLogoSrc(tone)} alt="" className="h-full w-full" />
+      )}
     </span>
   );
 }

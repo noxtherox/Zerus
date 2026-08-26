@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Check,
@@ -8,8 +8,10 @@ import {
   Github,
   Link2,
   Menu,
+  Moon,
   Search,
   Sparkles,
+  Sun,
   X,
 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
@@ -18,6 +20,22 @@ import "./Landing.css";
 const DOWNLOAD_URL = "/api/download";
 const RELEASES_URL = "https://github.com/noxtherox/Zerus/releases/latest";
 const REPOSITORY_URL = "https://github.com/noxtherox/Zerus";
+const LANDING_THEME_KEY = "zerus-landing-theme";
+
+type LandingTheme = "light" | "dark";
+
+function getInitialLandingTheme(): LandingTheme {
+  try {
+    const storedTheme = window.localStorage.getItem(LANDING_THEME_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") return storedTheme;
+  } catch {
+    // Storage can be unavailable in privacy-restricted browsing contexts.
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
 
 const features = [
   {
@@ -62,15 +80,27 @@ const faqs = [
 ];
 
 export function Landing() {
+  const [theme, setTheme] = useState<LandingTheme>(getInitialLandingTheme);
+
   useEffect(() => {
     document.title = "Zerus — Notes that stay yours";
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LANDING_THEME_KEY, theme);
+    } catch {
+      // The selected theme still applies for the current session.
+    }
+  }, [theme]);
+
+  const logoTone = theme === "dark" ? "white" : "graphite";
+
   return (
-    <div className="landing-page">
+    <div className="landing-page" data-theme={theme}>
       <header className="landing-nav">
         <a className="landing-brand" href="#top" aria-label="Zerus home">
-          <ZerusLogo className="landing-brand-mark" />
+          <ZerusLogo className="landing-brand-mark" tone={logoTone} />
           <span>Zerus</span>
         </a>
 
@@ -80,9 +110,20 @@ export function Landing() {
           <a href="#questions">Questions</a>
         </nav>
 
-        <a className="landing-nav-download" href={DOWNLOAD_URL}>
-          Download <ArrowRight size={15} aria-hidden="true" />
-        </a>
+        <div className="landing-nav-actions">
+          <button
+            type="button"
+            className="landing-theme-toggle"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
+          </button>
+          <a className="landing-nav-download" href={DOWNLOAD_URL}>
+            Download <ArrowRight size={15} aria-hidden="true" />
+          </a>
+        </div>
       </header>
 
       <main id="top">
@@ -224,7 +265,7 @@ export function Landing() {
         </section>
 
         <section className="landing-final-cta">
-          <ZerusLogo className="landing-final-mark" />
+          <ZerusLogo className="landing-final-mark" tone={logoTone} />
           <p>YOUR NOTES. YOUR FILES. YOUR SYSTEM.</p>
           <h2>Make your knowledge durable.</h2>
           <div className="landing-hero-actions">
@@ -242,7 +283,7 @@ export function Landing() {
 
       <footer className="landing-footer">
         <a className="landing-brand" href="#top">
-          <ZerusLogo className="landing-brand-mark" />
+          <ZerusLogo className="landing-brand-mark" tone={logoTone} />
           <span>Zerus</span>
         </a>
         <p>Local-first notes, made with care.</p>
@@ -265,7 +306,7 @@ function ProductPreview() {
       </div>
       <div className="landing-product-body">
         <aside className="landing-product-sidebar">
-          <ZerusLogo className="landing-product-logo" />
+          <ZerusLogo className="landing-product-logo" tone="white" />
           <nav aria-label="Example vault folders">
             <a className="is-active"><Folder /> Notes <span>12</span></a>
             <a><span className="folder-icon">◈</span> Projects <span>6</span></a>
