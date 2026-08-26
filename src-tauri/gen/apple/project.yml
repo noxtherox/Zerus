@@ -45,7 +45,7 @@ targets:
         UIRequiredDeviceCapabilities: [arm64, metal]
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-        CFBundleShortVersionString: 0.3.10
+        CFBundleShortVersionString: 0.3.11
         CFBundleVersion: "39"
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
