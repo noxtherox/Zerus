@@ -16,6 +16,15 @@
   --landing-release: #827b70;
   --landing-inverse-bg: #181713;
   --landing-inverse-fg: #f4f0e7;
+  --landing-primary-bg: var(--landing-ink);
+  --landing-primary-fg: var(--landing-paper);
+  --landing-primary-shadow: var(--landing-red);
+  --landing-product-accent-bg: rgba(216, 75, 64, .15);
+  --landing-product-accent-soft: rgba(216, 75, 64, .1);
+  --landing-product-accent-shadow: rgba(216, 75, 64, .22);
+  --landing-product-accent-text: #f06a5d;
+  --landing-product-mark-bg: rgba(216, 75, 64, .16);
+  --landing-product-mark-text: #f08176;
   min-height: 100vh;
   overflow: hidden;
   background: var(--landing-paper);
@@ -40,6 +49,15 @@
   --landing-release: #8d87a0;
   --landing-inverse-bg: #100e1a;
   --landing-inverse-fg: #d5cfe8;
+  --landing-primary-bg: #a78bfa;
+  --landing-primary-fg: #100e1a;
+  --landing-primary-shadow: #5b3fa6;
+  --landing-product-accent-bg: rgba(167, 139, 250, .16);
+  --landing-product-accent-soft: rgba(167, 139, 250, .11);
+  --landing-product-accent-shadow: rgba(91, 63, 166, .52);
+  --landing-product-accent-text: #c4b5fd;
+  --landing-product-mark-bg: rgba(167, 139, 250, .18);
+  --landing-product-mark-text: #c4b5fd;
   color-scheme: dark;
 }
 
@@ -93,13 +111,13 @@
 .landing-hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
 .landing-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 51px; padding: 0 22px; border: 1px solid var(--landing-ink); font-size: 13px; font-weight: 700; transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease; }
 .landing-button:hover { transform: translateY(-2px); }
-.landing-button-primary { background: var(--landing-ink); color: var(--landing-paper) !important; box-shadow: 4px 4px 0 var(--landing-red); }
+.landing-button-primary { border-color: var(--landing-primary-bg); background: var(--landing-primary-bg); color: var(--landing-primary-fg) !important; box-shadow: 4px 4px 0 var(--landing-primary-shadow); }
 .landing-button-secondary { background: transparent; }
 .landing-button-secondary:hover { background: var(--landing-hover); }
 .landing-release-note { margin: 16px 0 0; color: var(--landing-release); font-family: "DM Mono", monospace; font-size: 10px; text-transform: uppercase; }
 .landing-release-note span { margin: 0 6px; color: var(--landing-red); }
 
-.landing-product { position: absolute; z-index: 4; right: -205px; bottom: 58px; width: 840px; height: 484px; overflow: hidden; border: 1px solid #302f2b; border-radius: 10px; background: #17181c; color: #e6e5e2; box-shadow: 0 38px 90px rgba(34, 28, 20, .22), -6px 6px 0 rgba(216, 75, 64, .22); transform: rotate(-1.4deg); }
+.landing-product { position: absolute; z-index: 4; right: -205px; bottom: 58px; width: 840px; height: 484px; overflow: hidden; border: 1px solid #302f2b; border-radius: 10px; background: #17181c; color: #e6e5e2; box-shadow: 0 38px 90px rgba(34, 28, 20, .22), -6px 6px 0 var(--landing-product-accent-shadow); transform: rotate(-1.4deg); }
 .landing-product-titlebar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; height: 34px; padding: 0 13px; border-bottom: 1px solid #292a2f; background: #1d1e22; font-size: 9px; }
 .landing-product-titlebar > div { display: flex; gap: 6px; }
 .landing-product-titlebar > div span { width: 7px; height: 7px; border-radius: 50%; background: #494a50; }
@@ -111,13 +129,13 @@
 .landing-product-sidebar nav a { display: flex; align-items: center; gap: 7px; padding: 7px 8px; border-radius: 5px; color: #aaa9af; font-size: 9px; }
 .landing-product-sidebar nav a svg { width: 11px; }
 .landing-product-sidebar nav a span:last-child { margin-left: auto; color: #6e6e74; font-family: "DM Mono", monospace; font-size: 8px; }
-.landing-product-sidebar nav a.is-active { background: rgba(216,75,64,.15); color: #f06a5d; }
+.landing-product-sidebar nav a.is-active { background: var(--landing-product-accent-bg); color: var(--landing-product-accent-text); }
 .folder-icon { width: 11px; text-align: center; font-size: 10px; }
 .landing-product-list { border-right: 1px solid #292a2f; background: #1a1b20; }
 .landing-product-search { display: flex; align-items: center; gap: 7px; margin: 14px 12px 10px; padding: 9px; border: 1px solid #303136; border-radius: 5px; color: #74757c; font-size: 9px; }
 .landing-product-search svg { width: 12px; height: 12px; }
 .landing-note-row { position: relative; min-height: 70px; padding: 13px 12px; border-top: 1px solid #28292e; }
-.landing-note-row.is-selected { background: rgba(216,75,64,.1); box-shadow: inset 2px 0 var(--landing-red); }
+.landing-note-row.is-selected { background: var(--landing-product-accent-soft); box-shadow: inset 2px 0 var(--landing-red); }
 .landing-note-row strong { display: block; font-size: 10px; }
 .landing-note-row p { overflow: hidden; margin: 5px 0 8px; color: #77787f; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .landing-note-row span { color: #595a60; font-family: "DM Mono", monospace; font-size: 7px; text-transform: uppercase; }
@@ -127,7 +145,7 @@
 .landing-document-type { margin: 0 0 15px; color: var(--landing-red); font-family: "DM Mono", monospace; font-size: 8px; letter-spacing: .12em; }
 .landing-product-document h3 { margin: 0 0 20px; font-family: "Newsreader", serif; font-size: 32px; font-weight: 400; }
 .landing-product-document > p:not(.landing-document-type, .landing-document-check) { margin: 0; color: #a5a5aa; font-family: "Newsreader", serif; font-size: 13px; line-height: 1.7; }
-.landing-product-document mark { background: rgba(216,75,64,.16); color: #f08176; }
+.landing-product-document mark { background: var(--landing-product-mark-bg); color: var(--landing-product-mark-text); }
 .landing-product-document blockquote { margin: 22px 0; padding: 11px 14px; border-left: 2px solid var(--landing-red); background: #1e1f24; color: #c4c4c8; font-family: "Newsreader", serif; font-size: 12px; line-height: 1.5; }
 .landing-product-document h4 { margin: 0 0 10px; font-size: 11px; }
 .landing-document-check { display: flex; align-items: center; gap: 7px; margin: 5px 0; color: #8d8e94; font-size: 9px; }
