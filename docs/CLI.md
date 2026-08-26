@@ -15,13 +15,37 @@ for streams and `--no-input` to guarantee that a script never prompts.
 
 ## Notes
 
-- Read: `note list`, `note get`, `search`, `links`, `type list`
+- Read: `note list`, `note get`, `search`, relation-aware `links`, `type list`
 - Write: `note create`, `note set-body`, `note append`, `note prepend`
-- Organize: `note pin`, `note archive`, `type move`
+- Organize: `note pin`, `note archive`, `type create|rename|delete|move`
 - Properties: `note property list|set|unset`, `schema list|add|remove`
 - Lifecycle: `note trash`, `note restore`, `history`, `undo`
 - Transfer: `import`, `export`
 - Bulk: `bulk property-set`, `bulk archive`
+
+Normal reads and bulk operations exclude `.trash`. Use `note list --trash` or
+`search --trash` to inspect only Trash, and `--include-trash` only when a
+combined read is intentional. Type listing includes empty folders but excludes
+`.zerus`, `.trash`, and `assets`.
+
+## Tasks, links, files, and attachments
+
+- Tasks: `task list|get|create|update|complete|reopen|delete` and
+  `task category list|add|remove`
+- Saved links: `saved-link list|get|create|delete|move-to-type`
+- File hubs: `file get|attach-copy|detach`
+- Note attachments: `attachment list|add-copy|remove`
+- Type display metadata: `type icon get|set|unset` and
+  `type view get|set|unset`
+
+Task links use repeated `--link-note SELECTOR` values and resolve them to stable
+note IDs. `attachment add-copy` returns the exact `zerus-attachment:` Markdown
+reference that can be inserted into the note body. Managed vault copies move
+with their notes during type moves, trash, restore, and undo.
+
+The desktop note menu exports one rendered note as HTML, PDF, or DOCX. CLI
+`export OUTPUT` has a different purpose: it exports selected notes as portable
+raw Markdown plus `zerus-export.json`.
 
 Selectors accept an exact relative path, a unique note-ID prefix, or an exact
 title. Ambiguous interactive selections display title, path, and ID; scripts
@@ -30,8 +54,9 @@ receive an `ambiguous_selector` error instead. Content mutations accept
 
 ## Property schemas
 
-Property definitions can be scoped to any type path and are inherited by its
-sub-types. For example, a definition on `Development` applies to Initiatives,
+Property definitions can be scoped to any type path, up to the app's eight
+folder levels, and are inherited by its sub-types. For example, a definition
+on `Development` applies to Initiatives,
 Epics, and User Stories, while one on `Development/Initiatives` applies only to
 Initiatives and any types nested below it.
 
@@ -56,10 +81,10 @@ the selected type and its sub-types.
 
 ## Hidden metadata and migration
 
-Zerus reserves `zerus-*` frontmatter. The current metadata is
-`zerus-id`, `zerus-pinned`, and `zerus-archived`; these fields never
-appear in the normal Properties UI. False pin/archive values are omitted, and
-archiving always unpins a note.
+Zerus reserves all `zerus-*` frontmatter. This includes note identity and state,
+file-hub references, saved-link references, and attachment records; these fields
+never appear in the normal Properties UI. False pin/archive values are omitted,
+and archiving always unpins a note.
 
 Run `zerus migrate preview` before `zerus migrate apply --yes`. Duplicate
 IDs or malformed reserved metadata block migration for review. Once ready, the
@@ -68,7 +93,10 @@ vault manifest records that IDs are required on every device.
 ## Safety
 
 Writes use atomic replacement and revision checks. Bulk and data-loss actions
-require a preview and explicit `--yes`. There is no permanent-delete command:
-notes can only be trashed and restored. Mutation snapshots are retained for 30
-days up to 500 MB and can be inspected with `history` or reversed with `undo`.
+require a preview and explicit `--yes`. Notes can only be trashed and restored;
+task deletion, saved-link deletion, managed-copy deletion, and schema value
+purges are permanent. CLI mutation snapshots are namespaced under
+`.zerus/history/cli`, retained for 30 days up to 500 MB, and can be inspected
+with `history` or reversed with `undo`. Undo refuses to overwrite content that
+changed after the selected transaction.
 Removing a schema preserves note values unless `--purge-values --yes` is used.

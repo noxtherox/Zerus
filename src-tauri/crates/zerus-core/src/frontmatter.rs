@@ -48,10 +48,9 @@ fn split(content: &str) -> (Option<&str>, &str) {
 
 fn unquote(value: &str) -> String {
     let value = value.trim();
-    if value.len() >= 2
-        && ((value.starts_with('"') && value.ends_with('"'))
-            || (value.starts_with('\'') && value.ends_with('\'')))
-    {
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        serde_json::from_str(value).unwrap_or_else(|_| value[1..value.len() - 1].to_string())
+    } else if value.len() >= 2 && value.starts_with('\'') && value.ends_with('\'') {
         value[1..value.len() - 1].to_string()
     } else {
         value.to_string()
@@ -153,5 +152,16 @@ mod tests {
         );
         assert_eq!(note_body(content), "# Note\n\nBody\n");
         assert_eq!(note_title(content, "Fallback"), "Note");
+    }
+
+    #[test]
+    fn decodes_json_quoted_list_values_used_by_attachment_metadata() {
+        let content =
+            "---\nzerus-attachments:\n  - \"{\\\"id\\\":\\\"attachment-1\\\"}\"\n---\n# Note\n";
+        let properties = note_properties(content);
+        assert_eq!(
+            properties["zerus-attachments"],
+            PropertyValue::List(vec![r#"{"id":"attachment-1"}"#.into()])
+        );
     }
 }

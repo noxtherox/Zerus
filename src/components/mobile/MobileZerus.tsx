@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Cloud,
   Copy,
+  Download,
   ExternalLink,
   File,
   FilePlus2,
@@ -65,6 +66,7 @@ import {
   RelationsSection,
 } from "@/components/notes/PropertiesSection";
 import { IconPickerDialog } from "@/components/notes/IconPickerDialog";
+import { NoteExportDialog } from "@/components/notes/NoteExportDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
 import { VersionHistoryPanel } from "@/components/notes/VersionHistoryPanel";
@@ -558,9 +560,10 @@ interface NoteActionSheetProps {
   onMoveType: () => void;
   onChat: () => void;
   onShowHistory: () => void;
+  onExport: () => void;
 }
 
-function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory }: NoteActionSheetProps) {
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory, onExport }: NoteActionSheetProps) {
   const archived = isArchived(note);
   const trashed = isTrashed(note);
   const external = isExternalNote(note);
@@ -609,6 +612,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           {action("Chat about this note", <Sparkles className="h-5 w-5" />, onChat)}
           {action("Find in note", <Search className="h-5 w-5" />, onFind)}
           {!external && action("Version history", <History className="h-5 w-5" />, onShowHistory)}
+          {!trashed && action("Export", <Download className="h-5 w-5" />, onExport)}
           {!external && !trashed && action("Insert image", <ImagePlus className="h-5 w-5" />, onInsertImage)}
           {!external && !trashed && action("Move to folder", <FolderCog className="h-5 w-5" />, onMoveType)}
           {!file && !external && !trashed && action("Attach file to note", <FilePlus2 className="h-5 w-5" />, onReplaceFile)}
@@ -677,6 +681,7 @@ function NoteView({
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
   const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
@@ -1050,8 +1055,14 @@ function NoteView({
           onMoveType={() => setMoveTypeOpen(true)}
           onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
           onShowHistory={() => setHistoryOpen(true)}
+          onExport={() => setExportOpen(true)}
         />
       )}
+      <NoteExportDialog
+        note={note}
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+      />
       <input
         ref={imageInputRef}
         type="file"

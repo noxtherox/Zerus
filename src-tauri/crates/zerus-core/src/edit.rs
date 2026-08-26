@@ -91,6 +91,21 @@ pub fn set_property(content: &str, key: &str, value: Option<&str>) -> Result<Str
     replace_key(content, key, value)
 }
 
+/// Updates app-owned frontmatter while keeping the public property API from
+/// accepting reserved keys. Callers must provide a YAML-safe scalar or block
+/// value; this is intended for Zerus metadata migrations and coordinated file
+/// operations only.
+pub fn set_reserved_property(
+    content: &str,
+    key: &str,
+    value: Option<&str>,
+) -> Result<String, EditError> {
+    if !is_reserved_key(key) {
+        return Err(EditError::InvalidKey);
+    }
+    replace_key(content, key, value)
+}
+
 pub fn ensure_note_id(content: &str) -> Result<(String, Uuid), EditError> {
     if let Ok(metadata) = read_note_metadata(content) {
         if let Some(id) = metadata.id {
@@ -162,5 +177,13 @@ mod tests {
         assert!(note.contains("status: done"));
         assert!(!note.contains(ZERUS_PINNED_KEY));
         assert!(note.contains("zerus-archived: true"));
+    }
+
+    #[test]
+    fn internal_edits_are_limited_to_reserved_keys() {
+        let note = "---\nzerus-file-path: old.pdf\n---\n# Note\n";
+        let note = set_reserved_property(note, "zerus-file-path", Some("new.pdf")).unwrap();
+        assert!(note.contains("zerus-file-path: new.pdf"));
+        assert!(set_reserved_property(&note, "status", Some("done")).is_err());
     }
 }

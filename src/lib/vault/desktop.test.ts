@@ -57,6 +57,8 @@ describe("DesktopVault startup loading", () => {
         recursive: true,
       }),
       mkdir(join(root, ".hidden"), { recursive: true }),
+      mkdir(join(root, "(1).zerus"), { recursive: true }),
+      mkdir(join(root, ".zerus (2)"), { recursive: true }),
       mkdir(join(root, ".trash", "Notes"), { recursive: true }),
     ]);
     await Promise.all([
@@ -68,6 +70,8 @@ describe("DesktopVault startup loading", () => {
         "# Deep\n",
       ),
       writeFile(join(root, ".hidden", "Ignored.md"), "# Ignored\n"),
+      writeFile(join(root, "(1).zerus", "Ignored.md"), "# Ignored metadata\n"),
+      writeFile(join(root, ".zerus (2)", "Ignored.md"), "# Ignored metadata\n"),
       writeFile(join(root, ".trash", "Notes", "Deleted.md"), "# Deleted\n"),
     ]);
 

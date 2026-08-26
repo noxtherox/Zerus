@@ -3,6 +3,7 @@ use dialoguer::{theme::ColorfulTheme, Select};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -78,6 +79,22 @@ enum Command {
         #[command(subcommand)]
         command: SchemaCommand,
     },
+    Task {
+        #[command(subcommand)]
+        command: TaskCommand,
+    },
+    SavedLink {
+        #[command(subcommand)]
+        command: SavedLinkCommand,
+    },
+    File {
+        #[command(subcommand)]
+        command: FileCommand,
+    },
+    Attachment {
+        #[command(subcommand)]
+        command: AttachmentCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -124,6 +141,7 @@ enum NoteCommand {
     Append {
         #[command(flatten)]
         selector: NoteSelector,
+        #[arg(long)]
         text: String,
         #[arg(long)]
         if_revision: Option<String>,
@@ -131,6 +149,7 @@ enum NoteCommand {
     Prepend {
         #[command(flatten)]
         selector: NoteSelector,
+        #[arg(long)]
         text: String,
         #[arg(long)]
         if_revision: Option<String>,
@@ -215,10 +234,61 @@ enum MigrateCommand {
 #[derive(Subcommand)]
 enum TypeCommand {
     List,
+    Create {
+        type_path: String,
+    },
+    Rename {
+        from: String,
+        to: String,
+    },
+    Delete {
+        type_path: String,
+        #[arg(long)]
+        yes: bool,
+    },
     Move {
         #[command(flatten)]
         selector: NoteSelector,
+        #[arg(long)]
         to: String,
+    },
+    Icon {
+        #[command(subcommand)]
+        command: TypeIconCommand,
+    },
+    View {
+        #[command(subcommand)]
+        command: TypeViewCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TypeIconCommand {
+    Get { type_path: String },
+    Set { type_path: String, icon: String },
+    Unset { type_path: String },
+}
+
+#[derive(Subcommand)]
+enum TypeViewCommand {
+    Get {
+        type_path: String,
+    },
+    Set {
+        type_path: String,
+        #[arg(long)]
+        mode: Option<String>,
+        #[arg(long)]
+        group_by: Option<String>,
+        #[arg(long)]
+        date_property: Option<String>,
+        #[arg(long)]
+        sort: Option<String>,
+        #[arg(long)]
+        show_archived: Option<bool>,
+    },
+    Unset {
+        type_path: String,
     },
 }
 
@@ -285,6 +355,10 @@ struct ListArgs {
     archived: bool,
     #[arg(long)]
     include_archived: bool,
+    #[arg(long, conflicts_with = "include_trash")]
+    trash: bool,
+    #[arg(long)]
+    include_trash: bool,
 }
 
 #[derive(Args)]
@@ -306,6 +380,155 @@ struct SearchArgs {
     archived: bool,
     #[arg(long)]
     include_archived: bool,
+    #[arg(long, conflicts_with = "include_trash")]
+    trash: bool,
+    #[arg(long)]
+    include_trash: bool,
+}
+
+#[derive(Subcommand)]
+enum TaskCommand {
+    List {
+        #[arg(long)]
+        completed: bool,
+        #[arg(long)]
+        open: bool,
+        #[arg(long)]
+        today: bool,
+    },
+    Get {
+        selector: String,
+    },
+    Create {
+        title: String,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long, default_value = "none")]
+        priority: String,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        due: Option<String>,
+        #[arg(long = "link-note")]
+        linked_notes: Vec<String>,
+    },
+    Update {
+        selector: String,
+        #[arg(long)]
+        title: Option<String>,
+        #[arg(long)]
+        category: Option<String>,
+        #[arg(long)]
+        clear_category: bool,
+        #[arg(long)]
+        priority: Option<String>,
+        #[arg(long)]
+        date: Option<String>,
+        #[arg(long)]
+        due: Option<String>,
+        #[arg(long)]
+        clear_due: bool,
+        #[arg(long = "link-note")]
+        linked_notes: Vec<String>,
+        #[arg(long)]
+        clear_links: bool,
+    },
+    Complete {
+        selector: String,
+    },
+    Reopen {
+        selector: String,
+    },
+    Delete {
+        selector: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    Category {
+        #[command(subcommand)]
+        command: TaskCategoryCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum TaskCategoryCommand {
+    List,
+    Add {
+        name: String,
+    },
+    Remove {
+        name: String,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SavedLinkCommand {
+    List,
+    Get {
+        selector: String,
+    },
+    Create {
+        url: String,
+        #[arg(long)]
+        title: Option<String>,
+    },
+    Delete {
+        selector: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    MoveToType {
+        selector: String,
+        to: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum FileCommand {
+    Get {
+        #[command(flatten)]
+        selector: NoteSelector,
+    },
+    AttachCopy {
+        #[command(flatten)]
+        selector: NoteSelector,
+        #[arg(long)]
+        source: PathBuf,
+    },
+    Detach {
+        #[command(flatten)]
+        selector: NoteSelector,
+        #[arg(long)]
+        delete_managed: bool,
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum AttachmentCommand {
+    List {
+        #[command(flatten)]
+        selector: NoteSelector,
+    },
+    AddCopy {
+        #[command(flatten)]
+        selector: NoteSelector,
+        #[arg(long)]
+        source: PathBuf,
+    },
+    Remove {
+        #[command(flatten)]
+        selector: NoteSelector,
+        #[arg(long)]
+        attachment_id: String,
+        #[arg(long)]
+        delete_managed: bool,
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 #[derive(Args)]
@@ -370,6 +593,80 @@ struct HistoryEntry {
     created_at_ms: u128,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskRecord {
+    id: String,
+    title: String,
+    #[serde(default)]
+    completed: bool,
+    #[serde(default)]
+    category: Option<String>,
+    #[serde(default = "default_task_priority")]
+    priority: String,
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    due_date: Option<String>,
+    #[serde(default)]
+    completed_at: Option<String>,
+    #[serde(default)]
+    linked_note_ids: Vec<String>,
+    #[serde(default)]
+    created_at: String,
+}
+
+fn default_task_priority() -> String {
+    "none".into()
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TaskDocument {
+    #[serde(default)]
+    tasks: Vec<TaskRecord>,
+    #[serde(default)]
+    category_options: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SavedLinkRecord {
+    id: String,
+    path: String,
+    title: String,
+    url: String,
+}
+
+#[derive(Clone, Debug)]
+struct SavedLinkNote {
+    record: SavedLinkRecord,
+    content: String,
+    absolute_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileReference {
+    id: String,
+    name: String,
+    kind: String,
+    path: Option<String>,
+    location_id: Option<String>,
+    managed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentRecord {
+    id: String,
+    name: String,
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    managed: bool,
+}
+
 fn registry_path() -> Result<PathBuf, CliError> {
     default_registry_path()
         .map_err(|error| CliError::new("config_unavailable", error.to_string(), 2))
@@ -380,6 +677,522 @@ fn registry() -> Result<(PathBuf, VaultRegistry), CliError> {
     let value = load_registry(&path)
         .map_err(|error| CliError::new("registry_invalid", error.to_string(), 2))?;
     Ok((path, value))
+}
+
+const TASKS_PATH: &str = ".zerus/tasks.json";
+const SAVED_LINKS_DIR: &str = ".zerus/links";
+const SAVED_LINKS_INDEX_PATH: &str = ".zerus/links.json";
+const TYPE_ICONS_PATH: &str = ".zerus/type-icons.json";
+const TYPE_VIEWS_PATH: &str = ".zerus/views.json";
+const MAX_TYPE_DEPTH: usize = 8;
+
+fn read_json_or_default<T>(path: &Path) -> Result<T, CliError>
+where
+    T: serde::de::DeserializeOwned + Default,
+{
+    if !path.exists() {
+        return Ok(T::default());
+    }
+    serde_json::from_slice(
+        &fs::read(path)
+            .map_err(|error| CliError::new("metadata_read_failed", error.to_string(), 2))?,
+    )
+    .map_err(|error| CliError::new("metadata_invalid", error.to_string(), 3))
+}
+
+fn write_json<T: Serialize + ?Sized>(path: &Path, value: &T) -> Result<(), CliError> {
+    fs::create_dir_all(path.parent().unwrap())
+        .map_err(|error| CliError::new("metadata_write_failed", error.to_string(), 5))?;
+    let temporary = path.with_extension(format!("tmp-{}", Uuid::now_v7()));
+    fs::write(&temporary, serde_json::to_vec_pretty(value).unwrap())
+        .map_err(|error| CliError::new("metadata_write_failed", error.to_string(), 5))?;
+    fs::rename(temporary, path)
+        .map_err(|error| CliError::new("metadata_write_failed", error.to_string(), 5))
+}
+
+fn file_reference(note: &ScannedNote) -> Option<FileReference> {
+    file_reference_from_properties(&note.properties)
+}
+
+fn file_reference_from_content(content: &str) -> Option<FileReference> {
+    file_reference_from_properties(&zerus_core::note_properties(content))
+}
+
+fn file_reference_from_properties(
+    properties: &BTreeMap<String, zerus_core::PropertyValue>,
+) -> Option<FileReference> {
+    let text = |key: &str| {
+        properties
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
+            .and_then(|(_, value)| match value {
+                zerus_core::PropertyValue::String(value) if !value.trim().is_empty() => {
+                    Some(value.trim().to_string())
+                }
+                _ => None,
+            })
+    };
+    let id = text("zerus-file-id")?;
+    let name = text("zerus-file-name")?;
+    let kind = text("zerus-file-kind")?;
+    if !matches!(kind.as_str(), "vault" | "location" | "local") {
+        return None;
+    }
+    Some(FileReference {
+        id,
+        name,
+        kind,
+        path: text("zerus-file-path"),
+        location_id: text("zerus-file-location"),
+        managed: properties
+            .iter()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case("zerus-file-managed"))
+            .is_some_and(|(_, value)| matches!(value, zerus_core::PropertyValue::Boolean(true))),
+    })
+}
+
+fn attachment_records(note: &ScannedNote) -> Vec<AttachmentRecord> {
+    note.properties
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case("zerus-attachments"))
+        .and_then(|(_, value)| match value {
+            zerus_core::PropertyValue::List(values) => Some(values),
+            _ => None,
+        })
+        .into_iter()
+        .flatten()
+        .filter_map(|value| serde_json::from_str(value).ok())
+        .collect()
+}
+
+fn set_attachment_records(
+    content: &str,
+    attachments: &[AttachmentRecord],
+) -> Result<String, CliError> {
+    let raw = (!attachments.is_empty()).then(|| {
+        format!(
+            "\n{}",
+            attachments
+                .iter()
+                .map(|attachment| { format!("  - {}", serde_json::to_string(attachment).unwrap()) })
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    });
+    zerus_core::set_reserved_property(content, "zerus-attachments", raw.as_deref())
+        .map_err(|error| CliError::new("note_invalid", error.to_string(), 3))
+}
+
+fn normalize_type_path(input: &str) -> Result<String, CliError> {
+    let normalized = input.trim().trim_matches('/').replace('\\', "/");
+    zerus_core::validate_portable_relative_path(&normalized)
+        .map_err(|error| CliError::new("invalid_type", error.to_string(), 3))?;
+    let segments = normalized.split('/').count();
+    if segments == 0 || segments > MAX_TYPE_DEPTH || normalized.starts_with('.') {
+        return Err(CliError::new(
+            "invalid_type",
+            format!("type paths must contain 1 to {MAX_TYPE_DEPTH} visible segments"),
+            3,
+        ));
+    }
+    Ok(normalized)
+}
+
+fn validate_date(value: &str, label: &str) -> Result<(), CliError> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map(|_| ())
+        .map_err(|_| CliError::new("invalid_date", format!("{label} must be YYYY-MM-DD"), 3))
+}
+
+fn validate_priority(value: &str) -> Result<(), CliError> {
+    if matches!(value, "none" | "low" | "medium" | "high") {
+        Ok(())
+    } else {
+        Err(CliError::new(
+            "invalid_priority",
+            "priority must be none, low, medium, or high",
+            3,
+        ))
+    }
+}
+
+fn validate_type_icon(value: &str) -> Result<(), CliError> {
+    let tabler = Regex::new(r"^tabler:[A-Za-z][A-Za-z0-9]*$").unwrap();
+    if tabler.is_match(value) || !value.is_ascii() {
+        Ok(())
+    } else {
+        Err(CliError::new(
+            "invalid_icon",
+            "icon must be a tabler:IconName value or emoji",
+            3,
+        ))
+    }
+}
+
+fn task_document(root: &Path) -> Result<TaskDocument, CliError> {
+    let path = root.join(TASKS_PATH);
+    if !path.exists() {
+        return Ok(TaskDocument::default());
+    }
+    let value: Value = serde_json::from_slice(
+        &fs::read(&path)
+            .map_err(|error| CliError::new("tasks_read_failed", error.to_string(), 2))?,
+    )
+    .map_err(|error| CliError::new("tasks_invalid", error.to_string(), 3))?;
+    let mut document = if value.is_array() {
+        let tasks = serde_json::from_value(value)
+            .map_err(|error| CliError::new("tasks_invalid", error.to_string(), 3))?;
+        TaskDocument {
+            tasks,
+            category_options: Vec::new(),
+        }
+    } else {
+        serde_json::from_value(value)
+            .map_err(|error| CliError::new("tasks_invalid", error.to_string(), 3))?
+    };
+    for task in &mut document.tasks {
+        if task.created_at.is_empty() {
+            task.created_at = "1970-01-01T00:00:00Z".into();
+        }
+        if task.date.is_empty() {
+            task.date = task
+                .created_at
+                .get(..10)
+                .unwrap_or("1970-01-01")
+                .to_string();
+        }
+        if !matches!(task.priority.as_str(), "none" | "low" | "medium" | "high") {
+            task.priority = "none".into();
+        }
+        if let Some(category) = &task.category {
+            if !document
+                .category_options
+                .iter()
+                .any(|value| value.eq_ignore_ascii_case(category))
+            {
+                document.category_options.push(category.clone());
+            }
+        }
+    }
+    Ok(document)
+}
+
+fn save_tasks(root: &Path, document: &TaskDocument) -> Result<(), CliError> {
+    write_json(&root.join(TASKS_PATH), document)
+}
+
+fn choose_task_index(tasks: &[TaskRecord], selector: &str) -> Result<usize, CliError> {
+    let lowered = selector.to_lowercase();
+    let matches = tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, task)| {
+            task.id.to_lowercase().starts_with(&lowered)
+                || task.title.eq_ignore_ascii_case(selector)
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [index] => Ok(*index),
+        [] => Err(CliError::new(
+            "task_not_found",
+            "No task matches that selector",
+            3,
+        )),
+        _ => Err(CliError::new(
+            "ambiguous_selector",
+            "Multiple tasks match that selector; use an ID prefix",
+            4,
+        )),
+    }
+}
+
+fn resolve_note_ids(
+    cli: &Cli,
+    notes: &[ScannedNote],
+    selectors: &[String],
+) -> Result<Vec<String>, CliError> {
+    let mut ids = Vec::new();
+    for value in selectors {
+        let selector = NoteSelector {
+            target: Some(value.clone()),
+            id: None,
+            path: None,
+            title: None,
+        };
+        let note = choose_note(cli, notes, &selector)?;
+        if is_trashed_path(&note.path) {
+            return Err(CliError::new(
+                "note_trashed",
+                "tasks cannot link to trashed notes",
+                3,
+            ));
+        }
+        let id = note.id.ok_or_else(|| {
+            CliError::new("note_missing_id", "linked notes must have a zerus-id", 3)
+        })?;
+        let value = id.to_string();
+        if !ids.contains(&value) {
+            ids.push(value);
+        }
+    }
+    Ok(ids)
+}
+
+fn saved_link_paths(root: &Path) -> Result<Vec<String>, CliError> {
+    read_json_or_default(&root.join(SAVED_LINKS_INDEX_PATH))
+}
+
+fn load_saved_links(root: &Path) -> Result<Vec<SavedLinkNote>, CliError> {
+    let mut links = Vec::new();
+    for path in saved_link_paths(root)? {
+        if !path.starts_with(&format!("{SAVED_LINKS_DIR}/")) || !safe_vault_relative(&path) {
+            continue;
+        }
+        let absolute_path = root.join(&path);
+        let Ok(content) = fs::read_to_string(&absolute_path) else {
+            continue;
+        };
+        let properties = zerus_core::note_properties(&content);
+        let text = |key: &str| {
+            properties
+                .iter()
+                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
+                .and_then(|(_, value)| match value {
+                    zerus_core::PropertyValue::String(value) => Some(value.clone()),
+                    _ => None,
+                })
+        };
+        let Some(id) = text("zerus-link-id") else {
+            continue;
+        };
+        let Some(url) = text("zerus-link-url") else {
+            continue;
+        };
+        let fallback = Path::new(&path)
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("Link")
+            .to_string();
+        links.push(SavedLinkNote {
+            record: SavedLinkRecord {
+                id,
+                path,
+                title: zerus_core::note_title(&content, &fallback),
+                url,
+            },
+            content,
+            absolute_path,
+        });
+    }
+    Ok(links)
+}
+
+fn save_saved_link_paths(root: &Path, paths: &[String]) -> Result<(), CliError> {
+    write_json(&root.join(SAVED_LINKS_INDEX_PATH), paths)
+}
+
+fn choose_saved_link<'a>(
+    links: &'a [SavedLinkNote],
+    selector: &str,
+) -> Result<&'a SavedLinkNote, CliError> {
+    let lowered = selector.to_lowercase();
+    let matches = links
+        .iter()
+        .filter(|link| {
+            link.record.id.to_lowercase().starts_with(&lowered)
+                || link.record.title.eq_ignore_ascii_case(selector)
+                || link.record.url.eq_ignore_ascii_case(selector)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [link] => Ok(*link),
+        [] => Err(CliError::new(
+            "link_not_found",
+            "No saved link matches that selector",
+            3,
+        )),
+        _ => Err(CliError::new(
+            "ambiguous_selector",
+            "Multiple saved links match that selector; use an ID prefix",
+            4,
+        )),
+    }
+}
+
+fn normalize_http_url(value: &str) -> Result<String, CliError> {
+    let trimmed = value.trim();
+    if (trimmed.starts_with("https://") || trimmed.starts_with("http://"))
+        && trimmed
+            .split_once("://")
+            .is_some_and(|(_, rest)| !rest.is_empty())
+    {
+        Ok(trimmed.to_string())
+    } else {
+        Err(CliError::new(
+            "invalid_url",
+            "saved links require an explicit http:// or https:// URL",
+            3,
+        ))
+    }
+}
+
+fn collect_type_directories(root: &Path) -> Result<Vec<String>, CliError> {
+    fn visit(
+        root: &Path,
+        relative: &Path,
+        depth: usize,
+        output: &mut BTreeSet<String>,
+    ) -> io::Result<()> {
+        if depth >= MAX_TYPE_DEPTH {
+            return Ok(());
+        }
+        for entry in fs::read_dir(root.join(relative))? {
+            let entry = entry?;
+            if !entry.file_type()?.is_dir() || entry.file_type()?.is_symlink() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') || (relative.as_os_str().is_empty() && name == "assets") {
+                continue;
+            }
+            let child = relative.join(&name);
+            let key = child.to_string_lossy().replace('\\', "/");
+            output.insert(key);
+            visit(root, &child, depth + 1, output)?;
+        }
+        Ok(())
+    }
+    let mut values = BTreeSet::new();
+    visit(root, Path::new(""), 0, &mut values)
+        .map_err(|error| CliError::new("vault_unavailable", error.to_string(), 2))?;
+    Ok(values.into_iter().collect())
+}
+
+fn remove_empty_type_tree(path: &Path) -> Result<(), CliError> {
+    if !path.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(path)
+        .map_err(|error| CliError::new("type_delete_failed", error.to_string(), 5))?
+    {
+        let entry =
+            entry.map_err(|error| CliError::new("type_delete_failed", error.to_string(), 5))?;
+        if entry
+            .file_type()
+            .is_ok_and(|kind| kind.is_dir() && !kind.is_symlink())
+        {
+            remove_empty_type_tree(&entry.path())?;
+        } else {
+            return Err(CliError::new(
+                "type_not_empty",
+                format!(
+                    "{} remains after notes were trashed; refusing to delete an unrelated file",
+                    entry.path().display()
+                ),
+                5,
+            ));
+        }
+    }
+    fs::remove_dir(path).map_err(|error| CliError::new("type_delete_failed", error.to_string(), 5))
+}
+
+fn collect_regular_files(path: &Path, output: &mut Vec<PathBuf>) -> Result<(), CliError> {
+    if !path.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(path)
+        .map_err(|error| CliError::new("type_read_failed", error.to_string(), 2))?
+    {
+        let entry =
+            entry.map_err(|error| CliError::new("type_read_failed", error.to_string(), 2))?;
+        let kind = entry
+            .file_type()
+            .map_err(|error| CliError::new("type_read_failed", error.to_string(), 2))?;
+        if kind.is_symlink() {
+            return Err(CliError::new(
+                "type_unsafe",
+                format!(
+                    "refusing to delete a type containing symlink {}",
+                    entry.path().display()
+                ),
+                5,
+            ));
+        }
+        if kind.is_dir() {
+            collect_regular_files(&entry.path(), output)?;
+        } else {
+            output.push(entry.path());
+        }
+    }
+    Ok(())
+}
+
+fn remap_type_key(key: &str, from: &str, to: &str) -> Option<String> {
+    if key == from {
+        Some(to.to_string())
+    } else {
+        key.strip_prefix(&format!("{from}/"))
+            .map(|suffix| format!("{to}/{suffix}"))
+    }
+}
+
+fn update_type_keyed_document(
+    root: &Path,
+    relative: &str,
+    from: &str,
+    to: &str,
+) -> Result<(), CliError> {
+    let path = root.join(relative);
+    let mut document: BTreeMap<String, Value> = read_json_or_default(&path)?;
+    let mut next = BTreeMap::new();
+    for (key, value) in document.iter_mut() {
+        if relative == ".zerus/properties.json" {
+            if let Some(definitions) = value.as_array_mut() {
+                for definition in definitions {
+                    if let Some(relation) = definition
+                        .get_mut("relationTypeKey")
+                        .and_then(|value| value.as_str())
+                        .and_then(|key| remap_type_key(key, from, to))
+                    {
+                        definition["relationTypeKey"] = json!(relation);
+                    }
+                }
+            }
+        }
+        next.insert(
+            remap_type_key(key, from, to).unwrap_or_else(|| key.clone()),
+            value.clone(),
+        );
+    }
+    if next != document {
+        write_json(&path, &next)?;
+    }
+    Ok(())
+}
+
+fn relation_titles(note: &ScannedNote, schemas: &serde_json::Map<String, Value>) -> Vec<String> {
+    let definitions = effective_schema_definitions(schemas, &note_type_key(&note.path));
+    let relation_names = definitions
+        .iter()
+        .filter(|definition| definition.get("type").and_then(Value::as_str) == Some("relation"))
+        .filter_map(|definition| definition.get("name").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    relation_names
+        .into_iter()
+        .flat_map(|name| {
+            note.properties
+                .iter()
+                .find(|(candidate, _)| candidate.eq_ignore_ascii_case(name))
+                .map(|(_, value)| match value {
+                    zerus_core::PropertyValue::List(values) => values.clone(),
+                    zerus_core::PropertyValue::String(value) => vec![value.clone()],
+                    _ => Vec::new(),
+                })
+                .unwrap_or_default()
+        })
+        .filter(|value| !value.trim().is_empty())
+        .collect()
 }
 
 fn upward_vault(start: &Path) -> Option<PathBuf> {
@@ -451,6 +1264,10 @@ fn load_notes(cli: &Cli) -> Result<(Vec<ScannedNote>, String, PathBuf), CliError
 }
 
 fn history_dir(root: &Path) -> PathBuf {
+    root.join(".zerus/history/cli")
+}
+
+fn legacy_history_dir(root: &Path) -> PathBuf {
     root.join(".zerus/history")
 }
 
@@ -503,20 +1320,21 @@ fn save_history(
 }
 
 fn history_entries(root: &Path) -> Result<Vec<HistoryEntry>, CliError> {
-    let directory = history_dir(root);
-    if !directory.exists() {
-        return Ok(Vec::new());
-    }
     let mut entries = Vec::new();
-    for item in fs::read_dir(directory)
-        .map_err(|e| CliError::new("history_read_failed", e.to_string(), 2))?
-    {
-        let path = item
+    for directory in [history_dir(root), legacy_history_dir(root)] {
+        if !directory.exists() {
+            continue;
+        }
+        for item in fs::read_dir(directory)
             .map_err(|e| CliError::new("history_read_failed", e.to_string(), 2))?
-            .path();
-        if path.extension().and_then(|v| v.to_str()) == Some("json") {
-            if let Ok(value) = serde_json::from_slice(&fs::read(path).unwrap_or_default()) {
-                entries.push(value);
+        {
+            let path = item
+                .map_err(|e| CliError::new("history_read_failed", e.to_string(), 2))?
+                .path();
+            if path.is_file() && path.extension().and_then(|v| v.to_str()) == Some("json") {
+                if let Ok(value) = serde_json::from_slice(&fs::read(path).unwrap_or_default()) {
+                    entries.push(value);
+                }
             }
         }
     }
@@ -557,6 +1375,112 @@ fn valid_note_destination(root: &Path, relative: &str) -> Result<PathBuf, CliErr
     Ok(path)
 }
 
+fn safe_vault_relative(value: &str) -> bool {
+    !value.is_empty()
+        && !Path::new(value).is_absolute()
+        && Path::new(value).components().all(|component| {
+            matches!(
+                component,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+}
+
+fn unique_document_path(root: &Path, directory: &str, name: &str, current: &str) -> String {
+    let path = Path::new(name);
+    let stem = path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("Document");
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(|value| format!(".{value}"))
+        .unwrap_or_default();
+    for index in 0.. {
+        let file = format!(
+            "{stem}{}{extension}",
+            if index == 0 {
+                String::new()
+            } else {
+                format!(" {}", index + 1)
+            }
+        );
+        let candidate = if directory.is_empty() {
+            file
+        } else {
+            format!("{directory}/{file}")
+        };
+        if candidate == current || !root.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+    unreachable!()
+}
+
+fn move_note_with_managed_file(
+    root: &Path,
+    note: &ScannedNote,
+    relative: &str,
+) -> Result<String, CliError> {
+    let destination = valid_note_destination(root, relative)?;
+    fs::create_dir_all(destination.parent().unwrap())
+        .map_err(|error| CliError::new("write_failed", error.to_string(), 5))?;
+    let managed = file_reference(note).filter(|reference| {
+        reference.managed
+            && reference.kind == "vault"
+            && reference.path.as_deref().is_some_and(safe_vault_relative)
+    });
+    let document_move = managed.as_ref().and_then(|reference| {
+        let source_relative = reference.path.as_ref()?;
+        let source = root.join(source_relative);
+        if !source.is_file() {
+            return None;
+        }
+        let target_dir = Path::new(relative)
+            .parent()
+            .and_then(|path| path.to_str())
+            .unwrap_or("")
+            .replace('\\', "/");
+        let target_relative =
+            unique_document_path(root, &target_dir, &reference.name, source_relative);
+        Some((
+            source_relative.clone(),
+            source,
+            target_relative.clone(),
+            root.join(target_relative),
+        ))
+    });
+
+    fs::rename(&note.absolute_path, &destination)
+        .map_err(|error| CliError::new("write_failed", error.to_string(), 5))?;
+    if let Some((source_relative, source, target_relative, target)) = document_move {
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                let _ = fs::rename(&destination, &note.absolute_path);
+                CliError::new("write_failed", error.to_string(), 5)
+            })?;
+        }
+        if let Err(error) = fs::rename(&source, &target) {
+            let _ = fs::rename(&destination, &note.absolute_path);
+            return Err(CliError::new("write_failed", error.to_string(), 5));
+        }
+        let next = zerus_core::set_reserved_property(
+            &note.content,
+            "zerus-file-path",
+            Some(&target_relative),
+        )
+        .map_err(|error| CliError::new("note_invalid", error.to_string(), 3))?;
+        if let Err(error) = atomic_write(&destination, &next, Some(&note.revision)) {
+            let _ = fs::rename(&target, root.join(source_relative));
+            let _ = fs::rename(&destination, &note.absolute_path);
+            return Err(CliError::new("write_failed", error.to_string(), 5));
+        }
+        return Ok(next);
+    }
+    Ok(note.content.clone())
+}
+
 fn schema_path(root: &Path) -> PathBuf {
     root.join(".zerus/properties.json")
 }
@@ -585,20 +1509,11 @@ fn save_schemas(root: &Path, schemas: &serde_json::Map<String, Value>) -> Result
     fs::rename(temporary, path).map_err(|e| CliError::new("schema_write_failed", e.to_string(), 5))
 }
 
-const MAX_SCHEMA_TYPE_DEPTH: usize = 3;
-
 fn normalize_schema_type_path(input: &str) -> Result<String, CliError> {
-    let normalized = input.trim().replace('\\', "/");
-    zerus_core::validate_portable_relative_path(&normalized)
-        .map_err(|error| CliError::new("schema_invalid", error.to_string(), 3))?;
-    if normalized.split('/').count() > MAX_SCHEMA_TYPE_DEPTH {
-        return Err(CliError::new(
-            "schema_invalid",
-            format!("type paths can contain at most {MAX_SCHEMA_TYPE_DEPTH} segments"),
-            3,
-        ));
-    }
-    Ok(normalized)
+    normalize_type_path(input).map_err(|error| CliError {
+        code: "schema_invalid",
+        ..error
+    })
 }
 
 fn schema_owner_keys(type_path: &str) -> Vec<String> {
@@ -666,7 +1581,7 @@ fn note_type_key(path: &str) -> String {
     segments.pop();
     segments
         .into_iter()
-        .take(MAX_SCHEMA_TYPE_DEPTH)
+        .take(MAX_TYPE_DEPTH)
         .collect::<Vec<_>>()
         .join("/")
 }
@@ -676,13 +1591,26 @@ fn type_matches(path: &str, type_path: &str) -> bool {
     path.starts_with(&format!("{normalized}/"))
 }
 
+fn is_trashed_path(path: &str) -> bool {
+    path.starts_with(".trash/")
+}
+
 fn filtered_list<'a>(notes: &'a [ScannedNote], args: &ListArgs) -> Vec<&'a ScannedNote> {
     notes
         .iter()
         .filter(|note| {
-            args.type_path
-                .as_deref()
-                .map_or(true, |type_path| type_matches(&note.path, type_path))
+            let trash_matches = if args.trash {
+                is_trashed_path(&note.path)
+            } else if args.include_trash {
+                true
+            } else {
+                !is_trashed_path(&note.path)
+            };
+            trash_matches
+                && args
+                    .type_path
+                    .as_deref()
+                    .map_or(true, |type_path| type_matches(&note.path, type_path))
                 && (!args.pinned || note.pinned)
                 && if args.archived {
                     note.archived
@@ -841,9 +1769,18 @@ fn search_notes<'a>(
         .iter()
         .filter(|note| {
             let searchable = format!("{}\n{}", note.title, note.content).to_lowercase();
-            args.query
-                .as_deref()
-                .map_or(true, |query| searchable.contains(&lower(query)))
+            let trash_matches = if args.trash {
+                is_trashed_path(&note.path)
+            } else if args.include_trash {
+                true
+            } else {
+                !is_trashed_path(&note.path)
+            };
+            trash_matches
+                && args
+                    .query
+                    .as_deref()
+                    .map_or(true, |query| searchable.contains(&lower(query)))
                 && args
                     .title
                     .as_deref()
@@ -1210,11 +2147,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         }
                         format!(".trash/{}", note.path)
                     };
-                    let destination = valid_note_destination(&root, &relative)?;
-                    fs::create_dir_all(destination.parent().unwrap())
-                        .map_err(|e| CliError::new("write_failed", e.to_string(), 5))?;
-                    fs::rename(&note.absolute_path, &destination)
-                        .map_err(|e| CliError::new("write_failed", e.to_string(), 5))?;
+                    let next_content = move_note_with_managed_file(&root, note, &relative)?;
                     let operation = if restoring {
                         "note.restore"
                     } else {
@@ -1226,7 +2159,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         Some(&note.path),
                         Some(&relative),
                         Some(&note.content),
-                        Some(&note.content),
+                        Some(&next_content),
                     )?;
                     success(
                         cli,
@@ -1520,9 +2453,50 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
             }
             if let Some(after_path) = &entry.path_after {
                 let current = root.join(after_path);
+                if current.exists() {
+                    if let Some(expected) = entry.content_after.as_deref() {
+                        let actual = fs::read_to_string(&current)
+                            .map_err(|error| CliError::new("undo_failed", error.to_string(), 5))?;
+                        if actual != expected {
+                            return Err(CliError::new(
+                                "undo_conflict",
+                                "the note changed after this transaction; refusing to overwrite newer edits",
+                                5,
+                            ));
+                        }
+                    }
+                }
                 match (&entry.path_before, &entry.content_before) {
                     (Some(before_path), Some(before)) => {
                         let destination = root.join(before_path);
+                        let before_file = file_reference_from_content(before)
+                            .filter(|reference| reference.managed && reference.kind == "vault")
+                            .and_then(|reference| reference.path);
+                        let after_file = entry
+                            .content_after
+                            .as_deref()
+                            .and_then(file_reference_from_content)
+                            .filter(|reference| reference.managed && reference.kind == "vault")
+                            .and_then(|reference| reference.path);
+                        let file_move = match (after_file, before_file) {
+                            (Some(from), Some(to)) if from != to => {
+                                let source = root.join(&from);
+                                let target = root.join(&to);
+                                if source.exists() {
+                                    if target.exists() {
+                                        return Err(CliError::new(
+                                            "path_exists",
+                                            format!("{} already exists", target.display()),
+                                            3,
+                                        ));
+                                    }
+                                    Some((source, target))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        };
                         if current != destination && current.exists() {
                             if destination.exists() {
                                 return Err(CliError::new(
@@ -1533,8 +2507,20 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                             }
                             fs::create_dir_all(destination.parent().unwrap())
                                 .map_err(|e| CliError::new("undo_failed", e.to_string(), 5))?;
-                            fs::rename(&current, &destination)
-                                .map_err(|e| CliError::new("undo_failed", e.to_string(), 5))?;
+                            if let Some((source, target)) = &file_move {
+                                fs::create_dir_all(target.parent().unwrap()).map_err(|error| {
+                                    CliError::new("undo_failed", error.to_string(), 5)
+                                })?;
+                                fs::rename(source, target).map_err(|error| {
+                                    CliError::new("undo_failed", error.to_string(), 5)
+                                })?;
+                            }
+                            if let Err(error) = fs::rename(&current, &destination) {
+                                if let Some((source, target)) = &file_move {
+                                    let _ = fs::rename(target, source);
+                                }
+                                return Err(CliError::new("undo_failed", error.to_string(), 5));
+                            }
                         }
                         atomic_write(&destination, before, None)
                             .map_err(|e| CliError::new("undo_failed", e.to_string(), 5))?;
@@ -1572,36 +2558,195 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
             let (notes, _, root) = load_notes(cli)?;
             match command {
                 TypeCommand::List => {
-                    let mut types = std::collections::BTreeSet::new();
-                    for note in &notes {
-                        let mut parts: Vec<_> = note.path.split('/').collect();
-                        parts.pop();
-                        for depth in 1..=parts.len() {
-                            types.insert(parts[..depth].join("/"));
+                    let values = collect_type_directories(&root)?;
+                    output_collection(cli, &values, || values.join("\n"))
+                }
+                TypeCommand::Create { type_path } => {
+                    let key = normalize_type_path(type_path)?;
+                    let destination = root.join(&key);
+                    let created = !destination.exists();
+                    fs::create_dir_all(&destination).map_err(|error| {
+                        CliError::new("type_create_failed", error.to_string(), 5)
+                    })?;
+                    success(cli, json!({"type": key, "created": created}), || {
+                        if created {
+                            format!("Created {key}")
+                        } else {
+                            format!("{key} already exists")
+                        }
+                    })
+                }
+                TypeCommand::Rename { from, to } => {
+                    let from = normalize_type_path(from)?;
+                    let to = normalize_type_path(to)?;
+                    let source = root.join(&from);
+                    let destination = root.join(&to);
+                    if !source.is_dir() {
+                        return Err(CliError::new(
+                            "type_not_found",
+                            "the source type does not exist",
+                            3,
+                        ));
+                    }
+                    if destination.exists() {
+                        return Err(CliError::new(
+                            "path_exists",
+                            "the destination type already exists",
+                            3,
+                        ));
+                    }
+                    fs::create_dir_all(destination.parent().unwrap()).map_err(|error| {
+                        CliError::new("type_rename_failed", error.to_string(), 5)
+                    })?;
+                    fs::rename(&source, &destination).map_err(|error| {
+                        CliError::new("type_rename_failed", error.to_string(), 5)
+                    })?;
+                    for relative in [".zerus/properties.json", TYPE_ICONS_PATH, TYPE_VIEWS_PATH] {
+                        update_type_keyed_document(&root, relative, &from, &to)?;
+                    }
+                    let renamed_notes = scan_vault(&root).map_err(|error| {
+                        CliError::new("vault_unavailable", error.to_string(), 2)
+                    })?;
+                    let old_prefix = format!("{from}/");
+                    let new_prefix = format!("{to}/");
+                    let mut metadata_changed = 0;
+                    for note in renamed_notes
+                        .iter()
+                        .filter(|note| note.path.starts_with(&new_prefix))
+                    {
+                        let Some(reference) = file_reference(note) else {
+                            continue;
+                        };
+                        let Some(path) = reference.path else { continue };
+                        let Some(suffix) = path.strip_prefix(&old_prefix) else {
+                            continue;
+                        };
+                        let next_path = format!("{new_prefix}{suffix}");
+                        let next = zerus_core::set_reserved_property(
+                            &note.content,
+                            "zerus-file-path",
+                            Some(&next_path),
+                        )
+                        .map_err(|error| CliError::new("note_invalid", error.to_string(), 3))?;
+                        atomic_write(&note.absolute_path, &next, Some(&note.revision)).map_err(
+                            |error| CliError::new("type_rename_failed", error.to_string(), 5),
+                        )?;
+                        metadata_changed += 1;
+                    }
+                    success(
+                        cli,
+                        json!({"from": from, "to": to, "managedFileReferencesUpdated": metadata_changed}),
+                        || format!("Renamed {from} to {to}"),
+                    )
+                }
+                TypeCommand::Delete { type_path, yes } => {
+                    let key = normalize_type_path(type_path)?;
+                    let affected = notes
+                        .iter()
+                        .filter(|note| {
+                            !is_trashed_path(&note.path) && type_matches(&note.path, &key)
+                        })
+                        .collect::<Vec<_>>();
+                    let mut expected_files = affected
+                        .iter()
+                        .map(|note| note.absolute_path.clone())
+                        .collect::<BTreeSet<_>>();
+                    for note in &affected {
+                        if let Some(path) = file_reference(note)
+                            .filter(|reference| reference.managed && reference.kind == "vault")
+                            .and_then(|reference| reference.path)
+                            .filter(|path| safe_vault_relative(path))
+                        {
+                            expected_files.insert(root.join(path));
                         }
                     }
-                    let values: Vec<_> = types.into_iter().collect();
-                    output_collection(cli, &values, || values.join("\n"))
+                    let mut actual_files = Vec::new();
+                    collect_regular_files(&root.join(&key), &mut actual_files)?;
+                    let unrelated = actual_files
+                        .into_iter()
+                        .filter(|path| !expected_files.contains(path))
+                        .map(|path| {
+                            path.strip_prefix(&root)
+                                .unwrap_or(&path)
+                                .to_string_lossy()
+                                .replace('\\', "/")
+                        })
+                        .collect::<Vec<_>>();
+                    if !*yes {
+                        return success(
+                            cli,
+                            json!({"approvalRequired": unrelated.is_empty(), "blocked": !unrelated.is_empty(), "type": key, "notesToTrash": affected.iter().map(|note| &note.path).collect::<Vec<_>>(), "unrelatedFiles": unrelated }),
+                            || {
+                                if unrelated.is_empty() {
+                                    format!(
+                                        "Preview: {} notes will move to Trash. Re-run with --yes.",
+                                        affected.len()
+                                    )
+                                } else {
+                                    format!("Blocked: {} unrelated files must be moved out of the type first.", unrelated.len())
+                                }
+                            },
+                        );
+                    }
+                    if !unrelated.is_empty() {
+                        return Err(CliError::new(
+                            "type_not_empty",
+                            "the type contains unrelated files; move them before deleting the type",
+                            5,
+                        )
+                        .details(json!(unrelated)));
+                    }
+                    for note in affected {
+                        let target = format!(".trash/{}", note.path);
+                        let next = move_note_with_managed_file(&root, note, &target)?;
+                        save_history(
+                            &root,
+                            "type.delete-trash",
+                            Some(&note.path),
+                            Some(&target),
+                            Some(&note.content),
+                            Some(&next),
+                        )?;
+                    }
+                    let directory = root.join(&key);
+                    remove_empty_type_tree(&directory)?;
+                    for relative in [".zerus/properties.json", TYPE_ICONS_PATH, TYPE_VIEWS_PATH] {
+                        let path = root.join(relative);
+                        let mut document: BTreeMap<String, Value> = read_json_or_default(&path)?;
+                        document.retain(|candidate, _| {
+                            candidate != &key && !candidate.starts_with(&format!("{key}/"))
+                        });
+                        if path.exists() || !document.is_empty() {
+                            write_json(&path, &document)?;
+                        }
+                    }
+                    success(cli, json!({"type": key, "deleted": true}), || {
+                        format!("Deleted {key}; notes moved to Trash")
+                    })
                 }
                 TypeCommand::Move { selector, to } => {
                     let note = choose_note(cli, &notes, selector)?;
+                    if is_trashed_path(&note.path) {
+                        return Err(CliError::new(
+                            "note_trashed",
+                            "restore the note before moving its type",
+                            3,
+                        ));
+                    }
+                    let to = normalize_type_path(to)?;
                     let name = Path::new(&note.path)
                         .file_name()
                         .and_then(|v| v.to_str())
                         .unwrap_or("Note.md");
-                    let relative = format!("{}/{name}", to.trim_matches('/'));
-                    let destination = valid_note_destination(&root, &relative)?;
-                    fs::create_dir_all(destination.parent().unwrap())
-                        .map_err(|e| CliError::new("write_failed", e.to_string(), 5))?;
-                    fs::rename(&note.absolute_path, &destination)
-                        .map_err(|e| CliError::new("write_failed", e.to_string(), 5))?;
+                    let relative = format!("{to}/{name}");
+                    let next_content = move_note_with_managed_file(&root, note, &relative)?;
                     let entry = save_history(
                         &root,
                         "type.move",
                         Some(&note.path),
                         Some(&relative),
                         Some(&note.content),
-                        Some(&note.content),
+                        Some(&next_content),
                     )?;
                     success(
                         cli,
@@ -1609,25 +2754,181 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         || format!("Moved to {relative}"),
                     )
                 }
+                TypeCommand::Icon { command } => {
+                    let path = root.join(TYPE_ICONS_PATH);
+                    let mut icons: BTreeMap<String, String> = read_json_or_default(&path)?;
+                    match command {
+                        TypeIconCommand::Get { type_path } => {
+                            let key = normalize_type_path(type_path)?;
+                            success(cli, json!({"type": key, "icon": icons.get(&key)}), || {
+                                icons.get(&key).cloned().unwrap_or_else(|| "default".into())
+                            })
+                        }
+                        TypeIconCommand::Set { type_path, icon } => {
+                            let key = normalize_type_path(type_path)?;
+                            let icon = icon.trim();
+                            if icon.is_empty() {
+                                return Err(CliError::new(
+                                    "invalid_icon",
+                                    "icon cannot be empty",
+                                    3,
+                                ));
+                            }
+                            validate_type_icon(icon)?;
+                            icons.insert(key.clone(), icon.to_string());
+                            write_json(&path, &icons)?;
+                            success(cli, json!({"type": key, "icon": icon}), || {
+                                format!("Updated icon for {key}")
+                            })
+                        }
+                        TypeIconCommand::Unset { type_path } => {
+                            let key = normalize_type_path(type_path)?;
+                            icons.remove(&key);
+                            write_json(&path, &icons)?;
+                            success(cli, json!({"type": key, "icon": null}), || {
+                                format!("Reset icon for {key}")
+                            })
+                        }
+                    }
+                }
+                TypeCommand::View { command } => {
+                    let path = root.join(TYPE_VIEWS_PATH);
+                    let mut views: BTreeMap<String, Value> = read_json_or_default(&path)?;
+                    match command {
+                        TypeViewCommand::Get { type_path } => {
+                            let key = normalize_type_path(type_path)?;
+                            let value = views.get(&key).cloned().unwrap_or_else(|| json!({
+                                "mode": "list", "groupBy": null, "boardColumnOrder": {}, "dateProperty": null,
+                                "filters": {"sort": "updated-desc", "date": null, "showArchived": false, "typeKeys": [], "fileExtensions": [], "properties": []}
+                            }));
+                            success(cli, json!({"type": key, "view": value}), || {
+                                serde_json::to_string_pretty(&value).unwrap()
+                            })
+                        }
+                        TypeViewCommand::Set {
+                            type_path,
+                            mode,
+                            group_by,
+                            date_property,
+                            sort,
+                            show_archived,
+                        } => {
+                            let key = normalize_type_path(type_path)?;
+                            if let Some(mode) = mode.as_deref() {
+                                if !matches!(
+                                    mode,
+                                    "gallery" | "board" | "table" | "calendar" | "list"
+                                ) {
+                                    return Err(CliError::new(
+                                        "invalid_view",
+                                        "mode must be gallery, board, table, calendar, or list",
+                                        3,
+                                    ));
+                                }
+                            }
+                            if let Some(sort) = sort.as_deref() {
+                                if !matches!(
+                                    sort,
+                                    "updated-desc"
+                                        | "updated-asc"
+                                        | "created-desc"
+                                        | "created-asc"
+                                        | "title-asc"
+                                        | "title-desc"
+                                ) {
+                                    return Err(CliError::new(
+                                        "invalid_view",
+                                        "unsupported sort",
+                                        3,
+                                    ));
+                                }
+                            }
+                            let mut value = views.get(&key).cloned().unwrap_or_else(|| json!({
+                                "mode": "list", "groupBy": null, "boardColumnOrder": {}, "dateProperty": null,
+                                "filters": {"sort": "updated-desc", "date": null, "showArchived": false, "typeKeys": [], "fileExtensions": [], "properties": []}
+                            }));
+                            if let Some(mode) = mode {
+                                value["mode"] = json!(mode);
+                            }
+                            if let Some(group) = group_by {
+                                value["groupBy"] = json!(group);
+                            }
+                            if let Some(property) = date_property {
+                                value["dateProperty"] = json!(property);
+                            }
+                            if let Some(sort) = sort {
+                                value["filters"]["sort"] = json!(sort);
+                            }
+                            if let Some(show) = show_archived {
+                                value["filters"]["showArchived"] = json!(show);
+                            }
+                            views.insert(key.clone(), value.clone());
+                            write_json(&path, &views)?;
+                            success(cli, json!({"type": key, "view": value}), || {
+                                format!("Updated view for {key}")
+                            })
+                        }
+                        TypeViewCommand::Unset { type_path } => {
+                            let key = normalize_type_path(type_path)?;
+                            views.remove(&key);
+                            write_json(&path, &views)?;
+                            success(cli, json!({"type": key, "view": null}), || {
+                                format!("Reset view for {key}")
+                            })
+                        }
+                    }
+                }
             }
         }
         Command::Links { selector } => {
-            let (notes, _, _) = load_notes(cli)?;
+            let (notes, _, root) = load_notes(cli)?;
             let note = choose_note(cli, &notes, selector)?;
             let wiki = Regex::new(r"\[\[([^\]|#]+)").unwrap();
-            let outgoing: Vec<_> = wiki
+            let body_outgoing: Vec<_> = wiki
                 .captures_iter(&note.content)
                 .map(|capture| capture[1].trim().to_string())
                 .collect();
+            let schemas = load_schemas(&root)?;
+            let relation_outgoing = relation_titles(note, &schemas);
+            let outgoing = body_outgoing
+                .iter()
+                .chain(relation_outgoing.iter())
+                .cloned()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
             let needles = [
                 note.title.clone(),
                 note.path.clone(),
                 note.id.map(|id| id.to_string()).unwrap_or_default(),
             ];
-            let backlinks: Vec<_> = notes.iter().filter(|candidate| candidate.path != note.path && needles.iter().filter(|value| !value.is_empty()).any(|value| candidate.content.contains(&format!("[[{value}")))).map(|candidate| json!({"path": candidate.path, "title": candidate.title, "noteId": candidate.id})).collect();
+            let backlinks: Vec<_> = notes
+                .iter()
+                .filter(|candidate| {
+                    candidate.path != note.path && !is_trashed_path(&candidate.path)
+                })
+                .filter_map(|candidate| {
+                    let body = needles
+                        .iter()
+                        .filter(|value| !value.is_empty())
+                        .any(|value| candidate.content.contains(&format!("[[{value}")));
+                    let relation = relation_titles(candidate, &schemas)
+                        .iter()
+                        .any(|title| title.eq_ignore_ascii_case(&note.title));
+                    (body || relation).then(|| {
+                        json!({
+                            "path": candidate.path,
+                            "title": candidate.title,
+                            "noteId": candidate.id,
+                            "viaBody": body,
+                            "viaRelation": relation
+                        })
+                    })
+                })
+                .collect();
             success(
                 cli,
-                json!({"note": note.path, "outgoing": outgoing, "backlinks": backlinks}),
+                json!({"note": note.path, "outgoing": outgoing, "bodyOutgoing": body_outgoing, "relationOutgoing": relation_outgoing, "backlinks": backlinks}),
                 || {
                     format!(
                         "{} outgoing links, {} backlinks",
@@ -1646,7 +2947,8 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
             let selected: Vec<&ScannedNote> = notes
                 .iter()
                 .filter(|note| {
-                    (*include_archived || !note.archived)
+                    !is_trashed_path(&note.path)
+                        && (*include_archived || !note.archived)
                         && query.as_deref().map_or(true, |value| {
                             note.title.to_lowercase().contains(&value.to_lowercase())
                                 || note.content.to_lowercase().contains(&value.to_lowercase())
@@ -1685,6 +2987,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                 .iter()
                 .filter(|note| {
                     !note.archived
+                        && !is_trashed_path(&note.path)
                         && (note.title.to_lowercase().contains(&lowered)
                             || note.content.to_lowercase().contains(&lowered))
                 })
@@ -1917,6 +3220,696 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                                 format!("Removed {name}; existing note values were preserved")
                             }
                         },
+                    )
+                }
+            }
+        }
+        Command::Task { command } => {
+            let (root, _) = resolve_root(cli)?;
+            let notes = scan_vault(&root)
+                .map_err(|error| CliError::new("vault_unavailable", error.to_string(), 2))?;
+            let mut document = task_document(&root)?;
+            match command {
+                TaskCommand::List {
+                    completed,
+                    open,
+                    today,
+                } => {
+                    let today_value = chrono::Local::now()
+                        .date_naive()
+                        .format("%Y-%m-%d")
+                        .to_string();
+                    let values = document
+                        .tasks
+                        .iter()
+                        .filter(|task| {
+                            (!*completed || task.completed)
+                                && (!*open || !task.completed)
+                                && (!*today || task.date == today_value)
+                        })
+                        .collect::<Vec<_>>();
+                    output_collection(cli, &values, || {
+                        values
+                            .iter()
+                            .map(|task| {
+                                format!(
+                                    "{}\t{}\t{}",
+                                    if task.completed { "done" } else { "open" },
+                                    task.title,
+                                    &task.id[..task.id.len().min(8)]
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                }
+                TaskCommand::Get { selector } => {
+                    let index = choose_task_index(&document.tasks, selector)?;
+                    let task = document.tasks[index].clone();
+                    success(cli, serde_json::to_value(&task).unwrap(), || {
+                        serde_json::to_string_pretty(&task).unwrap()
+                    })
+                }
+                TaskCommand::Create {
+                    title,
+                    category,
+                    priority,
+                    date,
+                    due,
+                    linked_notes,
+                } => {
+                    let title = title.trim();
+                    if title.is_empty() {
+                        return Err(CliError::new("invalid_task", "title cannot be empty", 3));
+                    }
+                    validate_priority(priority)?;
+                    if let Some(date) = date {
+                        validate_date(date, "date")?;
+                    }
+                    if let Some(due) = due {
+                        validate_date(due, "due date")?;
+                    }
+                    let now = chrono::Utc::now();
+                    let task = TaskRecord {
+                        id: Uuid::now_v7().to_string(),
+                        title: title.into(),
+                        completed: false,
+                        category: category
+                            .as_ref()
+                            .map(|value| value.trim().to_string())
+                            .filter(|value| !value.is_empty()),
+                        priority: priority.clone(),
+                        date: date.clone().unwrap_or_else(|| {
+                            chrono::Local::now()
+                                .date_naive()
+                                .format("%Y-%m-%d")
+                                .to_string()
+                        }),
+                        due_date: due.clone(),
+                        completed_at: None,
+                        linked_note_ids: resolve_note_ids(cli, &notes, linked_notes)?,
+                        created_at: now.to_rfc3339(),
+                    };
+                    if let Some(category) = &task.category {
+                        if !document
+                            .category_options
+                            .iter()
+                            .any(|value| value.eq_ignore_ascii_case(category))
+                        {
+                            document.category_options.push(category.clone());
+                        }
+                    }
+                    document.tasks.push(task.clone());
+                    save_tasks(&root, &document)?;
+                    success(cli, serde_json::to_value(&task).unwrap(), || {
+                        format!("Created task {}", task.title)
+                    })
+                }
+                TaskCommand::Update {
+                    selector,
+                    title,
+                    category,
+                    clear_category,
+                    priority,
+                    date,
+                    due,
+                    clear_due,
+                    linked_notes,
+                    clear_links,
+                } => {
+                    let index = choose_task_index(&document.tasks, selector)?;
+                    if let Some(priority) = priority {
+                        validate_priority(priority)?;
+                    }
+                    if let Some(date) = date {
+                        validate_date(date, "date")?;
+                    }
+                    if let Some(due) = due {
+                        validate_date(due, "due date")?;
+                    }
+                    let resolved_links = if linked_notes.is_empty() {
+                        None
+                    } else {
+                        Some(resolve_note_ids(cli, &notes, linked_notes)?)
+                    };
+                    let task = &mut document.tasks[index];
+                    if let Some(title) = title {
+                        if title.trim().is_empty() {
+                            return Err(CliError::new("invalid_task", "title cannot be empty", 3));
+                        }
+                        task.title = title.trim().into();
+                    }
+                    if *clear_category {
+                        task.category = None;
+                    } else if let Some(category) = category {
+                        task.category =
+                            (!category.trim().is_empty()).then(|| category.trim().to_string());
+                    }
+                    if let Some(priority) = priority {
+                        task.priority = priority.clone();
+                    }
+                    if let Some(date) = date {
+                        task.date = date.clone();
+                    }
+                    if *clear_due {
+                        task.due_date = None;
+                    } else if let Some(due) = due {
+                        task.due_date = Some(due.clone());
+                    }
+                    if *clear_links {
+                        task.linked_note_ids.clear();
+                    } else if let Some(links) = resolved_links {
+                        task.linked_note_ids = links;
+                    }
+                    let updated = task.clone();
+                    if let Some(category) = &updated.category {
+                        if !document
+                            .category_options
+                            .iter()
+                            .any(|value| value.eq_ignore_ascii_case(category))
+                        {
+                            document.category_options.push(category.clone());
+                        }
+                    }
+                    save_tasks(&root, &document)?;
+                    success(cli, serde_json::to_value(&updated).unwrap(), || {
+                        format!("Updated task {}", updated.title)
+                    })
+                }
+                TaskCommand::Complete { selector } | TaskCommand::Reopen { selector } => {
+                    let complete = matches!(command, TaskCommand::Complete { .. });
+                    let index = choose_task_index(&document.tasks, selector)?;
+                    document.tasks[index].completed = complete;
+                    document.tasks[index].completed_at =
+                        complete.then(|| chrono::Utc::now().to_rfc3339());
+                    let updated = document.tasks[index].clone();
+                    save_tasks(&root, &document)?;
+                    success(cli, serde_json::to_value(&updated).unwrap(), || {
+                        format!(
+                            "{} {}",
+                            if complete { "Completed" } else { "Reopened" },
+                            updated.title
+                        )
+                    })
+                }
+                TaskCommand::Delete { selector, yes } => {
+                    let index = choose_task_index(&document.tasks, selector)?;
+                    let task = document.tasks[index].clone();
+                    if !yes {
+                        return success(
+                            cli,
+                            json!({"approvalRequired": true, "task": task}),
+                            || {
+                                "Preview: one task will be permanently deleted. Re-run with --yes."
+                                    .into()
+                            },
+                        );
+                    }
+                    document.tasks.remove(index);
+                    save_tasks(&root, &document)?;
+                    success(cli, json!({"deletedTaskId": task.id}), || {
+                        format!("Deleted task {}", task.title)
+                    })
+                }
+                TaskCommand::Category { command } => match command {
+                    TaskCategoryCommand::List => {
+                        output_collection(cli, &document.category_options, || {
+                            document.category_options.join("\n")
+                        })
+                    }
+                    TaskCategoryCommand::Add { name } => {
+                        let name = name.trim();
+                        if name.is_empty() {
+                            return Err(CliError::new(
+                                "invalid_category",
+                                "category cannot be empty",
+                                3,
+                            ));
+                        }
+                        if !document
+                            .category_options
+                            .iter()
+                            .any(|value| value.eq_ignore_ascii_case(name))
+                        {
+                            document.category_options.push(name.into());
+                        }
+                        save_tasks(&root, &document)?;
+                        success(cli, json!({"category": name}), || {
+                            format!("Added category {name}")
+                        })
+                    }
+                    TaskCategoryCommand::Remove { name, yes } => {
+                        let affected = document
+                            .tasks
+                            .iter()
+                            .filter(|task| {
+                                task.category
+                                    .as_deref()
+                                    .is_some_and(|value| value.eq_ignore_ascii_case(name))
+                            })
+                            .count();
+                        if !yes {
+                            return success(
+                                cli,
+                                json!({"approvalRequired": true, "category": name, "tasksToClear": affected}),
+                                || {
+                                    format!("Preview: category will be cleared from {affected} tasks. Re-run with --yes.")
+                                },
+                            );
+                        }
+                        document
+                            .category_options
+                            .retain(|value| !value.eq_ignore_ascii_case(name));
+                        for task in &mut document.tasks {
+                            if task
+                                .category
+                                .as_deref()
+                                .is_some_and(|value| value.eq_ignore_ascii_case(name))
+                            {
+                                task.category = None;
+                            }
+                        }
+                        save_tasks(&root, &document)?;
+                        success(
+                            cli,
+                            json!({"category": name, "tasksCleared": affected}),
+                            || format!("Removed category {name}"),
+                        )
+                    }
+                },
+            }
+        }
+        Command::SavedLink { command } => {
+            let (root, _) = resolve_root(cli)?;
+            let links = load_saved_links(&root)?;
+            match command {
+                SavedLinkCommand::List => {
+                    let values = links.iter().map(|link| &link.record).collect::<Vec<_>>();
+                    output_collection(cli, &values, || {
+                        values
+                            .iter()
+                            .map(|link| format!("{}\t{}", link.title, link.url))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                }
+                SavedLinkCommand::Get { selector } => {
+                    let link = choose_saved_link(&links, selector)?;
+                    success(
+                        cli,
+                        json!({"link": link.record, "content": link.content}),
+                        || link.content.clone(),
+                    )
+                }
+                SavedLinkCommand::Create { url, title } => {
+                    let url = normalize_http_url(url)?;
+                    if let Some(existing) = links.iter().find(|link| link.record.url == url) {
+                        return success(
+                            cli,
+                            serde_json::to_value(&existing.record).unwrap(),
+                            || format!("Already saved: {}", existing.record.title),
+                        );
+                    }
+                    let id = Uuid::now_v7().to_string();
+                    let title = title
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or_else(|| {
+                            url.split_once("://")
+                                .map(|(_, rest)| {
+                                    rest.split('/')
+                                        .next()
+                                        .unwrap_or(rest)
+                                        .trim_start_matches("www.")
+                                        .to_string()
+                                })
+                                .unwrap_or_else(|| "Link".into())
+                        })
+                        .replace(['\r', '\n'], " ");
+                    let mut content = format!("# {title}\n\n<{url}>\n");
+                    content =
+                        zerus_core::set_reserved_property(&content, "zerus-link-id", Some(&id))
+                            .map_err(|error| CliError::new("link_invalid", error.to_string(), 3))?;
+                    content =
+                        zerus_core::set_reserved_property(&content, "zerus-link-url", Some(&url))
+                            .map_err(|error| CliError::new("link_invalid", error.to_string(), 3))?;
+                    content = zerus_core::set_reserved_property(&content, "zerus-id", Some(&id))
+                        .map_err(|error| CliError::new("link_invalid", error.to_string(), 3))?;
+                    let path = format!("{SAVED_LINKS_DIR}/{id}.md");
+                    atomic_write(&root.join(&path), &content, None).map_err(|error| {
+                        CliError::new("link_write_failed", error.to_string(), 5)
+                    })?;
+                    let mut paths = saved_link_paths(&root)?;
+                    paths.push(path.clone());
+                    save_saved_link_paths(&root, &paths)?;
+                    let record = SavedLinkRecord {
+                        id,
+                        path,
+                        title,
+                        url,
+                    };
+                    success(cli, serde_json::to_value(&record).unwrap(), || {
+                        format!("Saved {}", record.url)
+                    })
+                }
+                SavedLinkCommand::Delete { selector, yes } => {
+                    let link = choose_saved_link(&links, selector)?;
+                    if !yes {
+                        return success(
+                            cli,
+                            json!({"approvalRequired": true, "link": link.record}),
+                            || {
+                                "Preview: one saved link will be permanently deleted. Re-run with --yes.".into()
+                            },
+                        );
+                    }
+                    fs::remove_file(&link.absolute_path).map_err(|error| {
+                        CliError::new("link_delete_failed", error.to_string(), 5)
+                    })?;
+                    let paths = saved_link_paths(&root)?
+                        .into_iter()
+                        .filter(|path| path != &link.record.path)
+                        .collect::<Vec<_>>();
+                    save_saved_link_paths(&root, &paths)?;
+                    success(cli, json!({"deletedLinkId": link.record.id}), || {
+                        format!("Deleted {}", link.record.title)
+                    })
+                }
+                SavedLinkCommand::MoveToType { selector, to } => {
+                    let link = choose_saved_link(&links, selector)?;
+                    let to = normalize_type_path(to)?;
+                    let stem = link
+                        .record
+                        .title
+                        .replace(['/', '\\', ':', '*', '?', '"', '<', '>', '|'], "");
+                    let relative = format!(
+                        "{to}/{}.md",
+                        if stem.trim().is_empty() {
+                            "Link"
+                        } else {
+                            stem.trim()
+                        }
+                    );
+                    let destination = valid_note_destination(&root, &relative)?;
+                    let mut content =
+                        zerus_core::set_reserved_property(&link.content, "zerus-link-id", None)
+                            .map_err(|error| CliError::new("link_invalid", error.to_string(), 3))?;
+                    content =
+                        zerus_core::set_reserved_property(&content, "zerus-link-url", None)
+                            .map_err(|error| CliError::new("link_invalid", error.to_string(), 3))?;
+                    atomic_write(&destination, &content, None).map_err(|error| {
+                        CliError::new("link_write_failed", error.to_string(), 5)
+                    })?;
+                    fs::remove_file(&link.absolute_path).map_err(|error| {
+                        CliError::new("link_delete_failed", error.to_string(), 5)
+                    })?;
+                    let paths = saved_link_paths(&root)?
+                        .into_iter()
+                        .filter(|path| path != &link.record.path)
+                        .collect::<Vec<_>>();
+                    save_saved_link_paths(&root, &paths)?;
+                    success(
+                        cli,
+                        json!({"noteId": link.record.id, "path": relative}),
+                        || format!("Moved link to {relative}"),
+                    )
+                }
+            }
+        }
+        Command::File { command } => {
+            let (notes, _, root) = load_notes(cli)?;
+            match command {
+                FileCommand::Get { selector } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    let reference = file_reference(note);
+                    success(cli, json!({"note": note.path, "file": reference}), || {
+                        reference
+                            .map(|value| serde_json::to_string_pretty(&value).unwrap())
+                            .unwrap_or_else(|| "No file attached".into())
+                    })
+                }
+                FileCommand::AttachCopy { selector, source } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    if is_trashed_path(&note.path) {
+                        return Err(CliError::new(
+                            "note_trashed",
+                            "restore the note before attaching a file",
+                            3,
+                        ));
+                    }
+                    if file_reference(note).is_some() {
+                        return Err(CliError::new(
+                            "file_exists",
+                            "the note already has a file attachment; detach it before attaching another",
+                            3,
+                        ));
+                    }
+                    let source = source.canonicalize().map_err(|error| {
+                        CliError::new("source_unavailable", error.to_string(), 3)
+                    })?;
+                    if !source.is_file() {
+                        return Err(CliError::new(
+                            "source_unavailable",
+                            "source must be a file",
+                            3,
+                        ));
+                    }
+                    let name = source
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .ok_or_else(|| {
+                            CliError::new("invalid_path", "source name is not UTF-8", 3)
+                        })?
+                        .to_string();
+                    let directory = Path::new(&note.path)
+                        .parent()
+                        .and_then(|value| value.to_str())
+                        .unwrap_or("");
+                    let target_relative = unique_document_path(&root, directory, &name, "");
+                    let target = root.join(&target_relative);
+                    fs::copy(&source, &target)
+                        .map_err(|error| CliError::new("file_copy_failed", error.to_string(), 5))?;
+                    let id = Uuid::now_v7().to_string();
+                    let mut next = note.content.clone();
+                    for (key, value) in [
+                        ("zerus-file-id", Some(id.as_str())),
+                        ("zerus-file-name", Some(name.as_str())),
+                        ("zerus-file-kind", Some("vault")),
+                        ("zerus-file-path", Some(target_relative.as_str())),
+                        ("zerus-file-location", None),
+                        ("zerus-file-managed", Some("true")),
+                    ] {
+                        next = zerus_core::set_reserved_property(&next, key, value)
+                            .map_err(|error| CliError::new("note_invalid", error.to_string(), 3))?;
+                    }
+                    let entry = match write_note(
+                        &root,
+                        note,
+                        "file.attach-copy",
+                        &next,
+                        Some(&note.revision),
+                    ) {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            let _ = fs::remove_file(&target);
+                            return Err(error);
+                        }
+                    };
+                    success(
+                        cli,
+                        json!({"note": note.path, "file": file_reference_from_content(&next), "transactionId": entry.transaction_id}),
+                        || format!("Attached {name}"),
+                    )
+                }
+                FileCommand::Detach {
+                    selector,
+                    delete_managed,
+                    yes,
+                } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    let reference = file_reference(note).ok_or_else(|| {
+                        CliError::new("file_not_found", "the note has no file attachment", 3)
+                    })?;
+                    if *delete_managed && !yes {
+                        return success(
+                            cli,
+                            json!({"approvalRequired": true, "file": reference}),
+                            || {
+                                "Preview: the managed vault copy will be permanently deleted. Re-run with --yes.".into()
+                            },
+                        );
+                    }
+                    let mut next = note.content.clone();
+                    for key in [
+                        "zerus-file-id",
+                        "zerus-file-name",
+                        "zerus-file-kind",
+                        "zerus-file-path",
+                        "zerus-file-location",
+                        "zerus-file-managed",
+                    ] {
+                        next = zerus_core::set_reserved_property(&next, key, None)
+                            .map_err(|error| CliError::new("note_invalid", error.to_string(), 3))?;
+                    }
+                    let entry =
+                        write_note(&root, note, "file.detach", &next, Some(&note.revision))?;
+                    if *delete_managed && reference.managed && reference.kind == "vault" {
+                        if let Some(path) = reference.path.filter(|path| safe_vault_relative(path))
+                        {
+                            if root.join(&path).exists() {
+                                fs::remove_file(root.join(&path)).map_err(|error| {
+                                    CliError::new("file_delete_failed", error.to_string(), 5)
+                                })?;
+                            }
+                        }
+                    }
+                    success(
+                        cli,
+                        json!({"note": note.path, "detached": true, "transactionId": entry.transaction_id}),
+                        || format!("Detached file from {}", note.title),
+                    )
+                }
+            }
+        }
+        Command::Attachment { command } => {
+            let (notes, _, root) = load_notes(cli)?;
+            match command {
+                AttachmentCommand::List { selector } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    let values = attachment_records(note);
+                    output_collection(cli, &values, || {
+                        values
+                            .iter()
+                            .map(|attachment| format!("{}\t{}", attachment.name, attachment.id))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    })
+                }
+                AttachmentCommand::AddCopy { selector, source } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    if is_trashed_path(&note.path) {
+                        return Err(CliError::new(
+                            "note_trashed",
+                            "restore the note before adding attachments",
+                            3,
+                        ));
+                    }
+                    let note_id = note
+                        .id
+                        .ok_or_else(|| {
+                            CliError::new("note_missing_id", "the note requires a zerus-id", 3)
+                        })?
+                        .to_string();
+                    let source = source.canonicalize().map_err(|error| {
+                        CliError::new("source_unavailable", error.to_string(), 3)
+                    })?;
+                    if !source.is_file() {
+                        return Err(CliError::new(
+                            "source_unavailable",
+                            "source must be a file",
+                            3,
+                        ));
+                    }
+                    let name = source
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .ok_or_else(|| {
+                            CliError::new("invalid_path", "source name is not UTF-8", 3)
+                        })?
+                        .to_string();
+                    let directory = format!(".zerus/attachments/{note_id}");
+                    fs::create_dir_all(root.join(&directory)).map_err(|error| {
+                        CliError::new("attachment_write_failed", error.to_string(), 5)
+                    })?;
+                    let target_relative = unique_document_path(&root, &directory, &name, "");
+                    fs::copy(&source, root.join(&target_relative)).map_err(|error| {
+                        CliError::new("attachment_write_failed", error.to_string(), 5)
+                    })?;
+                    let attachment = AttachmentRecord {
+                        id: Uuid::now_v7().to_string(),
+                        name,
+                        kind: "vault".into(),
+                        path: Some(target_relative),
+                        managed: true,
+                    };
+                    let mut attachments = attachment_records(note);
+                    attachments.push(attachment.clone());
+                    let next = set_attachment_records(&note.content, &attachments)?;
+                    let entry = match write_note(
+                        &root,
+                        note,
+                        "attachment.add-copy",
+                        &next,
+                        Some(&note.revision),
+                    ) {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            if let Some(path) = attachment.path.as_deref() {
+                                let _ = fs::remove_file(root.join(path));
+                            }
+                            return Err(error);
+                        }
+                    };
+                    success(
+                        cli,
+                        json!({"attachment": attachment, "markdown": format!("[{}](zerus-attachment:{})", attachment.name, attachment.id), "transactionId": entry.transaction_id}),
+                        || format!("Attached {}", attachment.name),
+                    )
+                }
+                AttachmentCommand::Remove {
+                    selector,
+                    attachment_id,
+                    delete_managed,
+                    yes,
+                } => {
+                    let note = choose_note(cli, &notes, selector)?;
+                    let mut attachments = attachment_records(note);
+                    let index = attachments
+                        .iter()
+                        .position(|attachment| attachment.id.starts_with(attachment_id))
+                        .ok_or_else(|| {
+                            CliError::new(
+                                "attachment_not_found",
+                                "no attachment matches that ID",
+                                3,
+                            )
+                        })?;
+                    let attachment = attachments[index].clone();
+                    if *delete_managed && !yes {
+                        return success(
+                            cli,
+                            json!({"approvalRequired": true, "attachment": attachment}),
+                            || {
+                                "Preview: the managed vault copy will be permanently deleted. Re-run with --yes.".into()
+                            },
+                        );
+                    }
+                    attachments.remove(index);
+                    let next = set_attachment_records(&note.content, &attachments)?;
+                    let entry = write_note(
+                        &root,
+                        note,
+                        "attachment.remove",
+                        &next,
+                        Some(&note.revision),
+                    )?;
+                    if *delete_managed && attachment.managed && attachment.kind == "vault" {
+                        if let Some(path) = attachment
+                            .path
+                            .as_deref()
+                            .filter(|path| safe_vault_relative(path))
+                        {
+                            if root.join(path).exists() {
+                                fs::remove_file(root.join(path)).map_err(|error| {
+                                    CliError::new("attachment_delete_failed", error.to_string(), 5)
+                                })?;
+                            }
+                        }
+                    }
+                    success(
+                        cli,
+                        json!({"removedAttachmentId": attachment.id, "transactionId": entry.transaction_id}),
+                        || format!("Removed {}", attachment.name),
                     )
                 }
             }

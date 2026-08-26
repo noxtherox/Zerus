@@ -9,7 +9,7 @@ vi.mock("@/store/notes-store", () => ({
   getVaultBackend: () => backend,
 }));
 
-import { deleteTask, loadTasks } from "./tasks-store";
+import { createTask, deleteTask, loadTasks, refreshTasks } from "./tasks-store";
 
 describe("tasks store", () => {
   beforeEach(() => {
@@ -58,5 +58,70 @@ describe("tasks store", () => {
       categoryOptions: ["Work"],
       tasks: [expect.objectContaining({ id: "keep-me", linkedNoteIds: ["note-1"] })],
     });
+  });
+
+  it("refreshes task changes that arrive through the open vault", async () => {
+    backend.readText
+      .mockResolvedValueOnce(JSON.stringify({ tasks: [], categoryOptions: [] }))
+      .mockResolvedValueOnce(JSON.stringify({
+        categoryOptions: ["Synced"],
+        tasks: [{
+          id: "from-another-device",
+          title: "Synced task",
+          completed: false,
+          category: "Synced",
+          priority: "none",
+          date: "2026-08-26",
+          dueDate: null,
+          completedAt: null,
+          linkedNoteIds: [],
+          createdAt: "2026-08-26T10:00:00.000Z",
+        }],
+      }));
+
+    await loadTasks("/test-vault");
+    await refreshTasks();
+    deleteTask("from-another-device");
+
+    await vi.waitFor(() => expect(backend.write).toHaveBeenCalledOnce());
+    expect(JSON.parse(backend.write.mock.calls[0][1])).toEqual({
+      categoryOptions: ["Synced"],
+      tasks: [],
+    });
+  });
+
+  it("does not replace a newer local edit with a stale refresh", async () => {
+    let resolveRefresh!: (value: string) => void;
+    backend.readText
+      .mockResolvedValueOnce(JSON.stringify({ tasks: [], categoryOptions: [] }))
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveRefresh = resolve; }));
+
+    await loadTasks("/test-vault");
+    const refresh = refreshTasks();
+    await vi.waitFor(() => expect(backend.readText).toHaveBeenCalledTimes(2));
+    const localTask = createTask("Keep local edit");
+    await vi.waitFor(() => expect(backend.write).toHaveBeenCalledOnce());
+    backend.write.mockClear();
+
+    resolveRefresh(JSON.stringify({
+      tasks: [{
+        id: "stale-task",
+        title: "Stale task",
+        completed: false,
+        category: null,
+        priority: "none",
+        date: "2026-08-26",
+        dueDate: null,
+        completedAt: null,
+        linkedNoteIds: [],
+        createdAt: "2026-08-26T09:00:00.000Z",
+      }],
+      categoryOptions: [],
+    }));
+    await refresh;
+    deleteTask(localTask!.id);
+
+    await vi.waitFor(() => expect(backend.write).toHaveBeenCalledOnce());
+    expect(JSON.parse(backend.write.mock.calls[0][1]).tasks).toEqual([]);
   });
 });

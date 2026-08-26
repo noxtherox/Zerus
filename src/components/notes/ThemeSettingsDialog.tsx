@@ -140,7 +140,23 @@ interface CliStatus {
   executablePath: string;
   onPath: boolean;
   version: string;
+  installedVersion: string | null;
+  updateAvailable: boolean;
 }
+
+interface SkillInstallStatus {
+  agent: string;
+  path: string;
+  installed: boolean;
+  version: string;
+  updateAvailable: boolean;
+}
+
+const SKILL_AGENTS = [
+  { label: "Codex / Agent Skills", value: "codex" },
+  { label: "Claude", value: "claude" },
+  { label: "Hermes", value: "hermes" },
+] as const;
 
 interface MigrationPreview {
   notesScanned: number;
@@ -176,6 +192,7 @@ export function ThemeSettingsDialog({
     useState<NoteAlignment>(loadNoteAlignment);
   const [locationDraft, setLocationDraft] = useState("");
   const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
+  const [skillStatuses, setSkillStatuses] = useState<Record<string, SkillInstallStatus>>({});
   const [migrationPreview, setMigrationPreview] =
     useState<MigrationPreview | null>(null);
   const [cliBusy, setCliBusy] = useState(false);
@@ -199,6 +216,10 @@ export function ThemeSettingsDialog({
       setNoteAlignment(loadNoteAlignment());
       if (isDesktop) {
         void invoke<CliStatus>("cli_status").then(setCliStatus);
+        void Promise.all(SKILL_AGENTS.map(async ({ value }) => [
+          value,
+          await invoke<SkillInstallStatus>("cli_skill_status", { agent: value, profile: null }),
+        ] as const)).then((entries) => setSkillStatuses(Object.fromEntries(entries)));
         if (location) {
           const pinnedPaths = notes.filter((note) => note.pinned).map((note) => note.path);
           const archivedPaths = notes.filter((note) => note.archived).map((note) => note.path);
@@ -367,12 +388,16 @@ export function ThemeSettingsDialog({
                             }
                           }}
                         >
-                          {cliStatus?.installed ? "Reinstall CLI" : "Install CLI"}
+                          {cliStatus?.updateAvailable
+                            ? "Update CLI"
+                            : cliStatus?.installed
+                              ? "Reinstall CLI"
+                              : "Install CLI"}
                         </Button>
                       </div>
                       {cliStatus?.installed && (
                         <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                          <CheckCircle2 size={13} className="text-green-600" /> Installed at {cliStatus.executablePath}{!cliStatus.onPath && " · Add its folder to PATH to use zerus anywhere."}
+                          <CheckCircle2 size={13} className="text-green-600" /> Installed {cliStatus.installedVersion ? `v${cliStatus.installedVersion}` : "(version unknown)"} at {cliStatus.executablePath}{cliStatus.updateAvailable && ` · v${cliStatus.version} is ready to install.`}{!cliStatus.onPath && " · Add its folder to PATH to use zerus anywhere."}
                         </p>
                       )}
                     </div>
@@ -385,7 +410,7 @@ export function ThemeSettingsDialog({
                       <p className="text-sm font-medium">AI agent skills</p>
                       <p className="mt-1 text-xs text-muted-foreground">Install instructions that teach an agent to use Zerus safely and consistently.</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {["Claude", "Codex", "Hermes"].map((agent) => (
+                        {SKILL_AGENTS.map(({ label, value: agent }) => (
                           <Button
                             key={agent}
                             size="sm"
@@ -394,8 +419,10 @@ export function ThemeSettingsDialog({
                             onClick={async () => {
                               setCliBusy(true);
                               try {
-                                const path = await invoke<string>("cli_install_skill", { agent: agent.toLowerCase().replace(" ", "-"), profile: null });
-                                setCliMessage(`${agent} skill installed at ${path}`);
+                                const path = await invoke<string>("cli_install_skill", { agent, profile: null });
+                                const status = await invoke<SkillInstallStatus>("cli_skill_status", { agent, profile: null });
+                                setSkillStatuses((current) => ({ ...current, [agent]: status }));
+                                setCliMessage(`${label} skill v${status.version} installed at ${path}`);
                                 setCliMessageKind("success");
                               } catch (error) {
                                 setCliMessage(String(error));
@@ -405,7 +432,11 @@ export function ThemeSettingsDialog({
                               }
                             }}
                           >
-                            Install for {agent}
+                            {skillStatuses[agent]?.updateAvailable
+                              ? `Update ${label}`
+                              : skillStatuses[agent]?.installed
+                                ? `Reinstall ${label}`
+                                : `Install for ${label}`}
                           </Button>
                         ))}
                       </div>

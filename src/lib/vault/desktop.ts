@@ -16,6 +16,15 @@ import type { VaultBackend, VaultFile } from "./backend";
 
 const STARTUP_READ_CONCURRENCY = 32;
 
+/**
+ * Cloud and Windows copy operations can rename a duplicate `.zerus` metadata
+ * directory to `(1).zerus` (or `.zerus (1)`). These directories are still
+ * internal metadata and must never become note types.
+ */
+function isInternalMetadataDirectory(name: string): boolean {
+  return /^(?:\.zerus(?: \(\d+\))?|\(\d+\)\.zerus)$/i.test(name);
+}
+
 interface VaultDiscovery {
   notePaths: string[];
   typeDirs: string[];
@@ -89,7 +98,13 @@ export class DesktopVault implements VaultBackend {
           const relPath = relDir ? `${relDir}/${entry.name}` : entry.name;
           if (entry.isDirectory) {
             const isTrashRoot = relPath === TRASH_DIR;
-            if (entry.name.startsWith(".") && !isTrashRoot) return;
+            if (
+              (entry.name.startsWith(".") ||
+                isInternalMetadataDirectory(entry.name)) &&
+              !isTrashRoot
+            ) {
+              return;
+            }
             if (!relPath.startsWith(`${TRASH_DIR}/`) && !isTrashRoot) {
               const typeDepth = relPath.split("/").length;
               if (typeDepth <= MAX_TYPE_DEPTH) typeDirs.push(relPath);

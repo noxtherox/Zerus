@@ -21,7 +21,13 @@ struct CliInstallStatus {
     executable_path: String,
     on_path: bool,
     version: String,
+    installed_version: Option<String>,
+    update_available: bool,
 }
+
+const BUNDLED_CLI_VERSION: &str = "0.2.0";
+const ZERUS_SKILL_VERSION: &str = "2";
+const ZERUS_SKILL_MARKDOWN: &str = include_str!("../skills/zerus-skill.md");
 
 fn cli_target_path() -> Result<std::path::PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Could not locate your home folder".to_string())?;
@@ -33,12 +39,14 @@ fn cli_target_path() -> Result<std::path::PathBuf, String> {
 }
 
 fn path_contains_file(path: &Path) -> bool {
+    let target = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     std::env::var_os("PATH")
         .map(|paths| {
             std::env::split_paths(&paths).any(|directory| {
                 directory
                     .join(path.file_name().unwrap_or_default())
-                    .exists()
+                    .canonicalize()
+                    .is_ok_and(|candidate| candidate == target)
             })
         })
         .unwrap_or(false)
@@ -47,11 +55,26 @@ fn path_contains_file(path: &Path) -> bool {
 #[tauri::command]
 fn cli_status() -> Result<CliInstallStatus, String> {
     let path = cli_target_path()?;
+    let installed_version = path
+        .is_file()
+        .then(|| {
+            Command::new(&path)
+                .arg("--version")
+                .output()
+                .ok()
+                .filter(|output| output.status.success())
+                .and_then(|output| String::from_utf8(output.stdout).ok())
+                .and_then(|output| output.split_whitespace().last().map(ToString::to_string))
+        })
+        .flatten();
     Ok(CliInstallStatus {
         installed: path.is_file(),
         on_path: path_contains_file(&path),
         executable_path: path.to_string_lossy().into_owned(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
+        version: BUNDLED_CLI_VERSION.to_string(),
+        update_available: path.is_file()
+            && installed_version.as_deref() != Some(BUNDLED_CLI_VERSION),
+        installed_version,
     })
 }
 
@@ -166,48 +189,59 @@ fn cli_register_vault(vault_path: String) -> Result<zerus_core::VaultRecord, Str
     Ok(record)
 }
 
-fn skill_markdown(agent: &str) -> String {
-    format!(
-        r#"---
-name: zerus
-description: Work safely with the user's local Zerus Markdown vault through the Zerus CLI.
----
-
-# Zerus CLI
-
-Use `zerus` for Zerus vault notes. Always select the vault explicitly with `--vault` in automation and use `--json` for machine-readable output.
-
-Start with `zerus vault list --json` and `zerus doctor --json`. Read with `note list`, `note get`, and `search`. Mutate with `note create`, `note set-body`, `note append`, `note pin`, `note archive`, `note property set`, `note trash`, `note restore`, and `import`. Include `--if-revision` when changing content read earlier. Preview `migrate` before applying it. Use `history` and `undo` for recovery. Never edit `zerus-*` properties directly.
-
-Manage property definitions with `schema list|add|remove`; do not hand-edit `.zerus/properties.json`. Schema type paths are exact and inherit into sub-types. Create relations with `schema add TYPE_PATH NAME relation --relation-type TARGET_TYPE [--multiple]`. Create lists with `schema add TYPE_PATH NAME list --options A,B,C [--multiple]`.
-
-For destructive or bulk operations, explain the preview and obtain explicit user approval. This package targets {agent}.
-"#
-    )
+fn skill_markdown() -> &'static str {
+    ZERUS_SKILL_MARKDOWN
 }
 
-#[tauri::command]
-fn cli_install_skill(agent: String, profile: Option<String>) -> Result<String, String> {
+fn cli_skill_directory(agent: &str, profile: Option<&str>) -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Could not locate your home folder".to_string())?;
-    let normalized = agent.to_ascii_lowercase();
-    let directory = match normalized.as_str() {
-        "codex" | "agent-skills" => home.join(".agents/skills/zerus"),
-        "claude" => home.join(".claude/skills/zerus"),
-        "hermes" => profile
+    match agent {
+        "codex" | "agent-skills" => Ok(home.join(".agents/skills/zerus")),
+        "claude" => Ok(home.join(".claude/skills/zerus")),
+        "hermes" => Ok(profile
             .filter(|value| !value.trim().is_empty())
             .map(|value| {
                 home.join(".hermes/profiles")
                     .join(value)
                     .join("skills/note-taking/zerus")
             })
-            .unwrap_or_else(|| home.join(".hermes/skills/note-taking/zerus")),
-        _ => {
-            return Err("Supported agents are Codex, Claude, Agent Skills, and Hermes".to_string())
-        }
-    };
+            .unwrap_or_else(|| home.join(".hermes/skills/note-taking/zerus"))),
+        _ => Err("Supported agents are Codex, Claude, Agent Skills, and Hermes".to_string()),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillInstallStatus {
+    agent: String,
+    path: String,
+    installed: bool,
+    version: String,
+    update_available: bool,
+}
+
+#[tauri::command]
+fn cli_skill_status(agent: String, profile: Option<String>) -> Result<SkillInstallStatus, String> {
+    let normalized = agent.to_ascii_lowercase();
+    let directory = cli_skill_directory(&normalized, profile.as_deref())?;
+    let path = directory.join("SKILL.md");
+    let installed = path.is_file();
+    let current = fs::read_to_string(&path).ok();
+    Ok(SkillInstallStatus {
+        agent: normalized,
+        path: directory.to_string_lossy().into_owned(),
+        installed,
+        version: ZERUS_SKILL_VERSION.to_string(),
+        update_available: installed && current.as_deref() != Some(skill_markdown()),
+    })
+}
+
+#[tauri::command]
+fn cli_install_skill(agent: String, profile: Option<String>) -> Result<String, String> {
+    let normalized = agent.to_ascii_lowercase();
+    let directory = cli_skill_directory(&normalized, profile.as_deref())?;
     fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
-    fs::write(directory.join("SKILL.md"), skill_markdown(&normalized))
-        .map_err(|error| error.to_string())?;
+    fs::write(directory.join("SKILL.md"), skill_markdown()).map_err(|error| error.to_string())?;
     Ok(directory.to_string_lossy().into_owned())
 }
 
@@ -223,7 +257,7 @@ fn cli_export_skill(path: String) -> Result<String, String> {
     } else {
         std::path::PathBuf::from(format!("{}.md", selected_path.to_string_lossy()))
     };
-    fs::write(&target, skill_markdown("other agents"))
+    fs::write(&target, skill_markdown())
         .map_err(|error| format!("Could not save the Zerus skill: {error}"))?;
     Ok(target.to_string_lossy().into_owned())
 }
@@ -2064,6 +2098,7 @@ pub fn run() {
             cli_install,
             cli_register_vault,
             cli_install_skill,
+            cli_skill_status,
             cli_export_skill,
             cli_migration_preview,
             cli_migration_apply
@@ -2121,11 +2156,12 @@ mod tests {
         ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_export_skill,
         cloud_ai_keyring_account, cloud_ai_request_body, codex_ai_prompt,
         codex_thread_start_params, codex_turn_input, copy_file_into_vault, desktop_open_paths,
-        normalized_cloud_ai_base_url, remove_legacy_model_directory, sync_opened_vault_record,
-        write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage, CloudAiProvider,
+        normalized_cloud_ai_base_url, remove_legacy_model_directory, skill_markdown,
+        sync_opened_vault_record, write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage,
+        CloudAiProvider, BUNDLED_CLI_VERSION, ZERUS_SKILL_VERSION,
     };
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_root(name: &str) -> PathBuf {
@@ -2602,8 +2638,19 @@ mod tests {
         assert_eq!(PathBuf::from(saved), expected);
         let contents = fs::read_to_string(&expected).expect("read exported skill");
         assert!(contents.contains("name: zerus"));
-        assert!(contents.contains("Never edit `zerus-*` properties directly."));
+        assert!(contents.contains("metadata:\n  version: \"2\""));
+        assert!(contents.contains("Pass `--vault NAME_OR_PATH --json --no-input`"));
 
         fs::remove_dir_all(root).expect("remove export folder");
+    }
+
+    #[test]
+    fn bundled_cli_and_skill_versions_match_their_sources() {
+        let cli_manifest = fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/zerus-cli/Cargo.toml"),
+        )
+        .expect("read CLI manifest");
+        assert!(cli_manifest.contains(&format!("version = \"{BUNDLED_CLI_VERSION}\"")));
+        assert!(skill_markdown().contains(&format!("  version: \"{ZERUS_SKILL_VERSION}\"")));
     }
 }

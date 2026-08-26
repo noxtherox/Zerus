@@ -34,6 +34,7 @@ import {
   initStore,
   moveExternalNoteToVault,
   moveSavedLinkToVault,
+  onDesktopVaultChanged,
   onDesktopNotesOpened,
   openExternalNotes,
   prioritizeNoteLoad,
@@ -47,6 +48,7 @@ import {
   deleteTask,
   deleteTaskCategory,
   loadTasks,
+  refreshTasks,
   updateTaskCategoryOptions,
   updateTask,
   useTaskCategoryOptions,
@@ -187,17 +189,22 @@ const Index = () => {
   }, [vault.location]);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = async () => {
       if (document.visibilityState !== "visible") return;
-      void refreshVaultFromDisk();
+      await Promise.all([refreshVaultFromDisk(), refreshTasks()]);
     };
-    window.addEventListener("focus", refresh);
-    document.addEventListener("visibilitychange", refresh);
+    const handleRefresh = () => void refresh();
+    window.addEventListener("focus", handleRefresh);
+    document.addEventListener("visibilitychange", handleRefresh);
+    const stopTaskFileSync = onDesktopVaultChanged(() => {
+      if (document.visibilityState === "visible") void refreshTasks();
+    });
     return () => {
-      window.removeEventListener("focus", refresh);
-      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", handleRefresh);
+      document.removeEventListener("visibilitychange", handleRefresh);
+      stopTaskFileSync();
     };
-  }, []);
+  }, [vault.isDesktop, vault.location]);
 
   const { notes } = vault;
   const navigate = (entry: AppNavigationEntry) => {

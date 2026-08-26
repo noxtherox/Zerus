@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   onCloseRequested: vi.fn().mockResolvedValue(() => {}),
   destroyWindow: vi.fn(),
   listen: vi.fn().mockResolvedValue(() => {}),
+  watch: vi.fn().mockResolvedValue(() => {}),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -81,6 +82,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
       const info = await fs.stat(path);
       return { mtime: info.mtime };
     },
+    watch: mocks.watch,
     writeFile: (path: string, bytes: Uint8Array) => fs.writeFile(path, bytes),
     writeTextFile: (
       path: string,
@@ -278,6 +280,15 @@ describe("external note store workflow", () => {
   it("shows the cached note index before the first disk read finishes", () => {
     expect(startupSnapshotContent).toContain("Later from cache");
     expect(startupSnapshotContent).toContain("Still waiting for its disk read.");
+  });
+
+  it("watches the desktop vault recursively instead of polling it every second", async () => {
+    await waitFor(() => mocks.watch.mock.calls.length > 0);
+    expect(mocks.watch).toHaveBeenCalledWith(
+      vault,
+      expect.any(Function),
+      { recursive: true, delayMs: 500 },
+    );
   });
 
   it("opens, edits, reveals, closes, and moves files from different folders", async () => {

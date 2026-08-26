@@ -9,7 +9,10 @@ import {
   readTextFile,
   remove as removeFsFile,
   stat,
+  watch,
   writeTextFile,
+  type UnwatchFn,
+  type WatchEvent,
 } from "@tauri-apps/plugin-fs";
 import {
   DEFAULT_TYPE,
@@ -250,7 +253,12 @@ let closingAfterFlush = false;
 let desktopOpenHookInstalled = false;
 let desktopOpenDrain: Promise<void> | null = null;
 let desktopSyncTimer: ReturnType<typeof setInterval> | null = null;
+let desktopSyncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopSyncInFlight = false;
+let desktopSyncRequested = false;
+let desktopWatchGeneration = 0;
+let stopDesktopWatch: UnwatchFn | null = null;
+const desktopVaultChangeListeners = new Set<() => void>();
 let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
@@ -928,6 +936,7 @@ async function loadVault(nextBackend: VaultBackend) {
     kind: nextBackend.kind,
     location: nextBackend.location,
   });
+  stopWatchingDesktopVault();
   backend = nextBackend;
   mobileNoteEntries = [];
   mobileNoteLoad = null;
@@ -1158,6 +1167,7 @@ async function loadVault(nextBackend: VaultBackend) {
       );
     }
     if (nextBackend.kind === "desktop") {
+      void watchDesktopVault(nextBackend.location);
       saveStartupCache(
         nextBackend.location,
         vaultNotes,
@@ -1385,13 +1395,107 @@ export async function refreshVaultFromDisk() {
   await synchronizeDesktopFiles();
 }
 
+/** Notifies stores with files outside the note index when the vault changes. */
+export function onDesktopVaultChanged(listener: () => void): () => void {
+  desktopVaultChangeListeners.add(listener);
+  return () => desktopVaultChangeListeners.delete(listener);
+}
+
 function relativePathKey(path: string): string {
   return normalizeFsPath(path);
 }
 
+const DESKTOP_SYNC_FALLBACK_MS = 60_000;
+const DESKTOP_SYNC_DEBOUNCE_MS = 250;
+const DESKTOP_WATCH_DEBOUNCE_MS = 500;
+
+function notifyDesktopVaultChanged() {
+  for (const listener of desktopVaultChangeListeners) listener();
+}
+
+function desktopWatchEventIsRelevant(event: WatchEvent): boolean {
+  if (typeof event.type === "object" && "access" in event.type) return false;
+  return event.paths.some((path) => {
+    const normalized = path.replace(/\\/g, "/").toLowerCase();
+    const metadataIndex = normalized.lastIndexOf("/.zerus/");
+    if (metadataIndex < 0) return true;
+    const metadataPath = normalized.slice(metadataIndex + "/.zerus/".length);
+    return (
+      metadataPath === "tasks.json" ||
+      metadataPath === "file-locations.json"
+    );
+  });
+}
+
+function requestDesktopFileSync() {
+  if (
+    document.visibilityState !== "visible" ||
+    state.status !== "ready" ||
+    backend?.kind !== "desktop"
+  ) {
+    return;
+  }
+  if (desktopSyncDebounceTimer) clearTimeout(desktopSyncDebounceTimer);
+  desktopSyncDebounceTimer = setTimeout(() => {
+    desktopSyncDebounceTimer = null;
+    notifyDesktopVaultChanged();
+    if (desktopSyncInFlight) {
+      desktopSyncRequested = true;
+      return;
+    }
+    void synchronizeDesktopFiles();
+  }, DESKTOP_SYNC_DEBOUNCE_MS);
+}
+
+function stopWatchingDesktopVault() {
+  desktopWatchGeneration += 1;
+  stopDesktopWatch?.();
+  stopDesktopWatch = null;
+}
+
+async function watchDesktopVault(location: string) {
+  if (backend?.kind !== "desktop" || backend.location !== location) return;
+  const generation = ++desktopWatchGeneration;
+  stopDesktopWatch?.();
+  stopDesktopWatch = null;
+  try {
+    const unwatch = await watch(
+      location,
+      (event) => {
+        if (
+          generation === desktopWatchGeneration &&
+          backend?.kind === "desktop" &&
+          backend.location === location &&
+          desktopWatchEventIsRelevant(event)
+        ) {
+          requestDesktopFileSync();
+        }
+      },
+      { recursive: true, delayMs: DESKTOP_WATCH_DEBOUNCE_MS },
+    );
+    if (
+      generation !== desktopWatchGeneration ||
+      backend?.kind !== "desktop" ||
+      backend.location !== location
+    ) {
+      unwatch();
+      return;
+    }
+    stopDesktopWatch = unwatch;
+  } catch (error) {
+    console.warn(
+      "Zerus: native vault watcher unavailable; using fallback sync",
+      error,
+    );
+  }
+}
+
 function installDesktopFileSync() {
   if (desktopSyncTimer) return;
-  desktopSyncTimer = setInterval(() => void synchronizeDesktopFiles(), 1_000);
+  desktopSyncTimer = setInterval(
+    requestDesktopFileSync,
+    DESKTOP_SYNC_FALLBACK_MS,
+  );
 }
 
 interface DesktopSyncBasisEntry {
@@ -1436,6 +1540,7 @@ export async function synchronizeDesktopFiles() {
   ) {
     return;
   }
+  desktopSyncRequested = false;
   desktopSyncInFlight = true;
   const activeBackend = backend;
   const syncBasis = captureDesktopSyncBasis();
@@ -1660,6 +1765,10 @@ export async function synchronizeDesktopFiles() {
     console.error("Zerus: failed to synchronize files", error);
   } finally {
     desktopSyncInFlight = false;
+    if (desktopSyncRequested) {
+      desktopSyncRequested = false;
+      void synchronizeDesktopFiles();
+    }
   }
 }
 

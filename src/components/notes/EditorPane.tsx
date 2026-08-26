@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Copy,
+  Download,
   Ellipsis,
   FileSearch,
   FileUp,
@@ -58,6 +59,7 @@ import {
 import { MarkdownEditor } from "@/components/editor/MdxMarkdownEditor";
 import { FileHubPanel, type FileHubPreviewType } from "./FileHubPanel";
 import { HtmlPreviewDialog } from "./HtmlPreviewDialog";
+import { NoteExportDialog } from "./NoteExportDialog";
 import { LinkHubPanel } from "./LinkHubPanel";
 import {
   ResizableHandle,
@@ -328,6 +330,7 @@ export function EditorPane({
     approvalExpired: boolean;
   } | null>(null);
   const [htmlPreviewDialogOpen, setHtmlPreviewDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const activeFileHub = note ? getFileHubReference(note) : null;
   const activeFileHubId = activeFileHub?.id ?? null;
   const activeFileHubName = activeFileHub?.name ?? null;
@@ -870,6 +873,12 @@ export function EditorPane({
                   <FolderSearch className="mr-2" size={14} />
                   Reveal in {fileManagerName}
                 </DropdownMenuItem>
+                {!trashed && (
+                  <DropdownMenuItem onSelect={() => setExportDialogOpen(true)}>
+                    <Download className="mr-2" size={14} />
+                    Export…
+                  </DropdownMenuItem>
+                )}
                 {fileHub && (
                   <>
                     <DropdownMenuSeparator />
@@ -1177,6 +1186,11 @@ export function EditorPane({
           )}
         />
       )}
+      <NoteExportDialog
+        note={note}
+        open={exportDialogOpen}
+        onOpenChange={setExportDialogOpen}
+      />
       <Dialog
         open={pendingAttachPath !== null}
         onOpenChange={(open) => !open && setPendingAttachPath(null)}
