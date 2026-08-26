@@ -35,6 +35,29 @@ describe("MDX Markdown compatibility", () => {
   });
 
   it.each([
+    ["Path: {/Users/example}", "Path: \\{/Users/example\\}"],
+    ["Template: {name}", "Template: \\{name\\}"],
+    ["Empty braces: {}", "Empty braces: \\{\\}"],
+    ["Only an opening { brace", "Only an opening \\{ brace"],
+  ])("shields literal braces that MDX treats as expressions: %s", (source, expected) => {
+    expect(prepareMarkdownForMdxEditor(source)).toBe(expected);
+  });
+
+  it.each([
+    "already \\{escaped\\}",
+    "inline `{name}` code",
+    "```txt\n{/Users/example}\n```",
+    "~~~txt\n{name}\n~~~",
+  ])("leaves escaped or verbatim braces unchanged: %s", (source) => {
+    expect(prepareMarkdownForMdxEditor(source)).toBe(source);
+  });
+
+  it("shields braces idempotently", () => {
+    const once = prepareMarkdownForMdxEditor("Path: {/Users/example}");
+    expect(prepareMarkdownForMdxEditor(once)).toBe(once);
+  });
+
+  it.each([
     ["First<br>Second", "First<br />Second"],
     ["First<BR >Second", "First<br />Second"],
     ["| First<br>Second | Other |", "| First<br />Second | Other |"],

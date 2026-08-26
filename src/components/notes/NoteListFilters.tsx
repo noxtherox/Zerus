@@ -41,6 +41,7 @@ import {
 } from "@/lib/filters";
 import { type Note, noteTypePath, typeKey } from "@/lib/note-utils";
 import { cn } from "@/lib/utils";
+import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 
 const DATE_OPTIONS: { value: NoteDateFilter; label: string }[] = [
   { value: "today", label: "Today" },
@@ -51,6 +52,8 @@ const DATE_OPTIONS: { value: NoteDateFilter; label: string }[] = [
 const SORT_OPTIONS: { value: NoteSort; label: string }[] = [
   { value: "updated-desc", label: "Recently updated" },
   { value: "updated-asc", label: "Least recently updated" },
+  { value: "created-desc", label: "Newest" },
+  { value: "created-asc", label: "Oldest" },
   { value: "title-asc", label: "Title: A–Z" },
   { value: "title-desc", label: "Title: Z–A" },
 ];
@@ -98,7 +101,12 @@ export function NoteListFilters({
         getNoteProperties(note.content),
       )) {
         const normalizedName = name.toLowerCase();
-        if (FILE_HUB_PROPERTY_KEYS.has(normalizedName)) continue;
+        if (
+          FILE_HUB_PROPERTY_KEYS.has(normalizedName) ||
+          isReservedZerusProperty(normalizedName)
+        ) {
+          continue;
+        }
         const property = properties.get(normalizedName) ?? {
           name,
           values: new Map<string, string>(),

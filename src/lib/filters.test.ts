@@ -115,6 +115,32 @@ describe("note list filters", () => {
     ).toEqual(["three", "two", "one"]);
   });
 
+  it("sorts newest and oldest by creation time rather than update time", () => {
+    const firstCreated = {
+      ...notes[0],
+      createdAt: "2026-05-01T08:00:00.000Z",
+      updatedAt: "2026-07-20T08:00:00.000Z",
+    };
+    const lastCreated = {
+      ...notes[1],
+      createdAt: "2026-06-01T08:00:00.000Z",
+      updatedAt: "2026-07-01T08:00:00.000Z",
+    };
+
+    expect(
+      filterNotes([firstCreated, lastCreated], { kind: "all" }, "", {
+        ...empty,
+        sort: "created-desc",
+      }).map((item) => item.id),
+    ).toEqual(["two", "one"]);
+    expect(
+      filterNotes([firstCreated, lastCreated], { kind: "all" }, "", {
+        ...empty,
+        sort: "created-asc",
+      }).map((item) => item.id),
+    ).toEqual(["one", "two"]);
+  });
+
   it("shows only active notes with attached documents in the files section", () => {
     const fileNote = {
       ...notes[0],

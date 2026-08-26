@@ -149,7 +149,7 @@
   margin-top: 0;
 }
 
-.zerus-mdx-title-first-line > p:first-child {
+.zerus-mdx-title-first-line > :is(p, h1):first-child {
   margin-bottom: 0.65em;
   font-size: 2.4em;
   font-weight: 700;

@@ -58,6 +58,16 @@ describe("note view configuration", () => {
     ).toEqual({ Projects: defaultTypeViewConfig() });
   });
 
+  it("keeps creation-date sorting in saved views", () => {
+    expect(
+      normalizeTypeViewConfigs({
+        Projects: {
+          filters: { sort: "created-desc" },
+        },
+      }).Projects.filters.sort,
+    ).toBe("created-desc");
+  });
+
   it("reconciles saved Kanban order with current property values", () => {
     expect(
       reconcileBoardColumnOrder(

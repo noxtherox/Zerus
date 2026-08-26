@@ -597,6 +597,7 @@ async function readExternalNote(path: string): Promise<Note> {
     content,
     pinned: false,
     archived: false,
+    createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
     updatedAt: (info.mtime ?? new Date()).toISOString(),
   };
 }
@@ -658,10 +659,16 @@ async function loadSavedLinkNotes(fromBackend: VaultBackend): Promise<Note[]> {
   const loaded = await Promise.all(
     paths.map(async (path) => {
       try {
-        const content = await fromBackend.readText(path);
-        if (!getLinkHubReference(content)) return null;
+        const file = fromBackend.loadFiles
+          ? (await fromBackend.loadFiles([path]))[0]
+          : {
+              path,
+              content: await fromBackend.readText(path),
+              updatedAt: new Date().toISOString(),
+            };
+        if (!file || !getLinkHubReference(file.content)) return null;
         return noteFromVaultFile(
-          { path, content, updatedAt: new Date().toISOString() },
+          file,
           new Set(),
           new Set(),
         );
@@ -743,6 +750,7 @@ interface StartupCachedNote {
   snippet: string;
   pinned: boolean;
   archived: boolean;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -788,6 +796,7 @@ function cachedNotePlaceholder(note: StartupCachedNote): Note {
     content: `# ${note.title}\n\n${note.snippet}`,
     pinned: note.pinned,
     archived: note.archived,
+    createdAt: note.createdAt ?? note.updatedAt,
     updatedAt: note.updatedAt,
   };
 }
@@ -810,6 +819,7 @@ function saveStartupCache(
       snippet: noteSnippet(note),
       pinned: note.pinned,
       archived: note.archived === true,
+      createdAt: note.createdAt ?? note.updatedAt,
       updatedAt: note.updatedAt,
     }))
     .sort((left, right) => {
@@ -846,6 +856,7 @@ function noteFromVaultFile(
     content: file.content,
     pinned: metadata.pinned || pinnedPaths.has(file.path),
     archived: metadata.archived || archivedPaths.has(file.path),
+    createdAt: file.createdAt ?? file.updatedAt,
     updatedAt: file.updatedAt,
   };
 }
@@ -1572,6 +1583,7 @@ export async function synchronizeDesktopFiles() {
         content: file.content,
         pinned: false,
         archived: false,
+        createdAt: file.createdAt ?? file.updatedAt,
         updatedAt: file.updatedAt,
       };
       latestNotes.push(note);
@@ -2299,6 +2311,7 @@ export async function copyExternalNoteToVault(
     const existedKeys = existingTypeKeys();
     try {
       const copiedId = crypto.randomUUID();
+      const createdAt = new Date().toISOString();
       const content = setZerusState(source.content, { id: copiedId });
       const path = await writeUniquePathOnDisk(
         typeKey(typePath),
@@ -2311,11 +2324,16 @@ export async function copyExternalNoteToVault(
         content,
         pinned: false,
         archived: false,
-        updatedAt: new Date().toISOString(),
+        createdAt,
+        updatedAt: createdAt,
       };
       diskSnapshots.set(copied.id, content);
       if (state.isNotePaginationEnabled) {
-        mobileNoteEntries.push({ path, updatedAt: copied.updatedAt });
+        mobileNoteEntries.push({
+          path,
+          createdAt: copied.createdAt,
+          updatedAt: copied.updatedAt,
+        });
         sortMobileEntries();
       }
       const summary = state.isNotePaginationEnabled
@@ -2501,13 +2519,15 @@ export async function createLinkNote(
     setLinkHubReference(withLinkMarkdown(`# ${title}\n`, url), { id, url }),
     { id },
   );
+  const createdAt = new Date().toISOString();
   const note: Note = {
     id,
     path,
     content,
     pinned: false,
     archived: false,
-    updatedAt: new Date().toISOString(),
+    createdAt,
+    updatedAt: createdAt,
   };
   if (!backend) return null;
   try {
@@ -3835,19 +3855,25 @@ export async function createNote(
   const path = uniquePath(dir, stem);
   const id = crypto.randomUUID();
   const persistedContent = setZerusState(content, { id });
+  const createdAt = new Date().toISOString();
   const note: Note = {
     id,
     path,
     content: persistedContent,
     pinned: false,
     archived: false,
-    updatedAt: new Date().toISOString(),
+    createdAt,
+    updatedAt: createdAt,
   };
   try {
     await backend.write(path, persistedContent);
     diskSnapshots.set(note.id, persistedContent);
     if (state.isNotePaginationEnabled) {
-      mobileNoteEntries.push({ path, updatedAt: note.updatedAt });
+      mobileNoteEntries.push({
+        path,
+        createdAt: note.createdAt,
+        updatedAt: note.updatedAt,
+      });
       sortMobileEntries();
     }
     const summary = state.isNotePaginationEnabled

@@ -125,6 +125,7 @@ export class DesktopVault implements VaultBackend {
     return {
       path,
       content,
+      createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
       updatedAt: (info.mtime ?? new Date()).toISOString(),
     };
   }

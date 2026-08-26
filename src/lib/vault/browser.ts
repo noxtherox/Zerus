@@ -6,6 +6,7 @@ const DIRS_KEY = "zerus.browserVault.dirs.v1";
 
 interface StoredFile {
   content: string;
+  createdAt?: string;
   updatedAt: string;
 }
 
@@ -31,6 +32,7 @@ function seedFiles(): Record<string, StoredFile> {
     new Date(now - offsetMinutes * 60_000).toISOString();
   return {
     "inbox/Welcome to Zerus.md": {
+      createdAt: at(60),
       updatedAt: at(60),
       content: `# Welcome to Zerus
 
@@ -51,6 +53,7 @@ Cmd/Ctrl+Click a link to follow it. Open [[Project Polaris]] and toggle the **Ba
 > In the desktop app you point Zerus at any folder of .md files and they show up here with their types.`,
     },
     "work/projects/Project Polaris.md": {
+      createdAt: at(50),
       updatedAt: at(50),
       content: `# Project Polaris
 
@@ -62,6 +65,7 @@ The star project. This note is linked from several places — toggle the Backlin
 - Keep scope small`,
     },
     "work/meetings/Meeting notes — kickoff.md": {
+      createdAt: at(40),
       updatedAt: at(40),
       content: `# Meeting notes — kickoff
 
@@ -71,6 +75,7 @@ Kickoff for [[Project Polaris]] with the platform team.
 - Next step: draft the spec`,
     },
     "personal/reading/Reading list.md": {
+      createdAt: at(30),
       updatedAt: at(30),
       content: `# Reading list
 
@@ -157,8 +162,22 @@ export class BrowserVault implements VaultBackend {
       .map(([path, file]) => ({
         path,
         content: file.content,
+        createdAt: file.createdAt ?? file.updatedAt,
         updatedAt: file.updatedAt,
       }));
+  }
+
+  async loadFiles(paths: string[]): Promise<VaultFile[]> {
+    return paths.map((path) => {
+      const file = this.files[path];
+      if (!file) throw new Error(`No such file: ${path}`);
+      return {
+        path,
+        content: file.content,
+        createdAt: file.createdAt ?? file.updatedAt,
+        updatedAt: file.updatedAt,
+      };
+    });
   }
 
   async readText(path: string): Promise<string> {
@@ -176,7 +195,13 @@ export class BrowserVault implements VaultBackend {
   }
 
   async write(path: string, content: string): Promise<void> {
-    this.files[path] = { content, updatedAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    this.files[path] = {
+      content,
+      createdAt:
+        this.files[path]?.createdAt ?? this.files[path]?.updatedAt ?? now,
+      updatedAt: now,
+    };
     this.persist();
   }
 

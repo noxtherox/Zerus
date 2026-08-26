@@ -2,12 +2,15 @@
 export interface VaultFile {
   path: string;
   content: string;
+  /** Filesystem creation time when available; falls back to updatedAt. */
+  createdAt?: string;
   updatedAt: string;
 }
 
 /** Lightweight note metadata used to paginate without reading file contents. */
 export interface VaultFileEntry {
   path: string;
+  createdAt?: string;
   updatedAt: string;
 }
 

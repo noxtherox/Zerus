@@ -23,6 +23,8 @@ export interface Note {
   pinned: boolean;
   /** Zerus-only visibility state; archived notes remain in place on disk. */
   archived?: boolean;
+  /** Original file creation time when the platform exposes it. */
+  createdAt?: string;
   updatedAt: string;
 }
 

@@ -26,6 +26,8 @@ export type NoteDateFilter = "today" | "last-7-days" | "last-30-days";
 export type NoteSort =
   | "updated-desc"
   | "updated-asc"
+  | "created-desc"
+  | "created-asc"
   | "title-asc"
   | "title-desc";
 
@@ -96,6 +98,12 @@ function sortTitle(note: Note, filter: NoteFilter): string {
 function compareNotes(a: Note, b: Note, filter: NoteFilter, sort: NoteSort): number {
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
   if (sort === "updated-asc") return a.updatedAt.localeCompare(b.updatedAt);
+  if (sort === "created-desc") {
+    return (b.createdAt ?? b.updatedAt).localeCompare(a.createdAt ?? a.updatedAt);
+  }
+  if (sort === "created-asc") {
+    return (a.createdAt ?? a.updatedAt).localeCompare(b.createdAt ?? b.updatedAt);
+  }
   if (sort === "title-asc") {
     return sortTitle(a, filter).localeCompare(sortTitle(b, filter), undefined, {
       sensitivity: "base",

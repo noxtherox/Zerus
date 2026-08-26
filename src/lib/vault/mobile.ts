@@ -164,6 +164,7 @@ abstract class MobileFilesystemVault implements VaultBackend {
         const info = await stat(this.target(path), this.options());
         entries.push({
           path,
+          createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
           updatedAt: (info.mtime ?? new Date()).toISOString(),
         });
       }
@@ -193,6 +194,7 @@ abstract class MobileFilesystemVault implements VaultBackend {
         return {
           path,
           content,
+          createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
           updatedAt: (info.mtime ?? new Date()).toISOString(),
         };
       }),

@@ -57,6 +57,8 @@ function isNoteSort(value: unknown): value is NoteSort {
   return (
     value === "updated-desc" ||
     value === "updated-asc" ||
+    value === "created-desc" ||
+    value === "created-asc" ||
     value === "title-asc" ||
     value === "title-desc"
   );
