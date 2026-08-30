@@ -8,6 +8,7 @@ import {
   Minimize2,
 } from "@/lib/icons";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { PropertiesSection, RelationsSection } from "./PropertiesSection";
 import {
@@ -35,6 +36,8 @@ interface BacklinksPanelProps {
   onOpenTask: (id: string) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
+  keepOpen: boolean;
+  onKeepOpenChange: (keepOpen: boolean) => void;
 }
 
 export function BacklinksPanel({
@@ -46,6 +49,8 @@ export function BacklinksPanel({
   onOpenTask,
   expanded,
   onToggleExpanded,
+  keepOpen,
+  onKeepOpenChange,
 }: BacklinksPanelProps) {
   const [showArchived, setShowArchived] = useState(false);
   const groups = getBacklinksGroupedByType(
@@ -73,7 +78,16 @@ export function BacklinksPanel({
         expanded ? "min-w-0 flex-1" : "w-72 shrink-0",
       )}
     >
-      <div className="flex items-center justify-end border-b border-border/60 px-2 py-1">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
+        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+          <Checkbox
+            checked={keepOpen}
+            onCheckedChange={(checked) => onKeepOpenChange(checked === true)}
+            aria-label="Keep properties panel open when changing notes"
+            className="h-3.5 w-3.5"
+          />
+          <span>Keep open</span>
+        </label>
         <Button
           variant="ghost"
           size="icon"

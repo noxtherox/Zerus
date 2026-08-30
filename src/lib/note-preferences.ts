@@ -5,6 +5,7 @@ const TYPE_ORDER_STORAGE_PREFIX = "zerus.noteTypeOrder.";
 const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
 const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
 const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
+const PROPERTIES_PANEL_KEEP_OPEN_STORAGE_KEY = "zerus.propertiesPanelKeepOpen";
 const FILE_HUB_EXPANSION_STORAGE_KEY = "zerus.fileHubExpansion.v1";
 const HTML_PREVIEW_MODE_STORAGE_KEY = "zerus.htmlPreviewMode.v1";
 
@@ -193,6 +194,27 @@ export function saveNoteAlignment(alignment: NoteAlignment): void {
 /** Applies the saved note alignment once during startup. */
 export function initNoteAlignment(): void {
   applyNoteAlignment(loadNoteAlignment());
+}
+
+/** Loads whether the properties panel should stay open when changing notes. */
+export function loadPropertiesPanelKeepOpen(): boolean {
+  try {
+    return localStorage.getItem(PROPERTIES_PANEL_KEEP_OPEN_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+/** Persists the properties-panel behavior on this device. */
+export function savePropertiesPanelKeepOpen(keepOpen: boolean): void {
+  try {
+    localStorage.setItem(
+      PROPERTIES_PANEL_KEEP_OPEN_STORAGE_KEY,
+      String(keepOpen),
+    );
+  } catch {
+    // Persistence is best-effort; the selected behavior still applies this session.
+  }
 }
 
 

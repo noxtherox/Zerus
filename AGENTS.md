@@ -2,15 +2,14 @@
 
 ## Web preview handoff
 
+- After every new implementation or feature, start or refresh the web version and
+  provide a working preview without waiting for the user to request one.
 - When a web preview is requested or ready from this Mac mini, share the private Tailscale Serve URL `https://mac-mini-m4-nox.ibex-oratrice.ts.net/` instead of a localhost URL.
 - Before sharing it, confirm both the frontend development server and the Tailscale Serve proxy respond successfully.
 - Never enable Tailscale Funnel unless the user explicitly requests public exposure.
 
 ## Build target resolution
 
-- When the active workspace or repository directory is named
-  `Zerus-desktop-work`, **new build** by itself means a macOS desktop DMG. Run
-  `pnpm desktop:build` without asking which platform the user means.
 - In any workspace that does not explicitly establish its target platform,
   **new build** by itself is ambiguous. Ask whether the user wants a macOS
   desktop DMG or an iOS App Store build before running a build command.

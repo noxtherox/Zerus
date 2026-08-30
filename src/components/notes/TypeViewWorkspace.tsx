@@ -31,7 +31,6 @@ import {
   Sparkles,
   Table2,
 } from "@/lib/icons";
-import { badgeVariants } from "@/components/ui/badge";
 import { boardCollisionDetection } from "@/lib/board-dnd";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +58,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { NoteListFilters } from "@/components/notes/NoteListFilters";
+import { PropertyPills } from "@/components/notes/PropertyPills";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
 import {
@@ -82,7 +82,6 @@ import {
 } from "@/lib/note-utils";
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
-import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 
 const NO_PROPERTY = "__none__";
 const NO_VALUE = "__no_value__";
@@ -109,15 +108,6 @@ function propertyValue(note: Note, propertyName: string): PropertyValue | undefi
     (name) => name.toLowerCase() === propertyName.toLowerCase(),
   );
   return key ? properties[key] : undefined;
-}
-
-function propertyLabel(value: PropertyValue | undefined): string {
-  if (value === undefined || value === "" || (Array.isArray(value) && !value.length)) {
-    return "No value";
-  }
-  if (Array.isArray(value)) return value.join(", ");
-  if (typeof value === "boolean") return value ? "Checked" : "Unchecked";
-  return String(value);
 }
 
 export function TypeViewSwitcher({
@@ -193,10 +183,15 @@ export function TypeViewSwitcher({
   );
 }
 
-function NoteCard({ note, onOpen }: { note: Note; onOpen: (id: string) => void }) {
-  const properties = Object.entries(getNoteProperties(note.content))
-    .filter(([name]) => !isReservedZerusProperty(name))
-    .slice(0, 3);
+function NoteCard({
+  note,
+  visibleProperties,
+  onOpen,
+}: {
+  note: Note;
+  visibleProperties: string[];
+  onOpen: (id: string) => void;
+}) {
   const image = useMemo(() => firstNoteImage(note.content), [note.content]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
@@ -241,22 +236,7 @@ function NoteCard({ note, onOpen }: { note: Note; onOpen: (id: string) => void }
           </span>
         )}
       </span>
-      {properties.length > 0 && (
-        <span className="mt-3 flex flex-wrap gap-1.5">
-          {properties.map(([name, value]) => (
-            <span
-              key={name}
-              className={cn(
-                badgeVariants({ variant: "secondary" }),
-                "max-w-full gap-1 text-[10px] font-normal",
-              )}
-            >
-              <span className="text-muted-foreground">{name}</span>
-              <span className="max-w-28 truncate">{propertyLabel(value)}</span>
-            </span>
-          ))}
-        </span>
-      )}
+      <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-3" />
     </button>
   );
 }
@@ -264,10 +244,12 @@ function NoteCard({ note, onOpen }: { note: Note; onOpen: (id: string) => void }
 function GalleryView({
   notes,
   groupBy,
+  visibleProperties,
   onOpen,
 }: {
   notes: Note[];
   groupBy: string | null;
+  visibleProperties: string[];
   onOpen: (id: string) => void;
 }) {
   const galleryId = useId();
@@ -332,7 +314,7 @@ function GalleryView({
                 className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3"
               >
                 {groupNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} onOpen={onOpen} />
+                  <NoteCard key={note.id} note={note} visibleProperties={visibleProperties} onOpen={onOpen} />
                 ))}
               </div>
             )}
@@ -343,7 +325,7 @@ function GalleryView({
   );
 }
 
-function DraggableBoardCard({ note, onOpen }: { note: Note; onOpen: (id: string) => void }) {
+function DraggableBoardCard({ note, visibleProperties, onOpen }: { note: Note; visibleProperties: string[]; onOpen: (id: string) => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: note.id,
     data: { type: "card" },
@@ -378,6 +360,7 @@ function DraggableBoardCard({ note, onOpen }: { note: Note; onOpen: (id: string)
           {noteSnippet(note)}
         </span>
       )}
+      <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-2" />
     </button>
   );
 }
@@ -385,12 +368,14 @@ function DraggableBoardCard({ note, onOpen }: { note: Note; onOpen: (id: string)
 function BoardColumn({
   value,
   notes,
+  visibleProperties,
   onOpen,
   onMoveLeft,
   onMoveRight,
 }: {
   value: string;
   notes: Note[];
+  visibleProperties: string[];
   onOpen: (id: string) => void;
   onMoveLeft: (() => void) | null;
   onMoveRight: (() => void) | null;
@@ -462,7 +447,7 @@ function BoardColumn({
         )}
       >
         {notes.map((note) => (
-          <DraggableBoardCard key={note.id} note={note} onOpen={onOpen} />
+          <DraggableBoardCard key={note.id} note={note} visibleProperties={visibleProperties} onOpen={onOpen} />
         ))}
       </div>
     </section>
@@ -473,6 +458,7 @@ function BoardView({
   notes,
   property,
   propertyDef,
+  visibleProperties,
   columnOrder,
   onOpen,
   onColumnOrderChange,
@@ -481,6 +467,7 @@ function BoardView({
   notes: Note[];
   property: string | null;
   propertyDef: PropertyDef | undefined;
+  visibleProperties: string[];
   columnOrder: string[] | undefined;
   onOpen: (id: string) => void;
   onColumnOrderChange: (order: string[]) => void;
@@ -552,6 +539,7 @@ function BoardView({
                   ? value.includes(column)
                   : String(value) === column;
               })}
+              visibleProperties={visibleProperties}
               onOpen={onOpen}
               onMoveLeft={index > 0 ? () => moveColumn(index, -1) : null}
               onMoveRight={index < columns.length - 1 ? () => moveColumn(index, 1) : null}
@@ -673,10 +661,12 @@ function TableView({
 function CalendarView({
   notes,
   dateProperty,
+  visibleProperties,
   onOpen,
 }: {
   notes: Note[];
   dateProperty: string | null;
+  visibleProperties: string[];
   onOpen: (id: string) => void;
 }) {
   const today = new Date();
@@ -729,7 +719,8 @@ function CalendarView({
                         className="mb-1 block w-full truncate rounded border-l-2 border-zerus-accent bg-zerus-accent/10 px-1.5 py-1 text-left text-[10px]"
                         onClick={() => onOpen(note.id)}
                       >
-                        {noteTitle(note)}
+                        <span className="block truncate">{noteTitle(note)}</span>
+                        <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1" />
                       </button>
                     ))}
                   </>
@@ -746,7 +737,8 @@ function CalendarView({
         <div className="space-y-2">
           {undated.map((note) => (
             <button key={note.id} className="w-full rounded-md border bg-background p-2.5 text-left text-xs font-medium" onClick={() => onOpen(note.id)}>
-              {noteTitle(note)}
+              <span className="block truncate">{noteTitle(note)}</span>
+              <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1.5" />
             </button>
           ))}
         </div>
@@ -878,7 +870,9 @@ export function TypeViewWorkspace({
             showFileTypes={false}
             showArchivedToggle
             filters={config.filters}
+            visibleProperties={config.visibleProperties}
             onChange={(filters) => onConfigChange({ filters })}
+            onVisiblePropertiesChange={(visibleProperties) => onConfigChange({ visibleProperties })}
           />
           {isDesktop && (
             <Button
@@ -947,12 +941,13 @@ export function TypeViewWorkspace({
         </div>
       </header>
       <main className="min-h-0 flex-1 overflow-auto">
-        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} onOpen={onOpenNote} />}
+        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
         {config.mode === "board" && (
           <BoardView
             notes={filteredNotes}
             property={activeGroupBy}
             propertyDef={activeGroupProperty}
+            visibleProperties={config.visibleProperties}
             columnOrder={activeGroupBy ? config.boardColumnOrder[boardColumnOrderKey(activeGroupBy)] : undefined}
             onOpen={onOpenNote}
             onColumnOrderChange={(order) => {
@@ -968,7 +963,7 @@ export function TypeViewWorkspace({
           />
         )}
         {config.mode === "table" && <TableView notes={filteredNotes} properties={properties} onOpen={onOpenNote} onSetProperty={onSetProperty} />}
-        {config.mode === "calendar" && <CalendarView notes={filteredNotes} dateProperty={config.dateProperty} onOpen={onOpenNote} />}
+        {config.mode === "calendar" && <CalendarView notes={filteredNotes} dateProperty={config.dateProperty} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
       </main>
     </div>
   );

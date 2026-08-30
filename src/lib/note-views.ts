@@ -19,6 +19,8 @@ export type NoteViewMode = (typeof NOTE_VIEW_MODES)[number];
 
 export interface TypeViewConfig {
   mode: NoteViewMode;
+  /** Properties rendered as pills on cards and list rows. */
+  visibleProperties: string[];
   /** Frontmatter property used to group Gallery cards or Board columns. */
   groupBy: string | null;
   /** User-defined Kanban column order, keyed by the grouped property name. */
@@ -33,6 +35,7 @@ export type TypeViewConfigs = Record<string, TypeViewConfig>;
 export function defaultTypeViewConfig(): TypeViewConfig {
   return {
     mode: "list",
+    visibleProperties: [],
     groupBy: null,
     boardColumnOrder: {},
     dateProperty: null,
@@ -86,6 +89,19 @@ function normalizeBoardColumnOrder(value: unknown): Record<string, string[]> {
   return orders;
 }
 
+function normalizeVisibleProperties(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item) => {
+    if (typeof item !== "string" || !item.trim()) return [];
+    const name = item.trim();
+    const key = name.toLowerCase();
+    if (seen.has(key)) return [];
+    seen.add(key);
+    return [name];
+  });
+}
+
 export function boardColumnOrderKey(propertyName: string): string {
   return propertyName.trim().toLowerCase();
 }
@@ -130,6 +146,7 @@ export function normalizeTypeViewConfig(value: unknown): TypeViewConfig {
       : fallback.filters;
   return {
     mode: isViewMode(candidate.mode) ? candidate.mode : fallback.mode,
+    visibleProperties: normalizeVisibleProperties(candidate.visibleProperties),
     groupBy:
       typeof candidate.groupBy === "string" && candidate.groupBy.trim()
         ? candidate.groupBy.trim()

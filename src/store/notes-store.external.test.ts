@@ -107,6 +107,7 @@ import {
   copyExternalNoteToVault,
   createNote,
   deleteNoteForever,
+  flushPendingWrites,
   getNotes,
   getNoteConflict,
   initStore,
@@ -266,6 +267,7 @@ describe("external note store workflow", () => {
           note.path === "inbox/Later.md" && note.content === "# Later\n",
       ),
     );
+    await flushPendingWrites();
     await waitFor(async () =>
       (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
         "Edited safely while other notes were loading.",
@@ -319,6 +321,7 @@ describe("external note store workflow", () => {
       vaultNote!.id,
       "# Welcome\n\nWritten in Zerus while a disk scan was running.\n",
     );
+    await flushPendingWrites();
     await waitFor(async () =>
       (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
         "Written in Zerus",
@@ -336,6 +339,7 @@ describe("external note store workflow", () => {
       "# Welcome\n\nStill editing while Zerus regains focus.\n",
     );
     await refreshVaultFromDisk();
+    await flushPendingWrites();
     expect(getNoteConflict(vaultNote!.id)).toBeNull();
     expect(getNotes().find((note) => note.id === vaultNote!.id)?.content).toContain(
       "Still editing while Zerus regains focus.",
@@ -366,6 +370,7 @@ describe("external note store workflow", () => {
     expect(externalNotes.map(noteTypePath)).toEqual([[], []]);
 
     updateNoteBody(ids[0], "# First external\n\nEdited outside the vault.\n");
+    await flushPendingWrites();
     await waitFor(async () =>
       (await readFile(firstPath, "utf8")).includes("Edited outside the vault."),
     );
@@ -389,6 +394,7 @@ describe("external note store workflow", () => {
       "# First external\n\nSimultaneous change from disk.\n",
       "utf8",
     );
+    await flushPendingWrites();
     await waitFor(() => getNoteConflict(ids[0]) !== null);
     expect(await readFile(firstPath, "utf8")).toContain(
       "Simultaneous change from disk.",
@@ -607,6 +613,7 @@ describe("external note store workflow", () => {
       `${note!.content}\nChanged on disk.\n`,
       "utf8",
     );
+    await flushPendingWrites();
     await waitFor(() => getNoteConflict(note!.id) !== null);
 
     await expect(switchDesktopVault(otherVault)).resolves.toBe(true);

@@ -35,6 +35,8 @@ export {
   IconDownload as Download,
   IconDots as Ellipsis,
   IconExternalLink as ExternalLink,
+  IconEye as Eye,
+  IconEyeOff as EyeOff,
   IconFile as File,
   IconFilePlus as FilePlus2,
   IconFileSearch as FileSearch,

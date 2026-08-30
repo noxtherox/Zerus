@@ -85,15 +85,15 @@ describe("note history", () => {
   it("creates full checkpoints and prunes to the configured checkpoint window", async () => {
     const vault = new MemoryVault();
     let before = "v0";
-    for (let index = 1; index <= 101; index += 1) {
+    for (let index = 1; index <= 8; index += 1) {
       const after = `v${index}`;
       await record(vault, before, after, "device-a", 1);
       before = after;
     }
     const versions = await listNoteHistory(vault, "note-1");
-    expect(versions[0].content).toBe("v101");
+    expect(versions[0].content).toBe("v8");
     expect(versions.filter((version) => version.checkpoint)).toHaveLength(1);
-    expect(versions.length).toBeLessThanOrEqual(50);
+    expect(versions.length).toBeLessThanOrEqual(3);
   });
 
   it("keeps protected versions when older history is pruned", async () => {

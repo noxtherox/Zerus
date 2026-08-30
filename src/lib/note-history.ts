@@ -8,7 +8,7 @@ import {
 } from "@/lib/zerus-metadata";
 import type { VaultBackend } from "@/lib/vault/backend";
 
-export const HISTORY_CHECKPOINT_INTERVAL = 50;
+export const HISTORY_CHECKPOINT_INTERVAL = 3;
 export const DEFAULT_HISTORY_CHECKPOINT_LIMIT = 10;
 
 const HISTORY_ROOT = ".zerus/history";

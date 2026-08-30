@@ -11,6 +11,17 @@ import {
 describe("note view configuration", () => {
   it("defaults every unknown type to the existing List view", () => {
     expect(typeViewConfigFor({}, "Projects")).toEqual(defaultTypeViewConfig());
+    expect(typeViewConfigFor({}, "Projects/Client").visibleProperties).toEqual([]);
+  });
+
+  it("keeps property visibility independent for each type and subtype", () => {
+    const configs = normalizeTypeViewConfigs({
+      Projects: { visibleProperties: ["Owner"] },
+      "Projects/Client": { visibleProperties: ["Priority"] },
+    });
+
+    expect(typeViewConfigFor(configs, "Projects").visibleProperties).toEqual(["Owner"]);
+    expect(typeViewConfigFor(configs, "Projects/Client").visibleProperties).toEqual(["Priority"]);
   });
 
   it("keeps supported portable settings and strips scope-only filters", () => {
@@ -18,6 +29,7 @@ describe("note view configuration", () => {
       normalizeTypeViewConfigs({
         " Projects / Active ": {
           mode: "board",
+          visibleProperties: [" Priority ", "Owner", "priority", 42],
           groupBy: " Status ",
           boardColumnOrder: {
             " Status ": ["Done", "Todo", "Done", 42],
@@ -37,6 +49,7 @@ describe("note view configuration", () => {
     ).toEqual({
       "Projects/Active": {
         mode: "board",
+        visibleProperties: ["Priority", "Owner"],
         groupBy: "Status",
         boardColumnOrder: { status: ["Done", "Todo"] },
         dateProperty: "Due",

@@ -151,6 +151,7 @@ const Index = () => {
   const [search, setSearch] = useState("");
   const [listFilters, setListFilters] =
     useState<NoteListFilters>(EMPTY_NOTE_LIST_FILTERS);
+  const [listVisibleProperties, setListVisibleProperties] = useState<string[]>([]);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
@@ -180,6 +181,7 @@ const Index = () => {
     setNavigation(createNavigationHistory(INITIAL_NAVIGATION_ENTRY));
     setNoteTabs(INITIAL_NOTE_TABS_STATE);
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setListVisibleProperties([]);
     setSearch("");
   }, [vault.location]);
 
@@ -979,6 +981,11 @@ const Index = () => {
                       isRefreshing={vault.isRefreshing}
                       onSearchChange={setSearch}
                       onListFiltersChange={setListFilters}
+                      visibleProperties={activeTypeView?.visibleProperties ?? listVisibleProperties}
+                      onVisiblePropertiesChange={(visibleProperties) => {
+                        if (activeTypeKey) handleTypeViewChange({ visibleProperties });
+                        else setListVisibleProperties(visibleProperties);
+                      }}
                       onSelectNote={handleSelectNote}
                       onOpenNoteInNewTab={handleOpenNoteInNewTab}
                       onCreateNote={() => void handleCreateNote()}

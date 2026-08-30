@@ -68,6 +68,7 @@ import {
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
 import { TypeViewSwitcher } from "./TypeViewWorkspace";
+import { PropertyPills } from "./PropertyPills";
 import type { NoteViewMode } from "@/lib/note-views";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
@@ -98,6 +99,8 @@ interface NoteListProps {
   isRefreshing: boolean;
   onSearchChange: (value: string) => void;
   onListFiltersChange: (filters: NoteListFilterState) => void;
+  visibleProperties: string[];
+  onVisiblePropertiesChange: (properties: string[]) => void;
   onSelectNote: (id: string) => void;
   onOpenNoteInNewTab: (id: string) => void;
   onCreateNote: () => void;
@@ -121,6 +124,8 @@ export function NoteList({
   isRefreshing,
   onSearchChange,
   onListFiltersChange,
+  visibleProperties,
+  onVisiblePropertiesChange,
   onSelectNote,
   onOpenNoteInNewTab,
   onCreateNote,
@@ -284,8 +289,10 @@ export function NoteList({
           showFileTypes={inFiles}
           showArchivedToggle={!inTrash && !inExternal}
           filters={listFilters}
+          visibleProperties={visibleProperties}
           triggerClassName="w-full justify-between"
           onChange={onListFiltersChange}
+          onVisiblePropertiesChange={onVisiblePropertiesChange}
         />
       </div>
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
@@ -402,6 +409,7 @@ export function NoteList({
                       {snippet}
                     </p>
                   )}
+                  <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1.5" />
                   <div className="mt-1.5 flex items-center gap-2">
                     <Badge
                       variant="secondary"

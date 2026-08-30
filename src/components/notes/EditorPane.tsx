@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -127,8 +127,10 @@ import {
   loadFileHubExpandedSection,
   loadHtmlPreviewPreference,
   loadHtmlPreviewMode,
+  loadPropertiesPanelKeepOpen,
   saveFileHubExpandedSection,
   saveHtmlPreviewMode,
+  savePropertiesPanelKeepOpen,
   type FileHubExpandedSection,
   type HtmlPreviewMode,
 } from "@/lib/note-preferences";
@@ -293,6 +295,9 @@ export function EditorPane({
   onNavigateForward,
 }: EditorPaneProps) {
   const [showBacklinks, setShowBacklinks] = useState(false);
+  const [keepPropertiesOpen, setKeepPropertiesOpen] = useState(
+    loadPropertiesPanelKeepOpen,
+  );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [externalImportMode, setExternalImportMode] =
     useState<ExternalImportMode>("copy");
@@ -335,9 +340,20 @@ export function EditorPane({
   const activeFileHubId = activeFileHub?.id ?? null;
   const activeFileHubName = activeFileHub?.name ?? null;
   const activeNoteId = note?.id ?? null;
+  const previousNoteIdRef = useRef(activeNoteId);
   const activeFileExtension = activeFileHub ? fileExtension(activeFileHub.name) : "";
   const activeFileIsHtml = ["html", "htm"].includes(activeFileExtension);
   const [editorReadyNoteId, setEditorReadyNoteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (
+      previousNoteIdRef.current !== activeNoteId &&
+      !keepPropertiesOpen
+    ) {
+      setShowBacklinks(false);
+    }
+    previousNoteIdRef.current = activeNoteId;
+  }, [activeNoteId, keepPropertiesOpen]);
 
   useEffect(() => {
     if (!activeNoteId || isLoading) {
@@ -531,6 +547,7 @@ export function EditorPane({
   }
 
   const external = isExternalNote(note);
+  const archived = isArchived(note);
   const trashed = isTrashed(note);
   const linkHub = getLinkHubReference(note);
   const absolutePath = noteAbsolutePath(note, vaultLocation);
@@ -667,6 +684,11 @@ export function EditorPane({
       onOpenTask={onOpenTask}
       expanded={expandBacklinks}
       onToggleExpanded={() => setExpandBacklinks((open) => !open)}
+      keepOpen={keepPropertiesOpen}
+      onKeepOpenChange={(keepOpen) => {
+        setKeepPropertiesOpen(keepOpen);
+        savePropertiesPanelKeepOpen(keepOpen);
+      }}
     />
   ) : null;
   const editorContent = (
@@ -934,12 +956,12 @@ export function EditorPane({
                     <DropdownMenuItem
                       onSelect={() => toggleNoteArchived(note.id)}
                     >
-                      {isArchived(note) ? (
+                      {archived ? (
                         <ArchiveRestore className="mr-2" size={14} />
                       ) : (
                         <Archive className="mr-2" size={14} />
                       )}
-                      {isArchived(note) ? "Unarchive" : "Archive"}
+                      {archived ? "Unarchive" : "Archive"}
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => toggleNotePinned(note.id)}
@@ -1013,6 +1035,27 @@ export function EditorPane({
           >
             <Undo2 size={14} />
             Restore
+          </Button>
+        </div>
+      )}
+      {archived && !trashed && (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-zerus-accent/30 bg-zerus-accent/10 px-4 py-2 text-xs"
+          role="status"
+        >
+          <Archive className="shrink-0 text-zerus-accent" size={16} />
+          <span className="min-w-0 flex-1 font-medium">
+            This note is archived.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 shrink-0 gap-1.5 text-xs"
+            disabled={isBusy}
+            onClick={() => toggleNoteArchived(note.id)}
+          >
+            <ArchiveRestore size={14} />
+            Unarchive
           </Button>
         </div>
       )}
