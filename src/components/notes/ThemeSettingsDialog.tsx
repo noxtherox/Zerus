@@ -658,14 +658,14 @@ export function ThemeSettingsDialog({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <label htmlFor="history-enabled" className="text-sm font-medium">Record version history</label>
-                <p className="mt-0.5 text-xs text-muted-foreground">Every content autosave is recorded. Turning this off preserves existing versions.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">Changes are autosaved after 5 seconds of inactivity. Turning this off preserves existing versions.</p>
               </div>
               <Switch id="history-enabled" checked={historySettings.enabled} onCheckedChange={(enabled) => void updateVersionHistorySettings({ ...historySettings, enabled })} />
             </div>
             <div className="grid grid-cols-[1fr_110px] items-end gap-3">
               <div>
                 <label htmlFor="history-checkpoints" className="text-sm font-medium">Retained checkpoints</label>
-                <p className="mt-0.5 text-xs text-muted-foreground">One checkpoint represents up to 50 versions. Kept versions are exempt.</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">One checkpoint represents up to 3 autosaves. Kept versions are exempt.</p>
               </div>
               {historySettings.checkpointLimit === null ? (
                 <Button variant="outline" size="sm" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: 10 })}>Unlimited</Button>

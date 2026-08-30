@@ -6,6 +6,8 @@ import {
   ChevronDown,
   FileType,
   Filter,
+  Eye,
+  EyeOff,
   Tag,
   X,
 } from "@/lib/icons";
@@ -67,8 +69,10 @@ interface NoteListFiltersProps {
   showFileTypes: boolean;
   showArchivedToggle: boolean;
   filters: NoteListFilterState;
+  visibleProperties?: string[];
   triggerClassName?: string;
   onChange: (filters: NoteListFilterState) => void;
+  onVisiblePropertiesChange?: (properties: string[]) => void;
 }
 
 export function NoteListFilters({
@@ -77,8 +81,10 @@ export function NoteListFilters({
   showFileTypes,
   showArchivedToggle,
   filters,
+  visibleProperties = [],
   triggerClassName,
   onChange,
+  onVisiblePropertiesChange,
 }: NoteListFiltersProps) {
   const typeOptions = useMemo(() => {
     const values = new Map<string, string>();
@@ -359,14 +365,39 @@ export function NoteListFilters({
                   const selected = filters.properties.find(
                     (item) => item.name === property.name,
                   );
+                  const isVisible = visibleProperties.some(
+                    (name) => name.toLowerCase() === property.name.toLowerCase(),
+                  );
                   return (
                     <div
                       key={property.name}
-                      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] items-center gap-2"
+                      className="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.35fr)] items-center gap-1.5"
                     >
                       <span className="truncate text-xs" title={property.name}>
                         {property.name}
                       </span>
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                          isVisible && "bg-zerus-accent/10 text-zerus-accent",
+                        )}
+                        title={isVisible ? `Hide ${property.name} on notes` : `Show ${property.name} on notes`}
+                        aria-label={isVisible ? `Hide ${property.name} property` : `Show ${property.name} property`}
+                        aria-pressed={isVisible}
+                        onClick={() => {
+                          if (!onVisiblePropertiesChange) return;
+                          onVisiblePropertiesChange(
+                            isVisible
+                              ? visibleProperties.filter(
+                                  (name) => name.toLowerCase() !== property.name.toLowerCase(),
+                                )
+                              : [...visibleProperties, property.name],
+                          );
+                        }}
+                      >
+                        {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
+                      </button>
                       <Select
                         value={
                           selected?.valueKey ??

@@ -140,6 +140,22 @@ let mounted = false;
 
 try {
   run("hdiutil", ["verify", dmgPath], { stdio: "inherit" });
+  if (requireNotarized) {
+    run("xcrun", ["stapler", "validate", dmgPath], { stdio: "inherit" });
+    run(
+      "spctl",
+      [
+        "--assess",
+        "--type",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "--verbose=4",
+        dmgPath,
+      ],
+      { stdio: "inherit" },
+    );
+  }
   run(
     "hdiutil",
     ["attach", dmgPath, "-readonly", "-nobrowse", "-mountpoint", mountPath],

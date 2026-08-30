@@ -150,7 +150,7 @@ const STARTUP_CACHE_KEY_PREFIX = "zerus.startupCache.v1.";
 const SAVED_LINKS_DIR = ".zerus/links";
 const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
 const TRASHED_IMAGES_INDEX_PATH = ".zerus/trashed-images.json";
-const FLUSH_DELAY_MS = 500;
+const FLUSH_DELAY_MS = 5_000;
 const MOBILE_NOTE_PAGE_SIZE = 30;
 
 function isManagedSavedLink(note: Note): boolean {
@@ -2044,6 +2044,11 @@ async function flushUntilIdle(id: string): Promise<boolean> {
     if (!(await flushNote(id))) return false;
   } while (pendingFlush.has(id) || inFlightFlush.has(id));
   return true;
+}
+
+/** Immediately persists all pending debounced note edits. */
+export async function flushPendingWrites(): Promise<boolean> {
+  return flushAll();
 }
 
 async function flushAll(

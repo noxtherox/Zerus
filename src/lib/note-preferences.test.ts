@@ -10,6 +10,7 @@ import {
   loadHtmlPreviewPreference,
   loadHideSubtypeNotes,
   loadNoteAlignment,
+  loadPropertiesPanelKeepOpen,
   loadNoteWidth,
   loadNoteTypeOrder,
   saveDefaultNoteType,
@@ -17,6 +18,7 @@ import {
   saveHtmlPreviewMode,
   saveHideSubtypeNotes,
   saveNoteAlignment,
+  savePropertiesPanelKeepOpen,
   saveNoteWidth,
   saveNoteTypeOrder,
 } from "./note-preferences";
@@ -184,5 +186,17 @@ describe("note alignment preference", () => {
         "--zerus-note-margin-inline",
       ),
     ).toBe("auto");
+  });
+});
+
+describe("properties panel preference", () => {
+  it("defaults to closing on note changes and persists keep-open changes", () => {
+    expect(loadPropertiesPanelKeepOpen()).toBe(false);
+
+    savePropertiesPanelKeepOpen(true);
+    expect(loadPropertiesPanelKeepOpen()).toBe(true);
+
+    savePropertiesPanelKeepOpen(false);
+    expect(loadPropertiesPanelKeepOpen()).toBe(false);
   });
 });

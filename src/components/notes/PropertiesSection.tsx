@@ -8,6 +8,7 @@ import {
   Hash,
   Link,
   List,
+  Loader2,
   Pencil,
   Plus,
   SlidersHorizontal,
@@ -61,10 +62,12 @@ import {
   noteTitle,
   noteTypePath,
   notesOfTypeKey,
+  parseTypePath,
   typeKey,
 } from "@/lib/note-utils";
 import {
   addTypeProperty,
+  createNote,
   removeTypeProperty,
   setNoteProperty,
   updateTypeProperty,
@@ -452,6 +455,7 @@ function RelationValueEditor({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const titles = Array.isArray(value)
     ? value
@@ -475,6 +479,32 @@ function RelationValueEditor({
     onCommit(def.relationMultiple ? [...titles, title] : title);
     setQuery("");
     setOpen(false);
+  };
+
+  const relatedTypePath = def.relationTypeKey
+    ? parseTypePath(def.relationTypeKey)
+    : noteTypePath(currentNote);
+  const relatedTypeLabel =
+    relatedTypePath.at(-1) ?? (def.name || "current type");
+  const createTitle = query.trim() || "Untitled";
+
+  const createRelatedNote = async () => {
+    if (creating) return;
+    setCreating(true);
+    try {
+      const created = await createNote(
+        relatedTypePath,
+        `# ${createTitle}\n\n`,
+      );
+      if (!created) return;
+
+      // Linking from the current note makes it appear automatically in the
+      // new note's Backlinks panel without duplicating relation metadata.
+      pick(created);
+      onOpenNote(created.id);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const remove = (title: string) => {
@@ -516,7 +546,27 @@ function RelationValueEditor({
                 onValueChange={setQuery}
               />
               <CommandList>
-                <CommandEmpty>No matching notes.</CommandEmpty>
+                <CommandEmpty>
+                  No matching notes. Create a new one below.
+                </CommandEmpty>
+                <CommandGroup>
+                  <CommandItem
+                    value={`create new ${createTitle} ${relatedTypeLabel}`}
+                    disabled={creating}
+                    onSelect={() => void createRelatedNote()}
+                  >
+                    {creating ? (
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                    ) : (
+                      <Plus size={14} className="mr-2" />
+                    )}
+                    <span className="truncate">
+                      {query.trim()
+                        ? `Create “${createTitle}” in ${relatedTypeLabel}`
+                        : `Create new item in ${relatedTypeLabel}`}
+                    </span>
+                  </CommandItem>
+                </CommandGroup>
                 <CommandGroup>
                   {candidates.slice(0, 100).map((note) => (
                     <CommandItem

@@ -1,47 +1,52 @@
-# Design QA
+# Property visibility control design QA
 
-- Source visual truth: `/Users/tiagopereira/.codex/attachments/3681d748-c5b4-45f6-8ddc-c1c11d16059b/codex-clipboard-df68d9b0-76ae-4682-b4e5-8a72cb1865ed.png`, interpreted with the user's explicit requested change: replace the long empty-editor prompt with `Title` in a grey-ish tone.
-- Implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/implementation-title-placeholder.jpg`
-- Full-view comparison: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-comparison.png`
-- Focused editor comparison: `/Users/tiagopereira/Documents/Codex/Zerus-desktop-work/design-qa-editor-comparison.png`
-- Viewport: 1274 × 642 CSS px.
-- Source pixels: 1274 × 642 at 1×.
-- Implementation pixels: 1274 × 642 at 1×.
-- Density normalization: none required; source and implementation use the same pixel and CSS dimensions.
-- State: dark theme, newly created empty desktop note, editor focused.
+- Source visual truth: `/Users/tiagopereira/.t3/userdata/attachments/e9a27a41-ef37-457a-89fa-4190bf006962-e0b0bd34-e7b0-4925-a060-3328bf23a4b8.png`
+- Implementation screenshot: `/Users/tiagopereira/Documents/Codex/Zerus-remote/artifacts/design-qa/property-visibility-implementation.png`
+- Focused implementation crop: `/Users/tiagopereira/Documents/Codex/Zerus-remote/artifacts/design-qa/property-visibility-focused.png`
+- Route: `https://mac-mini-m4-nox.ibex-oratrice.ts.net/app`
+- State: dark theme, `inbox` type selected, Sort & filter open, all property visibility controls unselected
+- Viewport: 1280 × 800 CSS px at device scale factor 1
+- Source pixels: 418 × 612
+- Implementation pixels: 1280 × 800; focused crop: 340 × 500
+- Density normalization: both captures were inspected at native 1× density. The focused crop isolates the same Sort & filter region as the source; exact outer crop sizes differ because the source is a partial screenshot.
+
+## Full-view comparison evidence
+
+The implementation preserves the desktop three-column workspace and opens the Sort & filter panel from the note-list toolbar. The panel remains within the note-list column without clipping or covering persistent controls.
+
+## Focused comparison evidence
+
+The source and focused implementation capture were opened together. Typography, dark tokens, separators, field heights, corner radii, dropdown styling, and vertical rhythm remain consistent with the source. The intended difference is present on every property row: the existing property label is followed by an eye-off control, followed by the unchanged filter dropdown. The demo contains three properties instead of the longer source list, which is expected data variation rather than design drift.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing app font family, weights, sizes, line heights, and truncation are unchanged and match the reference hierarchy.
+- Spacing and layout rhythm: property rows retain their height and dropdown width; the label, 28 px eye control, and dropdown are aligned in a stable three-column grid.
+- Colors and visual tokens: existing background, border, muted foreground, focus, and accent tokens are reused.
+- Image quality and asset fidelity: no raster imagery is involved. The eye states use the app's existing Tabler icon library and render sharply.
+- Copy and content: property names and “Don’t filter” copy are unchanged. Accessible labels switch between “Show … property” and “Hide … property.”
+
+## Primary interactions tested
+
+- Opened Sort & filter for the `inbox` type.
+- Confirmed all three controls render in label → eye → dropdown order using browser geometry.
+- Turned Owner, Priority, and Status visibility off through the UI.
+- Reloaded the application, reopened `inbox` and Sort & filter, and confirmed all three remained unselected.
+- Confirmed no property pills render while all controls are unselected.
+- Browser snapshot reported no console-error diagnostics.
 
 ## Findings
 
-No actionable P0, P1, or P2 differences were found for the requested change.
+No actionable P0, P1, or P2 differences remain.
 
-- Fonts and typography: `Title` keeps the existing first-line title treatment at 36 px, weight 700, and 46.8 px line height, preserving the hierarchy shown in the source.
-- Spacing and layout rhythm: editor position, top padding, toolbar, and first-line alignment remain unchanged.
-- Colors and visual tokens: the placeholder uses the existing editor foreground token at 38% opacity (`rgba(226, 221, 240, 0.38)` in the captured dark theme), producing a clearly muted grey state.
-- Image quality and asset fidelity: no image assets are part of this scoped change; existing icons and chrome remain unchanged.
-- Copy and content: the long instructional copy is replaced by exactly `Title`.
-- Interaction: the placeholder disappears when typing begins and returns when the editor is cleared.
-- Console: no browser console errors were present during the verified interaction.
+## Comparison history
 
-The full-view comparison confirms that the change remains scoped to the editor empty state. The focused comparison was used because placeholder copy, weight, and contrast are too small to judge reliably in the full-width side-by-side image. Differences in sidebar content come from the browser demo's sample vault and are unrelated to the requested component change.
+- Initial implementation check: the demo retained the prior session's three selected property controls. This was expected persistence, not a code default failure.
+- Action: cleared all three controls through the UI and reloaded the application.
+- Post-fix evidence: Owner, Priority, and Status each report `aria-pressed="false"` with “Show … property” labels, and no pills are rendered.
 
-## Open Questions
+## Follow-up polish
 
-None.
-
-## Comparison History
-
-- Initial rendered comparison: no P0/P1/P2 findings, so no visual-fix iteration was required.
-
-## Implementation Checklist
-
-- [x] Replace the desktop editor's default empty-state copy with `Title`.
-- [x] Apply muted placeholder color using the existing theme token.
-- [x] Preserve first-line title sizing and editor behavior.
-- [x] Verify typing and clearing behavior in the rendered app.
-- [x] Check the browser console.
-
-## Follow-up Polish
-
-No P3 follow-up is necessary for this scoped change.
+No P3 follow-ups identified for this scoped change.
 
 final result: passed

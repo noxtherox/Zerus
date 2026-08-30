@@ -672,6 +672,7 @@ function NoteView({
   onChat,
 }: NoteViewProps) {
   const presentedNote = presentNote(note);
+  const archived = isArchived(note);
   const trashed = isTrashed(note);
   const file = getFileHubReference(note);
   const hasFile = file !== null;
@@ -894,6 +895,27 @@ function NoteView({
             className="h-8 shrink-0 rounded-full bg-[#df5149] px-3 text-xs font-semibold text-white hover:bg-[#c94740]"
           >
             Restore
+          </Button>
+        </div>
+      )}
+      {archived && !trashed && (
+        <div
+          className="mx-4 flex shrink-0 items-center gap-3 rounded-[14px] border border-[#df5149]/25 bg-[#df5149]/10 px-3 py-2.5"
+          role="status"
+        >
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#df5149]/15 text-[#ef6b62]">
+            <Archive className="h-4 w-4" />
+          </span>
+          <span className="min-w-0 flex-1 text-sm font-medium text-[#c9c5bf]">
+            This note is archived.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => toggleNoteArchived(note.id)}
+            className="h-8 shrink-0 rounded-full bg-[#df5149] px-3 text-xs font-semibold text-white hover:bg-[#c94740]"
+          >
+            Unarchive
           </Button>
         </div>
       )}
@@ -1363,11 +1385,11 @@ function MobileSettings({
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Version history</p>
           <div className="space-y-4 rounded-[16px] bg-[#292a2b] p-4">
           <div className="flex items-center justify-between gap-3">
-            <span><span className="block text-[15px] font-semibold">Record history</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Every content autosave</span></span>
+            <span><span className="block text-[15px] font-semibold">Record history</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Autosaves after 5 seconds idle</span></span>
             <Switch checked={historySettings.enabled} onCheckedChange={(enabled) => void updateVersionHistorySettings({ ...historySettings, enabled })} />
           </div>
           <div className="flex items-center gap-3 border-t border-white/[0.08] pt-4">
-            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">Retained checkpoints</span><span className="mt-0.5 block text-xs text-[#8e8e93]">50 versions per checkpoint</span></span>
+            <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">Retained checkpoints</span><span className="mt-0.5 block text-xs text-[#8e8e93]">3 autosaves per checkpoint</span></span>
             {historySettings.checkpointLimit === null ? <Button variant="ghost" className="h-10 rounded-[11px] bg-white/[0.07] px-3 text-xs" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: 10 })}>Unlimited</Button> : <Input key={historySettings.checkpointLimit} type="number" min={1} max={100} defaultValue={historySettings.checkpointLimit} className="h-10 w-20 border-white/[0.08] bg-white/[0.04] text-center" onBlur={(event) => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: Math.max(1, Math.min(100, Number(event.target.value) || 1)) })} />}
           </div>
           <button type="button" className="text-left text-xs font-semibold text-[#ef6b62]" onClick={() => void updateVersionHistorySettings({ ...historySettings, checkpointLimit: historySettings.checkpointLimit === null ? 10 : null })}>{historySettings.checkpointLimit === null ? "Use a fixed limit" : "Keep unlimited checkpoints"}</button>

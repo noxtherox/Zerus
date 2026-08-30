@@ -31,6 +31,7 @@
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
     "desktop:build": "node scripts/desktop-build.mjs",
+    "desktop:build:local": "node scripts/desktop-build.mjs --local",
     "desktop:verify": "node scripts/verify-macos-build.mjs",
     "desktop:smoke": "node scripts/verify-macos-build.mjs --launch",
     "platform:verify": "node scripts/verify-platform-config.mjs",
