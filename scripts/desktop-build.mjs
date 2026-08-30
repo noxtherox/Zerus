@@ -1,12 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import {
   parseDeveloperIdApplications,
   resolveNotaryCredentials,
   resolveSigningIdentity,
 } from "./macos-release-utils.mjs";
+import { notarizeNewestMacosDmg } from "./notarize-macos-dmg.mjs";
 
 const localBuild = process.argv.includes("--local");
 const tauriArgs = process.argv
@@ -54,14 +55,6 @@ if (releaseBuild) {
     parseDeveloperIdApplications(identityOutput),
   );
   notaryCredentials = resolveNotaryCredentials(environment);
-  if (
-    notaryCredentials.kind === "App Store Connect API key" &&
-    !existsSync(environment.APPLE_API_KEY_PATH)
-  ) {
-    throw new Error(
-      `APPLE_API_KEY_PATH does not exist: ${environment.APPLE_API_KEY_PATH}`,
-    );
-  }
   console.log(
     `Release signing identity: ${environment.APPLE_SIGNING_IDENTITY}`,
   );
@@ -113,46 +106,7 @@ execFileSync("pnpm", ["exec", "tauri", "build", ...tauriArgs], {
 
 if (process.platform === "darwin") {
   if (releaseBuild) {
-    const config = JSON.parse(
-      readFileSync(resolve("src-tauri/tauri.conf.json"), "utf8"),
-    );
-    const targetRoot = resolve("src-tauri/target");
-    const bundleRoots = [resolve(targetRoot, "release/bundle")];
-    if (existsSync(targetRoot)) {
-      for (const entry of readdirSync(targetRoot, { withFileTypes: true })) {
-        if (entry.isDirectory()) {
-          bundleRoots.push(resolve(targetRoot, entry.name, "release/bundle"));
-        }
-      }
-    }
-    const dmgCandidates = bundleRoots.flatMap((bundleRoot) => {
-      const directory = resolve(bundleRoot, "dmg");
-      return existsSync(directory)
-        ? readdirSync(directory)
-            .filter(
-              (name) =>
-                name.startsWith(`${config.productName}_${config.version}_`) &&
-                name.endsWith(".dmg"),
-            )
-            .map((name) => resolve(directory, name))
-            .filter((path) => statSync(path).mtimeMs >= buildStartedAt - 5_000)
-        : [];
-    });
-    if (dmgCandidates.length === 0) {
-      throw new Error("The release build did not produce a new macOS DMG.");
-    }
-    const dmgPath = dmgCandidates.sort(
-      (left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs,
-    )[0];
-    console.log(`Submitting DMG for notarization: ${dmgPath}`);
-    execFileSync(
-      "xcrun",
-      ["notarytool", "submit", dmgPath, ...notaryCredentials.args, "--wait"],
-      { stdio: "inherit" },
-    );
-    execFileSync("xcrun", ["stapler", "staple", dmgPath], {
-      stdio: "inherit",
-    });
+    notarizeNewestMacosDmg(environment, buildStartedAt - 5_000);
   }
 
   execFileSync(

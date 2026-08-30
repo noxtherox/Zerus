@@ -99,8 +99,20 @@ jobs:
           prerelease: false
           args: --target aarch64-apple-darwin
 
+      - name: Notarize and staple DMG
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
+        run: node scripts/notarize-macos-dmg.mjs
+
       - name: Verify packaged desktop artifacts
         run: pnpm desktop:verify -- --require-notarized
+
+      - name: Replace release DMG with stapled artifact
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
 
       - name: Publish verified release
         env:
