@@ -61,6 +61,10 @@ import {
   propertyDefinitionOwner,
 } from "@/lib/properties";
 import {
+  preserveRelationsForTypeMove,
+  recoverLegacyMovedRelations,
+} from "@/lib/relation-schema-migrations";
+import {
   type TypeIcons,
   isTypeIconValue,
   suggestIconForType,
@@ -1140,6 +1144,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const editedIds = [...startupEditedNoteIds].filter((id) =>
       loadedNotes.some((note) => note.id === id),
     );
+    const recoveredSchemas = recoverLegacyMovedRelations(loadedNotes, schemas);
     setState({
       status: "ready",
       notes: loadedNotes,
@@ -1149,7 +1154,7 @@ async function loadVault(nextBackend: VaultBackend) {
       hasMoreNotes: canPage && files.length < mobileNoteEntries.length,
       isLoadingMoreNotes: false,
       extraTypes,
-      schemas,
+      schemas: recoveredSchemas,
       typeIcons,
       typeViews,
       fileLocations,
@@ -1172,7 +1177,7 @@ async function loadVault(nextBackend: VaultBackend) {
         nextBackend.location,
         vaultNotes,
         extraTypes,
-        schemas,
+        recoveredSchemas,
         typeIcons,
         typeViews,
         fileLocations,
@@ -1180,6 +1185,11 @@ async function loadVault(nextBackend: VaultBackend) {
       void invoke("cli_register_vault", {
         vaultPath: nextBackend.location,
       }).catch((error) => reportError("register vault with CLI", error));
+    }
+    if (recoveredSchemas !== schemas) {
+      void nextBackend
+        .write(SCHEMAS_PATH, JSON.stringify(recoveredSchemas, null, 2))
+        .catch((error) => reportError("repair moved relation definitions", error));
     }
     mobileDiagnostic("store.vault.load.resolved", {
       notes: loadedNotes.length,
@@ -4070,9 +4080,11 @@ export async function setNoteType(id: string, typePath: string[]) {
   // the move may create the type — capture what existed before to only
   // suggest icons for genuinely new type levels
   const existedKeys = existingTypeKeys();
+  const schemas = preserveRelationsForTypeMove(note, typePath, state.schemas);
   const target = uniquePath(typeKey(typePath), fileStem(note.path), id);
   try {
     await moveNoteWithManagedDocument(note, target);
+    if (schemas !== state.schemas) saveSchemas(schemas);
     saveNoteDisplayState();
     await suggestIconsForNewType(typePath, existedKeys);
   } catch (error) {

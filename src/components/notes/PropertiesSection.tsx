@@ -464,14 +464,13 @@ function RelationValueEditor({
       : [String(value)];
   const selectedLower = new Set(titles.map((title) => title.toLowerCase()));
 
-  const candidates = (
+  const relatedNotes = (
     def.relationTypeKey
       ? notesOfTypeKey(allNotes, def.relationTypeKey)
       : allNotes.filter((note) => !isExternalNote(note) && !isTrashed(note))
-  ).filter(
-    (note) =>
-      note.id !== currentNote.id &&
-      !selectedLower.has(noteTitle(note).toLowerCase()),
+  ).filter((note) => note.id !== currentNote.id);
+  const candidates = relatedNotes.filter(
+    (note) => !selectedLower.has(noteTitle(note).toLowerCase()),
   );
 
   const pick = (note: Note) => {
@@ -487,6 +486,15 @@ function RelationValueEditor({
   const relatedTypeLabel =
     relatedTypePath.at(-1) ?? (def.name || "current type");
   const createTitle = query.trim() || "Untitled";
+  const normalizedCreateTitle = query.trim().toLocaleLowerCase();
+  const hasExactTitleMatch =
+    selectedLower.has(normalizedCreateTitle) ||
+    relatedNotes.some(
+      (note) =>
+        noteTitle(note).trim().toLocaleLowerCase() === normalizedCreateTitle,
+    );
+  const showCreateAction =
+    normalizedCreateTitle.length >= 2 && !hasExactTitleMatch;
 
   const createRelatedNote = async () => {
     if (creating) return;
@@ -546,27 +554,7 @@ function RelationValueEditor({
                 onValueChange={setQuery}
               />
               <CommandList>
-                <CommandEmpty>
-                  No matching notes. Create a new one below.
-                </CommandEmpty>
-                <CommandGroup>
-                  <CommandItem
-                    value={`create new ${createTitle} ${relatedTypeLabel}`}
-                    disabled={creating}
-                    onSelect={() => void createRelatedNote()}
-                  >
-                    {creating ? (
-                      <Loader2 size={14} className="mr-2 animate-spin" />
-                    ) : (
-                      <Plus size={14} className="mr-2" />
-                    )}
-                    <span className="truncate">
-                      {query.trim()
-                        ? `Create “${createTitle}” in ${relatedTypeLabel}`
-                        : `Create new item in ${relatedTypeLabel}`}
-                    </span>
-                  </CommandItem>
-                </CommandGroup>
+                <CommandEmpty>No matching notes.</CommandEmpty>
                 <CommandGroup>
                   {candidates.slice(0, 100).map((note) => (
                     <CommandItem
@@ -579,6 +567,26 @@ function RelationValueEditor({
                   ))}
                 </CommandGroup>
               </CommandList>
+              {showCreateAction && (
+                <div className="border-t p-1">
+                  <button
+                    type="button"
+                    disabled={creating}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => void createRelatedNote()}
+                    className="flex w-full items-center rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    {creating ? (
+                      <Loader2 size={14} className="mr-2 animate-spin" />
+                    ) : (
+                      <Plus size={14} className="mr-2" />
+                    )}
+                    <span className="truncate">
+                      Create “{createTitle}” in {relatedTypeLabel}
+                    </span>
+                  </button>
+                </div>
+              )}
             </Command>
           </PopoverContent>
         </Popover>

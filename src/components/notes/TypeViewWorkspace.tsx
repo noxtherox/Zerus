@@ -400,7 +400,10 @@ function BoardColumn({
     <section
       ref={setNodeRef}
       style={style}
-      className={cn("group/board-column w-64 shrink-0", isDragging && "z-40 opacity-70")}
+      className={cn(
+        "group/board-column flex w-64 shrink-0 flex-col",
+        isDragging && "z-40 opacity-70",
+      )}
     >
       <header className="mb-2 flex h-7 items-center gap-1 px-1 text-xs font-medium">
         <button
@@ -442,7 +445,7 @@ function BoardColumn({
       </header>
       <div
         className={cn(
-          "min-h-28 space-y-2 rounded-lg border border-border/50 bg-zerus-surface/60 p-2",
+          "min-h-28 flex-1 space-y-2 rounded-lg border border-border/50 bg-zerus-surface/60 p-2",
           isOver && "border-zerus-accent/60 bg-zerus-accent/5",
         )}
       >
@@ -523,7 +526,7 @@ function BoardView({
       collisionDetection={boardCollisionDetection}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex min-w-max items-start gap-3 p-6">
+      <div className="flex min-w-max items-stretch gap-3 p-6">
         <SortableContext
           items={columns.map((column) => `board-column:${column}`)}
           strategy={horizontalListSortingStrategy}
