@@ -176,6 +176,56 @@
   color: rgb(var(--zerus-link));
 }
 
+.zerus-mdx-content a[href^="zerus-attachment:"] {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 38px;
+  align-items: center;
+  margin-block: 3px;
+  padding: 7px 60px 7px 36px;
+  overflow: hidden;
+  border: 1px solid rgb(var(--zerus-text) / 0.16);
+  border-radius: 8px;
+  background: rgb(var(--zerus-text) / 0.045);
+  color: rgb(var(--zerus-text));
+  font-weight: 550;
+  line-height: 1.35;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.zerus-mdx-content a[href^="zerus-attachment:"]:hover {
+  border-color: rgb(var(--zerus-accent) / 0.5);
+  background: rgb(var(--zerus-accent) / 0.09);
+}
+
+.zerus-mdx-content a[href^="zerus-attachment:"]::before {
+  position: absolute;
+  left: 12px;
+  content: "\1F4CE";
+  font-size: 14px;
+}
+
+.zerus-mdx-content a[href^="zerus-attachment:"]::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  width: 48px;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid rgb(var(--zerus-text) / 0.13);
+  color: rgb(var(--zerus-link));
+  content: "•••";
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
 .zerus-mdx-content blockquote {
   margin-inline: 0;
   padding-left: 1em;

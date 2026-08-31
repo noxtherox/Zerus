@@ -1,4 +1,11 @@
-import { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -38,19 +45,34 @@ import "./mdx-editor.css";
 import {
   ChevronLeft,
   ChevronRight,
+  Copy,
+  ExternalLink,
+  FolderSearch,
   Maximize,
   Minimize,
   Paperclip,
   Search,
   X,
 } from "@/lib/icons";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { getImageUrl, savePastedImage } from "@/store/notes-store";
 import { isImageAttachmentPath, type NoteAttachment } from "@/lib/note-attachments";
+import { fileManagerName } from "@/lib/desktop-platform";
 import {
   consumeLocalMarkdownEcho,
   recordLocalMarkdownEcho,
 } from "./mdx-sync";
 import { prepareMarkdownForMdxEditor } from "./mdx-compat";
+import {
+  attachmentClickAction,
+  attachmentIdFromHref,
+} from "./attachment-link";
 import { toast } from "sonner";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
@@ -276,6 +298,7 @@ export function MarkdownEditor({
   findRequest = 0,
   insertTextRequest = null,
   onTextSelectionChange,
+  attachments = [],
   onAttachmentAction,
   onAttachmentDrop,
   onRequestAttachments,
@@ -284,6 +307,11 @@ export function MarkdownEditor({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const lastInsertRequest = useRef<number | null>(null);
   const pendingLocalEchoes = useRef<string[]>([]);
+  const [attachmentMenu, setAttachmentMenu] = useState<{
+    id: string;
+    left: number;
+    top: number;
+  } | null>(null);
 
   const toolbarContext = useMemo<ToolbarContextValue>(
     () => ({
@@ -359,18 +387,28 @@ export function MarkdownEditor({
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as Element).closest<HTMLAnchorElement>("a");
     const href = anchor?.getAttribute("href") ?? "";
-    const attachment = href.match(/^zerus-attachment:([a-zA-Z0-9-]+)$/);
-    if (!attachment || !onAttachmentAction) return;
+    const attachmentId = attachmentIdFromHref(href);
+    if (!anchor || !attachmentId || !onAttachmentAction) return;
     event.preventDefault();
-    onAttachmentAction(attachment[1], "open");
+    event.stopPropagation();
+    const rect = anchor.getBoundingClientRect();
+    if (attachmentClickAction(rect.right, event.clientX) === "menu") {
+      setAttachmentMenu({ id: attachmentId, left: rect.right, top: rect.bottom });
+    } else {
+      onAttachmentAction(attachmentId, "open");
+    }
   };
+
+  const menuAttachment = attachmentMenu
+    ? attachments.find((attachment) => attachment.id === attachmentMenu.id)
+    : null;
 
   return (
     <ToolbarContext.Provider value={toolbarContext}>
       <div
         ref={wrapperRef}
         className="zerus-mdx-shell"
-        onClick={handleClick}
+        onClickCapture={handleClick}
         onKeyUp={reportSelection}
         onPointerUp={reportSelection}
         onBlur={() => onTextSelectionChange?.(false)}
@@ -393,6 +431,59 @@ export function MarkdownEditor({
           }}
           onError={({ error }) => toast.error(`Markdown could not be opened: ${error}`)}
         />
+        <DropdownMenu
+          open={!!menuAttachment}
+          onOpenChange={(open) => {
+            if (!open) setAttachmentMenu(null);
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-hidden="true"
+              className="pointer-events-none fixed h-px w-px opacity-0"
+              style={{
+                left: attachmentMenu?.left ?? 0,
+                top: attachmentMenu?.top ?? 0,
+              }}
+            />
+          </DropdownMenuTrigger>
+          {menuAttachment && (
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem
+                onSelect={() => onAttachmentAction?.(menuAttachment.id, "open")}
+              >
+                <ExternalLink className="mr-2" size={14} />
+                Open in default app
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => onAttachmentAction?.(menuAttachment.id, "reveal")}
+              >
+                <FolderSearch className="mr-2" size={14} />
+                Reveal in {fileManagerName}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() =>
+                  onAttachmentAction?.(
+                    menuAttachment.id,
+                    menuAttachment.kind === "vault" ? "external" : "copy",
+                  )
+                }
+              >
+                {menuAttachment.kind === "vault" ? (
+                  <ExternalLink className="mr-2" size={14} />
+                ) : (
+                  <Copy className="mr-2" size={14} />
+                )}
+                {menuAttachment.kind === "vault"
+                  ? "Keep as external link"
+                  : "Copy into vault"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          )}
+        </DropdownMenu>
       </div>
     </ToolbarContext.Provider>
   );

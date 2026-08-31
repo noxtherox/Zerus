@@ -2018,6 +2018,16 @@ fn enqueue_desktop_open_files(app: &tauri::AppHandle, paths: Vec<String>) {
 }
 
 #[tauri::command]
+fn open_file_in_default_app(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    if !std::path::Path::new(&path).is_file() {
+        return Err("The attached file is no longer available".to_string());
+    }
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn reveal_in_file_manager(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -2081,6 +2091,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_mobile_vault::init())
         .invoke_handler(tauri::generate_handler![
+            open_file_in_default_app,
             reveal_in_file_manager,
             write_new_vault_file,
             copy_file_into_vault,

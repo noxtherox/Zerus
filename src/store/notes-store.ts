@@ -3152,7 +3152,7 @@ export async function openNoteAttachment(
   const path = attachment ? attachmentAbsolutePath(attachment) : null;
   if (!path) return;
   try {
-    await openPath(path);
+    await invoke("open_file_in_default_app", { path });
   } catch (error) {
     reportError("open attachment", error);
   }
