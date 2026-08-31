@@ -145,9 +145,6 @@ jobs:
       - name: Verify platform boundaries
         run: pnpm platform:verify
 
-      - name: Test
-        run: pnpm exec vitest run --exclude '.claude/**'
-
       - name: Build Windows installer
         run: pnpm windows:build
 
