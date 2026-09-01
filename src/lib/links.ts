@@ -8,8 +8,26 @@ import {
   isTrashed,
   noteTitle,
   noteTypePath,
+  notesOfTypeKey,
   typeKey,
 } from "@/lib/note-utils";
+
+/** Notes eligible to be added from a relation-property picker. */
+export function getRelationPickerNotes(
+  notes: Note[],
+  currentNoteId: string,
+  relationTypeKey?: string,
+  includeArchived = false,
+): Note[] {
+  const relatedNotes = relationTypeKey
+    ? notesOfTypeKey(notes, relationTypeKey)
+    : notes.filter((note) => !isExternalNote(note) && !isTrashed(note));
+
+  return relatedNotes.filter(
+    (note) =>
+      note.id !== currentNoteId && (includeArchived || !isArchived(note)),
+  );
+}
 
 /** Titles referenced by this note's relation properties. */
 export function getOutgoingRelationTitles(

@@ -1022,6 +1022,7 @@ function NoteView({
                   onOpenNote(id);
                 }}
                 expanded
+                showArchived={showArchivedBacklinks}
               />
               {backlinkTotal === 0 && relationTotal === 0 ? (
                 <p className="text-sm text-[#77777d]">No notes link here yet.</p>

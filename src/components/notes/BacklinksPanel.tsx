@@ -124,7 +124,7 @@ export function BacklinksPanel({
           <Switch
             checked={showArchived}
             onCheckedChange={setShowArchived}
-            aria-label="Show archived backlinks"
+            aria-label="Show archived notes and backlinks"
             className="scale-75"
           />
         </label>
@@ -136,6 +136,7 @@ export function BacklinksPanel({
             allNotes={allNotes}
             onOpenNote={onOpenNote}
             expanded={expanded}
+            showArchived={showArchived}
           />
         )}
       </div>

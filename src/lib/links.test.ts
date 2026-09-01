@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBacklinksGroupedByType } from "./links";
+import { getBacklinksGroupedByType, getRelationPickerNotes } from "./links";
 import type { Note } from "./note-utils";
 
 function note(
@@ -107,5 +107,31 @@ describe("backlinks", () => {
     expect([...groups.values()].flat().map((item) => item.id)).toEqual([
       "person",
     ]);
+  });
+});
+
+describe("relation picker", () => {
+  it("hides archived notes by default and includes them when requested", () => {
+    const current = note("current", "feedback/current.md", "# Current");
+    const active = note("active", "products/active.md", "# Active");
+    const archived = note(
+      "archived",
+      "products/archived.md",
+      "# Archived",
+      true,
+    );
+    const trashed = note("trashed", ".trash/products/trashed.md", "# Trashed");
+    const notes = [current, active, archived, trashed];
+
+    expect(
+      getRelationPickerNotes(notes, current.id, "products").map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["active"]);
+    expect(
+      getRelationPickerNotes(notes, current.id, "products", true).map(
+        (candidate) => candidate.id,
+      ),
+    ).toEqual(["active", "archived"]);
   });
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Archive,
   ArrowLeftRight,
   ArrowRight,
   Calendar,
@@ -57,11 +58,9 @@ import {
   type Note,
   findNoteByTitle,
   getAllTypePaths,
-  isExternalNote,
-  isTrashed,
+  isArchived,
   noteTitle,
   noteTypePath,
-  notesOfTypeKey,
   parseTypePath,
   typeKey,
 } from "@/lib/note-utils";
@@ -76,7 +75,7 @@ import {
 import { cn } from "@/lib/utils";
 import { FILE_HUB_PROPERTY_KEYS } from "@/lib/file-hubs";
 import { isReservedZerusProperty } from "@/lib/zerus-metadata";
-import { hasRelationTo } from "@/lib/links";
+import { getRelationPickerNotes, hasRelationTo } from "@/lib/links";
 import {
   normalizeExternalUrl,
   openExternalUrl,
@@ -443,6 +442,7 @@ function RelationValueEditor({
   onOpenNote,
   onCommit,
   expanded,
+  showArchived,
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
@@ -452,6 +452,7 @@ function RelationValueEditor({
   onOpenNote: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
   expanded?: boolean;
+  showArchived?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -464,11 +465,12 @@ function RelationValueEditor({
       : [String(value)];
   const selectedLower = new Set(titles.map((title) => title.toLowerCase()));
 
-  const relatedNotes = (
-    def.relationTypeKey
-      ? notesOfTypeKey(allNotes, def.relationTypeKey)
-      : allNotes.filter((note) => !isExternalNote(note) && !isTrashed(note))
-  ).filter((note) => note.id !== currentNote.id);
+  const relatedNotes = getRelationPickerNotes(
+    allNotes,
+    currentNote.id,
+    def.relationTypeKey,
+    showArchived,
+  );
   const candidates = relatedNotes.filter(
     (note) => !selectedLower.has(noteTitle(note).toLowerCase()),
   );
@@ -562,7 +564,17 @@ function RelationValueEditor({
                       value={noteTitle(note)}
                       onSelect={() => pick(note)}
                     >
-                      {noteTitle(note)}
+                      {isArchived(note) && (
+                        <>
+                          <Archive
+                            size={14}
+                            className="shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <span className="sr-only">Archived: </span>
+                        </>
+                      )}
+                      <span className="truncate">{noteTitle(note)}</span>
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -937,6 +949,10 @@ interface PropertiesSectionProps {
   expanded?: boolean;
 }
 
+interface RelationsSectionProps extends PropertiesSectionProps {
+  showArchived?: boolean;
+}
+
 export function PropertiesSection({
   note,
   allNotes,
@@ -1201,7 +1217,8 @@ export function RelationsSection({
   allNotes,
   onOpenNote,
   expanded,
-}: PropertiesSectionProps) {
+  showArchived = false,
+}: RelationsSectionProps) {
   const { schemas, extraTypes } = useVault();
   const [addOpen, setAddOpen] = useState(false);
   const [addOwnerKey, setAddOwnerKey] = useState("");
@@ -1290,6 +1307,7 @@ export function RelationsSection({
                 onOpenNote={onOpenNote}
                 onCommit={(value) => setNoteProperty(note.id, def.name, value)}
                 expanded={expanded}
+                showArchived={showArchived}
               />
             </div>
           );
