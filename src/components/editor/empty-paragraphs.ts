@@ -8,17 +8,30 @@ import {
 } from "@mdxeditor/editor";
 import type { RootContent } from "mdast";
 
-type EmptyLineElement = Extract<RootContent, { type: "mdxJsxFlowElement" }>;
+type EmptyLineParagraph = Extract<RootContent, { type: "paragraph" }>;
+type LegacyEmptyLineElement = Extract<
+  RootContent,
+  { type: "mdxJsxFlowElement" }
+>;
 
-const EMPTY_LINE_ELEMENT: EmptyLineElement = {
-  type: "mdxJsxFlowElement",
-  name: "br",
-  attributes: [],
-  children: [],
+export const EMPTY_LINE_CHARACTER = "\u200B";
+
+const EMPTY_LINE_PARAGRAPH: EmptyLineParagraph = {
+  type: "paragraph",
+  children: [{ type: "text", value: EMPTY_LINE_CHARACTER }],
 };
 
-/** True for the standalone break used to round-trip one empty editor line. */
-export function isEmptyLineMarker(node: RootContent): node is EmptyLineElement {
+/** True for an invisible paragraph marker or the legacy standalone HTML break. */
+export function isEmptyLineMarker(node: RootContent): boolean {
+  if (
+    node.type === "paragraph" &&
+    node.children.length === 1 &&
+    node.children[0]?.type === "text" &&
+    node.children[0].value === EMPTY_LINE_CHARACTER
+  ) {
+    return true;
+  }
+
   return (
     node.type === "mdxJsxFlowElement" &&
     node.name === "br" &&
@@ -27,9 +40,11 @@ export function isEmptyLineMarker(node: RootContent): node is EmptyLineElement {
   );
 }
 
-const emptyParagraphImportVisitor: MdastImportVisitor<EmptyLineElement> = {
+const emptyParagraphImportVisitor: MdastImportVisitor<
+  EmptyLineParagraph | LegacyEmptyLineElement
+> = {
   priority: 100,
-  testNode: (node): node is EmptyLineElement =>
+  testNode: (node): node is EmptyLineParagraph | LegacyEmptyLineElement =>
     isEmptyLineMarker(node as RootContent),
   visitNode: ({ actions }) => {
     // Do not import the marker itself. An actually empty Lexical paragraph is
@@ -40,7 +55,7 @@ const emptyParagraphImportVisitor: MdastImportVisitor<EmptyLineElement> = {
 
 const emptyParagraphExportVisitor: LexicalExportVisitor<
   lexical.ParagraphNode,
-  EmptyLineElement
+  EmptyLineParagraph
 > = {
   priority: 100,
   testLexicalNode: lexical.$isParagraphNode,
@@ -53,9 +68,12 @@ const emptyParagraphExportVisitor: LexicalExportVisitor<
       return;
     }
 
-    // A standalone HTML break is valid, visible Markdown and survives parsing.
-    // The import visitor above turns it back into an empty editor paragraph.
-    actions.appendToParent(mdastParent, { ...EMPTY_LINE_ELEMENT });
+    // A zero-width character survives Markdown round-trips without exposing an
+    // HTML tag in renderers that do not know about Zerus's empty-line marker.
+    actions.appendToParent(mdastParent, {
+      ...EMPTY_LINE_PARAGRAPH,
+      children: [...EMPTY_LINE_PARAGRAPH.children],
+    });
   },
 };
 

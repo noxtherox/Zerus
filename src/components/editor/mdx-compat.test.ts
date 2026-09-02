@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { prepareMarkdownForMdxEditor } from "./mdx-compat";
+import {
+  cleanMarkdownFromMdxEditor,
+  prepareMarkdownForMdxEditor,
+} from "./mdx-compat";
 
 describe("MDX Markdown compatibility", () => {
   it.each([
@@ -55,6 +58,25 @@ describe("MDX Markdown compatibility", () => {
   it("shields braces idempotently", () => {
     const once = prepareMarkdownForMdxEditor("Path: {/Users/example}");
     expect(prepareMarkdownForMdxEditor(once)).toBe(once);
+  });
+
+  it("removes serialized trailing-space entities outside code", () => {
+    expect(
+      prepareMarkdownForMdxEditor(
+        "First paragraph&#x20;\n\nSecond paragraph &#x20;",
+      ),
+    ).toBe("First paragraph\n\nSecond paragraph");
+  });
+
+  it("keeps trailing-space entities inside inline and fenced code", () => {
+    const source = "`value&#x20;`\n\n```txt\nvalue&#x20;\n```";
+    expect(prepareMarkdownForMdxEditor(source)).toBe(source);
+  });
+
+  it("cleans newly exported trailing-space entities", () => {
+    expect(cleanMarkdownFromMdxEditor("Paragraph&#x20;\n\nNext")).toBe(
+      "Paragraph\n\nNext",
+    );
   });
 
   it.each([

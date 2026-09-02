@@ -29,7 +29,33 @@ function canStartMdxTag(character: string | undefined): boolean {
  * HTML break tags are made self-closing. Code spans and fenced code blocks
  * must remain verbatim.
  */
-export function prepareMarkdownForMdxEditor(source: string): string {
+/** Removes mdast's encoding of invisible trailing spaces outside code fences. */
+export function cleanMarkdownFromMdxEditor(source: string): string {
+  let fence: { marker: "`" | "~"; length: number } | null = null;
+
+  return source
+    .split(/(?<=\n)/u)
+    .map((line) => {
+      const content = line.replace(/\r?\n$/u, "");
+      const newline = line.slice(content.length);
+      const fenceMatch = content.match(/^( {0,3})(`{3,}|~{3,})/u);
+
+      if (fenceMatch) {
+        const marker = fenceMatch[2][0] as "`" | "~";
+        const length = fenceMatch[2].length;
+        if (!fence) fence = { marker, length };
+        else if (fence.marker === marker && length >= fence.length) fence = null;
+        return line;
+      }
+
+      if (fence) return line;
+      return `${content.replace(/[ \t]*&#x20;$/iu, "")}${newline}`;
+    })
+    .join("");
+}
+
+export function prepareMarkdownForMdxEditor(input: string): string {
+  const source = cleanMarkdownFromMdxEditor(input);
   let result = "";
   let index = 0;
   let inlineCodeTicks = 0;
@@ -53,6 +79,7 @@ export function prepareMarkdownForMdxEditor(source: string): string {
     }
 
     const character = source[index];
+
     if (!fence && character === "`") {
       const ticks = backtickRunLength(source, index);
       if (inlineCodeTicks === 0) inlineCodeTicks = ticks;

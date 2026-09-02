@@ -68,7 +68,10 @@ import {
   consumeLocalMarkdownEcho,
   recordLocalMarkdownEcho,
 } from "./mdx-sync";
-import { prepareMarkdownForMdxEditor } from "./mdx-compat";
+import {
+  cleanMarkdownFromMdxEditor,
+  prepareMarkdownForMdxEditor,
+} from "./mdx-compat";
 import { preserveEmptyParagraphsPlugin } from "./empty-paragraphs";
 import {
   attachmentClickAction,
@@ -428,8 +431,9 @@ export function MarkdownEditor({
           toMarkdownOptions={{ bullet: "-" }}
           onChange={(markdown, initialMarkdownNormalize) => {
             if (initialMarkdownNormalize) return;
-            recordLocalMarkdownEcho(pendingLocalEchoes.current, markdown);
-            onChange(markdown);
+            const cleanedMarkdown = cleanMarkdownFromMdxEditor(markdown);
+            recordLocalMarkdownEcho(pendingLocalEchoes.current, cleanedMarkdown);
+            onChange(cleanedMarkdown);
           }}
           onError={({ error }) => toast.error(`Markdown could not be opened: ${error}`)}
         />
