@@ -149,6 +149,14 @@
   margin-top: 0;
 }
 
+.zerus-mdx-content > p {
+  margin-block: 0 0.7em;
+}
+
+.zerus-mdx-content > p:last-child {
+  margin-bottom: 0;
+}
+
 .zerus-mdx-title-first-line > :is(p, h1):first-child {
   margin-bottom: 0.65em;
   font-size: 2.4em;
@@ -271,6 +279,31 @@
 .zerus-mdx-content img {
   max-width: 100%;
   border-radius: 6px;
+}
+
+/* MDXEditor renders image actions for every editable image. Keep them out of
+   the way until the image is hovered, keyboard-focused, or selected. */
+.zerus-mdx-content
+  [data-editor-block-type="image"]
+  > [class*="_editImageToolbar_"] {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 120ms ease,
+    visibility 0s linear 120ms;
+}
+
+.zerus-mdx-content
+  [data-editor-block-type="image"]:is(:hover, :focus-within)
+  > [class*="_editImageToolbar_"],
+.zerus-mdx-content
+  [data-editor-block-type="image"]:has(img[class*="_focusedImage_"])
+  > [class*="_editImageToolbar_"] {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0s;
 }
 
 @media (max-width: 767px) {

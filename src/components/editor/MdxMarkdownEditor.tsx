@@ -69,6 +69,7 @@ import {
   recordLocalMarkdownEcho,
 } from "./mdx-sync";
 import { prepareMarkdownForMdxEditor } from "./mdx-compat";
+import { preserveEmptyParagraphsPlugin } from "./empty-paragraphs";
 import {
   attachmentClickAction,
   attachmentIdFromHref,
@@ -248,6 +249,7 @@ const editorPlugins = [
   codeMirrorPlugin({ codeBlockLanguages: [] }),
   markdownShortcutPlugin(),
   searchPlugin(),
+  preserveEmptyParagraphsPlugin(),
   toolbarPlugin({
     toolbarClassName: "zerus-mdx-toolbar",
     toolbarContents: () => (
