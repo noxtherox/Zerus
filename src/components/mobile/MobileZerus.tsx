@@ -71,6 +71,7 @@ import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
 import { VersionHistoryPanel } from "@/components/notes/VersionHistoryPanel";
 import { PersistentAIChat } from "@/components/mobile/AIChat";
+import { MobileMarkdownReader } from "@/components/mobile/MobileMarkdownReader";
 import type { ChatScope } from "@/lib/mobile-chat-history";
 import { cn } from "@/lib/utils";
 import { noteBody } from "@/lib/frontmatter";
@@ -677,6 +678,7 @@ function NoteView({
   const file = getFileHubReference(note);
   const hasFile = file !== null;
   const [draft, setDraft] = useState(presentedNote.body);
+  const [isEditing, setIsEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(presentedNote.title);
   const [editingTitle, setEditingTitle] = useState(false);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
@@ -920,7 +922,7 @@ function NoteView({
         </div>
       )}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
-        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
+        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span><button type="button" onClick={() => setIsEditing((value) => !value)} className="ml-auto flex min-h-8 items-center gap-1.5 rounded-full bg-white/[0.07] px-3 text-[12px] font-semibold text-[#c9c5bf] active:bg-white/[0.12]"><Pencil className="h-3.5 w-3.5" />{isEditing ? "Done" : "Edit"}</button></div>
         {editingTitle ? (
           <Input
             autoFocus
@@ -938,7 +940,7 @@ function NoteView({
             aria-label="Note title"
           />
         ) : (
-          <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
+          <button type="button" onClick={() => { setIsEditing(true); setEditingTitle(true); }} className="text-left">
             <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
           </button>
         )}
@@ -947,25 +949,31 @@ function NoteView({
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
             <ExternalLink className="h-4 w-4 shrink-0 text-[#77777d]" />
         </button>}
-        <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden">
-          <MarkdownEditor
-            noteId={note.id}
-            initialContent={draft}
-            getLinkableTitles={() => linkableNotes().map((candidate) => noteTitle(candidate))}
-            isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
-            onChange={(body) => {
-              setDraft(body);
-              onBodyChange(body);
-            }}
-            onFollowLink={(title) => void followNoteLink(title)}
-            autoFocus={false}
-            placeholderText="Start writing…"
-            firstLineIsTitle={false}
-            followLinksOnClick
-            findRequest={findRequest}
-            insertTextRequest={insertTextRequest}
-          />
-        </div>
+        {isEditing ? (
+          <div className="mobile-note-editor -mx-6 mt-2 min-h-0 flex-1 overflow-hidden">
+            <MarkdownEditor
+              noteId={note.id}
+              initialContent={draft}
+              getLinkableTitles={() => linkableNotes().map((candidate) => noteTitle(candidate))}
+              isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
+              onChange={(body) => {
+                setDraft(body);
+                onBodyChange(body);
+              }}
+              onFollowLink={(title) => void followNoteLink(title)}
+              autoFocus={false}
+              placeholderText="Start writing…"
+              firstLineIsTitle={false}
+              followLinksOnClick
+              findRequest={findRequest}
+              insertTextRequest={insertTextRequest}
+            />
+          </div>
+        ) : (
+          <div className="-mx-6 mt-2 min-h-0 flex-1 overflow-y-auto px-6 pb-28">
+            <MobileMarkdownReader markdown={draft} onFollowLink={(title) => void followNoteLink(title)} />
+          </div>
+        )}
       </main>
       </div>
       {propertiesVisible && (
@@ -1073,8 +1081,14 @@ function NoteView({
           onReplaceFile={() => { void replaceLinkedFile(); }}
           onDetachFile={() => setDetachConfirmOpen(true)}
           onMoveToTrash={() => setTrashConfirmOpen(true)}
-          onFind={() => setFindRequest((value) => value + 1)}
-          onInsertImage={() => imageInputRef.current?.click()}
+          onFind={() => {
+            setIsEditing(true);
+            window.setTimeout(() => setFindRequest((value) => value + 1), 0);
+          }}
+          onInsertImage={() => {
+            setIsEditing(true);
+            imageInputRef.current?.click();
+          }}
           onMoveType={() => setMoveTypeOpen(true)}
           onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
           onShowHistory={() => setHistoryOpen(true)}

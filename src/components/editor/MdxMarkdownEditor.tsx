@@ -1,11 +1,13 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -43,8 +45,8 @@ import {
 import "@mdxeditor/editor/style.css";
 import "./mdx-editor.css";
 import {
-  ChevronLeft,
-  ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Copy,
   ExternalLink,
   FolderSearch,
@@ -107,6 +109,8 @@ interface MarkdownEditorProps {
 interface ToolbarContextValue {
   findRequest: number;
   isFullHeight: boolean;
+  searchContainer: HTMLDivElement | null;
+  restoreEditorFocus: () => void;
   onRequestAttachments?: () => void;
   onToggleFullHeight?: () => void;
 }
@@ -114,10 +118,33 @@ interface ToolbarContextValue {
 const ToolbarContext = createContext<ToolbarContextValue>({
   findRequest: 0,
   isFullHeight: false,
+  searchContainer: null,
+  restoreEditorFocus: () => undefined,
 });
 
+const CODE_BLOCK_LANGUAGES = {
+  "": "Plain text",
+  bash: "Shell",
+  css: "CSS",
+  html: "HTML",
+  java: "Java",
+  js: "JavaScript",
+  jsx: "JavaScript (React)",
+  json: "JSON",
+  markdown: "Markdown",
+  python: "Python",
+  rust: "Rust",
+  sql: "SQL",
+  swift: "Swift",
+  ts: "TypeScript",
+  tsx: "TypeScript (React)",
+  xml: "XML",
+  yaml: "YAML",
+};
+
 function SearchControl() {
-  const { findRequest } = useContext(ToolbarContext);
+  const { findRequest, restoreEditorFocus, searchContainer } =
+    useContext(ToolbarContext);
   const inputRef = useRef<HTMLInputElement>(null);
   const {
     closeSearch,
@@ -126,10 +153,10 @@ function SearchControl() {
     next,
     openSearch,
     prev,
-    search,
     setSearch,
     total,
   } = useEditorSearch();
+  const [inputValue, setInputValue] = useState("");
   const previousRequest = useRef(findRequest);
 
   useEffect(() => {
@@ -138,19 +165,41 @@ function SearchControl() {
   }, [findRequest, openSearch]);
 
   useEffect(() => {
-    if (isSearchOpen) inputRef.current?.focus();
+    if (isSearchOpen) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
   }, [isSearchOpen]);
 
-  if (isSearchOpen) {
-    return (
-      <div className="zerus-mdx-search">
+  const close = () => {
+    closeSearch();
+    requestAnimationFrame(restoreEditorFocus);
+  };
+
+  const updateSearch = (value: string) => {
+    setInputValue(value);
+    // The editor search API accepts a regular expression. Escaping turns the
+    // control into the literal, accent-tolerant find people expect from an app.
+    setSearch(
+      value
+        .normalize("NFKD")
+        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    );
+  };
+
+  if (isSearchOpen && searchContainer) {
+    return createPortal(
+      <div className="zerus-note-find" role="search" aria-label="Find in note">
         <Search size={14} aria-hidden="true" />
         <input
           ref={inputRef}
-          value={search}
+          value={inputValue}
           aria-label="Search this note"
-          placeholder="Find…"
-          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Find in note"
+          autoCapitalize="none"
+          autoCorrect="off"
+          enterKeyHint="search"
+          onChange={(event) => updateSearch(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
@@ -158,23 +207,25 @@ function SearchControl() {
               else next();
             } else if (event.key === "Escape") {
               event.preventDefault();
-              closeSearch();
+              close();
             }
           }}
         />
-        <span className="zerus-mdx-search-count">
-          {total ? `${cursor}/${total}` : "0/0"}
+        <span className="zerus-note-find-count" aria-live="polite">
+          {inputValue ? (total ? `${cursor} of ${total}` : "No results") : ""}
         </span>
-        <button type="button" aria-label="Previous match" onClick={prev}>
-          <ChevronLeft size={14} />
+        <span className="zerus-note-find-divider" aria-hidden="true" />
+        <button type="button" aria-label="Previous match" disabled={!total} onClick={prev}>
+          <ChevronUp size={16} />
         </button>
-        <button type="button" aria-label="Next match" onClick={next}>
-          <ChevronRight size={14} />
+        <button type="button" aria-label="Next match" disabled={!total} onClick={next}>
+          <ChevronDown size={16} />
         </button>
-        <button type="button" aria-label="Close find" onClick={closeSearch}>
-          <X size={14} />
+        <button type="button" aria-label="Close find" onClick={close}>
+          <X size={16} />
         </button>
-      </div>
+      </div>,
+      searchContainer,
     );
   }
 
@@ -199,7 +250,7 @@ function ZerusToolbarControls() {
   } = useContext(ToolbarContext);
 
   return (
-    <>
+    <div className="zerus-mdx-toolbar-end">
       <SearchControl />
       {onRequestAttachments && (
         <button
@@ -224,7 +275,7 @@ function ZerusToolbarControls() {
           {isFullHeight ? <Minimize size={16} /> : <Maximize size={16} />}
         </button>
       )}
-    </>
+    </div>
   );
 }
 
@@ -249,7 +300,7 @@ const editorPlugins = [
   thematicBreakPlugin(),
   frontmatterPlugin(),
   codeBlockPlugin({ defaultCodeBlockLanguage: "" }),
-  codeMirrorPlugin({ codeBlockLanguages: [] }),
+  codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
   markdownShortcutPlugin(),
   searchPlugin(),
   preserveEmptyParagraphsPlugin(),
@@ -269,7 +320,11 @@ const editorPlugins = [
           options={[
             {
               when: (editor) => editor?.editorType === "codeblock",
-              contents: () => <ChangeCodeMirrorLanguage />,
+              contents: () => (
+                <div className="zerus-mdx-code-language">
+                  <ChangeCodeMirrorLanguage />
+                </div>
+              ),
             },
             {
               fallback: () => (
@@ -310,6 +365,10 @@ export function MarkdownEditor({
 }: MarkdownEditorProps) {
   const editorRef = useRef<MDXEditorMethods>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const [searchContainer, setSearchContainer] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [keyboardFindRequest, setKeyboardFindRequest] = useState(0);
   const lastInsertRequest = useRef<number | null>(null);
   const pendingLocalEchoes = useRef<string[]>([]);
   const [attachmentMenu, setAttachmentMenu] = useState<{
@@ -318,14 +377,28 @@ export function MarkdownEditor({
     top: number;
   } | null>(null);
 
+  const captureWrapper = useCallback((element: HTMLDivElement | null) => {
+    wrapperRef.current = element;
+    setSearchContainer(element);
+  }, []);
+
   const toolbarContext = useMemo<ToolbarContextValue>(
     () => ({
-      findRequest,
+      findRequest: findRequest + keyboardFindRequest,
       isFullHeight,
+      searchContainer,
+      restoreEditorFocus: () => editorRef.current?.focus(),
       onRequestAttachments,
       onToggleFullHeight,
     }),
-    [findRequest, isFullHeight, onRequestAttachments, onToggleFullHeight],
+    [
+      findRequest,
+      isFullHeight,
+      keyboardFindRequest,
+      onRequestAttachments,
+      onToggleFullHeight,
+      searchContainer,
+    ],
   );
 
   useEffect(() => {
@@ -411,9 +484,15 @@ export function MarkdownEditor({
   return (
     <ToolbarContext.Provider value={toolbarContext}>
       <div
-        ref={wrapperRef}
+        ref={captureWrapper}
         className="zerus-mdx-shell"
         onClickCapture={handleClick}
+        onKeyDownCapture={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+            event.preventDefault();
+            setKeyboardFindRequest((request) => request + 1);
+          }
+        }}
         onKeyUp={reportSelection}
         onPointerUp={reportSelection}
         onBlur={() => onTextSelectionChange?.(false)}
