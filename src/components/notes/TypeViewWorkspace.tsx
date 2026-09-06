@@ -78,7 +78,6 @@ import {
   type Note,
   noteSnippet,
   noteTitle,
-  typeKey,
 } from "@/lib/note-utils";
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";

@@ -33,7 +33,7 @@
   color: rgb(var(--zerus-text));
 }
 
-.zerus-mdx-editor > div:last-child {
+.zerus-mdx-editor > .mdxeditor-root-contenteditable {
   min-height: 0;
   flex: 1;
   overflow: auto;
@@ -259,6 +259,36 @@
   color: rgb(var(--zerus-link));
 }
 
+.zerus-mdx-content table {
+  width: max-content;
+  min-width: 100%;
+  margin-block: 1em;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.zerus-mdx-content th,
+.zerus-mdx-content td {
+  min-width: 8rem;
+  border: 1px solid rgb(var(--zerus-text) / 0.18);
+  padding: 0.45rem 0.6rem;
+  vertical-align: top;
+}
+
+.zerus-mdx-content th {
+  background: rgb(var(--zerus-text) / 0.055);
+  font-weight: 650;
+}
+
+.zerus-mdx-content :is(th, td) > p {
+  margin: 0;
+}
+
+.zerus-mdx-content :is(th, td):focus-within {
+  outline: 2px solid rgb(var(--zerus-accent) / 0.55);
+  outline-offset: -2px;
+}
+
 .zerus-mdx-content a[href^="zerus-attachment:"] {
   position: relative;
   display: inline-flex;
@@ -405,4 +435,105 @@
     padding: 12px 24px 112px !important;
     font-size: 16px;
   }
+}
+
+/* Table presentation is shared by the inline editor and paginated workspace. */
+.zerus-mdx-content table, .zerus-table-grid table {
+  width: max-content;
+  min-width: min(100%, 32rem);
+  max-width: none;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid rgb(var(--zerus-text) / .14);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: .92em;
+  line-height: 1.5;
+}
+.zerus-mdx-content th, .zerus-mdx-content td,
+.zerus-table-grid th, .zerus-table-grid td {
+  width: 12rem;
+  min-width: 8rem;
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  padding: .65rem .8rem;
+  border: 0;
+  border-right: 1px solid rgb(var(--zerus-text) / .09);
+  border-bottom: 1px solid rgb(var(--zerus-text) / .09);
+  vertical-align: top;
+}
+.zerus-mdx-content tr:last-child > *, .zerus-table-grid tr:last-child > * { border-bottom: 0; }
+.zerus-mdx-content tr > *:last-child, .zerus-table-grid tr > *:last-child { border-right: 0; }
+.zerus-mdx-content th, .zerus-table-grid th { background: rgb(var(--zerus-text) / .055); font-weight: 650; }
+.zerus-mdx-content td[data-zerus-active-cell], .zerus-mdx-content th[data-zerus-active-cell] { outline: 2px solid rgb(var(--zerus-accent) / .7); outline-offset: -2px; }
+.zerus-table-cell-selected { background: rgb(var(--zerus-accent) / .13); }
+.zerus-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; margin-block: 1rem; border-radius: 8px; }
+.zerus-table-scroll > table { margin: 0; }
+.zerus-table-tools { display: flex; gap: .5rem; padding: .4rem .75rem; border-top: 1px solid rgb(var(--zerus-text) / .1); background: rgb(var(--zerus-editor-bg)); }
+.zerus-table-tools button, .zerus-table-summary button, .zerus-table-pagination button,
+.zerus-table-cell-editor button, .zerus-table-insert button { border: 1px solid rgb(var(--zerus-text) / .18); border-radius: 6px; padding: .45rem .7rem; font-size: 13px; background: rgb(var(--zerus-text) / .035); }
+.zerus-table-actions[data-state] { display: grid; gap: 2px; z-index: 90; }
+.zerus-table-actions button { text-align: left; padding: .5rem; border-radius: 5px; font-size: 13px; }
+.zerus-table-actions button:hover { background: rgb(var(--zerus-text) / .07); }
+.zerus-table-actions p { font-size: 11px; opacity: .65; padding: .5rem; }
+.zerus-table-insert { display: grid; gap: .75rem; }
+.zerus-table-insert label { display: grid; gap: .25rem; font-size: 13px; }
+.zerus-table-insert input, .zerus-table-cell-editor input { width: 100%; padding: .5rem; border: 1px solid rgb(var(--zerus-text) / .2); border-radius: 5px; background: transparent; }
+.zerus-table-expanded { position: fixed !important; inset: 4rem 1rem 4rem; z-index: 70; padding: 1rem; background: rgb(var(--zerus-editor-bg)); overflow: auto !important; border: 1px solid rgb(var(--zerus-text) / .2); box-shadow: 0 0 0 100vmax rgb(0 0 0 / .45); }
+.zerus-table-tools.is-expanded { position: fixed; left: 1rem; right: 1rem; bottom: 1rem; z-index: 80; border-radius: 8px; }
+.zerus-table-summary { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem; border: 1px solid rgb(var(--zerus-text) / .15); border-radius: 8px; margin: 1rem 0; }
+.zerus-table-summary span { display: block; font-size: 12px; opacity: .65; }
+.zerus-table-summary p { font-size: 13px; margin: .4rem 0 0; overflow-wrap: anywhere; }
+.zerus-table-summary button { flex-shrink: 0; }
+.zerus-table-dialog[role="dialog"] { max-width: 76rem; width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); }
+.zerus-table-pagination { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.zerus-table-pagination button:disabled, .zerus-table-insert button:disabled { opacity: .4; }
+.zerus-table-grid { overflow: auto; max-height: 55dvh; }
+.zerus-table-grid thead { position: sticky; top: 0; z-index: 1; background: rgb(var(--zerus-editor-bg)); }
+.zerus-table-grid td button, .zerus-table-grid th button { width: 100%; text-align: inherit; min-height: 2rem; overflow-wrap: anywhere; }
+.zerus-table-cell-editor { display: grid; gap: .5rem; font-size: 13px; }
+.zerus-table-cell-editor > div { display: flex; gap: .5rem; }
+@media (max-width: 640px) {
+  .zerus-table-tools button, .zerus-table-actions button, .zerus-table-pagination button, .zerus-table-cell-editor button { min-height: 44px; }
+  .zerus-table-actions[data-state] { width: calc(100vw - 2rem); max-height: 55dvh; overflow: auto; }
+  .zerus-table-dialog[role="dialog"] { padding: 1rem; }
+  .zerus-table-cell-editor input { font-size: 16px; }
+  .zerus-table-expanded { inset: 1rem .5rem 5rem; }
+}
+.zerus-mdx-content th, .zerus-table-grid th { text-align: left; }
+.zerus-table-cell-editor select { display: block; width: 100%; padding: .6rem; border: 1px solid rgb(var(--zerus-text) / .18); border-radius: 6px; background: rgb(var(--zerus-editor-bg)); }
+@media (max-width: 640px) {
+  [data-radix-popper-content-wrapper]:has(.zerus-table-actions) { transform: none !important; top: auto !important; bottom: max(.5rem, env(safe-area-inset-bottom)) !important; left: .5rem !important; right: .5rem !important; z-index: 90 !important; }
+  .zerus-table-actions[data-state] { width: calc(100vw - 1rem); border-radius: 14px; padding: .75rem; }
+}
+.zerus-editor-recovery { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; min-height: 50dvh; }
+.zerus-editor-recovery textarea { min-height: 40dvh; width: 100%; resize: vertical; padding: .75rem; border: 1px solid rgb(var(--zerus-text) / .2); border-radius: 6px; background: rgb(var(--zerus-editor-bg)); font: 14px/1.6 monospace; }
+.zerus-editor-recovery button { align-self: start; padding: .5rem; border: 1px solid rgb(var(--zerus-text) / .2); border-radius: 6px; }
+@media (max-width: 640px) {
+  .zerus-table-actions[data-state] { grid-template-columns: 1fr 1fr; }
+  .zerus-table-actions p { grid-column: 1 / -1; }
+}
+.zerus-table-link { color: rgb(var(--zerus-link)); text-decoration: underline; text-underline-offset: 2px; }
+.zerus-table-grid code { background: rgb(var(--zerus-text) / .06); border-radius: 3px; padding: .1em .25em; font-size: .9em; }
+/* Let sticky headers use the table viewport, rather than a clipped table box. */
+.zerus-table-grid table, .zerus-table-expanded table { overflow: visible; }
+.zerus-table-expanded tr:first-child > th { position: sticky; top: 0; z-index: 1; background: rgb(var(--zerus-surface)); }
+.zerus-table-grid thead th:first-child { border-top-left-radius: 7px; }
+.zerus-table-grid thead th:last-child { border-top-right-radius: 7px; }
+@media (max-width: 640px) {
+  .zerus-table-dialog[role="dialog"] {
+    top: calc(var(--zerus-table-viewport-top, 0px) + var(--mobile-safe-area-top, env(safe-area-inset-top, 0px)) + 1rem);
+    max-height: calc(var(--zerus-table-viewport-height, 100dvh) - var(--mobile-safe-area-top, env(safe-area-inset-top, 0px)) - env(safe-area-inset-bottom, 0px) - 2rem);
+    transform: translateX(-50%);
+  }
+  .zerus-table-expanded {
+    top: calc(var(--mobile-safe-area-top, env(safe-area-inset-top, 0px)) + .5rem);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem);
+  }
+}
+@media (max-width: 640px) {
+  .zerus-table-dialog.is-editing .zerus-table-grid,
+  .zerus-table-dialog.is-editing .zerus-table-pagination { display: none; }
 }

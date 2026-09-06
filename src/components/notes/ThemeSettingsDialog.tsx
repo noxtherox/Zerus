@@ -6,7 +6,6 @@ import {
   FolderCog,
   FolderOpen,
   MapPin,
-  Plus,
   RotateCcw,
   Save,
   Trash2,

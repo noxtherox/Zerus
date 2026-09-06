@@ -84,15 +84,12 @@ import {
 } from "@/lib/mobile-vault-picker";
 import { showError } from "@/utils/toast";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
-import {
-  loadDefaultNoteType,
-} from "@/lib/note-preferences";
+import { loadDefaultNoteType } from "@/lib/note-preferences";
 import {
   fileNameFromPath,
   getFileHubReference,
   isMarkdownFilePath,
   mostSpecificLocation,
-  normalizeRelativeFilePath,
   parseFileLocations,
   pathInsideRoot,
   removeFileHubReference,

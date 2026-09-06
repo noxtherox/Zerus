@@ -1,4 +1,4 @@
-import { badgeVariants } from "@/components/ui/badge";
+import { badgeVariants } from "@/components/ui/badge-variants";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
 import type { Note } from "@/lib/note-utils";
 import { cn } from "@/lib/utils";

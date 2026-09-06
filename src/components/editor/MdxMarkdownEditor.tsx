@@ -19,7 +19,6 @@ import {
   CreateLink,
   InsertCodeBlock,
   InsertImage,
-  InsertTable,
   InsertThematicBreak,
   ListsToggle,
   MDXEditor,
@@ -37,7 +36,6 @@ import {
   markdownShortcutPlugin,
   quotePlugin,
   searchPlugin,
-  tablePlugin,
   thematicBreakPlugin,
   toolbarPlugin,
   useEditorSearch,
@@ -75,11 +73,16 @@ import {
   prepareMarkdownForMdxEditor,
 } from "./mdx-compat";
 import { preserveEmptyParagraphsPlugin } from "./empty-paragraphs";
+import { linkDialogPositionPlugin } from "./link-dialog-position";
 import {
   attachmentClickAction,
   attachmentIdFromHref,
 } from "./attachment-link";
-import { toast } from "sonner";
+import {
+  InsertElementTable,
+} from "./element-table-controls";
+import { EditorRecoveryBoundary } from "./editor-recovery";
+import { elementTablePlugin } from "./element-table-plugin";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
 
@@ -285,6 +288,7 @@ const editorPlugins = [
   listsPlugin(),
   linkPlugin(),
   linkDialogPlugin(),
+  linkDialogPositionPlugin(),
   imagePlugin({
     imageUploadHandler: async (file) => {
       const path = await savePastedImage(
@@ -296,7 +300,7 @@ const editorPlugins = [
     },
     imagePreviewHandler: async (source) => (await getImageUrl(source)) ?? source,
   }),
-  tablePlugin(),
+  elementTablePlugin(),
   thematicBreakPlugin(),
   frontmatterPlugin(),
   codeBlockPlugin({ defaultCodeBlockLanguage: "" }),
@@ -329,7 +333,7 @@ const editorPlugins = [
             {
               fallback: () => (
                 <>
-                  <InsertTable />
+                  <InsertElementTable />
                   <InsertImage />
                   <InsertThematicBreak />
                   <InsertCodeBlock />
@@ -364,6 +368,7 @@ export function MarkdownEditor({
   onRequestAttachments,
 }: MarkdownEditorProps) {
   const editorRef = useRef<MDXEditorMethods>(null);
+  const recoveryRef = useRef<EditorRecoveryBoundary>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [searchContainer, setSearchContainer] = useState<HTMLDivElement | null>(
     null,
@@ -497,25 +502,33 @@ export function MarkdownEditor({
         onPointerUp={reportSelection}
         onBlur={() => onTextSelectionChange?.(false)}
       >
-        <MDXEditor
+        <EditorRecoveryBoundary
           key={noteId}
-          ref={editorRef}
-          markdown={prepareMarkdownForMdxEditor(initialContent)}
-          plugins={editorPlugins}
+          ref={recoveryRef}
+          markdown={initialContent}
+          onChange={onChange}
           readOnly={readOnly}
-          autoFocus={autoFocus}
-          placeholder={placeholderText}
-          className="zerus-mdx-editor"
-          contentEditableClassName={`zerus-mdx-content${firstLineIsTitle ? " zerus-mdx-title-first-line" : ""}`}
-          toMarkdownOptions={{ bullet: "-" }}
-          onChange={(markdown, initialMarkdownNormalize) => {
-            if (initialMarkdownNormalize) return;
-            const cleanedMarkdown = cleanMarkdownFromMdxEditor(markdown);
-            recordLocalMarkdownEcho(pendingLocalEchoes.current, cleanedMarkdown);
-            onChange(cleanedMarkdown);
-          }}
-          onError={({ error }) => toast.error(`Markdown could not be opened: ${error}`)}
-        />
+        >
+          <MDXEditor
+            key={noteId}
+            ref={editorRef}
+            markdown={prepareMarkdownForMdxEditor(initialContent)}
+            plugins={editorPlugins}
+            readOnly={readOnly}
+            autoFocus={autoFocus}
+            placeholder={placeholderText}
+            className="zerus-mdx-editor"
+            contentEditableClassName={`zerus-mdx-content${firstLineIsTitle ? " zerus-mdx-title-first-line" : ""}`}
+            toMarkdownOptions={{ bullet: "-" }}
+            onChange={(markdown, initialMarkdownNormalize) => {
+              if (initialMarkdownNormalize) return;
+              const cleanedMarkdown = cleanMarkdownFromMdxEditor(markdown);
+              recordLocalMarkdownEcho(pendingLocalEchoes.current, cleanedMarkdown);
+              onChange(cleanedMarkdown);
+            }}
+            onError={({ error }) => recoveryRef.current?.recover(error)}
+          />
+        </EditorRecoveryBoundary>
         <DropdownMenu
           open={!!menuAttachment}
           onOpenChange={(open) => {

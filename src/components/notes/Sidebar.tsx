@@ -82,7 +82,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button-variants";
 import { Input } from "@/components/ui/input";
 import { ThemeSettingsDialog } from "./ThemeSettingsDialog";
 import { TypeIcon } from "./TypeIcon";
@@ -549,8 +550,6 @@ export function Sidebar({
     const order = reorderTypeTree(tree, sourceKey, targetKey, placement);
     if (order) onTypeOrderChange(order);
   };
-
-  const allTypePaths = getAllTypePaths(notes, extraTypes);
 
   const handleTypeDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over) return;
