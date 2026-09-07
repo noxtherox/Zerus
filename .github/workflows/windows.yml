@@ -51,6 +51,19 @@ jobs:
       - name: Build Windows installer
         run: pnpm windows:build
 
+      - name: Check that the release signature gate rejects unsigned installers
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          try {
+            ./scripts/verify-windows-signature.ps1 -Directory src-tauri/target/release/bundle/nsis -Version $version
+          } catch {
+            if ($_.Exception.Message -notlike 'Invalid installer signature: NotSigned*') { throw }
+            Write-Output 'Verified: unsigned installers are rejected by the release signature gate.'
+            exit 0
+          }
+          throw 'The signature gate incorrectly accepted an unsigned installer.'
+
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v6
         with:

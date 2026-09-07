@@ -100,6 +100,15 @@ notarization tickets before the draft release is published.
 
 ## Releases and automatic updates
 
+### Code signing policy
+
+Windows SignPath enrollment is being prepared. Existing Windows downloads are
+not claimed to be SignPath-signed. See the
+[Code signing policy](docs/code-signing-policy.md),
+[privacy policy](docs/privacy.md), and [Windows signing setup](docs/windows-signing.md).
+
+### Publishing
+
 To publish a new Apple Silicon version, start from a clean, up-to-date `main`
 branch and run:
 
@@ -152,8 +161,9 @@ GPT-5.6.
   issues found during live desktop and browser checks.
 
 Codex and GPT-5.6 were development tools; they are not bundled into the app.
-Zerus currently has no OpenAI API integration, and using it does not require
-an OpenAI account or API key.
+Zerus's optional AI chat supports OpenAI, Anthropic, OpenRouter, and compatible
+custom endpoints. Ordinary note-taking does not require an AI account or API key.
+See the [privacy policy](docs/privacy.md) for what is sent when you use AI.
 
 ## Project status
 
