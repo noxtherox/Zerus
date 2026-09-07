@@ -1,6 +1,6 @@
 import type { VaultBackend } from "@/lib/vault/backend";
 import type { NoteContextKind } from "@/lib/mobile-note-retrieval";
-import type { StoredAiMessage } from "@/lib/ai-conversations";
+import type { StoredAiMessage, AiNoteChange, StoredAiToolCall } from "@/lib/ai-conversations";
 
 export const CHAT_ROOT = ".zerus/chats";
 export const CHAT_TOMBSTONE_ROOT = ".zerus/chat-tombstones";
@@ -14,6 +14,7 @@ export interface ChatDevice {
 }
 
 export type ChatScope =
+  | { kind: "selection"; noteIds: string[] }
   | { kind: "vault" }
   | { kind: "external" }
   | { kind: "files" }
@@ -57,6 +58,10 @@ export interface PersistedChatMessage {
   ownerGeneration: number;
   sources?: ChatSourceSnapshot[];
   contextKind?: NoteContextKind;
+  reasoning?: string | null;
+  toolCalls?: StoredAiToolCall[];
+  changes?: AiNoteChange[];
+  interrupted?: boolean;
   attachments?: ChatImageAttachment[];
 }
 
@@ -81,6 +86,7 @@ export type ChatEvent =
   | (ChatEventBase & { kind: "ownership"; owner: ChatDevice })
   | (ChatEventBase & { kind: "message"; message: PersistedChatMessage })
   | (ChatEventBase & { kind: "rename"; title: string })
+  | (ChatEventBase & { kind: "scope"; scope: ChatScope })
   | (ChatEventBase & { kind: "archive" | "restore" | "delete" })
   | (ChatEventBase & {
       kind: "summary";
@@ -114,6 +120,7 @@ export interface NewAssistantMessage {
   text: string;
   sources: ChatSourceSnapshot[];
   contextKind: NoteContextKind;
+  changes?: AiNoteChange[];
 }
 
 function uuid(): string {
@@ -245,7 +252,7 @@ export function foldChatEvents(
     } : null,
     archivedAt,
     deletedAt,
-    scope: descriptor.scope ?? { kind: "vault" },
+    scope: validEvents.filter((event): event is Extract<ChatEvent, { kind: "scope" }> => event.kind === "scope").at(-1)?.scope ?? descriptor.scope ?? { kind: "vault" },
   };
 }
 
@@ -321,6 +328,7 @@ export async function syncDesktopConversation(
 ): Promise<void> {
   if (!messages.length) return;
   const id = `desktop-${stableId(legacyKey)}`;
+  if (await backend.exists(`${CHAT_TOMBSTONE_ROOT}/${id}.json`)) return;
   const descriptorPath = `${CHAT_ROOT}/${id}/conversation.json`;
   if (!(await backend.exists(descriptorPath))) {
     const createdAt = new Date().toISOString();
@@ -455,7 +463,7 @@ export async function appendAssistantMessage(
   const message: PersistedChatMessage = {
     id: uuid(), turnId: assistant.turnId, role: "assistant", text: assistant.text,
     createdAt: event.at, deviceId: device.id, ownerGeneration: conversation.ownerGeneration,
-    sources: assistant.sources, contextKind: assistant.contextKind,
+    sources: assistant.sources, contextKind: assistant.contextKind, changes: assistant.changes,
   };
   await writeEvent(backend, { ...event, kind: "message", message });
 }
@@ -552,4 +560,64 @@ export function unansweredTurnIds(messages: PersistedChatMessage[]): string[] {
     if (message.role === "assistant") userTurns.delete(message.turnId);
   }
   return [...userTurns];
+}
+
+/** Append desktop turns to the same immutable event log used by mobile. Never replace history. */
+export async function saveDesktopChat(
+  backend: VaultBackend,
+  id: string,
+  scope: ChatScope,
+  messages: StoredAiMessage[],
+  device: ChatDevice,
+): Promise<ChatConversation | null> {
+  if (!messages.length) return null;
+  const existing = (await loadChatConversations(backend)).find((chat) => chat.id === id);
+  if (existing && (existing.owner.id !== device.id || existing.archivedAt || existing.deletedAt)) {
+    throw new Error("This conversation is read-only. Restore it or move it to this device first.");
+  }
+  if (!existing && !(await backend.exists(`${CHAT_ROOT}/${id}/conversation.json`))) {
+    const createdAt = new Date().toISOString();
+    await backend.writeNew(`${CHAT_ROOT}/${id}/conversation.json`, JSON.stringify({ version: 1, id, createdAt, scope }));
+    await writeEvent(backend, { version: 1, id: uuid(), conversationId: id, at: createdAt,
+      deviceId: device.id, ownerGeneration: 1, kind: "ownership", owner: device });
+  }
+  if (existing && JSON.stringify(existing.scope) !== JSON.stringify(scope)) await setChatScope(backend, existing, device, scope);
+  let lastAt = Math.max(0, ...existing?.messages.map((message) => Date.parse(message.createdAt)) ?? []);
+  const known = new Set(existing?.messages.map((message) => message.id));
+  for (const source of messages) {
+    if (!source.id || !source.turnId) throw new Error("Chat message is missing its identity.");
+    if (known.has(source.id)) continue;
+    lastAt = Math.max(Date.now(), lastAt + 1);
+    const at = new Date(lastAt).toISOString();
+    const message: PersistedChatMessage = {
+      id: source.id, turnId: source.turnId, role: source.role, text: source.content,
+      createdAt: at, deviceId: device.id, ownerGeneration: existing?.ownerGeneration ?? 1,
+      attachments: source.attachments, sources: source.sources, changes: source.changes,
+      reasoning: source.reasoning, toolCalls: source.toolCalls, interrupted: source.interrupted,
+    };
+    await writeEvent(backend, { version: 1, id: uuid(), conversationId: id, at,
+      deviceId: device.id, ownerGeneration: message.ownerGeneration, kind: "message", message });
+    known.add(source.id);
+  }
+  return (await loadChatConversations(backend)).find((chat) => chat.id === id) ?? null;
+}
+
+export function desktopChatMessages(conversation: ChatConversation): StoredAiMessage[] {
+  return conversation.messages.map((message) => ({
+    id: message.id, turnId: message.turnId, role: message.role, content: message.text,
+    attachments: message.attachments, sources: message.sources, changes: message.changes,
+    reasoning: message.reasoning, toolCalls: message.toolCalls, interrupted: message.interrupted,
+    editApplied: Boolean(message.changes?.length),
+  }));
+}
+
+export async function setChatScope(backend: VaultBackend, conversation: ChatConversation, device: ChatDevice, scope: ChatScope) {
+  if (conversation.owner.id !== device.id || conversation.archivedAt || conversation.deletedAt) throw new Error("This conversation is read-only.");
+  await writeEvent(backend, { ...baseEvent(conversation, device), kind: "scope", scope });
+}
+
+
+export async function loadChatsWithRetention(backend: VaultBackend, device: ChatDevice): Promise<ChatConversation[]> {
+  const chats = await loadChatConversations(backend);
+  return await purgeExpiredChats(backend, chats, device) ? loadChatConversations(backend) : chats;
 }

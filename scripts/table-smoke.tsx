@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { MarkdownEditor } from "../src/components/editor/MdxMarkdownEditor";
 import "../src/globals.css";
 const fixtures = {
+  leadingRule:
+    "---\n\n## Priority summary\n\n| # | Request |\n|---|---|\n| 1 | **Formatted** text and `inline code` |\n\n---\n\nAfter table.",
   small:
     "# Table verification\n\nBefore table.\n\n| Item | Details | Status |\n| --- | :---: | ---: |\n| **Keyboard** | A comfortable mechanical keyboard | Ready |\n| Notebook | [A long link](https://example.com/a/very/long/address/that/should/wrap/without/widening/the/page) | In progress |\n| Empty | | |\n\nAfter table.",
   large:
@@ -24,13 +26,19 @@ const fixtures = {
     "\n\nAfter table.",
 };
 export function Harness() {
-  const [kind, setKind] = useState<"small" | "large" | "recovery">("small");
+  const [kind, setKind] = useState<"small" | "large" | "recovery" | "leadingRule">("small");
   const [readOnly, setReadOnly] = useState(false);
   const [markdown, setMarkdown] = useState(fixtures.small);
   const [revision, setRevision] = useState(0);
   return (
     <main style={{ maxWidth: 1000, margin: "auto", padding: 16 }}>
       <nav style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <button onClick={() => {
+          setKind("leadingRule");
+          setMarkdown(fixtures.leadingRule);
+        }}>
+          Leading separator fixture
+        </button>
         <button
           onClick={() => {
             setKind("small");

@@ -397,3 +397,14 @@ export function retrieveNotes(notes: Note[], question: string): NoteRetrievalRes
     contextKind: matched ? "matches" : "recent",
   };
 }
+
+/** Multi-note ranking for chat synthesis; an exact title must not hide related evidence. */
+export function rankNotesForQuestion(notes: Note[], question: string): Note[] {
+  const terms = queryTerms(question);
+  const phrase = normalizedPhrase(question);
+  const ranked = notes.map((note) => ({ note, score: scoreNote(note, phrase, terms) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || updatedTime(b.note) - updatedTime(a.note));
+  return ranked.length ? ranked.slice(0, 12).map(({ note }) => note)
+    : [...notes].sort((a, b) => updatedTime(b) - updatedTime(a)).slice(0, 5);
+}

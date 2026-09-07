@@ -1,3 +1,5 @@
+import type { ChatSourceSnapshot } from "@/lib/mobile-chat-history";
+
 export interface StoredAiToolCall {
   name: string;
   arguments: string;
@@ -15,7 +17,19 @@ export interface StoredAiImageAttachment {
   name?: string;
 }
 
+export interface AiNoteChange {
+  noteId: string;
+  title: string;
+  before: string;
+  after: string;
+}
+
 export interface StoredAiMessage {
+  id?: string;
+  turnId?: string;
+  sources?: ChatSourceSnapshot[];
+  changes?: AiNoteChange[];
+  interrupted?: boolean;
   role: "user" | "assistant";
   content: string;
   attachments?: StoredAiImageAttachment[];
@@ -186,4 +200,9 @@ export function clearAiConversation(key: string | null) {
   const conversations = readAll();
   delete conversations[key];
   persist(conversations);
+}
+
+export function legacyAiConversations(vaultLocation: string | null) {
+  const prefix = `${vaultLocation ?? "browser"}\u0000`;
+  return Object.entries(readAll()).filter(([key]) => key.startsWith(prefix)).map(([key, conversation]) => ({ key, messages: conversation.messages, noteId: key.startsWith(`${prefix}note:`) ? key.slice(`${prefix}note:`.length) : null }));
 }

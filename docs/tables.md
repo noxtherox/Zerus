@@ -5,7 +5,8 @@ Tables remain standard GFM Markdown. The integration uses MDXEditor's public rea
 ## Editing
 
 - Insert table lets you choose 2–20 rows (including the header) and 1–12 columns.
-- Select a cell to show Table actions: insert/delete rows and columns, align a column, or delete the table. On narrow screens these actions appear in a bottom panel.
+- Hover a cell with the mouse to reveal a subtle vertical ellipsis inside its right edge. Touch users select a cell to reveal it. The grouped menu contains column alignment, add/move/delete row and column actions, and secondary table-wide options. No text padding changes when controls appear.
+- Drag the right column border to resize it, or focus the resize handle and use Left/Right. Widths are editor-only and reset when the Markdown is reloaded.
 - Tab and Shift+Tab navigate cells. Enter moves to the same column in the next row, adding a row at the end. Escape closes an expanded table or exits an inline table.
 - Expand table keeps the existing editor and selection. Closing restores the note's scroll position.
 - The first row is always the Markdown header. Merged cells and custom cell backgrounds are disabled. Column widths are presentation only and are not saved in Markdown.
@@ -48,3 +49,9 @@ Built and launched the native development app on the iPhone 17 Pro simulator run
 This check exposed two native layout issues, now corrected: the table dialog overlapped the status bar, and the software keyboard could cover the cell input. The dialog now respects safe-area insets and VisualViewport height/offset. On narrow screens, selecting a cell temporarily replaces the grid with the focused cell form; the input and Save button stay visible above the keyboard.
 
 These simulator checks supplement the browser tests; physical iPhone memory profiling remains outstanding.
+
+## Leading separator and recovery regression (2026-09-06)
+
+The physical-device error report identified a YAML parsing failure, reproduced by the harness's Leading separator fixture: mobile removes the note title, leaving a horizontal rule at the start of the body. MDXEditor's frontmatter plugin interpreted the following table as YAML. The editor no longer registers that plugin because callers already strip note properties with `noteBody`. The original body, including its leading separator, now renders all three tables and five rules in the optimized iOS WebKit harness. Earlier isolated checks had incorrectly omitted the leading rule.
+
+Recovery keeps Retry above the Markdown field, bounds and scrolls error details, and lets the Markdown field scroll independently. On mobile, the full note body becomes scrollable during recovery so a long title cannot clip the fallback. The browser check verified scroll movement in a 240-pixel container; the iOS harness verified the recovery controls remain visible.

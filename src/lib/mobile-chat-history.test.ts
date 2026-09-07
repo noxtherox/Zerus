@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   appendAssistantMessage,
+  saveDesktopChat,
+  desktopChatMessages,
+  setChatLifecycle,
+  setChatScope,
   CHAT_ROOT,
   createChatWithUserMessage,
   chatContentRevision,
@@ -223,5 +227,45 @@ describe("mobile chat helpers", () => {
     };
     expect(unansweredTurnIds([user("answered"), assistant, user("interrupted")]))
       .toEqual(["interrupted"]);
+  });
+});
+
+
+describe("desktop shared history", () => {
+  const device = { id: "mac", name: "Mac" };
+  const user = { id: "question-1", turnId: "turn-1", role: "user" as const, content: "Explain the plan" };
+  const answer = { id: "answer-1", turnId: "turn-1", role: "assistant" as const, content: "The plan", sources: [{ noteId: "plan", title: "Plan", type: "work", excerpt: "Ship", revision: "v1" }], changes: [{ noteId: "plan", title: "Plan", before: "a", after: "b" }] };
+  it("keeps separate chats and saves new turns once, with source and edit snapshots", async () => {
+    const backend = memoryBackend();
+    await saveDesktopChat(backend, "first", { kind: "vault" }, [user], device);
+    await saveDesktopChat(backend, "first", { kind: "vault" }, [user, answer], device);
+    await saveDesktopChat(backend, "first", { kind: "vault" }, [user, answer], device);
+    await saveDesktopChat(backend, "second", { kind: "vault" }, [{ ...user, id: "question-2" }], device);
+    const chats = await loadChatConversations(backend);
+    expect(chats).toHaveLength(2);
+    const first = chats.find((chat) => chat.id === "first")!;
+    expect(first.messages).toHaveLength(2);
+    expect(desktopChatMessages(first)[1]).toMatchObject(answer);
+  });
+  it("preserves history through archive, delete, restore and scope changes", async () => {
+    const backend = memoryBackend();
+    const chat = (await saveDesktopChat(backend, "first", { kind: "vault" }, [user], device))!;
+    await setChatScope(backend, chat, device, { kind: "selection", noteIds: ["plan"] });
+    await setChatLifecycle(backend, chat, device, "archive");
+    await expect(saveDesktopChat(backend, "first", { kind: "vault" }, [user, answer], device)).rejects.toThrow("read-only");
+    await setChatLifecycle(backend, chat, device, "delete");
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await setChatLifecycle(backend, chat, device, "restore");
+    const restored = (await loadChatConversations(backend))[0];
+    expect(restored.archivedAt).toBeNull(); expect(restored.deletedAt).toBeNull();
+    expect(restored.scope).toEqual({ kind: "selection", noteIds: ["plan"] });
+    expect(restored.messages).toHaveLength(1);
+  });
+  it("refuses a stale device after another device takes ownership", async () => {
+    const backend = memoryBackend();
+    const chat = (await saveDesktopChat(backend, "first", { kind: "vault" }, [user], device))!;
+    await transferChatOwnership(backend, chat, { id: "phone", name: "iPhone" });
+    await expect(saveDesktopChat(backend, "first", { kind: "vault" }, [user, answer], device)).rejects.toThrow("read-only");
+    expect((await loadChatConversations(backend))[0].messages).toHaveLength(1);
   });
 });

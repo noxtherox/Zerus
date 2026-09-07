@@ -47,6 +47,8 @@ export interface RunZerusAgentOptions {
   systemPrompt: string;
   messages: ModelMessage[];
   mutationAuthorized: boolean;
+  abortSignal?: AbortSignal;
+  onStepStart?: () => void;
   config?: ZerusAgentConfig;
   executeTool: (call: AiToolCall) => Promise<AiToolResult> | AiToolResult;
   onToolStart?: (event: ZerusAgentToolEvent) => void;
@@ -84,7 +86,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunkSize = 0x8000;
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
   }
   return btoa(binary);
 }
@@ -93,7 +97,8 @@ function fileDataToBase64(data: unknown): string | null {
   if (typeof data === "string") return data;
   if (data instanceof Uint8Array) return bytesToBase64(data);
   if (!data || typeof data !== "object") return null;
-  if (!("type" in data) || !("data" in data) || data.type !== "data") return null;
+  if (!("type" in data) || !("data" in data) || data.type !== "data")
+    return null;
   if (typeof data.data === "string") return data.data;
   return data.data instanceof Uint8Array ? bytesToBase64(data.data) : null;
 }
@@ -121,9 +126,10 @@ function toolOutputText(output: unknown): string {
   return JSON.stringify(output);
 }
 
-function promptToNativeMessages(
-  prompt: LanguageModelV4CallOptions["prompt"],
-): { systemPrompt: string; messages: NativeAiMessage[] } {
+function promptToNativeMessages(prompt: LanguageModelV4CallOptions["prompt"]): {
+  systemPrompt: string;
+  messages: NativeAiMessage[];
+} {
   const system: string[] = [];
   const messages: NativeAiMessage[] = [];
 
@@ -138,7 +144,10 @@ function promptToNativeMessages(
       for (const part of message.content) {
         if (part.type === "text") {
           text.push(part.text);
-        } else if (part.type === "file" && part.mediaType.startsWith("image/")) {
+        } else if (
+          part.type === "file" &&
+          part.mediaType.startsWith("image/")
+        ) {
           const data = fileDataToBase64(part.data);
           if (data) images.push({ mediaType: part.mediaType, data });
         }
@@ -159,7 +168,11 @@ function promptToNativeMessages(
           );
         }
       }
-      messages.push({ role: "assistant", content: content.join("\n\n"), images: [] });
+      messages.push({
+        role: "assistant",
+        content: content.join("\n\n"),
+        images: [],
+      });
       continue;
     }
     for (const part of message.content) {
@@ -180,13 +193,15 @@ function promptToNativeMessages(
 }
 
 function toolProtocol(options: LanguageModelV4CallOptions): string {
-  const tools = (options.tools ?? []).filter((candidate) => candidate.type === "function");
+  const tools = (options.tools ?? []).filter(
+    (candidate) => candidate.type === "function",
+  );
   if (tools.length === 0) return "";
   const definitions = tools.map((candidate) =>
     [
       `- ${candidate.name}: ${candidate.description ?? "No description provided."}`,
       `  Input JSON schema: ${JSON.stringify(candidate.inputSchema)}`,
-    ].join("\n")
+    ].join("\n"),
   );
   return [
     "Zerus provides these tools:",
@@ -207,6 +222,7 @@ class ZerusNativeLanguageModel implements LanguageModelV4 {
   constructor(
     private readonly providerConfig: AiProviderConfig,
     private readonly streamId: string,
+    private readonly onStepStart?: () => void,
   ) {
     this.modelId = providerConfig.model;
   }
@@ -214,57 +230,78 @@ class ZerusNativeLanguageModel implements LanguageModelV4 {
   async doGenerate(
     options: LanguageModelV4CallOptions,
   ): Promise<LanguageModelV4GenerateResult> {
-    const request = promptToNativeMessages(options.prompt);
-    const protocol = toolProtocol(options);
-    const response = await invoke<NativeAiChatResponse>(
-      this.providerConfig.provider === "codex" ? "codex_ai_chat" : "cloud_ai_chat",
-      {
-        streamId: this.streamId,
-        model: this.providerConfig.model,
-        ...(this.providerConfig.provider === "codex" ? {} : {
-          provider: this.providerConfig.provider,
-          baseUrl: this.providerConfig.baseUrl,
-        }),
-        request: {
-          systemPrompt: [request.systemPrompt, protocol].filter(Boolean).join("\n\n"),
-          messages: request.messages,
-          maxOutputTokens: options.maxOutputTokens,
-          ...(options.temperature === undefined
-            ? {}
-            : { temperature: options.temperature }),
-        },
-      },
-    );
-    const parsed = parseAiToolResponse(response.content);
-    if (parsed.toolError) throw new Error(parsed.toolError);
-
-    const content: LanguageModelV4Content[] = [];
-    if (response.reasoning?.trim()) {
-      content.push({ type: "reasoning", text: response.reasoning });
-    }
-    if (parsed.content) content.push({ type: "text", text: parsed.content });
-    if (parsed.toolCall) {
-      content.push({
-        type: "tool-call",
-        toolCallId: crypto.randomUUID(),
-        toolName: parsed.toolCall.name,
-        input: JSON.stringify(parsed.toolCall.arguments),
-      });
-    }
-
-    return {
-      content,
-      finishReason: {
-        unified: parsed.toolCall ? "tool-calls" : "stop",
-        raw: parsed.toolCall ? "tool_calls" : "stop",
-      },
-      usage: EMPTY_USAGE,
-      warnings: [],
+    options.abortSignal?.throwIfAborted();
+    this.onStepStart?.();
+    const cancel = () => {
+      void invoke("cancel_ai_chat", { streamId: this.streamId }).catch(
+        () => {},
+      );
     };
+    options.abortSignal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const request = promptToNativeMessages(options.prompt);
+      const protocol = toolProtocol(options);
+      const response = await invoke<NativeAiChatResponse>(
+        this.providerConfig.provider === "codex"
+          ? "codex_ai_chat"
+          : "cloud_ai_chat",
+        {
+          streamId: this.streamId,
+          model: this.providerConfig.model,
+          ...(this.providerConfig.provider === "codex"
+            ? {}
+            : {
+                provider: this.providerConfig.provider,
+                baseUrl: this.providerConfig.baseUrl,
+              }),
+          request: {
+            systemPrompt: [request.systemPrompt, protocol]
+              .filter(Boolean)
+              .join("\n\n"),
+            messages: request.messages,
+            maxOutputTokens: options.maxOutputTokens,
+            ...(options.temperature === undefined
+              ? {}
+              : { temperature: options.temperature }),
+          },
+        },
+      );
+      options.abortSignal?.throwIfAborted();
+      const parsed = parseAiToolResponse(response.content);
+      if (parsed.toolError) throw new Error(parsed.toolError);
+
+      const content: LanguageModelV4Content[] = [];
+      if (response.reasoning?.trim()) {
+        content.push({ type: "reasoning", text: response.reasoning });
+      }
+      if (parsed.content) content.push({ type: "text", text: parsed.content });
+      if (parsed.toolCall) {
+        content.push({
+          type: "tool-call",
+          toolCallId: crypto.randomUUID(),
+          toolName: parsed.toolCall.name,
+          input: JSON.stringify(parsed.toolCall.arguments),
+        });
+      }
+
+      return {
+        content,
+        finishReason: {
+          unified: parsed.toolCall ? "tool-calls" : "stop",
+          raw: parsed.toolCall ? "tool_calls" : "stop",
+        },
+        usage: EMPTY_USAGE,
+        warnings: [],
+      };
+    } finally {
+      options.abortSignal?.removeEventListener("abort", cancel);
+    }
   }
 
   async doStream(): Promise<never> {
-    throw new Error("Streaming through the Zerus native model adapter is not implemented.");
+    throw new Error(
+      "Streaming through the Zerus native model adapter is not implemented.",
+    );
   }
 }
 
@@ -274,30 +311,36 @@ export async function runZerusAgent(
   const config = options.config ?? DEFAULT_ZERUS_AGENT_CONFIG;
 
   async function execute(call: AiToolCall): Promise<AiToolResult> {
+    options.abortSignal?.throwIfAborted();
     options.onToolStart?.({ call });
-    const isMutation = call.name === "note_append" || call.name === "note_set_body";
-    const result = isMutation && !options.mutationAuthorized
-      ? {
-          ok: false,
-          result: {
-            error:
-              "The current user request did not explicitly authorize changing the note.",
-          },
-        }
-      : await options.executeTool(call);
+    const isMutation =
+      call.name === "note_append" || call.name === "note_set_body";
+    const result =
+      isMutation && !options.mutationAuthorized
+        ? {
+            ok: false,
+            result: {
+              error:
+                "The current user request did not explicitly authorize changing the note.",
+            },
+          }
+        : await options.executeTool(call);
     options.onToolEnd?.({ call, result });
     return result;
   }
 
   const tools = {
     note_get: tool({
-      description: "Read the current note or a note selected by exact title, path, or ID.",
+      description:
+        "Read the current note or a note selected by exact title, path, or ID.",
       inputSchema: z.object({ selector: z.string().optional() }),
       execute: (input) => execute({ name: "note_get", arguments: input }),
     }),
     note_list: tool({
       description: "List available notes with their titles, paths, and IDs.",
-      inputSchema: z.object({ limit: z.number().int().min(1).max(50).optional() }),
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
       execute: (input) => execute({ name: "note_list", arguments: input }),
     }),
     search: tool({
@@ -309,18 +352,24 @@ export async function runZerusAgent(
       execute: (input) => execute({ name: "search", arguments: input }),
     }),
     note_append: tool({
-      description: "Append Markdown to the current note only when the user explicitly asks to add material.",
+      description:
+        "Append Markdown to the current note only when the user explicitly asks to add material.",
       inputSchema: z.object({ text: z.string().min(1).max(100_000) }),
       execute: (input) => execute({ name: "note_append", arguments: input }),
     }),
     note_set_body: tool({
-      description: "Replace the current note's Markdown body when the user explicitly asks to update or rewrite it.",
+      description:
+        "Replace the current note's Markdown body when the user explicitly asks to update or rewrite it.",
       inputSchema: z.object({ body: z.string().min(1).max(100_000) }),
       execute: (input) => execute({ name: "note_set_body", arguments: input }),
     }),
   };
   const agent = new ToolLoopAgent({
-    model: new ZerusNativeLanguageModel(options.providerConfig, options.streamId),
+    model: new ZerusNativeLanguageModel(
+      options.providerConfig,
+      options.streamId,
+      options.onStepStart,
+    ),
     instructions: options.systemPrompt,
     maxOutputTokens: config.maxOutputTokens,
     ...(config.temperature === undefined
@@ -329,7 +378,10 @@ export async function runZerusAgent(
     tools,
     stopWhen: stepCountIs(config.maxSteps),
   });
-  const result = await agent.generate({ messages: options.messages });
+  const result = await agent.generate({
+    messages: options.messages,
+    abortSignal: options.abortSignal,
+  });
   return {
     text: result.text,
     reasoning: result.finalStep.reasoningText ?? null,

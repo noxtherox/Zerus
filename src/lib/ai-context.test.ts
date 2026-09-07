@@ -159,3 +159,29 @@ describe("buildAiContext", () => {
     expect(buildAiContext(null, all, { kind: "links" }, vault)?.scopedNoteIds).toEqual(["link"]);
   });
 });
+
+
+it("selects relevant notes beyond the old alphabetical context window", () => {
+  const filler = Array.from({ length: 20 }, (_, i) => note(`f${i}`, `work/A${i}.md`, `# A${i}\n${"Unrelated prose ".repeat(200)}`));
+  const relevant = note("zebra", "work/Zebra.md", "# Zebra\nThe launch deadline is Friday.");
+  const context = buildAiContext(null, [...filler, relevant], { kind: "vault" }, "/vault", "launch deadline");
+  expect(context?.sessionContext).toContain("launch deadline is Friday");
+  expect(context?.sources.map((source) => source.noteId)).toContain("zebra");
+});
+
+it("limits both prompt context and search scope to explicit note selections", () => {
+  const one = note("one", "work/One.md", "# One\nIncluded");
+  const two = note("two", "work/Two.md", "# Two\nExcluded");
+  const context = buildAiContext(two, [one, two], { kind: "selection", noteIds: ["one"] }, "/vault", "Included");
+  expect(context?.noteId).toBeNull();
+  expect(context?.scopedNoteIds).toEqual(["one"]);
+  expect(context?.sessionContext).not.toContain("Excluded");
+});
+
+
+it("includes related evidence even when the question names an exact project title", () => {
+  const project = note("polaris", "work/Polaris.md", "# Project Polaris\nGoals");
+  const meeting = note("meeting", "work/Meeting.md", "# Kickoff\nProject Polaris timeline: six weeks.");
+  const context = buildAiContext(null, [project, meeting], { kind: "vault" }, "/vault", "What is the Project Polaris timeline?");
+  expect(context?.sources.map((source) => source.noteId)).toContain("meeting");
+});

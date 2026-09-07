@@ -1,3 +1,6 @@
+import { rankNotesForQuestion } from "@/lib/mobile-note-retrieval";
+import type { ChatSourceSnapshot } from "@/lib/mobile-chat-history";
+import { chatContentRevision } from "@/lib/mobile-chat-history";
 import { noteBody } from "@/lib/frontmatter";
 import { buildZerusSystemPrompt } from "@/lib/ai-agent-policy";
 import {
@@ -28,9 +31,11 @@ export interface AiContext {
   scopedNoteIds: string[];
   systemPrompt: string;
   sessionContext: string;
+  sources: ChatSourceSnapshot[];
 }
 
 export type AiKnowledgeScope =
+  | { kind: "selection"; noteIds: string[] }
   | { kind: "vault" }
   | { kind: "external" }
   | { kind: "files" }
@@ -59,6 +64,7 @@ export function notesInAiScope(notes: Note[], scope: AiKnowledgeScope): Note[] {
   return notes
     .filter((candidate) => {
       if (isTrashed(candidate)) return false;
+      if (scope.kind === "selection") return scope.noteIds.includes(candidate.id);
       if (scope.kind === "external") return isExternalNote(candidate);
       if (scope.kind === "files") return !isExternalNote(candidate) && getFileHubReference(candidate) !== null;
       if (scope.kind === "links") return !isExternalNote(candidate) && getLinkHubReference(candidate) !== null;
@@ -76,6 +82,7 @@ export function aiScopeLabel(
   scope: AiKnowledgeScope,
   vaultLocation: string | null,
 ): string {
+  if (scope.kind === "selection") return "Selected notes";
   if (scope.kind === "vault") return vaultLocation ?? "Main Zerus folder";
   if (scope.kind === "external") return "External Notes";
   if (scope.kind === "files") return "Files";
@@ -92,6 +99,7 @@ function aiScopeInstructions(scope: AiKnowledgeScope, label: string): string {
     ].join(" ");
   }
   const descriptions = {
+    selection: "the explicitly selected notes only",
     vault: "the full note list in the main Zerus folder",
     external: "External Notes only",
     files: "Files only",
@@ -101,6 +109,7 @@ function aiScopeInstructions(scope: AiKnowledgeScope, label: string): string {
 }
 
 function scopeKey(scope: AiKnowledgeScope): string {
+  if (scope.kind === "selection") return `selection:${[...scope.noteIds].sort().join(",")}`;
   return scope.kind === "type"
     ? `type:${typeKey(scope.path)}:${scope.includeSubtypes !== false ? "tree" : "exact"}`
     : scope.kind;
@@ -111,12 +120,18 @@ export function buildAiContext(
   notes: Note[],
   scope: AiKnowledgeScope,
   vaultLocation: string | null,
+  question = "",
 ): AiContext | null {
   const scopedNotes = notesInAiScope(notes, scope);
   const scopedIds = new Set(scopedNotes.map((candidate) => candidate.id));
   const currentNote = note && scopedIds.has(note.id) ? note : null;
   const label = aiScopeLabel(scope, vaultLocation);
-  const siblings = scopedNotes.filter((candidate) => candidate.id !== currentNote?.id);
+  const ranked = question.trim() ? rankNotesForQuestion(scopedNotes, question) : [];
+  const siblings = question.trim()
+    ? ranked.filter((candidate) => candidate.id !== currentNote?.id)
+    : scopedNotes.filter((candidate) => candidate.id !== currentNote?.id);
+  const sources: ChatSourceSnapshot[] = [];
+  if (currentNote) sources.push({ noteId: currentNote.id, title: noteTitle(currentNote), type: noteTypePath(currentNote).join("/"), excerpt: clip(noteBody(currentNote.content), CURRENT_NOTE_LIMIT), revision: chatContentRevision(currentNote.content) });
   const siblingSections: string[] = [];
   let siblingLength = 0;
   for (const sibling of siblings) {
@@ -127,6 +142,7 @@ export function buildAiContext(
       clip(noteBody(sibling.content), SIBLING_NOTE_LIMIT),
     ].join("\n");
     if (siblingLength + section.length > FOLDER_CONTEXT_LIMIT) break;
+    sources.push({ noteId: sibling.id, title: noteTitle(sibling), type: noteTypePath(sibling).join("/"), excerpt: clip(noteBody(sibling.content), SIBLING_NOTE_LIMIT), revision: chatContentRevision(sibling.content) });
     siblingSections.push(section);
     siblingLength += section.length;
   }
@@ -147,6 +163,7 @@ export function buildAiContext(
     : "## Notes in the active context\nNo other notes are available in this context.";
 
   return {
+    sources,
     key: `${normalizeFsPath(vaultLocation ?? "browser")}\u0000${scopeKey(scope)}\u0000${currentNote?.id ?? "scope"}`,
     folder: label,
     noteId: currentNote?.id ?? null,

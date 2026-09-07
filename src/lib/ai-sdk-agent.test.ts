@@ -149,3 +149,26 @@ describe("runZerusAgent", () => {
     )).toBe(true);
   });
 });
+
+
+it("does not invoke a provider after a request has been stopped", async () => {
+  vi.mocked(invoke).mockReset();
+  const controller = new AbortController(); controller.abort();
+  await expect(runZerusAgent({ providerConfig, streamId: "cancelled", systemPrompt: "Test", messages: [{ role: "user", content: "hello" }], mutationAuthorized: false, executeTool: vi.fn(), abortSignal: controller.signal })).rejects.toThrow();
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("cancels the native request and prevents late tool execution", async () => {
+  vi.mocked(invoke).mockReset();
+  const controller = new AbortController();
+  let resolveProvider!: (value: unknown) => void;
+  vi.mocked(invoke).mockImplementation((command) => command === "cancel_ai_chat" ? Promise.resolve(undefined) : new Promise((resolve) => { resolveProvider = resolve; }));
+  const executeTool = vi.fn();
+  const pending = runZerusAgent({ providerConfig, streamId: "running", systemPrompt: "Test", messages: [{ role: "user", content: "append" }], mutationAuthorized: true, executeTool, abortSignal: controller.signal });
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith("cloud_ai_chat", expect.anything()));
+  controller.abort();
+  resolveProvider({ content: '<zerus_tool>{"name":"note_append","arguments":{"text":"late"}}</zerus_tool>', reasoning: null });
+  await expect(pending).rejects.toThrow();
+  expect(invoke).toHaveBeenCalledWith("cancel_ai_chat", { streamId: "running" });
+  expect(executeTool).not.toHaveBeenCalled();
+});

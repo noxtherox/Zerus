@@ -790,7 +790,7 @@ const Index = () => {
           />
         </div>
       </div>
-      {vault.isDesktop && (
+      {(vault.isDesktop || import.meta.env.DEV) && (
         <AiPanel
           open={aiOpen}
           note={selectedNote}
@@ -807,6 +807,7 @@ const Index = () => {
   return (
     <>
       <AutoUpdater />
+      {import.meta.env.DEV && !vault.isDesktop && !aiOpen && <button className="fixed bottom-4 right-4 z-50 rounded-full bg-zerus-accent px-4 py-2 text-sm text-white shadow-lg" onClick={() => setAiOpen(true)}>Chat preview</button>}
       <div
         className={cn(
           "relative flex h-screen w-screen overflow-hidden",
@@ -942,7 +943,7 @@ const Index = () => {
                       onSetProperty={setNoteProperty}
                     />
                   </div>
-                  {vault.isDesktop && !expandedEditorOpen && (
+                  {(vault.isDesktop || import.meta.env.DEV) && !expandedEditorOpen && (
                     <AiPanel
                       open={aiOpen}
                       note={null}

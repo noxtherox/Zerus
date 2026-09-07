@@ -1,3 +1,9 @@
+import { AiMarkdown } from "@/components/ai/AiMarkdown";
+import { ChatAnswerActions } from "@/components/ai/ChatAnswerActions";
+import { ChatContextPicker } from "@/components/ai/ChatContextPicker";
+import { visibleChatStream } from "@/lib/ai-chat-experience";
+import type { AiNoteChange } from "@/lib/ai-conversations";
+import { noteTitle } from "@/lib/note-utils";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent as ReactTouchEvent } from "react";
 import {
   Archive,
@@ -33,6 +39,7 @@ import {
   renameChat,
   saveChatSummary,
   setChatLifecycle,
+  setChatScope,
   transferChatOwnership,
   unansweredTurnIds,
   type ChatConversation,
@@ -308,12 +315,13 @@ export function PersistentAIChat({
   const [pendingImages, setPendingImages] = useState<PreparedChatImage[]>([]);
   const [preparingImage, setPreparingImage] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [contextOverride, setContextOverride] = useState<AiKnowledgeScope | null>(null);
   const [streamingText, setStreamingText] = useState("");
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [undoChanges, setUndoChanges] = useState<Array<{ id: string; content: string | null }>>([]);
+  const [undoChanges, setUndoChanges] = useState<Array<{ id: string; content: string | null; after: string | null }>>([]);
   const [speechState, setSpeechState] = useState<"idle" | "starting" | "listening" | "stopping">("idle");
   const [speechEngine, setSpeechEngine] = useState<string | null>(null);
   const [speechBuild, setSpeechBuild] = useState<string | null>(null);
@@ -331,6 +339,7 @@ export function PersistentAIChat({
     if (previousScopeKey.current === nextScopeKey) return;
     previousScopeKey.current = nextScopeKey;
     setConversationId(null);
+    setContextOverride(null);
     setBlankChat(true);
     setOptionsOpen(false);
     setDraft("");
@@ -345,7 +354,12 @@ export function PersistentAIChat({
     setPendingImages(images);
   };
 
+  useEffect(() => { setContextOverride(null); }, [conversationId]);
+
   const current = conversations.find((conversation) => conversation.id === conversationId) ?? null;
+  const activeChatScope = current?.scope ?? scope;
+  const contextNoteId = activeChatScope.kind === "note" ? activeChatScope.noteId : activeChatScope.kind === "selection" && activeChatScope.noteIds.length === 1 ? activeChatScope.noteIds[0] : null;
+  const contextNote = notes.find((note) => note.id === contextNoteId) ?? null;
   const isOwner = Boolean(current && device && current.owner.id === device.id);
   const canEditCurrent = Boolean(isOwner && !current?.archivedAt && !current?.deletedAt);
   const messages = current?.messages ?? [];
@@ -672,6 +686,7 @@ export function PersistentAIChat({
     localDevice: ChatDevice,
     turnId: string,
     question: string,
+    regenerate = false,
   ) => {
     const activeScope = conversation.scope;
     const scopedNotes = activeScope.kind === "note"
@@ -689,7 +704,7 @@ export function PersistentAIChat({
       bytes: await backend.readBinary(attachment.path),
       mimeType: attachment.mimeType,
     })));
-    const mutationRequested = questionRequestsNoteMutation(
+    const mutationRequested = !regenerate && questionRequestsNoteMutation(
       question,
       retrieval.notes.map((note) => note.title),
     );
@@ -714,6 +729,7 @@ export function PersistentAIChat({
     setStreamingText("");
     let answer = generated;
     let changedNoteIds: string[] = [];
+    let changes: AiNoteChange[] = [];
     if (!directAnswer) {
       const parsed = parseMobileAIActions(generated);
       if (parsed.malformed) {
@@ -724,13 +740,18 @@ export function PersistentAIChat({
           throw new Error("The AI tried to change a note without an explicit note-editing request. Nothing was changed.");
         }
         const before = new Map(getNotes().map((note) => [note.id, note.content]));
+        const allowedIds = new Set(scopedNotes.map((note) => note.id));
         const result = await executeMobileAIActions(parsed.actions, {
-          getNotes,
+          getNotes: () => getNotes().filter((note) => allowedIds.has(note.id)),
           createNote,
           updateNoteBody,
         });
         changedNoteIds = result.changedNoteIds;
-        setUndoChanges(result.changedNoteIds.map((id) => ({ id, content: before.get(id) ?? null })));
+        setUndoChanges(result.changedNoteIds.map((id) => ({ id, content: before.get(id) ?? null, after: getNotes().find((note) => note.id === id)?.content ?? null })));
+        changes = result.changedNoteIds.flatMap((id) => {
+          const latest = getNotes().find((note) => note.id === id);
+          return latest && before.has(id) ? [{ noteId: id, title: noteTitle(latest), before: noteBody(before.get(id)!), after: noteBody(latest.content) }] : [];
+        });
         answer = result.message;
       } else {
         answer = cleanNotesAnswer(parsed.visibleText, prompt!, retrieval, images.length > 0);
@@ -739,6 +760,7 @@ export function PersistentAIChat({
     await appendAssistantMessage(backend, conversation, localDevice, {
       turnId,
       text: answer,
+      changes,
       sources: sourceSnapshots(retrieval, notes),
       contextKind: retrieval.contextKind,
     });
@@ -767,7 +789,7 @@ export function PersistentAIChat({
       let working = current;
       let turnId: string;
       if (!working) {
-        const created = await createChatWithUserMessage(backend, device, question, submittedImages, scope);
+        const created = await createChatWithUserMessage(backend, device, question, submittedImages, contextOverride ?? scope);
         turnId = created.turnId;
         setBlankChat(false);
         const loaded = await refreshHistory(false, created.conversationId);
@@ -788,6 +810,20 @@ export function PersistentAIChat({
       setBusy(false);
       setStreamingText("");
     }
+  };
+
+  const regenerateAnswer = async (turnId: string) => {
+    const backend = getVaultBackend();
+    const user = current?.messages.find((message) => message.turnId === turnId && message.role === "user");
+    if (!backend || !current || !device || !user || !canEditCurrent || busy || memoryBusy) return;
+    setBusy(true); setError(null);
+    try {
+      const question = `Provide a fresh answer without changing any notes. Earlier question: ${user.text}`;
+      const nextTurn = await appendUserMessage(backend, current, device, question);
+      const loaded = await refreshHistory(false, current.id);
+      const updated = loaded.find((chat) => chat.id === current.id);
+      if (updated) await generateAnswer(backend, updated, device, nextTurn, question, true);
+    } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); setStreamingText(""); }
   };
 
   const retryTurn = async (turnId: string) => {
@@ -1051,6 +1087,7 @@ export function PersistentAIChat({
       {undoChanges.length > 0 && <div className="flex shrink-0 items-center gap-2 bg-[#df5149]/15 px-4 py-2 text-xs text-[#ef847d]">
         <span className="min-w-0 flex-1">AI updated {undoChanges.length} {undoChanges.length === 1 ? "note" : "notes"}.</span>
         <button type="button" className="font-semibold" onClick={() => {
+          if (undoChanges.some((change) => getNotes().find((note) => note.id === change.id)?.content !== change.after)) { setError("A note changed after the AI edit. Review the saved changes before undoing."); return; }
           for (const change of undoChanges) {
             if (change.content === null) void trashNote(change.id);
             else updateNoteBody(change.id, noteBody(change.content));
@@ -1070,8 +1107,14 @@ export function PersistentAIChat({
         </main>
       ) : (
         <>
+          <ChatContextPicker note={contextNote} notes={notes} scope={contextOverride ?? (current?.scope.kind === "note" ? { kind: "selection", noteIds: [current.scope.noteId] } : current?.scope ?? (scope.kind === "note" ? { kind: "selection", noteIds: [scope.noteId] } : scope))} selected={contextOverride?.kind === "selection" ? contextOverride.noteIds : activeChatScope.kind === "selection" ? activeChatScope.noteIds : null} disabled={busy || memoryBusy || Boolean(current && !canEditCurrent)} onChange={(ids) => {
+            const next = ids === null ? (scope.kind === "note" ? { kind: "selection" as const, noteIds: [scope.noteId] } : scope) : { kind: "selection" as const, noteIds: ids };
+            setContextOverride(next);
+            const backend = getVaultBackend();
+            if (current && device && backend) void setChatScope(backend, current, device, next).then(() => refreshHistory(false, current.id)).catch((error) => setError(errorMessage(error)));
+          }} />
           <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5">
-            {messages.length === 0 && <div className="mx-auto mt-12 max-w-xs text-center"><Sparkles className="mx-auto h-7 w-7 text-[#ef6b62]" /><p className="mt-3 text-[17px] font-semibold">Ask about your notes</p><p className="mt-1 text-sm leading-5 text-[#8e8e93]">This chat is saved with the vault after your first message.</p></div>}
+            {messages.length === 0 && <div className="mx-auto mt-12 max-w-xs text-center"><Sparkles className="mx-auto h-7 w-7 text-[#ef6b62]" /><p className="mt-3 text-[17px] font-semibold">Ask about your notes</p><p className="mt-1 text-sm leading-5 text-[#8e8e93]">This chat is saved with the vault after your first message.</p><div className="mt-4 flex flex-col gap-2">{["Summarize these notes", "Find related ideas", "Extract action items"].map((prompt) => <button key={prompt} className="rounded-xl border border-white/10 p-3 text-sm" onClick={() => setDraft(prompt)}>{prompt}</button>)}</div></div>}
             <div className="space-y-3">
               {messages.map((message) => (
                 <div key={message.id} className={cn("max-w-[88%]", message.role === "user" && "ml-auto")}>
@@ -1080,7 +1123,7 @@ export function PersistentAIChat({
                       <PersistedChatImage attachment={attachment} />
                     </div>
                   ))}
-                  <div className={cn("whitespace-pre-wrap rounded-[18px] px-4 py-3 text-[15px] leading-6", message.role === "user" ? "bg-[#df5149] text-white" : "bg-[#292a2b] text-[#f2efea]")}>{message.text}</div>
+                  <div className={cn("min-w-0 rounded-[18px] px-4 py-3 text-[15px] leading-6", message.role === "user" ? "bg-[#df5149] text-white" : "bg-[#292a2b] text-[#f2efea]")}><AiMarkdown inverted={message.role === "user"} onOpenNote={onOpenNote}>{message.text}</AiMarkdown>{message.role === "assistant" && <ChatAnswerActions text={message.text} changes={message.changes} note={contextNote} disabled={!canEditCurrent || busy || memoryBusy} onRegenerate={() => void regenerateAnswer(message.turnId)} />}</div>
                   {message.role === "assistant" && message.sources && message.sources.length > 0 && <div className="mt-2 px-1"><p className="mb-1.5 text-[11px] font-medium text-[#77777d]">{message.contextKind === "similar" ? "Similar notes" : message.contextKind === "choices" ? "Choose a note" : message.contextKind === "matches" ? "Matching context" : "Recent context (no direct match)"}</p><div className="flex flex-wrap gap-1.5">{message.sources.map((source) => {
                     const note = notes.find((candidate) => candidate.id === source.noteId);
                     const changed = note ? chatContentRevision(note.content) !== source.revision : false;
@@ -1091,7 +1134,7 @@ export function PersistentAIChat({
                 </div>
               ))}
               {busy && <div className="max-w-[90%] rounded-[18px] bg-[#292a2b] px-4 py-3 text-sm text-[#ddd9d4]">
-                {streamingText ? <p className="whitespace-pre-wrap leading-6">{streamingText}</p> : <p className="flex items-center text-[#aaa6a0]"><Loader2 className="mr-2 h-4 w-4 animate-spin text-[#ef6b62]" />Searching notes…</p>}
+                {streamingText ? <AiMarkdown onOpenNote={onOpenNote}>{visibleChatStream(streamingText)}</AiMarkdown> : <p className="flex items-center text-[#aaa6a0]"><Loader2 className="mr-2 h-4 w-4 animate-spin text-[#ef6b62]" />Searching notes…</p>}
                 <button type="button" onClick={() => void stopCloudAI()} className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-[#ef847d]"><Square className="h-3 w-3 fill-current" />Stop</button>
               </div>}
               {memoryBusy && <p className="flex items-center text-xs text-[#77777d]"><Brain className="mr-1.5 h-3.5 w-3.5" />Updating conversation memory…</p>}

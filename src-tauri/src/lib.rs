@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -498,6 +499,71 @@ struct AiChatResponse {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AiChatTextEvent {
+    stream_id: String,
+    text: String,
+}
+
+#[derive(Default)]
+struct AiCancellationState(Mutex<HashMap<String, AiCancellation>>);
+struct AiCancellation {
+    signal: tokio::sync::watch::Sender<bool>,
+    child: Option<Arc<Mutex<Child>>>,
+}
+struct AiRequestGuard {
+    app: tauri::AppHandle,
+    id: String,
+}
+impl Drop for AiRequestGuard {
+    fn drop(&mut self) {
+        if let Ok(mut requests) = self.app.state::<AiCancellationState>().0.lock() {
+            requests.remove(&self.id);
+        }
+    }
+}
+fn register_ai_request(
+    app: &tauri::AppHandle,
+    id: &str,
+) -> Result<(AiRequestGuard, tokio::sync::watch::Receiver<bool>), String> {
+    let (signal, receiver) = tokio::sync::watch::channel(false);
+    app.state::<AiCancellationState>()
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(
+            id.to_string(),
+            AiCancellation {
+                signal,
+                child: None,
+            },
+        );
+    Ok((
+        AiRequestGuard {
+            app: app.clone(),
+            id: id.to_string(),
+        },
+        receiver,
+    ))
+}
+#[tauri::command]
+fn cancel_ai_chat(app: tauri::AppHandle, stream_id: String) -> Result<(), String> {
+    let state = app.state::<AiCancellationState>();
+    let requests = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(request) = requests.get(&stream_id) {
+        let _ = request.signal.send(true);
+        if let Some(child) = &request.child {
+            child
+                .lock()
+                .map_err(|e| e.to_string())?
+                .kill()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AiChatReasoningEvent {
     stream_id: String,
     reasoning: String,
@@ -524,7 +590,7 @@ const CODEX_RPC_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CODEX_LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 struct CodexAppServer {
-    child: Child,
+    child: Arc<Mutex<Child>>,
     stdin: ChildStdin,
     stdout: BufReader<std::process::ChildStdout>,
     next_id: u64,
@@ -532,8 +598,10 @@ struct CodexAppServer {
 
 impl Drop for CodexAppServer {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -559,7 +627,7 @@ impl CodexAppServer {
             .take()
             .ok_or_else(|| "Codex did not open its output stream".to_string())?;
         let mut server = Self {
-            child,
+            child: Arc::new(Mutex::new(child)),
             stdin,
             stdout: BufReader::new(stdout),
             next_id: 1,
@@ -845,6 +913,16 @@ fn codex_ai_chat_impl(
     }
     let (input, _images) = codex_turn_input(&request)?;
     let mut server = CodexAppServer::start()?;
+    {
+        let state = app.state::<AiCancellationState>();
+        let mut requests = state.0.lock().map_err(|e| e.to_string())?;
+        if let Some(request) = requests.get_mut(&stream_id) {
+            request.child = Some(server.child.clone());
+            if *request.signal.borrow() {
+                return Err("Request stopped".to_string());
+            }
+        }
+    }
     let account = server.request("account/read", serde_json::json!({ "refreshToken": true }))?;
     if account
         .pointer("/account/type")
@@ -891,6 +969,13 @@ fn codex_ai_chat_impl(
                     .and_then(|value| value.as_str())
                 {
                     content.push_str(delta);
+                    let _ = app.emit(
+                        "ai-chat-text",
+                        AiChatTextEvent {
+                            stream_id: stream_id.clone(),
+                            text: content.clone(),
+                        },
+                    );
                 }
             }
             Some("item/reasoning/summaryTextDelta") if same_turn => {
@@ -1584,6 +1669,7 @@ async fn codex_ai_chat(
     stream_id: String,
     request: AiChatRequest,
 ) -> Result<AiChatResponse, String> {
+    let (_guard, _cancel) = register_ai_request(&app, &stream_id)?;
     tauri::async_runtime::spawn_blocking(move || codex_ai_chat_impl(app, model, stream_id, request))
         .await
         .map_err(|error| format!("The Codex request stopped unexpectedly: {error}"))?
@@ -1700,6 +1786,13 @@ async fn collect_chat_stream(
             };
             if let Some(delta) = content_delta {
                 content.push_str(&delta);
+                let _ = app.emit(
+                    "ai-chat-text",
+                    AiChatTextEvent {
+                        stream_id: stream_id.to_string(),
+                        text: content.clone(),
+                    },
+                );
             }
             if let Some(delta) = reasoning_delta {
                 reasoning.push_str(&delta);
@@ -1804,48 +1897,55 @@ async fn cloud_ai_chat(
     stream_id: String,
     request: AiChatRequest,
 ) -> Result<AiChatResponse, String> {
-    let provider = CloudAiProvider::parse(&provider)?;
-    let credentials = cloud_ai_credentials(&state, provider, &base_url, None)?;
-    let body = cloud_ai_request_body(request, &model, provider)?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
-        .build()
-        .map_err(|error| error.to_string())?;
-    let path = if provider == CloudAiProvider::Anthropic {
-        "messages"
-    } else {
-        "chat/completions"
-    };
-    let mut request_builder = client.post(format!("{}/{path}", credentials.base_url));
-    if provider == CloudAiProvider::Anthropic {
-        request_builder = request_builder
-            .header("x-api-key", &credentials.api_key)
-            .header("anthropic-version", "2023-06-01");
-    } else {
-        request_builder = request_builder.bearer_auth(&credentials.api_key);
-    }
-    if provider == CloudAiProvider::OpenRouter {
-        request_builder = request_builder
-            .header("HTTP-Referer", "https://zerus.im")
-            .header("X-Title", "Zerus");
-    }
-    let response = request_builder
-        .json(&body)
-        .send()
-        .await
-        .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
-    let status = response.status();
-    if !status.is_success() {
-        let payload = response
-            .json::<serde_json::Value>()
+    let (_guard, mut cancelled) = register_ai_request(&app, &stream_id)?;
+    let response_future = async {
+        let provider = CloudAiProvider::parse(&provider)?;
+        let credentials = cloud_ai_credentials(&state, provider, &base_url, None)?;
+        let body = cloud_ai_request_body(request, &model, provider)?;
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .build()
+            .map_err(|error| error.to_string())?;
+        let path = if provider == CloudAiProvider::Anthropic {
+            "messages"
+        } else {
+            "chat/completions"
+        };
+        let mut request_builder = client.post(format!("{}/{path}", credentials.base_url));
+        if provider == CloudAiProvider::Anthropic {
+            request_builder = request_builder
+                .header("x-api-key", &credentials.api_key)
+                .header("anthropic-version", "2023-06-01");
+        } else {
+            request_builder = request_builder.bearer_auth(&credentials.api_key);
+        }
+        if provider == CloudAiProvider::OpenRouter {
+            request_builder = request_builder
+                .header("HTTP-Referer", "https://zerus.im")
+                .header("X-Title", "Zerus");
+        }
+        let response = request_builder
+            .json(&body)
+            .send()
             .await
-            .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
-        return Err(format!(
-            "Cloud AI request failed ({status}): {}",
-            cloud_ai_error(&payload, "Unknown provider error")
-        ));
+            .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
+        let status = response.status();
+        if !status.is_success() {
+            let payload = response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
+            return Err(format!(
+                "Cloud AI request failed ({status}): {}",
+                cloud_ai_error(&payload, "Unknown provider error")
+            ));
+        }
+        collect_chat_stream(response, &app, &stream_id, "cloud AI provider", provider).await
+    };
+    tokio::select! {
+        result = response_future => result,
+        _ = cancelled.changed() => Err("Request stopped".to_string()),
     }
-    collect_chat_stream(response, &app, &stream_id, "cloud AI provider", provider).await
 }
 
 fn write_new_vault_file_impl(
@@ -2086,6 +2186,7 @@ pub fn run() {
     let app = builder
         .manage(PendingOpenFiles::default())
         .manage(CloudAiState::default())
+        .manage(AiCancellationState::default())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -2099,6 +2200,7 @@ pub fn run() {
             take_pending_open_files,
             cloud_ai_models,
             cloud_ai_chat,
+            cancel_ai_chat,
             cloud_ai_configure,
             cloud_ai_key_status,
             openrouter_oauth_login,

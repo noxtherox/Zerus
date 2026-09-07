@@ -920,7 +920,7 @@ function NoteView({
           </Button>
         </div>
       )}
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
+      <main className="mobile-note-body flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
         <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
         {editingTitle ? (
           <Input

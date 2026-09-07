@@ -27,7 +27,6 @@ import {
   UndoRedo,
   codeBlockPlugin,
   codeMirrorPlugin,
-  frontmatterPlugin,
   headingsPlugin,
   imagePlugin,
   linkDialogPlugin,
@@ -302,7 +301,9 @@ const editorPlugins = [
   }),
   elementTablePlugin(),
   thematicBreakPlugin(),
-  frontmatterPlugin(),
+  // Note properties are stripped by noteBody before reaching this editor.
+  // Parsing frontmatter here mistakes a leading horizontal rule (after the
+  // mobile title is removed) for YAML and can reject ordinary Markdown tables.
   codeBlockPlugin({ defaultCodeBlockLanguage: "" }),
   codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
   markdownShortcutPlugin(),

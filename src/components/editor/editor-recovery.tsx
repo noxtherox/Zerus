@@ -26,6 +26,15 @@ export class EditorRecoveryBoundary extends Component<
           The formatted editor could not open this note. Your Markdown is
           available below.
         </p>
+        <button type="button" onClick={() => this.setState({ error: null })}>
+          Retry formatted editor
+        </button>
+        <details>
+          <summary>Error details</summary>
+          <pre>
+            {this.state.error}
+          </pre>
+        </details>
         <textarea
           aria-label="Note Markdown recovery"
           value={this.props.markdown}
@@ -33,9 +42,6 @@ export class EditorRecoveryBoundary extends Component<
           onChange={(event) => this.props.onChange(event.target.value)}
           spellCheck={false}
         />
-        <button type="button" onClick={() => this.setState({ error: null })}>
-          Retry formatted editor
-        </button>
       </div>
     );
   }
