@@ -29,4 +29,5 @@ The installer is written below
 `src-tauri\target\release\bundle\nsis\`. The current Windows configuration
 deliberately disables updater artifacts so a local build does not need the
 release signing key. Code signing and Windows updater publication are separate
-release tasks.
+release tasks. See [Windows signing setup](windows-signing.md), the
+[code signing policy](code-signing-policy.md), and [privacy policy](privacy.md).
