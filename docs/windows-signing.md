@@ -2,8 +2,13 @@
 
 ## Enrollment status
 
-Repository preparation only. No SignPath account, approved application,
-certificate, or successful signed build is implied by these files.
+The application was submitted on 7 September 2026; the SignPath form confirmed
+receipt. Review is pending. No approved account, certificate, or successful
+signed build is implied by these files. All preparation PR checks passed,
+including the Windows installer build and unsigned-installer rejection test.
+The submitted application links to the public preparation PR and branch privacy
+policy, discloses installer-only signing and automatic update checks, and asks
+for guidance on requirements before production signing.
 
 The first phase signs the NSIS installer only; see the
 [code signing policy](code-signing-policy.md) for the exact coverage.

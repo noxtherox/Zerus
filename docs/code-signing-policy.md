@@ -2,8 +2,8 @@
 
 ## Status
 
-Zerus is preparing to apply to the SignPath Foundation. Acceptance and production
-signing have not been confirmed. Existing Windows downloads must not be assumed
+Zerus submitted its SignPath Foundation application on 7 September 2026 and is
+awaiting review. Acceptance and production signing have not been confirmed. Existing Windows downloads must not be assumed
 to have a SignPath signature. Release notes identify whether a Windows installer
 was signed or produced while enrollment was pending.
 

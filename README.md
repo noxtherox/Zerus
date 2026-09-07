@@ -102,7 +102,7 @@ notarization tickets before the draft release is published.
 
 ### Code signing policy
 
-Windows SignPath enrollment is being prepared. Existing Windows downloads are
+Windows SignPath enrollment has been submitted and is awaiting review. Existing Windows downloads are
 not claimed to be SignPath-signed. See the
 [Code signing policy](docs/code-signing-policy.md),
 [privacy policy](docs/privacy.md), and [Windows signing setup](docs/windows-signing.md).
