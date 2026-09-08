@@ -44,6 +44,13 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them; attach files; associate notes with PDFs and common office
   documents; preview HTML; and export rendered notes as HTML, PDF, or DOCX.
+- **Saved links** — keep web links with editable notes in the Links section.
+  Markdown autolinks such as `<https://example.com>` open in the formatted editor,
+  including links saved by earlier versions.
+- **Search PDFs** — switch Find between a file's note and its PDF, highlight
+  matches, and move between results. PDF previews support selectable text and
+  automatic fit-to-width sizing. Search requires a text layer; scanned PDFs need
+  OCR from another tool first.
 - **Context-aware AI chat** — use ChatGPT through Codex, OpenAI, Anthropic,
   OpenRouter, or another compatible API. Choose the notes used as context,
   stream or cancel answers, save answers as notes, and undo supported AI edits.
@@ -78,7 +85,7 @@ My Vault/
 ├── People/
 │   └── Ada.md
 ├── assets/                 # pasted and dropped images
-├── .zerus/              # Zerus's vault metadata
+├── .zerus/                 # Zerus's vault metadata
 └── .trash/                 # recoverable deleted notes
 ```
 
