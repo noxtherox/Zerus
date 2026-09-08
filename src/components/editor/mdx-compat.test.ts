@@ -1,10 +1,42 @@
 import { describe, expect, it } from "vitest";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { linkMarkdown } from "@/lib/link-hubs";
 import {
   cleanMarkdownFromMdxEditor,
   prepareMarkdownForMdxEditor,
 } from "./mdx-compat";
 
 describe("MDX Markdown compatibility", () => {
+  it.each([
+    "https://claude.ai/design/p/0d3f7a78-c165-4509-9597-ec3933dc08d0?via=share&file=Live+View+Prototype.dc.html",
+    "https://example.com/path_(one)?q=[two]&other=value",
+    "mailto:hello@example.com",
+  ])("opens saved autolinks as explicit links without changing their destination: %s", (url) => {
+    const prepared = prepareMarkdownForMdxEditor(`# Link\n\n${linkMarkdown(url)}\n`);
+    expect(prepared).toContain("](");
+    const paragraph = unified().use(remarkParse).parse(prepared).children[1];
+    expect(paragraph).toMatchObject({ type: "paragraph", children: [{ type: "link", url }] });
+    expect(prepareMarkdownForMdxEditor(prepared)).toBe(prepared);
+  });
+
+  it("converts email autolinks and nested links", () => {
+    expect(prepareMarkdownForMdxEditor("> <hello@example.com>\n\n- <https://example.com>"))
+      .toBe("> [hello@example.com](mailto:hello@example.com)\n\n- [https://example.com](https://example.com)");
+  });
+
+  it.each([
+    "`<https://example.com>`",
+    "```md\n<https://example.com>\n```",
+    "~~~md\n<https://example.com>\n~~~",
+    "    <https://example.com>\n",
+    "[Example](<https://example.com>)",
+    "![Example](<https://example.com/image.png>)",
+    "\\<https://example.com>",
+  ])("preserves code, explicit destinations, and escaped autolinks: %s", (source) => {
+    expect(prepareMarkdownForMdxEditor(source)).toBe(source);
+  });
+
   it.each([
     ["K+ <1", "K+ \\<1"],
     ["SpO2 <90%", "SpO2 \\<90%"],

@@ -1,3 +1,5 @@
+import { findPdfMatches, type PdfSearch, type PdfMatch } from "@/lib/pdf-search";
+import "./pdf-viewer.css";
 import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
@@ -5,10 +7,12 @@ import {
   Loader2,
   Maximize,
   Minimize,
+  Search,
   ZoomIn,
   ZoomOut,
 } from "@/lib/icons";
 import {
+  TextLayer,
   GlobalWorkerOptions,
   getDocument,
   type PDFDocumentProxy,
@@ -18,17 +22,35 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
+const EMPTY_MATCHES: PdfMatch[] = [];
+
+function scrollToPdfTarget(target: Element | null, center = false) {
+  const container = target?.closest<HTMLElement>("[data-pdf-scroll]");
+  if (!target || !container) return;
+  const bounds = target.getBoundingClientRect();
+  const viewport = container.getBoundingClientRect();
+  container.scrollTo({
+    top: container.scrollTop + bounds.top - viewport.top - (center ? (container.clientHeight - bounds.height) / 2 : 0),
+    left: center ? container.scrollLeft + bounds.left - viewport.left - (container.clientWidth - bounds.width) / 2 : container.scrollLeft,
+  });
+}
 
 function PdfPage({
   pdf,
   pageNumber,
   scale,
+  matches,
+  activeMatch,
 }: {
   pdf: PDFDocumentProxy;
   pageNumber: number;
   scale: number;
+  matches: PdfMatch[];
+  activeMatch?: PdfMatch;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [textLayer, setTextLayer] = useState<{ layer: TextLayer; offsets: number[] } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [visible, setVisible] = useState(pageNumber <= 2);
 
@@ -45,11 +67,14 @@ function PdfPage({
     return () => observer.disconnect();
   }, []);
 
+  const shouldRender = visible || !!activeMatch;
   useEffect(() => {
-    if (!visible || !canvasRef.current) return;
+    if ((!shouldRender) || !canvasRef.current) return;
     let cancelled = false;
+    let layer: TextLayer | null = null;
+    setTextLayer(null);
     let renderTask: { cancel: () => void; promise: Promise<unknown> } | null = null;
-    void pdf.getPage(pageNumber).then((page) => {
+    void pdf.getPage(pageNumber).then(async (page) => {
       if (cancelled || !canvasRef.current) return;
       const viewport = page.getViewport({ scale });
       const outputScale = window.devicePixelRatio || 1;
@@ -66,7 +91,23 @@ function PdfPage({
         viewport,
         transform: outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
       });
-      return renderTask.promise;
+      await renderTask.promise;
+      const content = await page.getTextContent();
+      if (cancelled || !textRef.current) return;
+      textRef.current.replaceChildren();
+      textRef.current.style.setProperty("--total-scale-factor", String(scale));
+      layer = new TextLayer({ textContentSource: content, container: textRef.current, viewport });
+      await layer.render();
+      if (!cancelled) {
+        let offset = 0;
+        const offsets = content.items.flatMap((item) => {
+          if (!("str" in item)) return [];
+          const start = offset;
+          offset += item.str.length + (item.hasEOL ? 1 : 0);
+          return [start];
+        });
+        setTextLayer({ layer, offsets });
+      }
     }).catch((error) => {
       if (!cancelled && error?.name !== "RenderingCancelledException") {
         console.error("Zerus: failed to render PDF page", error);
@@ -75,27 +116,57 @@ function PdfPage({
     return () => {
       cancelled = true;
       renderTask?.cancel();
+      layer?.cancel();
     };
-  }, [pageNumber, pdf, scale, visible]);
+  }, [pageNumber, pdf, scale, shouldRender]);
+
+  useEffect(() => {
+    if (!textLayer) return;
+    textLayer.layer.textDivs.forEach((div, index) => {
+      const text = textLayer.layer.textContentItemsStr[index];
+      const offset = textLayer.offsets[index];
+      div.replaceChildren();
+      let cursor = 0;
+      for (const match of matches) {
+        if (match.page !== pageNumber) continue;
+        const start = Math.max(0, match.start - offset);
+        const end = Math.min(text.length, match.end - offset);
+        if (start >= end) continue;
+        div.append(document.createTextNode(text.slice(cursor, start)));
+        const mark = document.createElement("mark");
+        mark.textContent = text.slice(start, end);
+        mark.className = match === activeMatch ? "pdf-match active" : "pdf-match";
+        div.append(mark);
+        cursor = end;
+      }
+      div.append(document.createTextNode(text.slice(cursor)));
+    });
+    scrollToPdfTarget(textRef.current?.querySelector(".pdf-match.active") ?? null, true);
+  }, [textLayer, matches, activeMatch, pageNumber]);
 
   return (
     <div
       ref={hostRef}
       data-pdf-page={pageNumber}
-      className="mx-auto min-h-40 w-fit max-w-full overflow-hidden rounded-sm bg-white shadow"
+      className="relative mx-auto min-h-40 w-fit shrink-0 overflow-hidden rounded-sm bg-white shadow"
     >
-      <canvas ref={canvasRef} className="block max-w-full" />
+      <canvas ref={canvasRef} className="block" />
+      <div ref={textRef} className="zerus-pdf-text" />
     </div>
   );
 }
 
 export function PdfViewer({
   loadBytes,
+  search,
+  onFind,
   version,
   isFullHeight = false,
   onToggleFullHeight,
 }: {
   loadBytes: () => Promise<Uint8Array>;
+  search?: PdfSearch;
+  onFind?: () => void;
   version: string;
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
@@ -107,6 +178,7 @@ export function PdfViewer({
   const [passwordRequest, setPasswordRequest] = useState<((password: string) => void) | null>(null);
   const [password, setPassword] = useState("");
   const [scale, setScale] = useState(1.25);
+  const [fitWidth, setFitWidth] = useState(true);
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -114,6 +186,8 @@ export function PdfViewer({
     let loadingTask: ReturnType<typeof getDocument> | null = null;
     setLoading(true);
     setError(null);
+    setPasswordRequest(null);
+    setPassword("");
     setPdf(null);
     void loadBytes()
       .then((bytes) => {
@@ -141,16 +215,69 @@ export function PdfViewer({
     };
   }, [loadBytes, version]);
 
+  useEffect(() => {
+    const container = scrollRef.current;
+    if (!pdf || loading || !container || !fitWidth) return;
+    let cancelled = false;
+    let observer: ResizeObserver | undefined;
+    void pdf.getPage(1).then((firstPage) => {
+      if (cancelled) return;
+      const width = firstPage.getViewport({ scale: 1 }).width;
+      const fit = () => setScale(Math.max(0.25, Math.min(3, (container.clientWidth - 32) / width)));
+      fit();
+      observer = new ResizeObserver(fit);
+      observer.observe(container);
+    }).catch(() => undefined);
+    return () => { cancelled = true; observer?.disconnect(); };
+  }, [pdf, loading, fitWidth]);
+
+  const [pages, setPages] = useState<string[] | null>(null);
+  const setStatus = search?.setStatus;
+  const setMatches = search?.setMatches;
+  const setActive = search?.setActive;
+  const query = search?.query ?? "";
+  useEffect(() => {
+    let cancelled = false;
+    setPages(null);
+    setStatus?.(error ? "PDF unavailable" : "Loading PDF…");
+    if (pdf) {
+      setStatus?.("Reading PDF text…");
+      void (async () => {
+        const texts: string[] = [];
+        for (let number = 1; number <= pdf.numPages; number++) {
+          const page = await pdf.getPage(number);
+          const content = await page.getTextContent();
+          if (cancelled) return;
+          texts.push(content.items.map((item) => "str" in item ? item.str + (item.hasEOL ? "\n" : "") : "").join(""));
+        }
+        if (!cancelled) {
+          setPages(texts);
+          setStatus?.(texts.some((text) => text.trim()) ? "" : "No text layer");
+        }
+      })().catch(() => { if (!cancelled) setStatus?.("Could not read PDF text"); });
+    }
+    return () => { cancelled = true; };
+  }, [pdf, error, setStatus]);
+
+  useEffect(() => {
+    setMatches?.(pages ? findPdfMatches(pages, query) : []);
+    setActive?.(0);
+  }, [pages, query, setMatches, setActive]);
+  const activeMatch = search?.matches[search.active];
+  useEffect(() => {
+    if (!activeMatch) return;
+    setPage(activeMatch.page);
+    scrollToPdfTarget(scrollRef.current?.querySelector(`[data-pdf-page="${activeMatch.page}"]`) ?? null);
+  }, [activeMatch]);
+
   const goToPage = (next: number) => {
     if (!pdf) return;
     const clamped = Math.max(1, Math.min(pdf.numPages, next));
     setPage(clamped);
-    scrollRef.current
-      ?.querySelector(`[data-pdf-page="${clamped}"]`)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToPdfTarget(scrollRef.current?.querySelector(`[data-pdf-page="${clamped}"]`) ?? null);
   };
 
-  if (loading) {
+  if (loading && !passwordRequest) {
     return <div className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="animate-spin" size={16} /> Loading PDF…</div>;
   }
   if (passwordRequest) {
@@ -174,16 +301,17 @@ export function PdfViewer({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div data-pdf-viewer tabIndex={-1} className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-center gap-1 border-b bg-background/90 px-2 py-1.5">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => goToPage(page - 1)} disabled={page <= 1}><ChevronLeft size={14} /></Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Previous PDF page" onClick={() => goToPage(page - 1)} disabled={page <= 1}><ChevronLeft size={14} /></Button>
         <span className="min-w-16 text-center text-xs tabular-nums">{page} / {pdf.numPages}</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => goToPage(page + 1)} disabled={page >= pdf.numPages}><ChevronRight size={14} /></Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Next PDF page" onClick={() => goToPage(page + 1)} disabled={page >= pdf.numPages}><ChevronRight size={14} /></Button>
         <div className="mx-1 h-5 w-px bg-border" />
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setScale((value) => Math.max(0.5, value - 0.2))}><ZoomOut size={14} /></Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Zoom out" onClick={() => { setFitWidth(false); setScale((value) => Math.max(0.25, value - 0.2)); }}><ZoomOut size={14} /></Button>
         <span className="w-12 text-center text-xs tabular-nums">{Math.round(scale * 100)}%</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setScale((value) => Math.min(3, value + 0.2))}><ZoomIn size={14} /></Button>
-        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setScale(1.25)}>Fit width</Button>
+        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Zoom in" onClick={() => { setFitWidth(false); setScale((value) => Math.min(3, value + 0.2)); }}><ZoomIn size={14} /></Button>
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setFitWidth(true)}>Fit width</Button>
+        {onFind && <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Find in PDF" title="Find in PDF (⌘F / Ctrl+F)" onClick={onFind}><Search size={14} /></Button>}
         {onToggleFullHeight && (
           <Button
             variant="ghost"
@@ -198,14 +326,14 @@ export function PdfViewer({
           </Button>
         )}
       </div>
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-auto bg-muted/50 p-4" onScroll={(event) => {
+      <div ref={scrollRef} data-pdf-scroll className="min-h-0 flex-1 space-y-4 overflow-auto bg-muted/50 p-4" onScroll={(event) => {
         const pages = [...event.currentTarget.querySelectorAll<HTMLElement>("[data-pdf-page]")];
         const top = event.currentTarget.getBoundingClientRect().top;
         const nearest = pages.reduce((best, item) => Math.abs(item.getBoundingClientRect().top - top) < Math.abs(best.getBoundingClientRect().top - top) ? item : best, pages[0]);
         if (nearest) setPage(Number(nearest.dataset.pdfPage));
       }}>
         {Array.from({ length: pdf.numPages }, (_, index) => (
-          <PdfPage key={index + 1} pdf={pdf} pageNumber={index + 1} scale={scale} />
+          <PdfPage key={index + 1} pdf={pdf} pageNumber={index + 1} scale={scale} matches={search?.matches ?? EMPTY_MATCHES} activeMatch={activeMatch?.page === index + 1 ? activeMatch : undefined} />
         ))}
       </div>
     </div>

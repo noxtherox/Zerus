@@ -1,3 +1,4 @@
+import type { PdfSearch } from "@/lib/pdf-search";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   ExternalLink,
@@ -48,6 +49,8 @@ function formatBytes(bytes: number | null): string {
 
 export function FileHubPanel({
   note,
+  pdfSearch,
+  onFind,
   previewType,
   htmlPreviewMode = "safe",
   htmlApprovedFingerprint,
@@ -56,6 +59,8 @@ export function FileHubPanel({
   onTogglePreviewFullHeight,
 }: {
   note: Note;
+  pdfSearch?: PdfSearch;
+  onFind?: () => void;
   previewType: FileHubPreviewType;
   htmlPreviewMode?: Exclude<HtmlPreviewMode, "link">;
   htmlApprovedFingerprint?: string | null;
@@ -149,6 +154,8 @@ export function FileHubPanel({
           >
             {previewType === "pdf" ? (
               <PdfViewer
+                search={pdfSearch}
+                onFind={onFind}
                 loadBytes={loadBytes}
                 version={version}
                 isFullHeight={isPreviewFullHeight}

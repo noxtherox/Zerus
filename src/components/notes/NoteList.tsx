@@ -361,9 +361,8 @@ export function NoteList({
           const archived = isArchived(note);
           const fileHub = getFileHubReference(note);
           const linkHub = getLinkHubReference(note);
-          const title = inFiles && fileHub ? fileHub.name : noteName;
-          const snippet = inFiles
-            ? noteName
+          const snippet = inFiles && fileHub
+            ? fileHub.name
             : inLinks && linkHub
               ? linkHub.url
               : noteSnippet(note);
@@ -402,7 +401,7 @@ export function NoteList({
                       />
                     )}
                     <span className="truncate text-sm font-medium">
-                      {title}
+                      {noteName}
                     </span>
                   </div>
                   {snippet && (

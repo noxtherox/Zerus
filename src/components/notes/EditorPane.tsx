@@ -1,3 +1,4 @@
+import { usePdfSearch } from "@/lib/pdf-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
@@ -308,6 +309,8 @@ export function EditorPane({
     useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
+  const pdfSearch = usePdfSearch();
+  const [findContainer, setFindContainer] = useState<HTMLDivElement | null>(null);
   const [conflictReviewOpen, setConflictReviewOpen] = useState(false);
   const [overwriteDiskConfirmOpen, setOverwriteDiskConfirmOpen] =
     useState(false);
@@ -726,6 +729,11 @@ export function EditorPane({
             previewType ? () => toggleExpandedSection("markdown") : undefined
           }
           findRequest={findRequest}
+          pdfSearch={previewType === "pdf" ? pdfSearch : undefined}
+          onFindScopeChange={(scope) => {
+            if (expandedSection && ((scope === "note" && expandedSection === "preview") || (scope === "pdf" && expandedSection === "markdown"))) toggleExpandedSection(expandedSection);
+          }}
+          findContainer={previewType === "pdf" ? findContainer : undefined}
           insertTextRequest={attachmentInsertRequest}
           attachments={getNoteAttachments(note)}
           onAttachmentAction={handleAttachmentAction}
@@ -749,7 +757,16 @@ export function EditorPane({
   );
 
   return (
-    <div className="flex h-full flex-col bg-zerus-editor">
+    <div ref={setFindContainer} className="relative flex h-full flex-col bg-zerus-editor" onKeyDownCapture={(event) => {
+      if (previewType === "pdf" && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        event.stopPropagation();
+        const target = event.target as HTMLElement;
+        if (target.closest(".zerus-mdx-shell")) pdfSearch.setScope("note");
+        else if (target.closest("[data-pdf-viewer]")) pdfSearch.setScope("pdf");
+        setFindRequest((value) => value + 1);
+      }
+    }}>
       <div
         className={cn(
           "relative z-20 flex items-center gap-2 border-b border-border/60 bg-zerus-editor px-4 py-2",
@@ -878,7 +895,7 @@ export function EditorPane({
                   onSelect={() => setFindRequest((request) => request + 1)}
                 >
                   <Search className="mr-2" size={14} />
-                  Find in note
+                  {previewType === "pdf" ? "Find in note / PDF" : "Find in note"}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => {
@@ -1114,6 +1131,8 @@ export function EditorPane({
                 <FileHubPanel
                   note={note}
                   previewType={previewType}
+                  pdfSearch={pdfSearch}
+                  onFind={() => { pdfSearch.setScope("pdf"); setFindRequest((value) => value + 1); }}
                   htmlPreviewMode={renderedHtmlPreviewMode ?? "safe"}
                   htmlApprovedFingerprint={
                     htmlPreviewState?.fileHubId === fileHub.id

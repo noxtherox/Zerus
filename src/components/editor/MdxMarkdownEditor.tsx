@@ -1,3 +1,4 @@
+import type { PdfSearch } from "@/lib/pdf-search";
 import {
   createContext,
   useCallback,
@@ -100,6 +101,9 @@ interface MarkdownEditorProps {
   isFullHeight?: boolean;
   onToggleFullHeight?: () => void;
   findRequest?: number;
+  pdfSearch?: PdfSearch;
+  onFindScopeChange?: (scope: "note" | "pdf") => void;
+  findContainer?: HTMLDivElement | null;
   insertTextRequest?: { id: number; text: string; at?: number } | null;
   onTextSelectionChange?: (hasSelection: boolean) => void;
   attachments?: NoteAttachment[];
@@ -109,6 +113,8 @@ interface MarkdownEditorProps {
 }
 
 interface ToolbarContextValue {
+  pdfSearch?: PdfSearch;
+  onFindScopeChange?: (scope: "note" | "pdf") => void;
   findRequest: number;
   isFullHeight: boolean;
   searchContainer: HTMLDivElement | null;
@@ -145,7 +151,7 @@ const CODE_BLOCK_LANGUAGES = {
 };
 
 function SearchControl() {
-  const { findRequest, restoreEditorFocus, searchContainer } =
+  const { findRequest, restoreEditorFocus, searchContainer, pdfSearch, onFindScopeChange } =
     useContext(ToolbarContext);
   const inputRef = useRef<HTMLInputElement>(null);
   const {
@@ -159,10 +165,27 @@ function SearchControl() {
     total,
   } = useEditorSearch();
   const [inputValue, setInputValue] = useState("");
+  const scope = pdfSearch?.scope ?? "note";
+  const inPdf = !!pdfSearch && scope === "pdf";
+  const matchTotal = inPdf ? pdfSearch.matches.length : total;
+  const matchCursor = inPdf ? pdfSearch.active + 1 : cursor;
+  const move = (direction: number) => {
+    if (inPdf) pdfSearch.setActive((value) => matchTotal ? (value + direction + matchTotal) % matchTotal : 0);
+    else if (direction > 0) next();
+    else prev();
+  };
+  const setPdfQuery = pdfSearch?.setQuery;
+  useEffect(() => {
+    setPdfQuery?.(isSearchOpen && inPdf ? inputValue : "");
+  }, [setPdfQuery, isSearchOpen, inPdf, inputValue]);
+  // Both scopes use a literal query; the editor API takes a regular expression.
+  useEffect(() => {
+    setSearch(inPdf ? "" : inputValue.normalize("NFKD").replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  }, [inPdf, inputValue, setSearch]);
   const previousRequest = useRef(findRequest);
 
   useEffect(() => {
-    if (findRequest !== previousRequest.current) openSearch();
+    if (findRequest !== previousRequest.current) { openSearch(); inputRef.current?.focus(); inputRef.current?.select(); }
     previousRequest.current = findRequest;
   }, [findRequest, openSearch]);
 
@@ -180,24 +203,25 @@ function SearchControl() {
 
   const updateSearch = (value: string) => {
     setInputValue(value);
-    // The editor search API accepts a regular expression. Escaping turns the
-    // control into the literal, accent-tolerant find people expect from an app.
-    setSearch(
-      value
-        .normalize("NFKD")
-        .replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-    );
+
   };
 
   if (isSearchOpen && searchContainer) {
     return createPortal(
-      <div className="zerus-note-find" role="search" aria-label="Find in note">
+      <div className="zerus-note-find" role="search" aria-label={inPdf ? "Find in PDF" : "Find in note"}>
         <Search size={14} aria-hidden="true" />
+        {pdfSearch && <select aria-label="Search scope" value={scope} className="min-w-0 bg-transparent text-xs" onChange={(event) => {
+          const nextScope = event.target.value as "note" | "pdf";
+          pdfSearch.setScope(nextScope);
+          onFindScopeChange?.(nextScope);
+          pdfSearch.setActive(0);
+          inputRef.current?.focus();
+        }}><option value="note">Note</option><option value="pdf">PDF</option></select>}
         <input
           ref={inputRef}
           value={inputValue}
-          aria-label="Search this note"
-          placeholder="Find in note"
+          aria-label={inPdf ? "Search this PDF" : "Search this note"}
+          placeholder={inPdf ? "Find in PDF" : "Find in note"}
           autoCapitalize="none"
           autoCorrect="off"
           enterKeyHint="search"
@@ -205,22 +229,21 @@ function SearchControl() {
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              if (event.shiftKey) prev();
-              else next();
+              move(event.shiftKey ? -1 : 1);
             } else if (event.key === "Escape") {
               event.preventDefault();
               close();
             }
           }}
         />
-        <span className="zerus-note-find-count" aria-live="polite">
-          {inputValue ? (total ? `${cursor} of ${total}` : "No results") : ""}
+        <span className="zerus-note-find-count" aria-live="polite" title={inPdf && pdfSearch.status === "No text layer" ? "This PDF has no searchable text. Scanned pages need OCR before they can be searched." : undefined}>
+          {inPdf && pdfSearch.status ? pdfSearch.status : inputValue ? (matchTotal ? `${matchCursor} of ${matchTotal}` : "No results") : ""}
         </span>
         <span className="zerus-note-find-divider" aria-hidden="true" />
-        <button type="button" aria-label="Previous match" disabled={!total} onClick={prev}>
+        <button type="button" aria-label="Previous match" disabled={!matchTotal} onClick={() => move(-1)}>
           <ChevronUp size={16} />
         </button>
-        <button type="button" aria-label="Next match" disabled={!total} onClick={next}>
+        <button type="button" aria-label="Next match" disabled={!matchTotal} onClick={() => move(1)}>
           <ChevronDown size={16} />
         </button>
         <button type="button" aria-label="Close find" onClick={close}>
@@ -237,7 +260,7 @@ function SearchControl() {
       className="zerus-mdx-toolbar-action"
       title="Find in note"
       aria-label="Find in note"
-      onClick={openSearch}
+      onClick={() => { pdfSearch?.setScope("note"); onFindScopeChange?.("note"); openSearch(); }}
     >
       <Search size={16} />
     </button>
@@ -361,6 +384,9 @@ export function MarkdownEditor({
   isFullHeight = false,
   onToggleFullHeight,
   findRequest = 0,
+  pdfSearch,
+  onFindScopeChange,
+  findContainer,
   insertTextRequest = null,
   onTextSelectionChange,
   attachments = [],
@@ -392,7 +418,9 @@ export function MarkdownEditor({
     () => ({
       findRequest: findRequest + keyboardFindRequest,
       isFullHeight,
-      searchContainer,
+      searchContainer: findContainer ?? searchContainer,
+      pdfSearch,
+      onFindScopeChange,
       restoreEditorFocus: () => editorRef.current?.focus(),
       onRequestAttachments,
       onToggleFullHeight,
@@ -401,6 +429,9 @@ export function MarkdownEditor({
       findRequest,
       isFullHeight,
       keyboardFindRequest,
+      pdfSearch,
+      onFindScopeChange,
+      findContainer,
       onRequestAttachments,
       onToggleFullHeight,
       searchContainer,

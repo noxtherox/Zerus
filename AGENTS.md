@@ -1,5 +1,12 @@
 # Repository release instructions
 
+## Release documentation review
+
+- Before every release, review `README.md` against the release's current
+  features, supported platforms, setup steps, commands, dependencies, and
+  limitations. Add newly relevant information, update changed behavior, and
+  remove obsolete claims before creating the version commit and tag.
+
 ## Web preview handoff
 
 - After every new implementation or feature, start or refresh the web version and

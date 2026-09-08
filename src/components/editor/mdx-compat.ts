@@ -1,3 +1,30 @@
+import type { RootContent } from "mdast";
+import { toMarkdown } from "mdast-util-to-markdown";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+
+const markdownParser = unified().use(remarkParse);
+
+/** MDX disables CommonMark autolinks; convert only actual link nodes. */
+function expandAutolinks(source: string): string {
+  if (!source.includes("<")) return source;
+  const replacements: { start: number; end: number; markdown: string }[] = [];
+  function visit(node: RootContent) {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (node.type === "link" && start !== undefined && end !== undefined && source[start] === "<") {
+      replacements.push({ start, end, markdown: toMarkdown(node, { resourceLink: true }).trimEnd() });
+    } else if ("children" in node) {
+      node.children.forEach(visit);
+    }
+  }
+  markdownParser.parse(source).children.forEach(visit);
+  for (const { start, end, markdown } of replacements.reverse()) {
+    source = source.slice(0, start) + markdown + source.slice(end);
+  }
+  return source;
+}
+
 const MDX_NAME_START = /[\p{ID_Start}$_]/u;
 
 function backtickRunLength(source: string, from: number): number {
@@ -55,7 +82,7 @@ export function cleanMarkdownFromMdxEditor(source: string): string {
 }
 
 export function prepareMarkdownForMdxEditor(input: string): string {
-  const source = cleanMarkdownFromMdxEditor(input);
+  const source = expandAutolinks(cleanMarkdownFromMdxEditor(input));
   let result = "";
   let index = 0;
   let inlineCodeTicks = 0;
