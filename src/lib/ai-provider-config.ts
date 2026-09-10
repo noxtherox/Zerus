@@ -10,6 +10,7 @@ export interface AiProviderConfig {
 }
 
 export interface CloudAiModel {
+  contextWindow?: number | null;
   id: string;
   name: string;
 }

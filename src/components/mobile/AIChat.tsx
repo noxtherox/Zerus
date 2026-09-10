@@ -68,7 +68,7 @@ import {
 } from "@/lib/mobile-ai-actions";
 import { buildNotesPrompt, cleanNotesAnswer } from "@/lib/mobile-ai-response";
 import { prepareChatImage, questionReferencesImage, type PreparedChatImage } from "@/lib/mobile-chat-image";
-import { chatDocumentContext, prepareChatDocument, MAX_DOCUMENT_TEXT, type ChatDocument } from "@/lib/chat-documents";
+import { selectDocumentContext, prepareChatDocument, validateDocumentBatch, type ChatDocument } from "@/lib/chat-documents";
 import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
 import {
   retrieveNotes,
@@ -291,6 +291,7 @@ export function PersistentAIChat({
   const swipeTimer = useRef<number | null>(null);
   const imageInput = useRef<HTMLInputElement | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
+  const [documentContextStatus, setDocumentContextStatus] = useState("");
   const selectingFiles = useRef(false);
   const fileSelectionGeneration = useRef(0);
   const pendingImagesRef = useRef<PreparedChatImage[]>([]);
@@ -714,11 +715,14 @@ export function PersistentAIChat({
       question,
       retrieval.notes.map((note) => note.title),
     );
-    const documents = turnMessage?.documents?.length ? turnMessage.documents : [...previousMessages].reverse().find((message) => message.documents?.length)?.documents;
+    const documents = [...previousMessages, ...(turnMessage ? [turnMessage] : [])].flatMap((message) => message.documents ?? []);
     const directAnswer = images.length || documents?.length || mutationRequested ? null : retrieval.directAnswer;
-    const prompt = directAnswer ? null : buildNotesPrompt(
+    const basePrompt = buildNotesPrompt(
       retrieval, previousMessages, question, conversation.summary?.text ?? null, images.length > 0 || Boolean(documents?.length),
-    ) + chatDocumentContext(documents);
+    );
+    const documentContext = documents.length ? await selectDocumentContext(documents, question, discoveredModels.find((model) => model.id === cloudModel) ?? { id: cloudModel }, basePrompt, images.length) : null;
+    const prompt = directAnswer ? null : basePrompt + (documentContext?.text ?? "");
+    setDocumentContextStatus(documentContext ? `${documentContext.excerpts ? "Using file excerpts" : "Full file context"}${documentContext.fallback ? " · model capacity unknown; conservative budget" : ""}` : "");
     mobileDiagnostic("mobile-ai.question", {
       engine: "cloud",
       direct: Boolean(directAnswer),
@@ -848,6 +852,7 @@ export function PersistentAIChat({
   useEffect(() => {
     fileSelectionGeneration.current += 1;
     setPendingDocuments([]);
+    setDocumentContextStatus("");
   }, [conversationId, visible]);
 
   const selectImages = async (files: readonly File[]) => {
@@ -859,11 +864,11 @@ export function PersistentAIChat({
     try {
       const available = 4 - pendingImages.length;
       const documents = [...pendingDocuments];
+      validateDocumentBatch(documents, files);
       for (const file of files.filter((file) => !file.type.startsWith("image/"))) {
-        if (documents.length >= 4) throw new Error("You can attach up to 4 documents per message.");
         const document = await prepareChatDocument(file);
-        if (documents.reduce((sum, item) => sum + item.text.length, document.text.length) > MAX_DOCUMENT_TEXT) throw new Error("Attached documents exceed 16,000 characters. Use shorter excerpts.");
         documents.push(document);
+        validateDocumentBatch(documents, []);
       }
       if (generation !== fileSelectionGeneration.current) return;
       setPendingDocuments(documents);
@@ -1185,6 +1190,7 @@ export function PersistentAIChat({
                 }} className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#3b3c3d] text-[#c4c0bb]" aria-label={`Remove image ${index + 1}`}><X className="h-4 w-4" /></button>
               </div>)}
             </div>}
+            {documentContextStatus && <p role="status" className="mb-2 text-xs text-[#c4c0bb]">{documentContextStatus}</p>}
             {pendingDocuments.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs text-[#c4c0bb]"><span className="min-w-0 flex-1 break-all">{document.name}</span><button type="button" aria-label={`Remove ${document.name}`} onClick={() => setPendingDocuments((current) => current.filter((_, position) => position !== index))}><X className="h-4 w-4" /></button></div>)}
             <div className="flex min-w-0 items-end gap-2 rounded-[24px] border border-white/[0.11] bg-[#2b2c2d] p-1.5 pl-1 focus-within:border-[#df5149]/65">
               <input ref={imageInput} type="file" multiple className="hidden" onChange={(event) => { void selectImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />

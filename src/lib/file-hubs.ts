@@ -3,7 +3,7 @@ import {
   setContentProperty,
   type PropertyValue,
 } from "@/lib/frontmatter";
-import { normalizeFsPath, type Note } from "@/lib/note-utils";
+import { normalizeFsPath, normalizeFsPathSeparators, type Note } from "@/lib/note-utils";
 
 export const FILE_HUB_KEYS = {
   id: "zerus-file-id",
@@ -138,7 +138,16 @@ export function pathInsideRoot(root: string, absolutePath: string): string | nul
   const normalizedPath = normalizeFsPath(absolutePath);
   const prefix = `${normalizedRoot}/`;
   if (!normalizedPath.startsWith(prefix)) return null;
-  return normalizeRelativeFilePath(normalizedPath.slice(prefix.length));
+  // Compare without case on Windows, but sync the original filename casing.
+  const originalPath = normalizeFsPathSeparators(absolutePath);
+  const rootSegments = normalizeFsPathSeparators(root).split("/").length;
+  return normalizeRelativeFilePath(originalPath.split("/").slice(rootSegments).join("/"));
+}
+
+/** Keep extended Windows paths in native syntax: Win32 does not normalize `/` there. */
+function joinFileLocationPath(root: string, relativePath: string): string {
+  const separator = root.includes("\\") || root.startsWith("//?/") ? "\\" : "/";
+  return `${root.replace(/[\\/]+$/, "")}${separator}${relativePath}`.replace(/[\\/]/g, separator);
 }
 
 export function mostSpecificLocation(
@@ -184,7 +193,7 @@ export function resolveFileHubReference(
         : null;
   return {
     reference,
-    absolutePath: root && reference.path ? `${root.replace(/[\\/]$/, "")}/${reference.path}` : null,
+    absolutePath: root && reference.path ? joinFileLocationPath(root, reference.path) : null,
     location,
     missingMapping: !root,
   };

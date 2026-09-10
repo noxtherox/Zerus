@@ -81,6 +81,7 @@
     "cmdk": "^1.0.0",
     "date-fns": "^3.6.0",
     "docx": "^9.7.1",
+    "js-tiktoken": "^1.0.21",
     "lexical": "0.48.0",
     "lucide-react": "^0.462.0",
     "mdast-util-gfm-table": "2.0.0",

@@ -32,6 +32,7 @@ struct CloudAIGenerateResponse: Encodable {
 struct CloudAIModelResponse: Encodable {
   let id: String
   let name: String
+  let contextWindow: Int?
 }
 
 struct CloudAIModelsResponse: Encodable {
@@ -102,7 +103,7 @@ final class CloudAIManager {
     let models = entries.compactMap { entry -> CloudAIModelResponse? in
       guard let id = entry["id"] as? String, !id.isEmpty else { return nil }
       guard !modelUsesWebSearch(id) else { return nil }
-      return CloudAIModelResponse(id: id, name: (entry["name"] as? String) ?? id)
+      return CloudAIModelResponse(id: id, name: (entry["name"] as? String) ?? id, contextWindow: (entry["context_length"] as? Int) ?? (entry["context_window"] as? Int))
     }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     return CloudAIModelsResponse(models: models)
   }

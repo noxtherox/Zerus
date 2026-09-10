@@ -241,6 +241,7 @@ let state: VaultState = {
 };
 
 let backend: VaultBackend | null = null;
+let vaultLoadGeneration = 0;
 let mobileNoteEntries: VaultFileEntry[] = [];
 let mobileNoteLoad: Promise<void> | null = null;
 let initialized = false;
@@ -933,6 +934,8 @@ function loadedMobilePaths(): Set<string> {
 }
 
 async function loadVault(nextBackend: VaultBackend) {
+  const generation = ++vaultLoadGeneration;
+  const isCurrentLoad = () => generation === vaultLoadGeneration;
   mobileDiagnostic("store.vault.load.started", {
     kind: nextBackend.kind,
     location: nextBackend.location,
@@ -992,7 +995,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const applyPriorityFiles = (
       files: Awaited<ReturnType<DesktopVault["loadAll"]>>,
     ) => {
-      if (backend !== nextBackend || files.length === 0) return;
+      if (!isCurrentLoad() || files.length === 0) return;
       const existingByPath = new Map(
         state.notes.map((note) => [note.path, note] as const),
       );
@@ -1060,6 +1063,7 @@ async function loadVault(nextBackend: VaultBackend) {
       loadHistorySettings(nextBackend),
       loadTrashedImages(nextBackend),
     ]);
+    if (!isCurrentLoad()) return;
     if (canPage) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
     }
@@ -1068,6 +1072,7 @@ async function loadVault(nextBackend: VaultBackend) {
           mobileNoteEntries.slice(0, MOBILE_NOTE_PAGE_SIZE).map((entry) => entry.path),
         )
       : (noteSource as VaultFile[]);
+    if (!isCurrentLoad()) return;
     const vaultNotes: Note[] = files.map((file) => {
       const edited = state.notes.find(
         (note) =>
@@ -1086,6 +1091,7 @@ async function loadVault(nextBackend: VaultBackend) {
     });
     let externalNotes =
       nextBackend.kind === "browser" ? [] : await loadExternalNotes();
+    if (!isCurrentLoad()) return;
     if (externalNotes.length) {
       const vaultPaths = new Set(
         await Promise.all(
@@ -1098,6 +1104,7 @@ async function loadVault(nextBackend: VaultBackend) {
           ),
         ),
       );
+      if (!isCurrentLoad()) return;
       const duplicates = externalNotes.filter((note) =>
         vaultPaths.has(normalizeFsPath(note.externalPath as string)),
       );
@@ -1194,6 +1201,7 @@ async function loadVault(nextBackend: VaultBackend) {
     });
     void drainDesktopOpenPaths();
   } catch (error) {
+    if (!isCurrentLoad()) return;
     mobileDiagnostic("store.vault.load.failed", { error });
     setState({
       status: "error",
@@ -1373,13 +1381,15 @@ export function getDesktopVaultConflictCount(path: string): number {
 
 export async function switchDesktopVault(path: string): Promise<boolean> {
   if (!path || !isTauri() || isIOSRuntime()) return false;
-  if (backend?.kind === "desktop" && state.location === path) return true;
+  if (backend?.kind === "desktop" && state.location === path &&
+      state.status === "ready" && !state.isRefreshing) return true;
   if (backend && !(await flushAll({ allowConflicts: true }))) return false;
   suspendCurrentDesktopConflicts();
   localStorage.setItem(VAULT_PATH_KEY, path);
   rememberDesktopVault(path);
-  await loadVault(new DesktopVault(path));
-  return state.status === "ready";
+  const nextBackend = new DesktopVault(path);
+  await loadVault(nextBackend);
+  return backend === nextBackend && state.status === "ready";
 }
 
 export async function chooseVaultFolder(): Promise<boolean> {

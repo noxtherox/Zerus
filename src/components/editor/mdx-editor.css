@@ -243,6 +243,10 @@
   color: rgb(var(--zerus-text) / 0.38);
 }
 
+.zerus-mdx-content :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 700;
+}
+
 .zerus-mdx-content h1 {
   font-size: 1.55em;
 }

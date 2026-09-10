@@ -77,6 +77,8 @@ pub struct CloudAiGenerateResponse {
 pub struct CloudAiModelResponse {
     pub id: String,
     pub name: String,
+    #[serde(rename = "contextWindow")]
+    pub context_window: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

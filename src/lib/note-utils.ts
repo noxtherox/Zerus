@@ -52,14 +52,22 @@ export function isSavedLinkNote(note: Note): boolean {
   );
 }
 
-/** Normalizes separators and Windows casing for reliable path comparisons. */
-export function normalizeFsPath(path: string): string {
-  const withSlashes = path.replace(/\\/g, "/");
+/** Comparison form preserving filename casing and removing extended DOS/UNC prefixes. */
+export function normalizeFsPathSeparators(path: string): string {
+  const withSlashes = path.replace(/\\/g, "/")
+    .replace(/^\/\/\?\/UNC\//i, "//")
+    .replace(/^\/\/\?\/(?=[a-z]:\/)/i, "");
   const isUnc = withSlashes.startsWith("//");
   let normalized = withSlashes.replace(/\/{2,}/g, "/").replace(/\/$/, "");
   if (isUnc) normalized = `/${normalized}`;
+  return normalized;
+}
+
+/** Normalizes separators and Windows casing for reliable path comparisons. */
+export function normalizeFsPath(path: string): string {
+  const normalized = normalizeFsPathSeparators(path);
   const looksWindows =
-    isUnc || /^[a-z]:\//i.test(normalized) || path.includes("\\");
+    normalized.startsWith("//") || /^[a-z]:(?:\/|$)/i.test(normalized) || path.includes("\\");
   return looksWindows ? normalized.toLowerCase() : normalized;
 }
 

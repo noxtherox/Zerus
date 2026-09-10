@@ -1,4 +1,5 @@
 import type { PdfSearch } from "@/lib/pdf-search";
+import { nativeFileDropPoint } from "@/lib/native-file-drop";
 import {
   createContext,
   useCallback,
@@ -478,8 +479,7 @@ export function MarkdownEditor({
         const scale = await getCurrentWindow().scaleFactor();
         const bounds = wrapperRef.current?.getBoundingClientRect();
         if (!bounds) return;
-        const x = payload.position.x / scale;
-        const y = payload.position.y / scale;
+        const { x, y } = nativeFileDropPoint(payload.position, scale);
         if (document.elementFromPoint(x, y)?.closest('[data-ai-chat="true"]')) return;
         if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return;
         onAttachmentDrop(paths, editorRef.current?.getMarkdown().length ?? 0);

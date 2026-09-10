@@ -56,8 +56,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   stream or cancel answers, save answers as notes, and undo supported AI edits.
   Upload images, searchable PDFs, and text-based files, or drop them inside chat
   to use them as conversation context without attaching them to the open note.
-  Each message supports four documents with up to 16,000 extracted characters
-  total and a 20 MB limit per document. Scanned PDFs require external OCR;
+  Documents use full text when they fit the model context budget and searchable
+  excerpts otherwise. Uploads have a 50 MB per-file and 100 MB total processing
+  budget, with no fixed document-count limit. Scanned PDFs require external OCR;
   unsupported binary documents must first be exported as text or searchable PDF.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled

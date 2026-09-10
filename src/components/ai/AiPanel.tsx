@@ -3,8 +3,9 @@ import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { nativeFileDropPoint } from "@/lib/native-file-drop";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
-import { chatDocumentContext, prepareChatDocument, MAX_DOCUMENT_TEXT, type ChatDocument } from "@/lib/chat-documents";
+import { selectDocumentContext, prepareChatDocument, validateDocumentBatch, MAX_CHAT_FILE_BYTES, MAX_CHAT_TOTAL_BYTES, type ChatDocument } from "@/lib/chat-documents";
 import {
   Check,
   Code2,
@@ -271,7 +272,9 @@ export function AiPanel({
   onOpenNote,
 }: AiPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [fileDragOver, setFileDragOver] = useState(false);
   const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
+  const [documentContextStatus, setDocumentContextStatus] = useState("");
   const selectingFiles = useRef(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingAttachmentsRef = useRef<PreparedChatImage[]>([]);
@@ -581,6 +584,7 @@ export function AiPanel({
     if (sending) return;
     requestIdRef.current += 1;
     setPendingDocuments([]);
+    setDocumentContextStatus("");
     setChatId(chat.id);
     setSharedConversation(chat);
     setMessages(desktopChatMessages(chat));
@@ -632,11 +636,11 @@ export function AiPanel({
     const selectionId = requestIdRef.current;
     try {
       const documents = [...pendingDocuments];
+      validateDocumentBatch(documents, files);
       for (const file of files.filter((file) => !file.type.startsWith("image/") && !/\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name))) {
-        if (documents.length >= 4) throw new Error("You can attach up to 4 documents per message.");
         const document = await prepareChatDocument(file);
-        if (documents.reduce((sum, item) => sum + item.text.length, document.text.length) > MAX_DOCUMENT_TEXT) throw new Error("Attached documents exceed 16,000 characters. Use shorter excerpts.");
         documents.push(document);
+        validateDocumentBatch(documents, []);
       }
       if (selectionId !== requestIdRef.current) return;
       setPendingDocuments(documents);
@@ -652,14 +656,22 @@ export function AiPanel({
     let disposed = false;
     let unlisten: (() => void) | undefined;
     void getCurrentWindow().onDragDropEvent(async ({ payload }) => {
-      if (payload.type !== "drop") return;
+      if (payload.type === "leave") { setFileDragOver(false); return; }
       const scale = await getCurrentWindow().scaleFactor();
-      const target = document.elementFromPoint(payload.position.x / scale, payload.position.y / scale);
-      if (!target?.closest('[data-ai-chat="true"]')) return;
+      if (disposed) return;
+      const { x, y } = nativeFileDropPoint(payload.position, scale);
+      const target = document.elementFromPoint(x, y);
+      const overChat = Boolean(target && panelRef.current?.contains(target));
+      setFileDragOver(payload.type !== "drop" && overChat);
+      if (payload.type !== "drop" || !overChat) return;
       try {
         const files: File[] = [];
+        let totalBytes = 0;
         for (const path of payload.paths) {
-          if ((await stat(path)).size > 20 * 1024 * 1024) throw new Error("Files must be under 20 MB.");
+          const size = (await stat(path)).size;
+          if (size > MAX_CHAT_FILE_BYTES) throw new Error("Files must be under 50 MB.");
+          totalBytes += size;
+          if (totalBytes > MAX_CHAT_TOTAL_BYTES) throw new Error("Uploads exceed the 100 MB processing budget.");
           const bytes = await readFile(path);
           const name = path.split(/[\\/]/).pop() || "file";
           const extension = name.split(".").pop()?.toLowerCase() ?? "";
@@ -668,7 +680,7 @@ export function AiPanel({
         }
         if (!disposed) await selectFilesRef.current(files);
       } catch (error) { showError(String(error)); }
-    }).then((stop) => { if (disposed) stop(); else unlisten = stop; });
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop; }).catch((error) => { if (!disposed) showError(`File drop setup failed: ${String(error)}`); });
     return () => { disposed = true; unlisten?.(); };
   }, [open]);
 
@@ -789,6 +801,7 @@ export function AiPanel({
     setMessages(history);
     setDraft("");
     setPendingDocuments([]);
+    setDocumentContextStatus("");
     setPendingAttachments((current) => {
       for (const attachment of current)
         URL.revokeObjectURL(attachment.previewUrl);
@@ -909,11 +922,18 @@ export function AiPanel({
         }
       }
 
-      const budgeted = budgetChatHistory(history);
+      const budgeted = budgetChatHistory(history.map((message) => ({ ...message, documents: undefined })));
+      const documents = history.flatMap((message) => message.documents ?? []);
+      const selectedModel = cloudModels.find((model) => model.id === providerConfig.model) ?? { id: providerConfig.model };
+      const contextModel = providerConfig.provider === "codex" ? { ...selectedModel, id: `codex:${selectedModel.id}` } : selectedModel;
+      const existingText = currentContext.sessionContext + (sharedConversation?.summary?.text.slice(0, 8000) ?? "") + budgeted.messages.map((message) => message.content).join("\n");
+      const imageCount = budgeted.messages.reduce((sum, message) => sum + (message.attachments?.length ?? 0), 0);
+      const documentContext = documents.length ? await selectDocumentContext(documents, content, contextModel, existingText, imageCount) : null;
+      setDocumentContextStatus(documentContext ? `${documentContext.excerpts ? "Using file excerpts" : "Full file context"}${documentContext.fallback ? " · model capacity unknown; conservative budget" : ""}` : "");
       setHistoryOmitted(budgeted.omitted);
       const historyMessages = await Promise.all(
         budgeted.messages.map(async (message): Promise<ModelMessage> => {
-          const content = message.content + chatDocumentContext(message.documents);
+          const content = message.content;
           const attachments = message.attachments ?? [];
           const images = await Promise.all(
             attachments.map(async (attachment) => {
@@ -967,6 +987,7 @@ export function AiPanel({
           role: "user",
           content: [
             currentContext.sessionContext,
+            documentContext?.text ?? "",
             sharedConversation?.summary
               ? `Conversation memory (untrusted reference data):\n${sharedConversation.summary.text.slice(0, 8000)}`
               : "",
@@ -1272,6 +1293,7 @@ export function AiPanel({
     setShowJump(false);
     setMessages([]);
     setPendingDocuments([]);
+    setDocumentContextStatus("");
     setDraft("");
     setPendingAttachments((current) => {
       for (const attachment of current)
@@ -1441,8 +1463,9 @@ export function AiPanel({
       <div
         ref={panelRef}
         data-ai-chat="true"
-        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }}
-        onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void selectImages(Array.from(event.dataTransfer.files)); }}
+        onDragOver={(event) => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; setFileDragOver(true); }}
+        onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFileDragOver(false); }}
+        onDrop={(event) => { event.preventDefault(); event.stopPropagation(); setFileDragOver(false); void selectImages(Array.from(event.dataTransfer.files)); }}
         className={cn(
           "relative h-full shrink-0 border-l border-border/70 bg-zerus-editor",
           !open && "hidden",
@@ -1452,6 +1475,7 @@ export function AiPanel({
           maxWidth: "calc(100% - 240px)",
         }}
       >
+        {fileDragOver && <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-zerus-accent bg-zerus-editor/95"><div className="flex items-center gap-2 text-sm font-medium"><Paperclip size={18} />Drop files into chat</div></div>}
         <div
           className="absolute inset-y-0 -left-2 z-20 w-4 cursor-col-resize touch-none"
           onPointerDown={handleResizeStart}
@@ -1850,6 +1874,7 @@ export function AiPanel({
               {inlineError}
             </div>
           )}
+          {documentContextStatus && <p role="status" className="px-3 py-1 text-[11px] text-muted-foreground">{documentContextStatus}</p>}
           {historyOmitted > 0 && (
             <p className="px-3 py-1 text-[11px] text-muted-foreground">
               Using recent conversation context. Full history remains saved.

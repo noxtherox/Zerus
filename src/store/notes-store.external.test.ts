@@ -634,6 +634,50 @@ describe("external note store workflow", () => {
     await resolveNoteConflict(restored!.id, "disk");
   });
 
+  it("ignores a slow vault load after a newer vault finishes opening", async () => {
+    const slowVault = join(root, "slow-vault");
+    const fastVault = join(root, "fast-vault");
+    await mkdir(slowVault);
+    await mkdir(fastVault);
+    await writeFile(join(slowVault, "Slow.md"), "# Slow vault\n");
+    await writeFile(join(fastVault, "Fast.md"), "# Fast vault\n");
+    let release!: () => void;
+    let started!: () => void;
+    const reading = new Promise<void>((resolve) => { started = resolve; });
+    mocks.readTextGatePath = join(slowVault, "Slow.md");
+    mocks.readTextGate = new Promise<void>((resolve) => { release = resolve; });
+    mocks.onReadTextGate = started;
+    const slowSwitch = switchDesktopVault(slowVault);
+    try {
+      await reading;
+      await expect(switchDesktopVault(fastVault)).resolves.toBe(true);
+      release();
+      await expect(slowSwitch).resolves.toBe(false);
+      expect(getNotes().some((note) => note.path === "Fast.md")).toBe(true);
+      expect(getNotes().some((note) => note.path === "Slow.md")).toBe(false);
+      expect(mocks.invoke).not.toHaveBeenCalledWith("cli_register_vault", {
+        vaultPath: slowVault,
+      });
+    } finally {
+      release();
+      await slowSwitch;
+      await switchDesktopVault(vault);
+    }
+  });
+
+  it("retries opening the same vault after its first load failed", async () => {
+    const unavailable = join(root, "retry-vault");
+    await expect(switchDesktopVault(unavailable)).resolves.toBe(false);
+    await mkdir(unavailable);
+    await writeFile(join(unavailable, "Recovered.md"), "# Recovered\n");
+    try {
+      await expect(switchDesktopVault(unavailable)).resolves.toBe(true);
+      expect(getNotes().some((note) => note.path === "Recovered.md")).toBe(true);
+    } finally {
+      await switchDesktopVault(vault);
+    }
+  });
+
   it("does not duplicate a legacy typed link during repeated desktop syncs", async () => {
     const url = "https://example.com/legacy-link";
     const path = join(vault, "inbox", "Legacy link.md");

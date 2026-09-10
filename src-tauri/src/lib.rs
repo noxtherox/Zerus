@@ -574,6 +574,7 @@ struct AiChatReasoningEvent {
 struct CloudAiModel {
     id: String,
     name: String,
+    context_window: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -796,7 +797,7 @@ fn codex_ai_status_impl() -> Result<CodexAiStatus, String> {
                 .and_then(|value| value.as_str())
                 .unwrap_or(&id)
                 .to_string();
-            Some(CloudAiModel { id, name })
+            Some(CloudAiModel { id, name, context_window: model.get("contextWindow").and_then(|value| value.as_u64()) })
         })
         .collect();
     Ok(CodexAiStatus {
@@ -1098,7 +1099,7 @@ fn cloud_ai_request_body(
         if !matches!(message.role.as_str(), "user" | "assistant") {
             return Err("The AI conversation contains an invalid role".to_string());
         }
-        if message.content.len() > 50_000 {
+        if message.content.len() > 50 * 1024 * 1024 {
             return Err("An AI message is too large".to_string());
         }
         if message.images.len() > 4 {
@@ -1876,6 +1877,7 @@ async fn cloud_ai_models(
             Some(CloudAiModel {
                 id: id.to_string(),
                 name: name.to_string(),
+                context_window: model.get("context_length").or_else(|| model.get("context_window")).and_then(|value| value.as_u64()),
             })
         })
         .collect::<Vec<_>>();

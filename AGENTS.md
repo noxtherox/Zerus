@@ -11,8 +11,8 @@
 
 - After every new implementation or feature, start or refresh the web version and
   provide a working preview without waiting for the user to request one.
-- When a web preview is requested or ready from this Mac mini, share the private Tailscale Serve URL `https://mac-mini-m4-nox.ibex-oratrice.ts.net/` instead of a localhost URL.
-- Before sharing it, confirm both the frontend development server and the Tailscale Serve proxy respond successfully.
+- When a web preview is requested or ready from this Mac mini, share the private Tailscale Serve app URL `https://mac-mini-m4-nox.ibex-oratrice.ts.net/app`. Always include `/app` so the preview opens the application; the root URL opens the website. Do not share a localhost URL.
+- Before sharing it, confirm the `/app` route responds successfully through both the frontend development server and the Tailscale Serve proxy.
 - Never enable Tailscale Funnel unless the user explicitly requests public exposure.
 
 ## Build target resolution

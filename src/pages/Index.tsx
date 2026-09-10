@@ -23,6 +23,7 @@ import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { NoteTabs } from "@/components/notes/NoteTabs";
 import { EditorPane } from "@/components/notes/EditorPane";
 import { ZerusLogo } from "@/components/ZerusLogo";
+import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { AiPanel } from "@/components/ai/AiPanel";
 import {
   chooseVaultFolder,
@@ -174,19 +175,6 @@ const Index = () => {
   const wasFocusModeRef = useRef(false);
   const leavingFocusRef = useRef(false);
   const sidebarCollapsedBeforeFocusRef = useRef(false);
-  const previousVaultLocationRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const previous = previousVaultLocationRef.current;
-    previousVaultLocationRef.current = vault.location;
-    if (!previous || !vault.location || previous === vault.location) return;
-    setNavigation(createNavigationHistory(INITIAL_NAVIGATION_ENTRY));
-    setNoteTabs(INITIAL_NOTE_TABS_STATE);
-    setListFilters(EMPTY_NOTE_LIST_FILTERS);
-    setListVisibleProperties([]);
-    setSearch("");
-  }, [vault.location]);
-
   useEffect(() => {
     void loadTasks(vault.location);
     setSelectedTaskId(null);
@@ -1033,4 +1021,13 @@ const Index = () => {
   );
 };
 
-export default Index;
+export default function DesktopWorkspace() {
+  const vault = useVault();
+  // Reset navigation, panels, dialogs and editor state together, before the
+  // first render for another vault (including a synchronous cache hit).
+  return (
+    <WorkspaceErrorBoundary key={vault.location}>
+      <Index />
+    </WorkspaceErrorBoundary>
+  );
+}

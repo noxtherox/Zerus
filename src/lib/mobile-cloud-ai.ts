@@ -18,6 +18,7 @@ export interface CloudAIImageInput {
 }
 
 export interface CloudAIModel {
+  contextWindow?: number | null;
   id: string;
   name: string;
 }

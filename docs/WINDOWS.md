@@ -31,6 +31,18 @@ deliberately disables updater artifacts so a local build does not need the
 release signing key. Code signing and Windows updater publication are separate
 release tasks.
 
+## Windows icons
+
+`src-tauri/icons/windows-icon.svg` contains the rounded Windows icon with
+transparent corners. To regenerate the executable/taskbar ICO and Store PNGs:
+
+```sh
+node scripts/generate-windows-icons.mjs
+```
+
+The generator updates only Windows resources, preserving the macOS and mobile
+icons. Rebuild the Windows app to embed the updated icon.
+
 ## Microsoft Store MSIX
 
 Each configured tagged desktop release also builds an **unsigned x64 MSIX**

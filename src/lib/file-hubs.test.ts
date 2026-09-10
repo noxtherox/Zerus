@@ -103,6 +103,40 @@ describe("portable file locations", () => {
     expect(result.missingMapping).toBe(false);
   });
 
+  it.each([
+    String.raw`\\?\C:\Users\peretz\OneDrive - The ESAB Group`,
+    String.raw`\\?\G:\My Drive`,
+    String.raw`\\?\UNC\server\share`,
+    String.raw`C:\Users\peretz\OneDrive - The ESAB Group`,
+    String.raw`\\server\share`,
+  ])("resolves cloud files with native separators beneath %s", (root) => {
+    const resolved = resolveFileHubReference(
+      locationReference, null, locations, { company: root }, {},
+    );
+    expect(resolved.absolutePath).toBe(`${root}\\Clients\\Acme\\Proposal.docx`);
+    expect(pathInsideRoot(root, resolved.absolutePath!)).toBe(locationReference.path);
+  });
+
+  it("matches canonical and ordinary Windows paths without lowercasing the synced filename", () => {
+    expect(pathInsideRoot(
+      String.raw`\\?\G:\My Drive`,
+      String.raw`g:\my drive\Clients\Acme\Proposal.docx`,
+    )).toBe("Clients/Acme/Proposal.docx");
+    expect(pathInsideRoot(
+      String.raw`\\SERVER\Share`,
+      String.raw`\\?\UNC\server\share\Clients\Proposal.docx`,
+    )).toBe("Clients/Proposal.docx");
+    expect(pathInsideRoot("/Users/me/Drive", "/Users/me/drive/File.pdf")).toBeNull();
+  });
+
+  it("keeps drive-root mappings and trailing separators valid", () => {
+    const resolved = resolveFileHubReference(
+      locationReference, null, locations, { company: "\\\\?\\G:\\" }, {},
+    );
+    expect(resolved.absolutePath).toBe(String.raw`\\?\G:\Clients\Acme\Proposal.docx`);
+    expect(pathInsideRoot("G:\\", resolved.absolutePath!)).toBe(locationReference.path);
+  });
+
   it("does not treat a sibling path as inside a root", () => {
     expect(pathInsideRoot("/Users/me/Drive", "/Users/me/Drive 2/file.pdf")).toBeNull();
   });
