@@ -110,3 +110,8 @@ manual installer downloads.
 
 References: [Microsoft's MSIX packaging guide](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion)
 and [Tauri apps with MSIX](https://learn.microsoft.com/en-us/windows/apps/dev-tools/winapp-cli/guides/tauri).
+
+Manual GitHub Actions runs of **Windows desktop build** default to the real
+Store identity. Disable the `store` input for a development package; pull
+requests always use the development identity. Manual runs upload build
+artifacts without publishing a new GitHub release or Store submission.
