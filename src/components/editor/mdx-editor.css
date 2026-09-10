@@ -39,6 +39,10 @@
   overflow: auto;
 }
 
+.mobile-note-editor .zerus-mdx-content {
+  padding-bottom: calc(120px + var(--mobile-keyboard-overlap, 0px)) !important;
+}
+
 .zerus-mdx-toolbar {
   min-height: 42px;
   flex-shrink: 0;
