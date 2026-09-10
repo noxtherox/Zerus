@@ -17,9 +17,19 @@ if ($LASTEXITCODE -ne 0) { throw "MakeAppx pack failed: $LASTEXITCODE" }
 $Unpacked = Join-Path (Split-Path $Output) 'verified'
 & $MakeAppx unpack /p $Output /d $Unpacked /o
 if ($LASTEXITCODE -ne 0) { throw "MakeAppx unpack failed: $LASTEXITCODE" }
+function Get-PayloadHash([string]$Path) {
+    $Stream = [System.IO.File]::OpenRead($Path)
+    $Hasher = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return [System.BitConverter]::ToString($Hasher.ComputeHash($Stream))
+    } finally {
+        $Hasher.Dispose()
+        $Stream.Dispose()
+    }
+}
 foreach ($File in @('AppxManifest.xml', 'Zerus.exe', 'binaries\zerus.exe', 'Assets\StoreLogo.png', 'Assets\Square150x150Logo.png', 'Assets\Square44x44Logo.png')) {
     if (-not (Test-Path (Join-Path $Unpacked $File))) { throw "Missing MSIX payload: $File" }
-    if ((Get-FileHash (Join-Path $Staging $File)).Hash -ne (Get-FileHash (Join-Path $Unpacked $File)).Hash) {
+    if ((Get-PayloadHash (Join-Path $Staging $File)) -ne (Get-PayloadHash (Join-Path $Unpacked $File))) {
         throw "MSIX payload mismatch: $File"
     }
 }
