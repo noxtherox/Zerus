@@ -45,8 +45,9 @@ icons. Rebuild the Windows app to embed the updated icon.
 
 ## Microsoft Store MSIX
 
-Each configured tagged desktop release also builds an **unsigned x64 MSIX**
-alongside the unsigned NSIS EXE. The EXE remains the direct-download installer.
+Tagged desktop releases build an **unsigned x64 MSIX** only when the repository
+Actions variable `MS_STORE_BUILD_ENABLED` is `true` and the Store identity is
+configured. This adds the MSIX alongside the unsigned NSIS EXE. The EXE remains the direct-download installer.
 The MSIX is an input to Microsoft Store certification: it cannot be installed
 normally from GitHub while unsigned. Microsoft signs it during Store publishing;
 this workflow does not submit or publish the app in Partner Center.
@@ -63,8 +64,10 @@ Reserve Zerus in Microsoft Partner Center, then copy the exact values from
 | `MS_STORE_PUBLISHER` | Package/Identity/Publisher (including `CN=`) |
 | `MS_STORE_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
 
-All three are required for Store packaging. Tagged releases skip the MSIX when
-none are configured and still publish the desktop installers. Partial identity
+All three are required for Store packaging. Set `MS_STORE_BUILD_ENABLED=true`
+to opt tagged releases into packaging; it is disabled by default even when the
+identity variables are present. Tagged releases skip the MSIX when
+none are configured and still publish the desktop installers. When Store packaging is enabled, partial identity
 configuration fails the release instead of publishing a package under an invented identity.
 No certificate, signing password, or Store API credential is needed to build.
 
@@ -96,7 +99,8 @@ pnpm windows:msix --development
 ```
 
 This explicitly permits a development identity and labels the artifact
-`_development.msix`. The Windows pull-request/manual workflow uses this mode;
+`_development.msix`. The manual Windows workflow uses this mode when its `build_msix` input is enabled;
+normal manual and pull-request builds produce only the EXE. These
 development packages must not be submitted to the Store.
 
 ### Certification and runtime checks

@@ -2,6 +2,11 @@ name: Windows desktop build
 
 on:
   workflow_dispatch:
+    inputs:
+      build_msix:
+        description: Also build a development Microsoft Store package
+        type: boolean
+        default: false
   pull_request:
     paths:
       - ".github/workflows/windows.yml"
@@ -20,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build EXE and development MSIX
+    name: Build Windows installer
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -60,12 +65,15 @@ jobs:
           retention-days: 30
 
       - name: Verify MSIX packaging logic
+        if: inputs.build_msix == true
         run: pnpm windows:msix:test
 
       - name: Build development MSIX with SDK validation
+        if: inputs.build_msix == true
         run: pnpm windows:msix --development
 
       - name: Upload development MSIX
+        if: inputs.build_msix == true
         uses: actions/upload-artifact@v6
         with:
           name: zerus-windows-msix-development

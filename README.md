@@ -44,6 +44,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them; attach files; associate notes with PDFs and common office
   documents; preview HTML; and export rendered notes as HTML, PDF, or DOCX.
+- **Portable cloud file references** — map each shared file location to its local
+  folder on every device. File hubs resolve the saved relative path beneath that
+  root, including Windows extended paths such as `\\?\G:\My Drive`.
 - **Saved links** — keep web links with editable notes in the Links section.
   Markdown autolinks such as `<https://example.com>` open in the formatted editor,
   including links saved by earlier versions.
@@ -164,13 +167,15 @@ pnpm release <major.minor.patch>
 The release command verifies the build and tests, keeps the Tauri and Rust
 versions in sync, commits the version bump, creates the matching version tag,
 and pushes both atomically. GitHub Actions then builds the notarized Apple
-Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE. An unsigned
-Microsoft Store MSIX is also built when all three Partner Center identity variables in
-[the Windows packaging guide](docs/WINDOWS.md) are configured. Store packaging is
-skipped when none are configured; partial configuration blocks publication. The release is published only after both
-platform jobs succeed. The MSIX asset is a Store submission artifact, not a
-direct-install download. Store certification, signing, and publication happen
-separately in Partner Center. Installed macOS copies check
+Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE.
+Microsoft Store packaging is disabled by default. To include an unsigned MSIX,
+set `MS_STORE_BUILD_ENABLED=true` and configure all three Partner Center identity
+variables in [the Windows packaging guide](docs/WINDOWS.md). When enabled, an
+absent identity skips packaging; a partial identity blocks publication.
+
+The release is published only after both platform jobs succeed. The optional
+MSIX asset is for Store submission; certification, signing, and publication
+happen separately in Partner Center. Installed macOS copies check
 `latest.json` on launch and every six hours. When an update is available, the
 user can install it or ask Zerus to remind them again in 24 hours.
 

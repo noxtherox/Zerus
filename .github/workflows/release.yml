@@ -95,8 +95,6 @@ jobs:
           releaseBody: |
             Download the DMG for Apple Silicon macOS or the unsigned EXE installer for Windows.
 
-            The unsigned MSIX is for Microsoft Store submission, not direct installation. Microsoft signs it after Store certification.
-
             The macOS build is signed, notarized, and stapled. Installed macOS copies check for signed updates automatically.
           releaseDraft: true
           prerelease: false
@@ -118,7 +116,7 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
 
   windows:
-    name: Build Windows EXE and MSIX
+    name: Build Windows installer
     runs-on: windows-latest
     permissions:
       contents: read
@@ -150,6 +148,7 @@ jobs:
         run: pnpm platform:verify
 
       - name: Verify MSIX packaging logic
+        if: vars.MS_STORE_BUILD_ENABLED == 'true'
         run: pnpm windows:msix:test
 
       - name: Build Windows installer
@@ -163,6 +162,11 @@ jobs:
           MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
           MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
         run: |
+          if ('${{ vars.MS_STORE_BUILD_ENABLED }}' -ne 'true') {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Store packaging is disabled; building desktop installers only."
+            exit 0
+          }
           $configured = @($env:MS_STORE_IDENTITY_NAME, $env:MS_STORE_PUBLISHER, $env:MS_STORE_PUBLISHER_DISPLAY_NAME) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
           if ($configured.Count -eq 0) {
             "enabled=false" >> $env:GITHUB_OUTPUT
