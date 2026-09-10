@@ -1,4 +1,5 @@
 import type { PdfSearch } from "@/lib/pdf-search";
+import { keepMobileCaretVisible } from "./mobile-caret";
 import { nativeFileDropPoint } from "@/lib/native-file-drop";
 import {
   createContext,
@@ -84,6 +85,7 @@ import {
 } from "./element-table-controls";
 import { EditorRecoveryBoundary } from "./editor-recovery";
 import { elementTablePlugin } from "./element-table-plugin";
+import { IndentControls } from "./IndentControls";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
 
@@ -344,6 +346,7 @@ const editorPlugins = [
         <CodeToggle />
         <CreateLink />
         <ListsToggle />
+        <IndentControls />
         <Separator />
         <ConditionalContents
           options={[
@@ -442,6 +445,10 @@ export function MarkdownEditor({
   useEffect(() => {
     pendingLocalEchoes.current = [];
   }, [noteId]);
+
+  useEffect(() => {
+    if (!readOnly && searchContainer) return keepMobileCaretVisible(searchContainer);
+  }, [searchContainer, noteId, readOnly]);
 
   useEffect(() => {
     if (consumeLocalMarkdownEcho(pendingLocalEchoes.current, initialContent)) return;

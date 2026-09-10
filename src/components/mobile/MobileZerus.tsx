@@ -1238,12 +1238,18 @@ function Composer({ onClose, onSave, typePath, allNotes }: ComposerProps) {
 
 interface MobileSettingsProps {
   location: string | null;
+  defaultNoteType: string[];
+  typeTree: TypeNode[];
+  onDefaultNoteTypeChange: (typePath: string[]) => void;
   onClose: () => void;
   onChangeVault: () => void;
 }
 
 function MobileSettings({
   location,
+  defaultNoteType,
+  typeTree,
+  onDefaultNoteTypeChange,
   onClose,
   onChangeVault,
 }: MobileSettingsProps) {
@@ -1253,6 +1259,11 @@ function MobileSettings({
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
+  const defaultTypeOptions = [...new Set([
+    typeKey(DEFAULT_TYPE),
+    ...flattenTypeKeys(typeTree),
+    typeKey(defaultNoteType),
+  ])];
   const mapLocation = async (id: string) => {
     setBusyLocation(id);
     setLocationMessage(null);
@@ -1312,6 +1323,27 @@ function MobileSettings({
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
           </div>
           <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-white/[0.07] text-sm font-semibold text-[#ef6b62] hover:bg-white/[0.1] hover:text-[#ef6b62]">Change vault</Button>
+          </div>
+
+          <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">New notes</p>
+          <div className="rounded-[16px] bg-[#292a2b] p-4">
+            <label htmlFor="mobile-default-note-type" className="block text-[15px] font-semibold">Default type</label>
+            <p id="mobile-default-note-type-description" className="mb-3 mt-1 text-xs leading-4 text-[#8e8e93]">
+              Used when creating notes from All Notes. Inside a type, new notes use that type. Saved for this vault on this device.
+            </p>
+            <select
+              id="mobile-default-note-type"
+              aria-describedby="mobile-default-note-type-description"
+              value={typeKey(defaultNoteType)}
+              onChange={(event) => onDefaultNoteTypeChange(parseTypePath(event.target.value))}
+              className="min-h-11 w-full min-w-0 rounded-[11px] border border-white/[0.08] bg-[#1c1d1e] px-3 text-base text-[#f5f5f7] [color-scheme:dark]"
+            >
+              {defaultTypeOptions.map((key) => (
+                <option key={key} value={key}>
+                  {key === typeKey(DEFAULT_TYPE) ? "Inbox" : parseTypePath(key).join(" / ")}
+                </option>
+              ))}
+            </select>
           </div>
 
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">File locations</p>
@@ -2034,7 +2066,7 @@ export function MobileZerus() {
           onOpenNote={(noteId) => openNote(noteId, "chat")}
           scope={chatScope}
         />
-        {settingsOpen && <MobileSettings location={vault.location} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
+        {settingsOpen && <MobileSettings location={vault.location} defaultNoteType={defaultNoteType} typeTree={typeTree} onDefaultNoteTypeChange={updateDefaultNoteType} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
         {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
         {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} allNotes={vault.notes} />}
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
