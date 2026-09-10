@@ -65,7 +65,7 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 | Platform | Status | Vault storage |
 | --- | --- | --- |
 | macOS Apple Silicon | Desktop release with signed automatic updates | Local filesystem |
-| Windows 10/11 | Desktop release using a per-user NSIS installer | Local filesystem |
+| Windows 10/11 | Unsigned per-user EXE; MSIX packaging for Store submission | Local filesystem |
 | iOS 17+ | Native mobile app | Files selected through the mobile vault picker |
 | Browser | Development and interface preview | Browser local storage |
 
@@ -127,7 +127,8 @@ pnpm typecheck       # check the TypeScript projects
 pnpm build           # build the web app
 pnpm platform:verify # validate platform-specific packaging boundaries
 pnpm desktop:build   # build and verify the macOS DMG
-pnpm windows:build   # build the Windows NSIS installer (run on Windows)
+pnpm windows:build   # build the unsigned Windows NSIS EXE (run on Windows)
+pnpm windows:msix    # build an unsigned Store MSIX (Windows + Store identity)
 ```
 
 On macOS, `pnpm desktop:build` creates a distribution-signed, notarized, and
@@ -157,8 +158,13 @@ pnpm release <major.minor.patch>
 The release command verifies the build and tests, keeps the Tauri and Rust
 versions in sync, commits the version bump, creates the matching version tag,
 and pushes both atomically. GitHub Actions then builds the notarized Apple
-Silicon DMG, signed macOS updater bundle, and Windows NSIS installer. The release
-is published only after both platform jobs succeed. Installed macOS copies check
+Silicon DMG, signed macOS updater bundle, unsigned Windows NSIS EXE, and unsigned
+Microsoft Store MSIX. Configure the three Partner Center identity variables in
+[the Windows packaging guide](docs/WINDOWS.md) before tagging a release; missing
+identity values block publication. The release is published only after both
+platform jobs succeed. The MSIX asset is a Store submission artifact, not a
+direct-install download. Store certification, signing, and publication happen
+separately in Partner Center. Installed macOS copies check
 `latest.json` on launch and every six hours. When an update is available, the
 user can install it or ask Zerus to remind them again in 24 hours.
 

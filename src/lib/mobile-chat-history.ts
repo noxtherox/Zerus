@@ -1,4 +1,5 @@
 import type { VaultBackend } from "@/lib/vault/backend";
+import type { ChatDocument } from "./chat-documents";
 import type { NoteContextKind } from "@/lib/mobile-note-retrieval";
 import type { StoredAiMessage, AiNoteChange, StoredAiToolCall } from "@/lib/ai-conversations";
 
@@ -49,6 +50,7 @@ export interface NewChatImageAttachment {
 }
 
 export interface PersistedChatMessage {
+  documents?: ChatDocument[];
   id: string;
   turnId: string;
   role: "user" | "assistant";
@@ -361,6 +363,7 @@ export async function syncDesktopConversation(
       deviceId: device.id,
       ownerGeneration: existing?.ownerGeneration ?? 1,
       attachments: source.attachments?.map((attachment) => ({ ...attachment })),
+      documents: source.documents,
     };
     const event: ChatEvent = {
       version: 1,
@@ -399,6 +402,7 @@ export async function createChatWithUserMessage(
   text: string,
   image?: NewChatImageAttachment | NewChatImageAttachment[],
   scope: ChatScope = { kind: "vault" },
+  documents?: ChatDocument[],
 ): Promise<{ conversationId: string; turnId: string }> {
   const conversationId = uuid();
   const turnId = uuid();
@@ -417,7 +421,7 @@ export async function createChatWithUserMessage(
   const attachments = await storeImageAttachment(backend, conversationId, image);
   const message: PersistedChatMessage = {
     id: uuid(), turnId, role: "user", text, createdAt,
-    deviceId: device.id, ownerGeneration: 1, attachments,
+    deviceId: device.id, ownerGeneration: 1, attachments, documents,
   };
   const messageEvent: ChatEvent = {
     version: 1,
@@ -441,13 +445,14 @@ export async function appendUserMessage(
   device: ChatDevice,
   text: string,
   image?: NewChatImageAttachment | NewChatImageAttachment[],
+  documents?: ChatDocument[],
 ): Promise<string> {
   const event = baseEvent(conversation, device);
   const turnId = uuid();
   const attachments = await storeImageAttachment(backend, conversation.id, image);
   const message: PersistedChatMessage = {
     id: uuid(), turnId, role: "user", text, createdAt: event.at,
-    deviceId: device.id, ownerGeneration: conversation.ownerGeneration, attachments,
+    deviceId: device.id, ownerGeneration: conversation.ownerGeneration, attachments, documents,
   };
   await writeEvent(backend, { ...event, kind: "message", message });
   return turnId;
@@ -592,7 +597,7 @@ export async function saveDesktopChat(
     const message: PersistedChatMessage = {
       id: source.id, turnId: source.turnId, role: source.role, text: source.content,
       createdAt: at, deviceId: device.id, ownerGeneration: existing?.ownerGeneration ?? 1,
-      attachments: source.attachments, sources: source.sources, changes: source.changes,
+      attachments: source.attachments, documents: source.documents, sources: source.sources, changes: source.changes,
       reasoning: source.reasoning, toolCalls: source.toolCalls, interrupted: source.interrupted,
     };
     await writeEvent(backend, { version: 1, id: uuid(), conversationId: id, at,
@@ -605,7 +610,7 @@ export async function saveDesktopChat(
 export function desktopChatMessages(conversation: ChatConversation): StoredAiMessage[] {
   return conversation.messages.map((message) => ({
     id: message.id, turnId: message.turnId, role: message.role, content: message.text,
-    attachments: message.attachments, sources: message.sources, changes: message.changes,
+    attachments: message.attachments, documents: message.documents, sources: message.sources, changes: message.changes,
     reasoning: message.reasoning, toolCalls: message.toolCalls, interrupted: message.interrupted,
     editApplied: Boolean(message.changes?.length),
   }));

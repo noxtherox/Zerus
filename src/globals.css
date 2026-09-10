@@ -256,3 +256,55 @@
     }
   }
 }
+
+/* Keep the checkmark visible before gently closing the completed row's space. */
+.task-row-shell {
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.task-row-completing {
+  animation: task-row-complete ease-in-out forwards;
+}
+
+@keyframes task-row-complete {
+  0%, 43% { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
+  75% { opacity: 0; transform: translateY(6px); }
+  100% { grid-template-rows: 0fr; opacity: 0; transform: translateY(6px); }
+}
+
+/* Introduce the empty state while the final row exits, avoiding a height jump. */
+.task-empty-entering {
+  animation: task-empty-enter ease-in-out forwards;
+}
+
+@keyframes task-empty-enter {
+  0%, 43% { grid-template-rows: 0fr; opacity: 0; }
+  100% { grid-template-rows: 1fr; opacity: 1; }
+}
+
+.task-row-creating {
+  animation: task-row-create ease-out forwards;
+}
+
+@keyframes task-row-create {
+  0% { grid-template-rows: 0fr; opacity: 0; }
+  50% { grid-template-rows: 1fr; opacity: 0; }
+  100% { grid-template-rows: 1fr; opacity: 1; }
+}
+
+.task-empty-exiting {
+  animation: task-empty-exit ease-out forwards;
+}
+
+@keyframes task-empty-exit {
+  from { grid-template-rows: 1fr; opacity: 1; }
+  to { grid-template-rows: 0fr; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-row-completing,
+  .task-row-creating { animation: none; }
+  .task-empty-entering,
+  .task-empty-exiting { display: none; }
+}

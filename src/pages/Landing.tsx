@@ -15,9 +15,9 @@ import {
   X,
 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
+import { detectDownloadPlatform, getDownloadOption } from "@/lib/download-platform";
 import "./Landing.css";
 
-const DOWNLOAD_URL = "/api/download";
 const RELEASES_URL = "https://github.com/noxtherox/Zerus/releases/latest";
 const REPOSITORY_URL = "https://github.com/noxtherox/Zerus";
 const LANDING_THEME_KEY = "zerus-landing-theme";
@@ -65,7 +65,7 @@ const faqs = [
   {
     question: "Where are my notes stored?",
     answer:
-      "In a normal folder on your Mac. Zerus reads and writes Markdown directly, so your vault stays portable and easy to back up.",
+      "In a normal folder on your computer. Zerus reads and writes Markdown directly, so your vault stays portable and easy to back up.",
   },
   {
     question: "Do I need an account?",
@@ -80,6 +80,7 @@ const faqs = [
 ];
 
 export function Landing() {
+  const download = getDownloadOption(detectDownloadPlatform(navigator));
   const [theme, setTheme] = useState<LandingTheme>(getInitialLandingTheme);
 
   useEffect(() => {
@@ -120,8 +121,8 @@ export function Landing() {
           >
             {theme === "dark" ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}
           </button>
-          <a className="landing-nav-download" href={DOWNLOAD_URL}>
-            Download <ArrowRight size={15} aria-hidden="true" />
+          <a className="landing-nav-download" href={download.href}>
+            {download.label} <ArrowRight size={15} aria-hidden="true" />
           </a>
         </div>
       </header>
@@ -134,7 +135,7 @@ export function Landing() {
           <div className="landing-hero-copy">
             <p className="landing-eyebrow">
               <Sparkles size={14} aria-hidden="true" />
-              Local-first notes for macOS
+              Local-first notes for macOS and Windows
             </p>
             <h1 id="hero-title">
               Your notes should
@@ -146,9 +147,9 @@ export function Landing() {
               single word.
             </p>
             <div className="landing-hero-actions">
-              <a className="landing-button landing-button-primary" href={DOWNLOAD_URL}>
+              <a className="landing-button landing-button-primary" href={download.href}>
                 <Download size={18} aria-hidden="true" />
-                Download for macOS
+                {download.label}
               </a>
               <a className="landing-button landing-button-secondary" href="/app">
                 Try the browser demo
@@ -156,7 +157,8 @@ export function Landing() {
               </a>
             </div>
             <p className="landing-release-note">
-              Free and open source <span aria-hidden="true">·</span> Apple silicon
+              Free and open source <span aria-hidden="true">·</span> {download.detail}
+              {" · "}<a href={RELEASES_URL}>All downloads</a>
             </p>
           </div>
 
@@ -269,9 +271,9 @@ export function Landing() {
           <p>YOUR NOTES. YOUR FILES. YOUR SYSTEM.</p>
           <h2>Make your knowledge durable.</h2>
           <div className="landing-hero-actions">
-            <a className="landing-button landing-button-primary" href={DOWNLOAD_URL}>
+            <a className="landing-button landing-button-primary" href={download.href}>
               <Download size={18} aria-hidden="true" />
-              Download Zerus
+              {download.label}
             </a>
             <a className="landing-button landing-button-secondary" href={REPOSITORY_URL}>
               <Github size={18} aria-hidden="true" />

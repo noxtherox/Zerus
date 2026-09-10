@@ -19,6 +19,16 @@ import {
 } from "./mobile-chat-history";
 import type { VaultBackend } from "./vault/backend";
 
+it("keeps uploaded document context when reopening mobile chats on desktop", async () => {
+  const backend = memoryBackend();
+  const documents = [{ name: "research.txt", text: "The result is 42." }];
+  const device = { id: "test-device", name: "Test" };
+  await createChatWithUserMessage(backend, device, "Summarize", [], { kind: "vault" }, documents);
+  const [conversation] = await loadChatConversations(backend);
+  expect(conversation.messages[0].documents).toEqual(documents);
+  expect(desktopChatMessages(conversation)[0].documents).toEqual(documents);
+});
+
 function memoryBackend(): VaultBackend {
   const files = new Map<string, string>();
   const binaries = new Map<string, Uint8Array>();

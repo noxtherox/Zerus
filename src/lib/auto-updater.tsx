@@ -103,7 +103,7 @@ export function AutoUpdater() {
   };
 
   useEffect(() => {
-    if (!import.meta.env.PROD || !isTauri()) return undefined;
+    if (import.meta.env.VITE_DISTRIBUTION === "ms-store" || !import.meta.env.PROD || !isTauri()) return undefined;
 
     const checkForUpdate = async () => {
       const now = Date.now();

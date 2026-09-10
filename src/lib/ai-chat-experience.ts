@@ -1,4 +1,5 @@
 import type { StoredAiMessage } from "./ai-conversations";
+import { chatDocumentContext } from "./chat-documents";
 
 export const CHAT_HISTORY_BUDGET = 24_000;
 /** Keep complete recent turns; never silently truncate the current question. */
@@ -11,13 +12,13 @@ export function budgetChatHistory(
   let start = lastUser;
   let size = messages
     .slice(start)
-    .reduce((sum, message) => sum + message.content.length, 0);
+    .reduce((sum, message) => sum + message.content.length + chatDocumentContext(message.documents).length, 0);
   if (size > budget)
     throw new Error(
       "This message is too long. Split it into smaller questions.",
     );
   for (let index = lastUser - 1; index >= 0; index--) {
-    size += messages[index].content.length;
+    size += messages[index].content.length + chatDocumentContext(messages[index].documents).length;
     if (size > budget) break;
     if (messages[index].role === "user") start = index;
   }

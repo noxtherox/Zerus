@@ -2,6 +2,9 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { readFile, stat } from "@tauri-apps/plugin-fs";
+import { chatDocumentContext, prepareChatDocument, MAX_DOCUMENT_TEXT, type ChatDocument } from "@/lib/chat-documents";
 import {
   Check,
   Code2,
@@ -268,6 +271,8 @@ export function AiPanel({
   onOpenNote,
 }: AiPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
+  const selectingFiles = useRef(false);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pendingAttachmentsRef = useRef<PreparedChatImage[]>([]);
   const requestIdRef = useRef(0);
@@ -574,6 +579,8 @@ export function AiPanel({
   };
   const selectConversation = (chat: ChatConversation) => {
     if (sending) return;
+    requestIdRef.current += 1;
+    setPendingDocuments([]);
     setChatId(chat.id);
     setSharedConversation(chat);
     setMessages(desktopChatMessages(chat));
@@ -619,7 +626,54 @@ export function AiPanel({
   }, [open, sending, chatId, chatDevice]);
 
   const selectImages = async (files: readonly File[]) => {
-    if (!files.length || preparingImages) return;
+    if (!files.length || selectingFiles.current || sending || !ownsSharedConversation) return;
+    selectingFiles.current = true;
+    setPreparingImages(true);
+    const selectionId = requestIdRef.current;
+    try {
+      const documents = [...pendingDocuments];
+      for (const file of files.filter((file) => !file.type.startsWith("image/") && !/\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name))) {
+        if (documents.length >= 4) throw new Error("You can attach up to 4 documents per message.");
+        const document = await prepareChatDocument(file);
+        if (documents.reduce((sum, item) => sum + item.text.length, document.text.length) > MAX_DOCUMENT_TEXT) throw new Error("Attached documents exceed 16,000 characters. Use shorter excerpts.");
+        documents.push(document);
+      }
+      if (selectionId !== requestIdRef.current) return;
+      setPendingDocuments(documents);
+      await selectImageFiles(files.filter((file) => file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name)));
+    } catch (error) { showError(String(error)); }
+    finally { selectingFiles.current = false; setPreparingImages(false); }
+  };
+
+  const selectFilesRef = useRef(selectImages);
+  selectFilesRef.current = selectImages;
+  useEffect(() => {
+    if (!isTauri() || !open) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void getCurrentWindow().onDragDropEvent(async ({ payload }) => {
+      if (payload.type !== "drop") return;
+      const scale = await getCurrentWindow().scaleFactor();
+      const target = document.elementFromPoint(payload.position.x / scale, payload.position.y / scale);
+      if (!target?.closest('[data-ai-chat="true"]')) return;
+      try {
+        const files: File[] = [];
+        for (const path of payload.paths) {
+          if ((await stat(path)).size > 20 * 1024 * 1024) throw new Error("Files must be under 20 MB.");
+          const bytes = await readFile(path);
+          const name = path.split(/[\\/]/).pop() || "file";
+          const extension = name.split(".").pop()?.toLowerCase() ?? "";
+          const imageType = /^(png|jpe?g|gif|webp|heic|avif|bmp)$/.test(extension) ? `image/${extension === "jpg" ? "jpeg" : extension}` : "";
+          files.push(new File([bytes], name, { type: imageType }));
+        }
+        if (!disposed) await selectFilesRef.current(files);
+      } catch (error) { showError(String(error)); }
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop; });
+    return () => { disposed = true; unlisten?.(); };
+  }, [open]);
+
+  const selectImageFiles = async (files: readonly File[]) => {
+    if (!files.length) return;
     const available = MAX_CHAT_IMAGES - pendingAttachments.length;
     if (available <= 0) {
       showError(`You can attach up to ${MAX_CHAT_IMAGES} images per message.`);
@@ -658,8 +712,8 @@ export function AiPanel({
     const content =
       retryMessage?.content ??
       (draft.trim() ||
-        (selectedAttachments.length
-          ? "What can you tell me about this image?"
+        (selectedAttachments.length || pendingDocuments.length
+          ? "Summarize these attached files."
           : ""));
     const currentContext = buildAiContext(
       note,
@@ -721,6 +775,7 @@ export function AiPanel({
             turnId: crypto.randomUUID(),
             role: "user",
             content,
+            documents: retryMessage?.documents ?? pendingDocuments,
             ...(storedAttachments.length
               ? { attachments: storedAttachments }
               : {}),
@@ -733,6 +788,7 @@ export function AiPanel({
     requestIdRef.current = requestId;
     setMessages(history);
     setDraft("");
+    setPendingDocuments([]);
     setPendingAttachments((current) => {
       for (const attachment of current)
         URL.revokeObjectURL(attachment.previewUrl);
@@ -827,7 +883,7 @@ export function AiPanel({
 
       const directAction =
         !regenerate && storedAttachments.length === 0
-          ? directAiNoteAction(content)
+          ? (userMessage.documents?.length ? null : directAiNoteAction(content))
           : null;
       if (directAction && currentContext.noteId) {
         const latestNote = getNotes().find(
@@ -857,6 +913,7 @@ export function AiPanel({
       setHistoryOmitted(budgeted.omitted);
       const historyMessages = await Promise.all(
         budgeted.messages.map(async (message): Promise<ModelMessage> => {
+          const content = message.content + chatDocumentContext(message.documents);
           const attachments = message.attachments ?? [];
           const images = await Promise.all(
             attachments.map(async (attachment) => {
@@ -890,8 +947,8 @@ export function AiPanel({
                     {
                       type: "text" as const,
                       text: references
-                        ? `${message.content}\n\n${references}`
-                        : message.content,
+                        ? `${content}\n\n${references}`
+                        : content,
                     },
                     ...images.map((image) => ({
                       type: "file" as const,
@@ -900,8 +957,8 @@ export function AiPanel({
                     })),
                   ]
                 : references
-                  ? `${message.content}\n\n${references}`
-                  : message.content,
+                  ? `${content}\n\n${references}`
+                  : content,
           };
         }),
       );
@@ -1214,6 +1271,7 @@ export function AiPanel({
     setHistoryOmitted(0);
     setShowJump(false);
     setMessages([]);
+    setPendingDocuments([]);
     setDraft("");
     setPendingAttachments((current) => {
       for (const attachment of current)
@@ -1382,6 +1440,9 @@ export function AiPanel({
     <>
       <div
         ref={panelRef}
+        data-ai-chat="true"
+        onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }}
+        onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void selectImages(Array.from(event.dataTransfer.files)); }}
         className={cn(
           "relative h-full shrink-0 border-l border-border/70 bg-zerus-editor",
           !open && "hidden",
@@ -1635,6 +1696,7 @@ export function AiPanel({
                       : "border border-border/70 bg-muted/35",
                   )}
                 >
+                  {message.documents?.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs"><Paperclip size={14} className="shrink-0" /><span className="break-all">{document.name}</span></div>)}
                   {message.attachments && message.attachments.length > 0 && (
                     <div
                       className={cn(
@@ -1797,13 +1859,13 @@ export function AiPanel({
             <input
               ref={imageInputRef}
               type="file"
-              accept="image/*"
               multiple
               className="hidden"
               onChange={(event) =>
                 void selectImages(Array.from(event.target.files ?? []))
               }
             />
+            {pendingDocuments.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs"><Paperclip size={14} className="shrink-0" /><span className="min-w-0 flex-1 break-all">{document.name}</span><button type="button" aria-label={`Remove ${document.name}`} onClick={() => setPendingDocuments((current) => current.filter((_, position) => position !== index))}><X size={14} /></button></div>)}
             {pendingAttachments.length > 0 && (
               <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
                 {pendingAttachments.map((attachment, index) => (
@@ -1878,10 +1940,9 @@ export function AiPanel({
                   sending ||
                   !aiReady ||
                   !ownsSharedConversation ||
-                  preparingImages ||
-                  pendingAttachments.length >= MAX_CHAT_IMAGES
+                  preparingImages
                 }
-                title={`Attach images (up to ${MAX_CHAT_IMAGES})`}
+                title="Attach files"
               >
                 {preparingImages ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1912,7 +1973,7 @@ export function AiPanel({
                     !aiReady ||
                     !ownsSharedConversation ||
                     preparingImages ||
-                    (!draft.trim() && pendingAttachments.length === 0)
+                    (!draft.trim() && pendingAttachments.length === 0 && pendingDocuments.length === 0)
                   }
                 >
                   <Send size={14} />

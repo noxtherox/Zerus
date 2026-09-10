@@ -93,7 +93,9 @@ jobs:
           tagName: v__VERSION__
           releaseName: Zerus v__VERSION__
           releaseBody: |
-            Download the DMG for Apple Silicon macOS or the NSIS installer for Windows.
+            Download the DMG for Apple Silicon macOS or the unsigned EXE installer for Windows.
+
+            The unsigned MSIX is for Microsoft Store submission, not direct installation. Microsoft signs it after Store certification.
 
             The macOS build is signed, notarized, and stapled. Installed macOS copies check for signed updates automatically.
           releaseDraft: true
@@ -116,7 +118,7 @@ jobs:
         run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
 
   windows:
-    name: Build Windows installer
+    name: Build Windows EXE and MSIX
     runs-on: windows-latest
     permissions:
       contents: read
@@ -145,8 +147,25 @@ jobs:
       - name: Verify platform boundaries
         run: pnpm platform:verify
 
+      - name: Verify MSIX packaging logic
+        run: pnpm windows:msix:test
+
       - name: Build Windows installer
         run: pnpm windows:build
+
+      - name: Build unsigned Microsoft Store package
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
+        run: pnpm windows:msix
+
+      - name: Upload Microsoft Store package artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: zerus-windows-msix
+          path: src-tauri/target/release/bundle/msix/*_store.msix
+          if-no-files-found: error
 
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v6
@@ -174,6 +193,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: gh release upload "$GITHUB_REF_NAME" windows-installer/*.exe
+
+      - name: Download Microsoft Store package artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: zerus-windows-msix
+          path: windows-msix
+
+      - name: Add Microsoft Store package to draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" windows-msix/*.msix
 
       - name: Publish verified release
         env:

@@ -44,13 +44,15 @@ import {
 } from "@/store/notes-store";
 import {
   createTask,
+  createTaskList,
+  renameTaskList,
+  deleteTaskList,
+  useTaskLists,
+  useGeneralTaskListName,
   deleteTask,
-  deleteTaskCategory,
   loadTasks,
   refreshTasks,
-  updateTaskCategoryOptions,
   updateTask,
-  useTaskCategoryOptions,
   useTasks,
 } from "@/store/tasks-store";
 import {
@@ -141,7 +143,8 @@ function navigationEntriesEqual(
 const Index = () => {
   const vault = useVault();
   const tasks = useTasks();
-  const taskCategoryOptions = useTaskCategoryOptions();
+  const taskLists = useTaskLists();
+  const generalTaskListName = useGeneralTaskListName();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [navigation, setNavigation] = useState(() =>
     createNavigationHistory(INITIAL_NAVIGATION_ENTRY),
@@ -807,7 +810,7 @@ const Index = () => {
   return (
     <>
       <AutoUpdater />
-      {import.meta.env.DEV && !vault.isDesktop && !aiOpen && <button className="fixed bottom-4 right-4 z-50 rounded-full bg-zerus-accent px-4 py-2 text-sm text-white shadow-lg" onClick={() => setAiOpen(true)}>Chat preview</button>}
+      {import.meta.env.DEV && !vault.isDesktop && !aiOpen && filter.kind !== "tasks" && <button className="fixed bottom-4 right-4 z-50 rounded-full bg-zerus-accent px-4 py-2 text-sm text-white shadow-lg" onClick={() => setAiOpen(true)}>Chat preview</button>}
       <div
         className={cn(
           "relative flex h-screen w-screen overflow-hidden",
@@ -910,15 +913,18 @@ const Index = () => {
               {filter.kind === "tasks" ? (
                 <TasksWorkspace
                   tasks={tasks}
-                  categoryOptions={taskCategoryOptions}
+                  lists={taskLists}
+                  generalListName={generalTaskListName}
+                  onCreateList={createTaskList}
+                  onRenameList={renameTaskList}
+                  onDeleteList={deleteTaskList}
                   notes={notes}
+                  typeIcons={vault.typeIcons}
                   selectedTaskId={selectedTaskId}
                   onSelectedTaskChange={setSelectedTaskId}
                   onCreateTask={createTask}
                   onUpdateTask={updateTask}
                   onDeleteTask={deleteTask}
-                  onCategoryOptionsChange={updateTaskCategoryOptions}
-                  onDeleteCategory={deleteTaskCategory}
                   onOpenNote={handleOpenNote}
                 />
               ) : structuredTypeViewOpen && activeTypeView && filter.kind === "type" ? (

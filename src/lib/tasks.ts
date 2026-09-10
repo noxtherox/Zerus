@@ -4,7 +4,13 @@ export type TaskPriority = "none" | "low" | "medium" | "high";
 export type TaskView = "all" | "today" | "completed";
 export type TaskSort = "recently-completed" | "recently-created" | "title-asc" | "title-desc";
 
+export interface TaskList {
+  id: string;
+  name: string;
+}
+
 export interface Task {
+  listId?: string | null;
   id: string;
   title: string;
   completed: boolean;
@@ -20,13 +26,31 @@ export interface Task {
 export type TaskPatch = Partial<Omit<Task, "id" | "createdAt">>;
 
 export interface TaskData {
+  generalListName?: string;
   tasks: Task[];
   categoryOptions: string[];
+  lists: TaskList[];
 }
 
 export function localDateKey(date = new Date()): string {
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+/** Compare calendar dates without timezone or daylight-saving shifts. */
+export function formatTaskDate(value: string, today = localDateKey()): string {
+  const parseDay = (key: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return NaN;
+    const timestamp = Date.parse(`${key}T00:00:00Z`);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === key
+      ? timestamp : NaN;
+  };
+  const days = (parseDay(value) - parseDay(today)) / 86_400_000;
+  if (!Number.isFinite(days)) return value;
+  if (days === 0) return "Today";
+  if (days === -1) return "Yesterday";
+  if (days === 1) return "Tomorrow";
+  return days < 0 ? `${-days} days ago` : `In ${days} days`;
 }
 
 function optionalString(value: unknown): string | null {
@@ -49,6 +73,7 @@ export function normalizeTask(value: unknown): Task | null {
     ? (candidate.priority as TaskPriority)
     : "none";
   return {
+    listId: optionalString(candidate.listId),
     id: candidate.id,
     title: candidate.title.trim(),
     completed: candidate.completed === true,
@@ -75,17 +100,32 @@ export function normalizeTaskData(value: unknown): TaskData {
     const tasks = normalizeTasks(value);
     return {
       tasks,
+      lists: [],
       categoryOptions: normalizeListOptions(
         tasks.flatMap((task) => task.category ? [task.category] : []),
       ),
     };
   }
   if (!value || typeof value !== "object") {
-    return { tasks: [], categoryOptions: [] };
+    return { tasks: [], categoryOptions: [], lists: [] };
   }
   const candidate = value as Record<string, unknown>;
+  const lists: TaskList[] = [];
+  if (Array.isArray(candidate.lists)) {
+    for (const value of candidate.lists) {
+      if (!value || typeof value !== "object") continue;
+      const id = optionalString(value.id);
+      const name = optionalString(value.name);
+      if (id && name && !lists.some((list) => list.id === id)) lists.push({ id, name });
+    }
+  }
   return {
-    tasks: normalizeTasks(candidate.tasks),
+    ...(optionalString(candidate.generalListName) ? { generalListName: optionalString(candidate.generalListName)! } : {}),
+    lists,
+    tasks: normalizeTasks(candidate.tasks).map((task) => ({
+      ...task,
+      listId: lists.some((list) => list.id === task.listId) ? task.listId : null,
+    })),
     categoryOptions: normalizeListOptions(
       Array.isArray(candidate.categoryOptions)
         ? candidate.categoryOptions.filter((option): option is string => typeof option === "string")
@@ -98,6 +138,7 @@ export function removeTaskCategory(data: TaskData, category: string): TaskData {
   const key = category.trim().toLowerCase();
   if (!key) return data;
   return {
+    ...data,
     categoryOptions: data.categoryOptions.filter(
       (option) => option.toLowerCase() !== key,
     ),
@@ -132,15 +173,23 @@ export function tasksForView(
   view: TaskView,
   today = localDateKey(),
   sort: TaskSort = "recently-created",
+  showAllCompleted = false,
 ): Task[] {
+  // Include the whole local calendar day seven days ago.
+  const cutoff = new Date(`${today}T00:00:00`);
+  cutoff.setDate(cutoff.getDate() - 7);
   return sortTasks(
-    tasks.filter((task) =>
-      view === "completed"
+    tasks.filter((task) => {
+      if (task.completed && !showAllCompleted) {
+        const completedAt = task.completedAt ? Date.parse(task.completedAt) : NaN;
+        if (!Number.isFinite(completedAt) || completedAt < cutoff.getTime()) return false;
+      }
+      return view === "completed"
         ? task.completed
         : view === "today"
           ? task.date === today
-          : true,
-    ),
+          : true;
+    }),
     sort,
   );
 }

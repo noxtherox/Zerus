@@ -1,4 +1,5 @@
 import type { ChatSourceSnapshot } from "@/lib/mobile-chat-history";
+import type { ChatDocument } from "./chat-documents";
 
 export interface StoredAiToolCall {
   name: string;
@@ -25,6 +26,7 @@ export interface AiNoteChange {
 }
 
 export interface StoredAiMessage {
+  documents?: ChatDocument[];
   id?: string;
   turnId?: string;
   sources?: ChatSourceSnapshot[];
@@ -83,6 +85,9 @@ function isStoredMessage(value: unknown): value is StoredAiMessage {
   return (
     (candidate.role === "user" || candidate.role === "assistant") &&
     typeof candidate.content === "string" &&
+    (candidate.documents === undefined ||
+      (Array.isArray(candidate.documents) && candidate.documents.length <= 4 &&
+        candidate.documents.every((document) => document && typeof document.name === "string" && typeof document.text === "string" && document.text.length <= 16_000))) &&
     (candidate.attachments === undefined ||
       (Array.isArray(candidate.attachments) &&
         candidate.attachments.length <= 4 &&

@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build NSIS installer
+    name: Build EXE and development MSIX
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -56,5 +56,19 @@ jobs:
         with:
           name: zerus-windows-nsis
           path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify MSIX packaging logic
+        run: pnpm windows:msix:test
+
+      - name: Build development MSIX with SDK validation
+        run: pnpm windows:msix --development
+
+      - name: Upload development MSIX
+        uses: actions/upload-artifact@v6
+        with:
+          name: zerus-windows-msix-development
+          path: src-tauri/target/release/bundle/msix/*_development.msix
           if-no-files-found: error
           retention-days: 30

@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import { configDefaults } from "vitest/config";
+import downloadHandler from "./api/download.ts";
 
 export default defineConfig(() => ({
   server: {
@@ -9,7 +10,18 @@ export default defineConfig(() => ({
     port: 8080,
     allowedHosts: ["mac-mini-m4-nox.ibex-oratrice.ts.net"],
   },
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "download-api-preview",
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (request.url?.split("?")[0] !== "/api/download") return next();
+          void downloadHandler(request, response).catch(next);
+        });
+      },
+    },
+  ],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),

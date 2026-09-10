@@ -1,3 +1,5 @@
+import { detectDownloadPlatform } from "../src/lib/download-platform.js";
+
 type GitHubRelease = {
   html_url: string;
   assets: Array<{
@@ -8,6 +10,8 @@ type GitHubRelease = {
 
 type DownloadRequest = {
   method?: string;
+  url?: string;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 type DownloadResponse = {
@@ -39,6 +43,20 @@ export default async function handler(
     return;
   }
 
+  const requestedPlatform = new URL(request.url ?? "/api/download", "http://localhost")
+    .searchParams.get("platform");
+  const userAgent = request.headers?.["user-agent"];
+  const platform = requestedPlatform === "windows" || requestedPlatform === "macos"
+    ? requestedPlatform
+    : detectDownloadPlatform({ userAgent: typeof userAgent === "string" ? userAgent : "" });
+
+  // A shared cached redirect must never send another device the wrong installer.
+  response.setHeader("Vary", "User-Agent");
+  if (platform === "other") {
+    redirect(response, LATEST_RELEASE_PAGE, "private, no-store");
+    return;
+  }
+
   try {
     const githubResponse = await fetch(LATEST_RELEASE_API, {
       headers: {
@@ -53,25 +71,27 @@ export default async function handler(
     }
 
     const release = (await githubResponse.json()) as GitHubRelease;
-    const diskImages = release.assets.filter((asset) =>
-      asset.name.toLowerCase().endsWith(".dmg"),
+    const installers = release.assets.filter((asset) =>
+      asset.name.toLowerCase().endsWith(platform === "windows" ? ".exe" : ".dmg"),
     );
-    const appleSiliconImage = diskImages.find((asset) =>
-      /(?:aarch64|arm64|apple[-_ ]?silicon)/i.test(asset.name),
+    const preferredInstaller = installers.find((asset) =>
+      platform === "windows"
+        ? /(?:x64|x86_64|amd64)/i.test(asset.name)
+        : /(?:aarch64|arm64|apple[-_ ]?silicon)/i.test(asset.name),
     );
-    const download = appleSiliconImage ?? diskImages[0];
+    const download = preferredInstaller ?? installers[0];
 
     redirect(
       response,
       download?.browser_download_url ?? release.html_url,
-      "public, s-maxage=300, stale-while-revalidate=86400",
+      "private, no-store",
     );
   } catch (error) {
     console.error("Could not resolve the latest Zerus download", error);
     redirect(
       response,
       LATEST_RELEASE_PAGE,
-      "public, s-maxage=60, stale-while-revalidate=300",
+      "private, no-store",
     );
   }
 }

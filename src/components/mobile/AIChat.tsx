@@ -11,7 +11,7 @@ import {
   Brain,
   Cloud,
   History,
-  ImagePlus,
+  Paperclip,
   Loader2,
   Mic,
   MoreHorizontal,
@@ -68,6 +68,7 @@ import {
 } from "@/lib/mobile-ai-actions";
 import { buildNotesPrompt, cleanNotesAnswer } from "@/lib/mobile-ai-response";
 import { prepareChatImage, questionReferencesImage, type PreparedChatImage } from "@/lib/mobile-chat-image";
+import { chatDocumentContext, prepareChatDocument, MAX_DOCUMENT_TEXT, type ChatDocument } from "@/lib/chat-documents";
 import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
 import {
   retrieveNotes,
@@ -289,6 +290,9 @@ export function PersistentAIChat({
   const swipeStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
   const swipeTimer = useRef<number | null>(null);
   const imageInput = useRef<HTMLInputElement | null>(null);
+  const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
+  const selectingFiles = useRef(false);
+  const fileSelectionGeneration = useRef(0);
   const pendingImagesRef = useRef<PreparedChatImage[]>([]);
   const [device, setDevice] = useState<ChatDevice | null>(null);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
@@ -338,6 +342,7 @@ export function PersistentAIChat({
     const nextScopeKey = JSON.stringify(scope);
     if (previousScopeKey.current === nextScopeKey) return;
     previousScopeKey.current = nextScopeKey;
+    fileSelectionGeneration.current += 1;
     setConversationId(null);
     setContextOverride(null);
     setBlankChat(true);
@@ -346,6 +351,7 @@ export function PersistentAIChat({
     for (const image of pendingImagesRef.current) URL.revokeObjectURL(image.previewUrl);
     pendingImagesRef.current = [];
     setPendingImages([]);
+    setPendingDocuments([]);
   }, [scope]);
 
   const replacePendingImages = (images: PreparedChatImage[]) => {
@@ -708,10 +714,11 @@ export function PersistentAIChat({
       question,
       retrieval.notes.map((note) => note.title),
     );
-    const directAnswer = images.length || mutationRequested ? null : retrieval.directAnswer;
+    const documents = turnMessage?.documents?.length ? turnMessage.documents : [...previousMessages].reverse().find((message) => message.documents?.length)?.documents;
+    const directAnswer = images.length || documents?.length || mutationRequested ? null : retrieval.directAnswer;
     const prompt = directAnswer ? null : buildNotesPrompt(
-      retrieval, previousMessages, question, conversation.summary?.text ?? null, images.length > 0,
-    );
+      retrieval, previousMessages, question, conversation.summary?.text ?? null, images.length > 0 || Boolean(documents?.length),
+    ) + chatDocumentContext(documents);
     mobileDiagnostic("mobile-ai.question", {
       engine: "cloud",
       direct: Boolean(directAnswer),
@@ -777,9 +784,9 @@ export function PersistentAIChat({
 
   const send = async () => {
     const submittedImages = pendingImages;
-    const question = draft.trim() || (submittedImages.length ? "What is in these images?" : "");
+    const question = draft.trim() || (submittedImages.length || pendingDocuments.length ? "Summarize these attached files." : "");
     const backend = getVaultBackend();
-    if (!question || !backend || !device || !notesReady || busy || memoryBusy || !cloudStatus?.configured) return;
+    if (!question || !backend || !device || !notesReady || busy || memoryBusy || selectingFiles.current || !cloudStatus?.configured) return;
     if (current && !canEditCurrent) return;
     setDraft("");
     setBusy(true);
@@ -789,18 +796,19 @@ export function PersistentAIChat({
       let working = current;
       let turnId: string;
       if (!working) {
-        const created = await createChatWithUserMessage(backend, device, question, submittedImages, contextOverride ?? scope);
+        const created = await createChatWithUserMessage(backend, device, question, submittedImages, contextOverride ?? scope, pendingDocuments);
         turnId = created.turnId;
         setBlankChat(false);
         const loaded = await refreshHistory(false, created.conversationId);
         working = loaded.find((conversation) => conversation.id === created.conversationId) ?? null;
         if (!working) throw new Error("The new conversation could not be reopened.");
       } else {
-        turnId = await appendUserMessage(backend, working, device, question, submittedImages);
+        turnId = await appendUserMessage(backend, working, device, question, submittedImages, pendingDocuments);
         const loaded = await refreshHistory(false, working.id);
         working = loaded.find((conversation) => conversation.id === working!.id) ?? working;
       }
       replacePendingImages([]);
+      setPendingDocuments([]);
       await generateAnswer(backend, working, device, turnId, question);
     } catch (generationError) {
       mobileDiagnostic("mobile-ai.error", { engine: "cloud", error: errorMessage(generationError) });
@@ -837,19 +845,36 @@ export function PersistentAIChat({
     finally { setBusy(false); }
   };
 
+  useEffect(() => {
+    fileSelectionGeneration.current += 1;
+    setPendingDocuments([]);
+  }, [conversationId, visible]);
+
   const selectImages = async (files: readonly File[]) => {
-    if (!files.length || pendingImages.length >= 4) return;
+    if (!files.length || selectingFiles.current || busy || memoryBusy || (current && !canEditCurrent)) return;
+    selectingFiles.current = true;
+    const generation = fileSelectionGeneration.current;
     setPreparingImage(true);
     setError(null);
     try {
       const available = 4 - pendingImages.length;
+      const documents = [...pendingDocuments];
+      for (const file of files.filter((file) => !file.type.startsWith("image/"))) {
+        if (documents.length >= 4) throw new Error("You can attach up to 4 documents per message.");
+        const document = await prepareChatDocument(file);
+        if (documents.reduce((sum, item) => sum + item.text.length, document.text.length) > MAX_DOCUMENT_TEXT) throw new Error("Attached documents exceed 16,000 characters. Use shorter excerpts.");
+        documents.push(document);
+      }
+      if (generation !== fileSelectionGeneration.current) return;
+      setPendingDocuments(documents);
       const prepared: PreparedChatImage[] = [];
-      for (const file of files.slice(0, available)) prepared.push(await prepareChatImage(file));
+      for (const file of files.filter((file) => file.type.startsWith("image/")).slice(0, available)) prepared.push(await prepareChatImage(file));
       pendingImagesRef.current = [...pendingImagesRef.current, ...prepared];
       setPendingImages((current) => [...current, ...prepared]);
     } catch (imageError) {
       setError(errorMessage(imageError));
     } finally {
+      selectingFiles.current = false;
       setPreparingImage(false);
       if (imageInput.current) imageInput.current.value = "";
     }
@@ -940,6 +965,7 @@ export function PersistentAIChat({
   };
 
   const startNewChat = () => {
+    setPendingDocuments([]);
     setConversationId(null);
     setBlankChat(true);
     setDraft("");
@@ -1055,6 +1081,9 @@ export function PersistentAIChat({
 
   return (
     <div
+      data-ai-chat="true"
+      onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }}
+      onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void selectImages(Array.from(event.dataTransfer.files)); }}
       className={cn("absolute inset-x-0 z-[75] flex-col overflow-hidden bg-[#1c1d1e]", visible ? "flex" : "hidden")}
       style={{
         ...viewportStyle,
@@ -1118,6 +1147,7 @@ export function PersistentAIChat({
             <div className="space-y-3">
               {messages.map((message) => (
                 <div key={message.id} className={cn("max-w-[88%]", message.role === "user" && "ml-auto")}>
+                  {message.documents?.map((document, index) => <p key={index} className="mb-1 break-all text-right text-xs text-[#c4c0bb]">{document.name}</p>)}
                   {message.role === "user" && message.attachments?.map((attachment) => (
                     <div key={attachment.id} className="mb-1 flex justify-end">
                       <PersistedChatImage attachment={attachment} />
@@ -1155,12 +1185,13 @@ export function PersistentAIChat({
                 }} className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-[#3b3c3d] text-[#c4c0bb]" aria-label={`Remove image ${index + 1}`}><X className="h-4 w-4" /></button>
               </div>)}
             </div>}
+            {pendingDocuments.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs text-[#c4c0bb]"><span className="min-w-0 flex-1 break-all">{document.name}</span><button type="button" aria-label={`Remove ${document.name}`} onClick={() => setPendingDocuments((current) => current.filter((_, position) => position !== index))}><X className="h-4 w-4" /></button></div>)}
             <div className="flex min-w-0 items-end gap-2 rounded-[24px] border border-white/[0.11] bg-[#2b2c2d] p-1.5 pl-1 focus-within:border-[#df5149]/65">
-              <input ref={imageInput} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { void selectImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-              <button type="button" onClick={() => imageInput.current?.click()} disabled={busy || memoryBusy || preparingImage || pendingImages.length >= 4 || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[#c4c0bb] disabled:opacity-50" aria-label="Add images" title="Add images">{preparingImage ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : <ImagePlus className="h-[18px] w-[18px]" />}</button>
+              <input ref={imageInput} type="file" multiple className="hidden" onChange={(event) => { void selectImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
+              <button type="button" onClick={() => imageInput.current?.click()} disabled={busy || memoryBusy || preparingImage || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-[#c4c0bb] disabled:opacity-50" aria-label="Add files" title="Add files">{preparingImage ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : <Paperclip className="h-[18px] w-[18px]" />}</button>
               <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} enterKeyHint="send" placeholder={speechState === "listening" ? "Listening…" : pendingImages.length ? "Ask about these images" : "Ask about your notes"} className="max-h-28 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-white outline-none placeholder:text-[#77777d]" />
               <button type="button" onClick={() => void toggleSpeech()} disabled={busy || memoryBusy || speechState === "starting" || speechState === "stopping"} aria-label={speechState === "listening" ? "Stop dictation" : "Dictate message"} className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50", speechState === "listening" ? "bg-[#df5149] text-white" : "bg-white/[0.08] text-[#c4c0bb]")}>{speechState === "starting" || speechState === "stopping" ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : speechState === "listening" ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-[18px] w-[18px]" />}</button>
-              <button type="submit" disabled={(!draft.trim() && !pendingImages.length) || !notesReady || busy || memoryBusy || preparingImage || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#df5149] text-white disabled:bg-white/[0.09] disabled:text-[#77777d]" aria-label="Send message"><Send className="h-[18px] w-[18px]" /></button>
+              <button type="submit" disabled={(!draft.trim() && !pendingImages.length && !pendingDocuments.length) || !notesReady || busy || memoryBusy || preparingImage || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#df5149] text-white disabled:bg-white/[0.09] disabled:text-[#77777d]" aria-label="Send message"><Send className="h-[18px] w-[18px]" /></button>
             </div>
           </form>}
         </>

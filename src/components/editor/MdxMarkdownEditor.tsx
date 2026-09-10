@@ -480,6 +480,7 @@ export function MarkdownEditor({
         if (!bounds) return;
         const x = payload.position.x / scale;
         const y = payload.position.y / scale;
+        if (document.elementFromPoint(x, y)?.closest('[data-ai-chat="true"]')) return;
         if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return;
         onAttachmentDrop(paths, editorRef.current?.getMarkdown().length ?? 0);
       })
