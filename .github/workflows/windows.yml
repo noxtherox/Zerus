@@ -2,6 +2,11 @@ name: Windows desktop build
 
 on:
   workflow_dispatch:
+    inputs:
+      store:
+        description: Build with the Microsoft Store product identity
+        type: boolean
+        default: true
   pull_request:
     paths:
       - ".github/workflows/windows.yml"
@@ -20,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build EXE and development MSIX
+    name: Build Windows EXE and MSIX
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -62,10 +67,29 @@ jobs:
       - name: Verify MSIX packaging logic
         run: pnpm windows:msix:test
 
+      - name: Build Microsoft Store MSIX with SDK validation
+        if: github.event_name == 'workflow_dispatch' && inputs.store
+        env:
+          MS_STORE_IDENTITY_NAME: ${{ vars.MS_STORE_IDENTITY_NAME }}
+          MS_STORE_PUBLISHER: ${{ vars.MS_STORE_PUBLISHER }}
+          MS_STORE_PUBLISHER_DISPLAY_NAME: ${{ vars.MS_STORE_PUBLISHER_DISPLAY_NAME }}
+        run: pnpm windows:msix
+
+      - name: Upload Microsoft Store MSIX
+        if: github.event_name == 'workflow_dispatch' && inputs.store
+        uses: actions/upload-artifact@v6
+        with:
+          name: zerus-windows-msix
+          path: src-tauri/target/release/bundle/msix/*_store.msix
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Build development MSIX with SDK validation
+        if: github.event_name != 'workflow_dispatch' || !inputs.store
         run: pnpm windows:msix --development
 
       - name: Upload development MSIX
+        if: github.event_name != 'workflow_dispatch' || !inputs.store
         uses: actions/upload-artifact@v6
         with:
           name: zerus-windows-msix-development
