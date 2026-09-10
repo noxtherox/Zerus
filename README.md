@@ -54,6 +54,11 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Context-aware AI chat** — use ChatGPT through Codex, OpenAI, Anthropic,
   OpenRouter, or another compatible API. Choose the notes used as context,
   stream or cancel answers, save answers as notes, and undo supported AI edits.
+  Upload images, searchable PDFs, and text-based files, or drop them inside chat
+  to use them as conversation context without attaching them to the open note.
+  Each message supports four documents with up to 16,000 extracted characters
+  total and a 20 MB limit per document. Scanned PDFs require external OCR;
+  unsupported binary documents must first be exported as text or searchable PDF.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI.
@@ -158,10 +163,10 @@ pnpm release <major.minor.patch>
 The release command verifies the build and tests, keeps the Tauri and Rust
 versions in sync, commits the version bump, creates the matching version tag,
 and pushes both atomically. GitHub Actions then builds the notarized Apple
-Silicon DMG, signed macOS updater bundle, unsigned Windows NSIS EXE, and unsigned
-Microsoft Store MSIX. Configure the three Partner Center identity variables in
-[the Windows packaging guide](docs/WINDOWS.md) before tagging a release; missing
-identity values block publication. The release is published only after both
+Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE. An unsigned
+Microsoft Store MSIX is also built when all three Partner Center identity variables in
+[the Windows packaging guide](docs/WINDOWS.md) are configured. Store packaging is
+skipped when none are configured; partial configuration blocks publication. The release is published only after both
 platform jobs succeed. The MSIX asset is a Store submission artifact, not a
 direct-install download. Store certification, signing, and publication happen
 separately in Partner Center. Installed macOS copies check
@@ -192,7 +197,7 @@ src-tauri/            Rust desktop shell, permissions, and packaging
 
 AI chat is optional. Your Markdown vault and conversation history remain local,
 but when you send a cloud AI request, Zerus sends the selected note excerpts,
-folder context, conversation history, and prompt needed to answer it to the
+folder context, uploaded images and document text, conversation history, and prompt needed to answer it to the
 provider you selected. Review that provider's privacy and billing terms before
 using it.
 

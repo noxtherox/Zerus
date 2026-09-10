@@ -51,8 +51,9 @@ Reserve Zerus in Microsoft Partner Center, then copy the exact values from
 | `MS_STORE_PUBLISHER` | Package/Identity/Publisher (including `CN=`) |
 | `MS_STORE_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
 
-All three are required for release packaging; absent or partial identity values
-fail the release instead of publishing a package under an invented identity.
+All three are required for Store packaging. Tagged releases skip the MSIX when
+none are configured and still publish the desktop installers. Partial identity
+configuration fails the release instead of publishing a package under an invented identity.
 No certificate, signing password, or Store API credential is needed to build.
 
 ### Build and validate
