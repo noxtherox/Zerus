@@ -40,6 +40,7 @@
 }
 
 .mobile-note-editor .zerus-mdx-content {
+  padding-top: calc(24px + var(--mobile-note-title-offset, 0px)) !important;
   padding-bottom: calc(120px + var(--mobile-keyboard-overlap, 0px)) !important;
 }
 

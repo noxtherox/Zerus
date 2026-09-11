@@ -109,6 +109,7 @@ interface MarkdownEditorProps {
   onFindScopeChange?: (scope: "note" | "pdf") => void;
   findContainer?: HTMLDivElement | null;
   insertTextRequest?: { id: number; text: string; at?: number } | null;
+  focusRequest?: number;
   onTextSelectionChange?: (hasSelection: boolean) => void;
   onScrollTopChange?: (scrollTop: number) => void;
   attachments?: NoteAttachment[];
@@ -395,6 +396,7 @@ export function MarkdownEditor({
   onFindScopeChange,
   findContainer,
   insertTextRequest = null,
+  focusRequest = 0,
   onTextSelectionChange,
   onScrollTopChange,
   attachments = [],
@@ -410,6 +412,7 @@ export function MarkdownEditor({
   );
   const [keyboardFindRequest, setKeyboardFindRequest] = useState(0);
   const lastInsertRequest = useRef<number | null>(null);
+  const lastFocusRequest = useRef(focusRequest);
   const pendingLocalEchoes = useRef<string[]>([]);
   const [attachmentMenu, setAttachmentMenu] = useState<{
     id: string;
@@ -477,6 +480,12 @@ export function MarkdownEditor({
       );
     });
   }, [insertTextRequest, readOnly]);
+
+  useEffect(() => {
+    if (focusRequest === lastFocusRequest.current || readOnly) return;
+    lastFocusRequest.current = focusRequest;
+    editorRef.current?.focus();
+  }, [focusRequest, readOnly]);
 
   useEffect(() => {
     if (!isTauri() || !onAttachmentDrop) return;

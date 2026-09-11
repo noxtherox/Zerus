@@ -1,6 +1,6 @@
 export type HorizontalSwipeDirection = "left" | "right" | null;
 
-const NOTE_HEADER_COLLAPSE_DISTANCE = 88;
+const NOTE_HEADER_COLLAPSE_DISTANCE = 72;
 
 interface SwipePoint {
   x: number;
@@ -25,6 +25,19 @@ export function horizontalSwipeDirection(
   return deltaX < 0 ? "left" : "right";
 }
 
-export function noteHeaderCollapseProgress(scrollTop: number): number {
-  return Math.min(1, Math.max(0, scrollTop / NOTE_HEADER_COLLAPSE_DISTANCE));
+export function noteHeaderCollapseProgress(
+  scrollTop: number,
+  collapseDistance = NOTE_HEADER_COLLAPSE_DISTANCE,
+): number {
+  return Math.min(1, Math.max(0, scrollTop / Math.max(1, collapseDistance)));
+}
+
+export function shouldDismissBottomSheet(
+  distance: number,
+  durationMs: number,
+  sheetHeight: number,
+): boolean {
+  const dismissDistance = Math.min(120, Math.max(72, sheetHeight * 0.18));
+  const velocity = distance / Math.max(durationMs, 1);
+  return distance >= dismissDistance || (distance >= 32 && velocity >= 0.65);
 }

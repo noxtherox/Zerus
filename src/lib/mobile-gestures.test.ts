@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   horizontalSwipeDirection,
   noteHeaderCollapseProgress,
+  shouldDismissBottomSheet,
 } from "./mobile-gestures";
 
 describe("horizontalSwipeDirection", () => {
@@ -17,14 +18,33 @@ describe("horizontalSwipeDirection", () => {
 });
 
 describe("noteHeaderCollapseProgress", () => {
-  it("tracks the opening 88 pixels of note scrolling", () => {
+  it("tracks the toolbar transition across the opening 72 pixels of note scrolling", () => {
     expect(noteHeaderCollapseProgress(0)).toBe(0);
-    expect(noteHeaderCollapseProgress(44)).toBe(0.5);
-    expect(noteHeaderCollapseProgress(88)).toBe(1);
+    expect(noteHeaderCollapseProgress(36)).toBe(0.5);
+    expect(noteHeaderCollapseProgress(72)).toBe(1);
   });
 
   it("clamps overscroll in either direction", () => {
     expect(noteHeaderCollapseProgress(-20)).toBe(0);
     expect(noteHeaderCollapseProgress(240)).toBe(1);
+  });
+
+  it("supports a shorter range for compact mobile headers", () => {
+    expect(noteHeaderCollapseProgress(28, 56)).toBe(0.5);
+    expect(noteHeaderCollapseProgress(56, 56)).toBe(1);
+  });
+});
+
+describe("shouldDismissBottomSheet", () => {
+  it("dismisses for a deliberate downward drag", () => {
+    expect(shouldDismissBottomSheet(110, 500, 600)).toBe(true);
+  });
+
+  it("dismisses a shorter fast flick", () => {
+    expect(shouldDismissBottomSheet(40, 50, 600)).toBe(true);
+  });
+
+  it("keeps the sheet open after a short slow drag", () => {
+    expect(shouldDismissBottomSheet(40, 500, 600)).toBe(false);
   });
 });

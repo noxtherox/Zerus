@@ -46,7 +46,7 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         CFBundleShortVersionString: 0.3.20
-        CFBundleVersion: "46"
+        CFBundleVersion: "47"
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.zerus.notes.openrouter
