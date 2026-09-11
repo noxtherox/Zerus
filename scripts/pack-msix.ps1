@@ -3,6 +3,23 @@ param(
     [Parameter(Mandatory = $true)][string]$Output
 )
 $ErrorActionPreference = 'Stop'
+
+function Get-Sha256([string]$Path) {
+    $Stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $Hasher = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            return [System.BitConverter]::ToString($Hasher.ComputeHash($Stream)).Replace('-', '')
+        }
+        finally {
+            $Hasher.Dispose()
+        }
+    }
+    finally {
+        $Stream.Dispose()
+    }
+}
+
 $SdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
 $MakeAppx = Get-ChildItem $SdkBin -Directory |
     Where-Object { $_.Name -match '^10\.0\.\d+\.0$' } |
@@ -19,7 +36,7 @@ $Unpacked = Join-Path (Split-Path $Output) 'verified'
 if ($LASTEXITCODE -ne 0) { throw "MakeAppx unpack failed: $LASTEXITCODE" }
 foreach ($File in @('AppxManifest.xml', 'Zerus.exe', 'binaries\zerus.exe', 'Assets\StoreLogo.png', 'Assets\Square150x150Logo.png', 'Assets\Square44x44Logo.png')) {
     if (-not (Test-Path (Join-Path $Unpacked $File))) { throw "Missing MSIX payload: $File" }
-    if ((Get-FileHash (Join-Path $Staging $File)).Hash -ne (Get-FileHash (Join-Path $Unpacked $File)).Hash) {
+    if ((Get-Sha256 (Join-Path $Staging $File)) -ne (Get-Sha256 (Join-Path $Unpacked $File))) {
         throw "MSIX payload mismatch: $File"
     }
 }

@@ -182,9 +182,11 @@ set `MS_STORE_BUILD_ENABLED=true` and configure all three Partner Center identit
 variables in [the Windows packaging guide](docs/WINDOWS.md). When enabled, an
 absent identity skips packaging; a partial identity blocks publication.
 
-The release is published only after both platform jobs succeed. The optional
-MSIX asset is for Store submission; certification, signing, and publication
-happen separately in Partner Center. Installed macOS copies check
+The verified macOS release is published first, after notarization and stapling.
+The Windows job then builds and attaches the NSIS installer and, when enabled,
+the Store MSIX. The MSIX asset is for Store submission; certification, signing,
+and publication happen separately in Partner Center. A Windows packaging failure
+does not withdraw the already-verified macOS release. Installed macOS copies check
 `latest.json` on launch and every six hours. When an update is available, the
 user can install it or ask Zerus to remind them again in 24 hours.
 
