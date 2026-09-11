@@ -1,3 +1,4 @@
+import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
 import { getNoteProperties, noteBody } from "@/lib/frontmatter";
 import {
   decodeMarkdownEscapes,
@@ -15,7 +16,7 @@ export const DEFAULT_TYPE: string[] = ["inbox"];
  * under `.trash/`.
  */
 export interface Note {
-  id: string; // stable for the session; the path may change on rename/move
+  id: string; // persisted as zerus-id; independent of title and path
   path: string;
   /** Absolute source path when the note is open outside the vault. */
   externalPath?: string;
@@ -191,7 +192,7 @@ export function noteSnippet(note: Note): string {
     .filter((line) => line.length > 0)
     .join(" ")
     .replace(IMAGE_MD_REGEX, "")
-    .replace(WIKILINK_REGEX, "$1");
+    .replace(WIKILINK_REGEX, (_, reference: string) => parseNoteReference(reference).label);
   const rest = transformPreservingMarkdownEscapes(restSource, (value) =>
     value
       .replace(/(\*\*|__|~~)(?=\S)(.+?\S)\1/g, "$2")
@@ -212,9 +213,10 @@ export function firstNoteImagePath(note: Note): string | null {
 
 export function getOutgoingLinkTitles(content: string): string[] {
   const titles: string[] = [];
-  for (const match of noteBody(content).matchAll(WIKILINK_REGEX)) {
-    titles.push(match[1].trim());
-  }
+  mapWikilinks(noteBody(content), (reference) => {
+    titles.push(reference);
+    return `[[${reference}]]`;
+  });
   return titles;
 }
 
@@ -222,14 +224,13 @@ export function findNoteByTitle(
   title: string,
   notes: Note[],
 ): Note | undefined {
-  const needle = title.trim().toLowerCase();
-  return notes.find(
-    (note) =>
-      !isExternalNote(note) &&
-      !isSavedLinkNote(note) &&
-      !isTrashed(note) &&
-      noteTitle(note).toLowerCase() === needle,
-  );
+  const { target, id } = parseNoteReference(title);
+  const candidates = notes.filter((note) =>
+    !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note));
+  if (id !== null) return candidates.find((note) => note.id === id);
+  // Legacy title links resolve only when unambiguous. Never guess during migration.
+  const matches = candidates.filter((note) => noteTitle(note).toLowerCase() === target.toLowerCase());
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 export interface TypeNode {
@@ -427,4 +428,15 @@ export function noteMatchesSearch(note: Note, query: string): boolean {
     typeKey(noteTypePath(note)).toLowerCase().includes(q) ||
     fileStem(note.path).toLowerCase().includes(q)
   );
+}
+
+/** Stable target plus a readable fallback label, shared by body and relation links. */
+export function noteReference(note: Note, label = noteTitle(note)): string {
+  return `zerus:${note.id}|${label.replace(/[\]\r\n[]/g, " ")}`;
+}
+
+export function noteReferenceMatches(reference: string, target: Note): boolean {
+  const parsed = parseNoteReference(reference);
+  return parsed.id !== null ? parsed.id === target.id
+    : parsed.target.toLowerCase() === noteTitle(target).toLowerCase();
 }

@@ -125,15 +125,27 @@ importers:
       lucide-react:
         specifier: ^0.462.0
         version: 0.462.0(react@19.2.3)
+      mdast-util-from-markdown:
+        specifier: 2.0.3
+        version: 2.0.3
       mdast-util-gfm-table:
         specifier: 2.0.0
         version: 2.0.0
+      mdast-util-mdx-jsx:
+        specifier: 3.2.0
+        version: 3.2.0
       mdast-util-to-markdown:
         specifier: 2.1.2
         version: 2.1.2
       micromark-extension-gfm-table:
         specifier: 2.1.1
         version: 2.1.1
+      micromark-extension-mdx-jsx:
+        specifier: 3.0.2
+        version: 3.0.2
+      micromark-extension-mdx-md:
+        specifier: 2.0.0
+        version: 2.0.0
       pdfjs-dist:
         specifier: ^6.2.108
         version: 6.2.108

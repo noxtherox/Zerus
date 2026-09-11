@@ -1,3 +1,4 @@
+import { parseNoteReference } from "@/lib/wikilinks";
 import type {
   BlockContent,
   Link,
@@ -68,7 +69,8 @@ function safeFileStem(value: string): string {
 }
 
 function displayProperty(value: PropertyValue): string {
-  return Array.isArray(value) ? value.join(", ") : String(value);
+  const display = (item: string) => item.startsWith("zerus:") ? parseNoteReference(item).label : item;
+  return Array.isArray(value) ? value.map(display).join(", ") : display(String(value));
 }
 
 function splitWikilinks(value: string): PhrasingContent[] {
@@ -79,7 +81,7 @@ function splitWikilinks(value: string): PhrasingContent[] {
     if (index > cursor) {
       children.push({ type: "text", value: value.slice(cursor, index) });
     }
-    const [target, label] = match[1].split("|", 2).map((part) => part.trim());
+    const { target, label } = parseNoteReference(match[1]);
     const link: Link = {
       type: "link",
       url: `zerus-note:${encodeURIComponent(target)}`,

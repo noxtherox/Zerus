@@ -1,3 +1,5 @@
+import { DateInput } from "@/components/ui/date-input";
+import { parseNoteReference } from "@/lib/wikilinks";
 import { useState } from "react";
 import {
   Archive,
@@ -57,6 +59,7 @@ import {
 import {
   type Note,
   findNoteByTitle,
+  noteReference,
   getAllTypePaths,
   isArchived,
   noteTitle,
@@ -67,6 +70,7 @@ import {
 import {
   addTypeProperty,
   createNote,
+  ensureReciprocalRelation,
   removeTypeProperty,
   setNoteProperty,
   updateTypeProperty,
@@ -108,7 +112,7 @@ interface ValueEditorProps {
 }
 
 const inputClass =
-  "h-6 rounded border-transparent bg-transparent px-1.5 text-xs shadow-none hover:bg-muted/60 focus-visible:bg-white focus-visible:ring-1";
+  "h-6 rounded border-transparent bg-transparent px-1.5 text-xs text-foreground shadow-none hover:bg-muted/60 focus-visible:bg-background focus-visible:ring-1";
 
 const wrapEditorClass =
   "w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded px-1.5 py-1 text-xs leading-4";
@@ -140,7 +144,7 @@ function WrapTextarea({
         rows={1}
         value={value}
         placeholder={placeholder}
-        className={`${wrapEditorClass} [grid-area:1/1] bg-transparent outline-none placeholder:text-muted-foreground hover:bg-muted/60 focus-visible:bg-white focus-visible:ring-1 focus-visible:ring-ring`}
+        className={`${wrapEditorClass} [grid-area:1/1] bg-transparent text-foreground outline-none placeholder:text-muted-foreground hover:bg-muted/60 focus-visible:bg-background focus-visible:ring-1 focus-visible:ring-ring`}
         onChange={(e) => onChange(e.target.value.replace(/\n/g, " "))}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
@@ -463,7 +467,11 @@ function RelationValueEditor({
     : value === undefined || value === null || value === ""
       ? []
       : [String(value)];
-  const selectedLower = new Set(titles.map((title) => title.toLowerCase()));
+  const selectedLower = new Set(titles.map((title) => {
+    const linked = findNoteByTitle(title, allNotes);
+    return (linked ? noteTitle(linked) : parseNoteReference(title).label).toLowerCase();
+  }));
+  const selectedIds = new Set(titles.map((title) => findNoteByTitle(title, allNotes)?.id));
 
   const relatedNotes = getRelationPickerNotes(
     allNotes,
@@ -472,11 +480,12 @@ function RelationValueEditor({
     showArchived,
   );
   const candidates = relatedNotes.filter(
-    (note) => !selectedLower.has(noteTitle(note).toLowerCase()),
+    (note) => !selectedIds.has(note.id),
   );
 
   const pick = (note: Note) => {
-    const title = noteTitle(note);
+    const title = noteReference(note);
+    ensureReciprocalRelation(currentNote.id, note.id);
     onCommit(def.relationMultiple ? [...titles, title] : title);
     setQuery("");
     setOpen(false);
@@ -508,8 +517,6 @@ function RelationValueEditor({
       );
       if (!created) return;
 
-      // Linking from the current note makes it appear automatically in the
-      // new note's Backlinks panel without duplicating relation metadata.
       pick(created);
       onOpenNote(created.id);
     } finally {
@@ -615,7 +622,7 @@ function RelationValueEditor({
           return (
             <RelationChip
               key={title}
-              title={title}
+              title={linkedNote ? noteTitle(linkedNote) : parseNoteReference(title).label}
               note={linkedNote}
               reciprocal={
                 linkedNote
@@ -673,11 +680,11 @@ function ValueEditor({
   }
   if (type === "date") {
     return (
-      <Input
-        type="date"
+      <DateInput
+        aria-label={def.name}
         className={inputClass}
         value={typeof value === "string" ? value : ""}
-        onChange={(e) => onCommit(e.target.value || null)}
+        onValueChange={(next) => onCommit(next || null)}
       />
     );
   }

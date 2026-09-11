@@ -12,21 +12,25 @@
 				<string>md</string>
 				<string>markdown</string>
 			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>net.daringfireball.markdown</string>
+			</array>
 			<key>CFBundleTypeName</key>
 			<string>Markdown document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>LSHandlerRank</key>
 			<string>Default</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>net.daringfireball.markdown</string>
-			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>pdf</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>PDF document</string>
@@ -34,10 +38,6 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>com.adobe.pdf</string>
-			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
@@ -56,22 +56,26 @@
 				<string>numbers</string>
 				<string>key</string>
 			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.rtf</string>
+				<string>public.plain-text</string>
+			</array>
 			<key>CFBundleTypeName</key>
 			<string>Office document</string>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.rtf</string>
-				<string>public.plain-text</string>
-			</array>
 		</dict>
 		<dict>
 			<key>CFBundleTypeExtensions</key>
 			<array>
 				<string>*</string>
+			</array>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.data</string>
 			</array>
 			<key>CFBundleTypeName</key>
 			<string>File</string>
@@ -79,10 +83,6 @@
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
 			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>public.data</string>
-			</array>
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
@@ -105,6 +105,14 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>zerus</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.zerus.notes.google-drive</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.126630902143-qqq93rlgus679vplfmgtgk5upn33endl</string>
 			</array>
 		</dict>
 	</array>
@@ -137,5 +145,7 @@
 	<string>Dark</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>ZerusGoogleDriveClientID</key>
+	<string>126630902143-qqq93rlgus679vplfmgtgk5upn33endl.apps.googleusercontent.com</string>
 </dict>
 </plist>

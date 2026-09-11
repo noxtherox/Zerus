@@ -5,6 +5,7 @@ Default permissions for the plugin
 #### This default permission set includes the following:
 
 - `allow-pick-vault-folder`
+- `allow-google-drive`
 - `allow-restore-vault-folder`
 - `allow-clear-vault-folder`
 - `allow-pick-external-notes`
@@ -236,6 +237,32 @@ Enables the generate_cloud_ai command without any pre-configured scope.
 <td>
 
 Denies the generate_cloud_ai command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-google-drive`
+
+</td>
+<td>
+
+Enables the google_drive command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-google-drive`
+
+</td>
+<td>
+
+Denies the google_drive command without any pre-configured scope.
 
 </td>
 </tr>

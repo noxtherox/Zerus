@@ -1,5 +1,6 @@
 const COMMANDS: &[&str] = &[
     "pick_vault_folder",
+    "google_drive",
     "restore_vault_folder",
     "clear_vault_folder",
     "pick_external_notes",

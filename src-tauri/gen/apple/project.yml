@@ -50,7 +50,12 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.zerus.notes.openrouter
-            CFBundleURLSchemes: [zerus]
+            CFBundleURLSchemes:
+              - zerus
+          - CFBundleURLName: com.zerus.notes.google-drive
+            CFBundleURLSchemes:
+              - com.googleusercontent.apps.126630902143-qqq93rlgus679vplfmgtgk5upn33endl
+        ZerusGoogleDriveClientID: 126630902143-qqq93rlgus679vplfmgtgk5upn33endl.apps.googleusercontent.com
     entitlements:
       path: app_iOS/app_iOS.entitlements
       properties:

@@ -22,6 +22,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   private var webviewOffsetObservation: NSKeyValueObservation?
   private lazy var cloudAI = CloudAIManager()
   private var cloudAITask: Task<Void, Never>?
+  private var googleDriveStorage: AnyObject?
   private var openRouterSession: ASWebAuthenticationSession?
   private lazy var speechRecognizer = OnDeviceSpeechRecognizer()
   private var modernSpeechRecognizerStorage: AnyObject?
@@ -380,6 +381,18 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
       invoke.resolve(try cloudAI.configure(request))
     } catch {
       invoke.reject(error.localizedDescription)
+    }
+  }
+
+  @objc public func googleDrive(_ invoke: Invoke) {
+    Task { @MainActor in
+      do {
+        let request = try invoke.parseArgs(GoogleDriveCommand.self)
+        let drive: GoogleDriveManager
+        if let existing = self.googleDriveStorage as? GoogleDriveManager { drive = existing }
+        else { drive = GoogleDriveManager(); self.googleDriveStorage = drive }
+        invoke.resolve(try await drive.run(request, presenter: self))
+      } catch { invoke.reject(error.localizedDescription) }
     }
   }
 

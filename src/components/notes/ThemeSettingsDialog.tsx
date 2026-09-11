@@ -1,3 +1,4 @@
+import { DateFormatSetting } from "./DateFormatSetting";
 import { useEffect, useState } from "react";
 import {
   Bot,
@@ -590,6 +591,7 @@ export function ThemeSettingsDialog({
           </TabsContent>
 
           <TabsContent value="general" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+          <DateFormatSetting />
           <p className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Note list
           </p>

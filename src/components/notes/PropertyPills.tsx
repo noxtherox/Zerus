@@ -1,3 +1,7 @@
+import { formatDate, useDateFormat } from "@/lib/date-format";
+import { effectivePropertyDefinitions, inferPropertyType } from "@/lib/properties";
+import { noteTypePath } from "@/lib/note-utils";
+import { useVault } from "@/store/notes-store";
 import { badgeVariants } from "@/components/ui/badge-variants";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
 import type { Note } from "@/lib/note-utils";
@@ -18,6 +22,13 @@ export function PropertyPills({
   visibleProperties: string[];
   className?: string;
 }) {
+  const dateFormat = useDateFormat();
+  const { schemas } = useVault();
+  const definitions = effectivePropertyDefinitions(noteTypePath(note), schemas);
+  const label = (name: string, value: PropertyValue) => {
+    const type = definitions.find(({ def }) => def.name.toLowerCase() === name.toLowerCase())?.def.type ?? inferPropertyType(value);
+    return type === "date" && typeof value === "string" ? formatDate(value, dateFormat) : propertyLabel(value);
+  };
   if (!visibleProperties.length) return null;
   const properties = getNoteProperties(note.content);
   const entries = visibleProperties.flatMap((visibleName) => {
@@ -37,10 +48,10 @@ export function PropertyPills({
             badgeVariants({ variant: "secondary" }),
             "h-5 max-w-full gap-1 rounded-full px-2 text-[10px] font-normal",
           )}
-          title={`${name}: ${propertyLabel(value)}`}
+          title={`${name}: ${label(name, value)}`}
         >
           <span className="text-muted-foreground">{name}</span>
-          <span className="max-w-32 truncate">{propertyLabel(value)}</span>
+          <span className="max-w-32 truncate">{label(name, value)}</span>
         </span>
       ))}
     </span>

@@ -1,3 +1,7 @@
+import type { DriveVaultSelection } from "@/lib/google-drive";
+import { GoogleDrivePicker } from "./GoogleDrivePicker";
+import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
+import { parseNoteReference } from "@/lib/wikilinks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import {
   Archive,
@@ -59,6 +63,7 @@ import {
   DialogContent,
   DialogFooter,
   DialogHeader,
+  DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { MarkdownEditor } from "@/components/editor/MdxMarkdownEditor";
@@ -108,7 +113,10 @@ import {
   saveDefaultNoteType,
   saveNoteTypeOrder,
 } from "@/lib/note-preferences";
-import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
+import {
+  horizontalSwipeDirection,
+  noteHeaderCollapseProgress,
+} from "@/lib/mobile-gestures";
 import {
   readMobileNavigationEntry,
   withMobileNavigationEntry,
@@ -124,6 +132,10 @@ import {
   loadAllNotes,
   loadMoreNotes,
   locateMobileVault,
+  openGoogleDriveVault,
+  prepareGoogleDriveConnection,
+  reloadVault,
+  resolveNoteConflict,
   openExternalNotes,
   openFileHub,
   createType,
@@ -680,6 +692,7 @@ function NoteView({
   const [draft, setDraft] = useState(presentedNote.body);
   const [titleDraft, setTitleDraft] = useState(presentedNote.title);
   const [editingTitle, setEditingTitle] = useState(false);
+  const [headerCollapseProgress, setHeaderCollapseProgress] = useState(0);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -691,6 +704,7 @@ function NoteView({
     setDraft(presentedNote.body);
     setTitleDraft(presentedNote.title);
   }, [presentedNote.body, presentedNote.title]);
+  useEffect(() => setHeaderCollapseProgress(0), [note.id]);
   const [moveTypeOpen, setMoveTypeOpen] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
   const [insertTextRequest, setInsertTextRequest] = useState<{ id: number; text: string } | null>(null);
@@ -834,6 +848,8 @@ function NoteView({
 
   const propertiesVisible = propertiesOpen || (isDragging && dragX < 0);
   const transition = isDragging ? "none" : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)";
+  const expandedHeaderOpacity = Math.max(0, 1 - headerCollapseProgress * 1.6);
+  const compactHeaderOpacity = Math.max(0, (headerCollapseProgress - 0.28) / 0.72);
   const [showArchivedBacklinks, setShowArchivedBacklinks] = useState(false);
   const backlinkGroups = useMemo(
     () => getBacklinksGroupedByType(note, allNotes, schemas, showArchivedBacklinks),
@@ -852,12 +868,15 @@ function NoteView({
       candidate.id !== note.id,
   );
   const followNoteLink = async (title: string) => {
+    await loadAllNotes();
     const existing = findNoteByTitle(title, getNotes());
     if (existing) {
       onOpenNote(existing.id);
       return;
     }
-    const created = await createNote(noteTypePath(note), `# ${title}\n\n`);
+    const reference = parseNoteReference(title);
+    if (reference.id !== null) return;
+    const created = await createNote(noteTypePath(note), `# ${reference.target}\n\n`);
     if (created) onOpenNote(created.id);
   };
 
@@ -870,13 +889,61 @@ function NoteView({
       onTouchCancel={() => { touchStart.current = null; setIsDragging(false); setDragX(0); }}
     >
       <div className="flex min-h-0 flex-1 flex-col" style={{ transform: `translate3d(${propertiesOpen ? 0 : Math.max(0, dragX)}px, 0, 0)`, transition }}>
-      <header className="relative z-20 grid h-[60px] shrink-0 grid-cols-[44px_1fr_44px] items-center px-4 pb-3 pt-1">
-        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => settle(window.innerWidth, onBack)} aria-label="Back to notes"><ArrowLeft className="h-5 w-5" /></Button>
-        <span className="flex min-w-0 max-w-full items-center justify-center gap-1.5 justify-self-center text-[14px] font-medium leading-none text-[#99958f] dark:text-[#8b8883]">
-          <TypeIcon icon={presentedNote.icon ?? undefined} size={16} className="shrink-0" />
-          <span className="truncate">{presentedNote.type}</span>
-        </span>
-        <Button variant="ghost" size="icon" className="h-11 w-11 touch-manipulation rounded-full bg-[#f0efed] hover:bg-[#e9e7e3] dark:bg-white/[0.08] dark:text-[#f5f3ef] dark:hover:bg-white/[0.12]" onClick={() => setActionsOpen(true)} aria-label="Note actions"><MoreHorizontal className="h-[20px] w-[20px]" /></Button>
+      <header
+        className="relative z-20 grid h-[60px] shrink-0 grid-cols-[44px_1fr_44px] items-center border-b px-4 pb-3 pt-1 backdrop-blur-xl"
+        style={{
+          backgroundColor: `rgb(28 29 30 / ${compactHeaderOpacity * 0.9})`,
+          borderBottomColor: `rgb(255 255 255 / ${compactHeaderOpacity * 0.07})`,
+        }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 touch-manipulation rounded-full text-[#f5f3ef] hover:bg-white/[0.12]"
+          style={{ backgroundColor: `rgb(255 255 255 / ${(1 - headerCollapseProgress) * 0.08})` }}
+          onClick={() => settle(window.innerWidth, onBack)}
+          aria-label="Back to notes"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div className="relative flex h-11 min-w-0 items-center justify-center justify-self-stretch">
+          <span
+            className="absolute inset-0 flex min-w-0 items-center justify-center gap-1.5 overflow-hidden text-[14px] font-medium leading-none text-[#8b8883]"
+            style={{
+              opacity: expandedHeaderOpacity,
+              transform: `translateY(${-6 * headerCollapseProgress}px)`,
+            }}
+            aria-hidden={compactHeaderOpacity > 0.5}
+          >
+            <TypeIcon icon={presentedNote.icon ?? undefined} size={16} className="shrink-0" />
+            <span className="truncate">{presentedNote.type}</span>
+          </span>
+          <span
+            className="absolute inset-0 flex min-w-0 flex-col items-center justify-center gap-0.5 overflow-hidden px-2 text-center"
+            style={{
+              opacity: compactHeaderOpacity,
+              transform: `translateY(${(1 - compactHeaderOpacity) * 6}px)`,
+            }}
+            aria-hidden={compactHeaderOpacity <= 0.5}
+          >
+            <span className="max-w-full truncate text-[10px] font-semibold uppercase leading-none tracking-[0.13em] text-[#df5149]">
+              {presentedNote.type}
+            </span>
+            <span className="max-w-full truncate text-[14px] font-medium leading-tight tracking-[-0.015em] text-[#f5f3ef]">
+              {presentedNote.title}
+            </span>
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 touch-manipulation rounded-full text-[#f5f3ef] hover:bg-white/[0.12]"
+          style={{ backgroundColor: `rgb(255 255 255 / ${(1 - headerCollapseProgress) * 0.08})` }}
+          onClick={() => setActionsOpen(true)}
+          aria-label="Note actions"
+        >
+          <MoreHorizontal className="h-[20px] w-[20px]" />
+        </Button>
       </header>
       {trashed && (
         <div
@@ -920,29 +987,46 @@ function NoteView({
           </Button>
         </div>
       )}
-      <main className="mobile-note-body flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-5">
-        <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
-        {editingTitle ? (
-          <Input
-            autoFocus
-            value={titleDraft}
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-              if (event.key === "Escape") {
-                setTitleDraft(presentedNote.title);
-                setEditingTitle(false);
-              }
-            }}
-            className="h-auto border-0 bg-transparent px-0 text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#f5f3ef] shadow-none focus-visible:ring-0"
-            aria-label="Note title"
-          />
-        ) : (
-          <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
-            <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
-          </button>
-        )}
+      <main
+        className="mobile-note-body flex min-h-0 flex-1 flex-col overflow-hidden px-6"
+        style={{ paddingTop: `${20 - headerCollapseProgress * 12}px` }}
+      >
+        <div
+          className="grid shrink-0"
+          style={{
+            gridTemplateRows: `${1 - headerCollapseProgress}fr`,
+            opacity: 1 - headerCollapseProgress,
+            transform: `translateY(${-12 * headerCollapseProgress}px)`,
+            willChange: "grid-template-rows, opacity, transform",
+          }}
+          aria-hidden={headerCollapseProgress >= 0.95}
+          inert={headerCollapseProgress >= 0.95}
+        >
+          <div className="min-h-0 overflow-hidden">
+            <div className="mb-4 flex items-center gap-2 text-xs font-medium text-[#77736f]"><span className="flex items-center gap-1 text-[#df5149]">{presentedNote.kind === "external" ? <ExternalLink className="h-3.5 w-3.5" /> : presentedNote.kind === "file" ? <File className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}{presentedNote.type}</span><span>·</span><span>Edited {presentedNote.updated} ago</span></div>
+            {editingTitle ? (
+              <Input
+                autoFocus
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={commitTitle}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                  if (event.key === "Escape") {
+                    setTitleDraft(presentedNote.title);
+                    setEditingTitle(false);
+                  }
+                }}
+                className="h-auto border-0 bg-transparent px-0 text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#f5f3ef] shadow-none focus-visible:ring-0"
+                aria-label="Note title"
+              />
+            ) : (
+              <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
+                <h1 className="text-[36px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
+              </button>
+            )}
+          </div>
+        </div>
         {file && <button type="button" onClick={() => onOpenFile(note.id, "preview")} className="mt-5 flex w-full min-w-0 select-none items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
@@ -965,6 +1049,9 @@ function NoteView({
             followLinksOnClick
             findRequest={findRequest}
             insertTextRequest={insertTextRequest}
+            onScrollTopChange={(scrollTop) => {
+              setHeaderCollapseProgress(noteHeaderCollapseProgress(scrollTop));
+            }}
           />
         </div>
       </main>
@@ -1316,12 +1403,14 @@ function MobileSettings({
 
         <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.25rem)] [-webkit-overflow-scrolling:touch]">
 
+        <DateFormatSetting />
         <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">Current vault</p>
         <div className="rounded-[16px] bg-[#292a2b] px-4 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><Folder className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Your Markdown vault</span></span>
           </div>
+          {location?.startsWith("Google Drive ·") && <Button type="button" variant="ghost" onClick={() => void reloadVault()} className="mt-3 w-full">Save and refresh Google Drive</Button>}
           <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-white/[0.07] text-sm font-semibold text-[#ef6b62] hover:bg-white/[0.1] hover:text-[#ef6b62]">Change vault</Button>
           </div>
 
@@ -1349,7 +1438,7 @@ function MobileSettings({
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-[#77777d]">File locations</p>
           <div className="rounded-[16px] bg-[#292a2b] p-3">
           <p className="px-1 pb-3 text-xs leading-4 text-[#8e8e93]">
-            Map each synced location to its folder on this device. For Google Drive, select “My Drive”; saved relative paths such as “Documentos” resolve beneath it.
+            Map each synced location to its folder on this device. Use a provider that supports folder access, such as iCloud Drive. Google Drive vaults connect separately; Drive file-location mappings are not supported.
           </p>
           <div className="space-y-2">
             {fileLocations.map((fileLocation) => {
@@ -1442,6 +1531,7 @@ interface VaultSetupProps {
   error: string | null;
   onClose?: () => void;
   onLocate: () => Promise<boolean>;
+  onDrive: (selection: DriveVaultSelection) => Promise<boolean>;
   onCreateAtLocation: () => Promise<boolean>;
   onCreateOnDevice: () => Promise<boolean>;
 }
@@ -1451,10 +1541,12 @@ function VaultSetup({
   error,
   onClose,
   onLocate,
+  onDrive,
   onCreateAtLocation,
   onCreateOnDevice,
 }: VaultSetupProps) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [driveOpen, setDriveOpen] = useState(false);
 
   const run = async (label: string, action: () => Promise<boolean>) => {
     setBusyAction(label);
@@ -1478,6 +1570,12 @@ function VaultSetup({
     </button>
   );
 
+  if (driveOpen) return <GoogleDrivePicker onClose={() => setDriveOpen(false)} onChoose={async (selection) => {
+    const opened = await onDrive(selection);
+    if (opened) onClose?.();
+    return opened;
+  }} />;
+
   return (
     <main className="absolute inset-0 z-50 flex flex-col overflow-y-auto bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
       {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={busyAction !== null} className="ml-auto h-10 w-10 rounded-full bg-white/[0.08]" aria-label="Close vault setup"><X className="h-5 w-5" /></Button>}
@@ -1490,7 +1588,14 @@ function VaultSetup({
           {busyAction === "Locate existing vault" ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <FolderSearch className="mr-2 h-5 w-5" />}
           Locate existing vault
         </Button>
-        <p className="mt-2 text-center text-xs leading-4 text-[#77777d]">Select the vault itself or a folder containing “Zerus.”</p>
+        <p className="mt-2 text-center text-xs leading-4 text-[#77777d]">Use iCloud Drive or another provider that supports folder access.</p>
+        <div className="mt-4 overflow-hidden rounded-[17px] bg-[#292a2b]">
+          {actionRow("Google Drive", "Connect your account and choose a vault folder", <Cloud className="h-5 w-5" />, async () => {
+            if (!(await prepareGoogleDriveConnection())) return false;
+            setDriveOpen(true);
+            return false;
+          })}
+        </div>
 
         <div className="my-6 flex items-center gap-3"><span className="h-px flex-1 bg-white/[0.08]" /><span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#66666b]">Create a vault</span><span className="h-px flex-1 bg-white/[0.08]" /></div>
         <div className="overflow-hidden rounded-[17px] bg-[#292a2b]">
@@ -1865,11 +1970,11 @@ export function MobileZerus() {
     <div className="dark flex min-h-screen items-center justify-center bg-[#0d0d0d] p-0 sm:p-8">
       <section className={cn("mobile-zerus-dark relative flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-[#1c1d1e] text-[#f5f3ef] sm:h-[852px] sm:rounded-[42px] sm:border-[7px] sm:border-[#080808] sm:shadow-[0_28px_70px_rgba(0,0,0,0.6)]", isNativeApp && "mobile-native-shell")} aria-label="Zerus iOS prototype">
         {!isNativeApp && <StatusBar />}
-        {vault.status === "pick-vault" ? (
+        {vault.status === "pick-vault" || (vault.status === "error" && vaultSetupOpen) ? (
           <VaultSetup
             nativeAvailable={isNativeApp}
             error={vault.error}
-            onLocate={() => runVaultAction(locateMobileVault)}
+            onLocate={() => runVaultAction(locateMobileVault)} onDrive={(selection) => runVaultAction(() => openGoogleDriveVault(selection))}
             onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)}
             onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)}
           />
@@ -1879,6 +1984,8 @@ export function MobileZerus() {
               <>
                 <h1 className="text-xl font-semibold">Couldn’t open your notes</h1>
                 <p className="mt-2 text-sm text-[#8e8e93]">{vault.error ?? "The mobile vault is unavailable."}</p>
+                <Button className="mt-5" onClick={() => void reloadVault()}>Retry opening vault</Button>
+                <Button variant="ghost" className="mt-2" onClick={() => setVaultSetupOpen(true)}>Choose another vault</Button>
               </>
             ) : (
               <>
@@ -2067,11 +2174,35 @@ export function MobileZerus() {
           scope={chatScope}
         />
         {settingsOpen && <MobileSettings location={vault.location} defaultNoteType={defaultNoteType} typeTree={typeTree} onDefaultNoteTypeChange={updateDefaultNoteType} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
-        {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
+        {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onDrive={(selection) => runVaultAction(() => openGoogleDriveVault(selection))} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
+        {vault.status === "ready" && vault.location?.startsWith("Google Drive ·") && Object.values(vault.conflicts)[0] && <DriveConflictReview conflict={Object.values(vault.conflicts)[0]} />}
         {composerOpen && <Composer onClose={() => setComposerOpen(false)} onSave={saveQuickNote} typePath={creationType} allNotes={vault.notes} />}
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
       </section>
       <div className="pointer-events-none fixed bottom-5 right-6 hidden items-center gap-2 rounded-full bg-[#232323]/90 px-3 py-2 text-xs font-medium text-[#aaa6a0] shadow-sm backdrop-blur sm:flex"><FileText className="h-3.5 w-3.5" />Interactive iOS prototype</div>
     </div>
   );
+}
+
+function DriveConflictReview({ conflict }: { conflict: { noteId: string; currentContent: string; diskContent: string | null; diskPath: string } }) {
+  const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
+  const resolve = async (choice: "disk" | "current") => {
+    setBusy(true);
+    try { if (await resolveNoteConflict(conflict.noteId, choice)) setReview(false); }
+    finally { setBusy(false); }
+  };
+  return <>
+    <button type="button" onClick={() => setReview(true)} className="absolute inset-x-4 bottom-24 z-50 rounded-xl bg-[#59352f] p-3 text-sm text-white">A note changed in Google Drive. Review both versions.</button>
+    <Dialog open={review} onOpenChange={setReview}>
+      <DialogContent className="max-h-[85dvh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Review Google Drive changes</DialogTitle><DialogDescription>{conflict.diskPath}</DialogDescription></DialogHeader>
+        <label className="text-sm">Your edit<textarea readOnly value={conflict.currentContent} className="mt-2 h-36 w-full rounded border bg-background p-2 text-xs" /></label>
+        <label className="text-sm">Google Drive version<textarea readOnly value={conflict.diskContent ?? "This note is no longer in the vault."} className="mt-2 h-36 w-full rounded border bg-background p-2 text-xs" /></label>
+        <p className="text-xs text-muted-foreground">Choosing a version replaces the other in Zerus. Copy any text you want to keep first.</p>
+        <Button disabled={busy} onClick={() => void resolve("current")}>Save my version to Drive</Button>
+        <Button disabled={busy} variant="outline" onClick={() => void resolve("disk")}>Use Google Drive version</Button>
+      </DialogContent>
+    </Dialog>
+  </>;
 }

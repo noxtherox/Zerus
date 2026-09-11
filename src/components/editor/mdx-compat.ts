@@ -1,9 +1,14 @@
 import type { RootContent } from "mdast";
 import { toMarkdown } from "mdast-util-to-markdown";
 import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { mdxJsxFromMarkdown } from "mdast-util-mdx-jsx";
+import { mdxJsx } from "micromark-extension-mdx-jsx";
+import { mdxMd } from "micromark-extension-mdx-md";
 import { unified } from "unified";
 
-const markdownParser = unified().use(remarkParse);
+const markdownParser = unified().use(remarkParse).use(remarkGfm);
 
 /** MDX disables CommonMark autolinks; convert only actual link nodes. */
 function expandAutolinks(source: string): string {
@@ -25,14 +30,6 @@ function expandAutolinks(source: string): string {
   return source;
 }
 
-const MDX_NAME_START = /[\p{ID_Start}$_]/u;
-
-function backtickRunLength(source: string, from: number): number {
-  let to = from;
-  while (source[to] === "`") to += 1;
-  return to - from;
-}
-
 function isEscaped(source: string, at: number): boolean {
   let slashes = 0;
   for (let index = at - 1; index >= 0 && source[index] === "\\"; index -= 1) {
@@ -41,21 +38,6 @@ function isEscaped(source: string, at: number): boolean {
   return slashes % 2 === 1;
 }
 
-function canStartMdxTag(character: string | undefined): boolean {
-  if (!character || /\s/u.test(character)) return true;
-  return MDX_NAME_START.test(character) || "/!?>".includes(character);
-}
-
-/**
- * Normalize Markdown constructs that MDX otherwise mistakes for invalid JSX.
- *
- * Common medical and mathematical Markdown such as `K+ <1`, as well as prose
- * containing literal braces, is valid text, but MDX tokenizers can mistake it
- * for JSX or a JavaScript expression and throw before the editor can open the
- * note. CommonMark backslash escapes preserve the visible characters, while
- * HTML break tags are made self-closing. Code spans and fenced code blocks
- * must remain verbatim.
- */
 /** Removes mdast's encoding of invisible trailing spaces outside code fences. */
 export function cleanMarkdownFromMdxEditor(source: string): string {
   let fence: { marker: "`" | "~"; length: number } | null = null;
@@ -81,75 +63,56 @@ export function cleanMarkdownFromMdxEditor(source: string): string {
     .join("");
 }
 
+/**
+ * Use CommonMark's node boundaries instead of guessing which characters start
+ * JSX. Only prose is escaped: code, destinations, and Markdown syntax retain
+ * their original source. Valid HTML remains formatted; malformed HTML is shown
+ * literally if the editor's JSX tokenizer cannot parse it.
+ */
 export function prepareMarkdownForMdxEditor(input: string): string {
   const source = expandAutolinks(cleanMarkdownFromMdxEditor(input));
-  let result = "";
-  let index = 0;
-  let inlineCodeTicks = 0;
-  let fence: { marker: "`" | "~"; length: number } | null = null;
-  let lineStart = true;
+  const tree = markdownParser.parse(source);
 
-  while (index < source.length) {
-    if (lineStart && inlineCodeTicks === 0) {
-      const fenceMatch = source.slice(index).match(/^( {0,3})(`{3,}|~{3,})/u);
-      if (fenceMatch) {
-        const marker = fenceMatch[2][0] as "`" | "~";
-        const length = fenceMatch[2].length;
-        if (!fence) fence = { marker, length };
-        else if (fence.marker === marker && length >= fence.length) fence = null;
-        const delimiterLength = fenceMatch[1].length + fenceMatch[2].length;
-        result += source.slice(index, index + delimiterLength);
-        index += delimiterLength;
-        lineStart = false;
-        continue;
+  function prepare(literalHtml: boolean): string {
+    const replacements: { start: number; end: number; value: string }[] = [];
+    function visit(node: RootContent) {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (node.type === "code" && start !== undefined && end !== undefined &&
+          !/^[ \t]*(`{3,}|~{3,})/u.test(source.slice(start, end))) {
+        // MDX disables indented code. Fences preserve its literal contents.
+        const prefix = source.slice(source.lastIndexOf("\n", start - 1) + 1, start)
+          .replace(/[^> \t]/gu, " ");
+        const value = toMarkdown(node, { fences: true }).trimEnd().replace(/\n/gu, `\n${prefix}`);
+        replacements.push({ start, end, value });
+      } else if ((node.type === "text" || node.type === "html") && start !== undefined && end !== undefined) {
+        const original = source.slice(start, end);
+        const value = node.type === "html" && !literalHtml
+          ? original.replace(/<br\s*>/giu, "<br />")
+          : original.replace(/[<{}]/gu, (character, offset: number) =>
+            isEscaped(original, offset) ? character : `\\${character}`);
+        if (value !== original) replacements.push({ start, end, value });
+      } else if ("children" in node) {
+        node.children.forEach(visit);
       }
     }
-
-    const character = source[index];
-
-    if (!fence && character === "`") {
-      const ticks = backtickRunLength(source, index);
-      if (inlineCodeTicks === 0) inlineCodeTicks = ticks;
-      else if (inlineCodeTicks === ticks) inlineCodeTicks = 0;
-      result += source.slice(index, index + ticks);
-      index += ticks;
-      lineStart = false;
-      continue;
+    tree.children.forEach(visit);
+    let result = source;
+    for (const { start, end, value } of replacements.reverse()) {
+      result = result.slice(0, start) + value + result.slice(end);
     }
-
-    if (!fence && inlineCodeTicks === 0 && character === "<") {
-      const breakTag = source.slice(index).match(/^<br\s*>/iu);
-      if (breakTag) {
-        result += "<br />";
-        index += breakTag[0].length;
-        lineStart = false;
-        continue;
-      }
-    }
-
-    if (
-      !fence &&
-      inlineCodeTicks === 0 &&
-      character === "<" &&
-      !isEscaped(source, index) &&
-      !canStartMdxTag(source[index + 1])
-    ) {
-      result += "\\";
-    }
-
-    if (
-      !fence &&
-      inlineCodeTicks === 0 &&
-      (character === "{" || character === "}") &&
-      !isEscaped(source, index)
-    ) {
-      result += "\\";
-    }
-
-    result += character;
-    index += 1;
-    lineStart = character === "\n";
+    return result;
   }
 
-  return result;
+  const prepared = prepare(false);
+  try {
+    // Match the HTML syntax extensions enabled by MDXEditor's core plugin.
+    fromMarkdown(prepared, {
+      extensions: [mdxJsx(), mdxMd()],
+      mdastExtensions: [mdxJsxFromMarkdown()],
+    });
+    return prepared;
+  } catch {
+    return prepare(true);
+  }
 }

@@ -1171,6 +1171,19 @@ fn update_type_keyed_document(
     Ok(())
 }
 
+/// Explicit IDs never fall back to a label when their target is missing.
+fn note_reference_matches(reference: &str, note: &ScannedNote) -> bool {
+    let unescaped = reference.replace("\\|", "|");
+    let reference = unescaped.trim().trim_start_matches("[[").trim_end_matches("]]");
+    let target = reference.split('|').next().unwrap_or(reference).trim();
+    if let Some(id) = target.strip_prefix("zerus:") {
+        return note.id.map(|value| value.to_string() == id).unwrap_or(false);
+    }
+    target.eq_ignore_ascii_case(&note.title)
+        || target == note.path
+        || note.id.map(|value| value.to_string() == target).unwrap_or(false)
+}
+
 fn relation_titles(note: &ScannedNote, schemas: &serde_json::Map<String, Value>) -> Vec<String> {
     let definitions = effective_schema_definitions(schemas, &note_type_key(&note.path));
     let relation_names = definitions
@@ -2883,7 +2896,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
         Command::Links { selector } => {
             let (notes, _, root) = load_notes(cli)?;
             let note = choose_note(cli, &notes, selector)?;
-            let wiki = Regex::new(r"\[\[([^\]|#]+)").unwrap();
+            let wiki = Regex::new(r"\\?\[\\?\[([^\[\]]+)\]\]").unwrap();
             let body_outgoing: Vec<_> = wiki
                 .captures_iter(&note.content)
                 .map(|capture| capture[1].trim().to_string())
@@ -2897,24 +2910,17 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            let needles = [
-                note.title.clone(),
-                note.path.clone(),
-                note.id.map(|id| id.to_string()).unwrap_or_default(),
-            ];
             let backlinks: Vec<_> = notes
                 .iter()
                 .filter(|candidate| {
                     candidate.path != note.path && !is_trashed_path(&candidate.path)
                 })
                 .filter_map(|candidate| {
-                    let body = needles
-                        .iter()
-                        .filter(|value| !value.is_empty())
-                        .any(|value| candidate.content.contains(&format!("[[{value}")));
+                    let body = wiki.captures_iter(&candidate.content)
+                        .any(|capture| note_reference_matches(&capture[1], note));
                     let relation = relation_titles(candidate, &schemas)
                         .iter()
-                        .any(|title| title.eq_ignore_ascii_case(&note.title));
+                        .any(|reference| note_reference_matches(reference, note));
                     (body || relation).then(|| {
                         json!({
                             "path": candidate.path,

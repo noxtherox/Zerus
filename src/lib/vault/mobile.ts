@@ -321,6 +321,7 @@ abstract class MobileFilesystemVault implements VaultBackend {
 /** Persistent Markdown vault stored inside the iOS app container. */
 export class MobileVault extends MobileFilesystemVault {
   readonly location = DEFAULT_VAULT_NAME;
+  readonly cacheIdentity = "mobile:on-device";
 
   static async open(): Promise<MobileVault> {
     const vault = new MobileVault();
@@ -366,12 +367,14 @@ export class MobileVault extends MobileFilesystemVault {
 /** User-selected Files or iCloud Drive folder held by a security-scoped bookmark. */
 export class MobileFolderVault extends MobileFilesystemVault {
   readonly location: string;
+  readonly cacheIdentity: string;
   private readonly root: URL;
 
   constructor(rootUrl: string, name: string) {
     super();
     this.root = new URL(rootUrl.endsWith("/") ? rootUrl : `${rootUrl}/`);
     this.location = name;
+    this.cacheIdentity = `mobile:folder:${this.root.href}`;
   }
 
   static async restore(rootUrl: string, name: string): Promise<MobileFolderVault> {

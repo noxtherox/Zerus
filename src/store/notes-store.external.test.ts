@@ -1,3 +1,5 @@
+import { getBacklinksGroupedByType } from "@/lib/links";
+import { getNoteProperties } from "@/lib/frontmatter";
 import {
   mkdtemp,
   mkdir,
@@ -102,6 +104,8 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
 vi.mock("@/utils/toast", () => ({ showError: vi.fn() }));
 
 import {
+  addTypeProperty,
+  setNoteProperty,
   attachFileToNote,
   closeExternalNote,
   copyExternalNoteToVault,
@@ -125,7 +129,7 @@ import {
   trashNote,
   updateNoteBody,
 } from "./notes-store";
-import { isExternalNote, noteTypePath } from "@/lib/note-utils";
+import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
 
@@ -282,6 +286,13 @@ describe("external note store workflow", () => {
   it("shows the cached note index before the first disk read finishes", () => {
     expect(startupSnapshotContent).toContain("Later from cache");
     expect(startupSnapshotContent).toContain("Still waiting for its disk read.");
+  });
+
+  it("keeps complete note bodies in the next-launch cache", () => {
+    const cached = JSON.parse(storage.get(`zerus.startupCache.v1.${vault}`) ?? "null");
+    expect(cached.notes.find((note: { path: string }) =>
+      note.path === "inbox/Welcome.md",
+    )?.content).toContain("Edited safely while other notes were loading.");
   });
 
   it("watches the desktop vault recursively instead of polling it every second", async () => {
@@ -673,6 +684,34 @@ describe("external note store workflow", () => {
     try {
       await expect(switchDesktopVault(unavailable)).resolves.toBe(true);
       expect(getNotes().some((note) => note.path === "Recovered.md")).toBe(true);
+    } finally {
+      await switchDesktopVault(vault);
+    }
+  });
+
+  it("migrates legacy links and preserves identity, navigation and backlinks after save and reopen", async () => {
+    const linkVault = join(root, "stable-links-vault");
+    await mkdir(join(linkVault, "work"), { recursive: true });
+    await writeFile(join(linkVault, "work", "Target.md"), "# Target\n");
+    await writeFile(join(linkVault, "work", "Source.md"), "# Source\n\n[[Target]]\n");
+    try {
+      await switchDesktopVault(linkVault);
+      addTypeProperty("work", { name: "Related", type: "relation" });
+      const target = getNotes().find((note) => noteTitle(note) === "Target")!;
+      const source = getNotes().find((note) => noteTitle(note) === "Source")!;
+      setNoteProperty(source.id, "Related", "Target");
+      updateNoteBody(target.id, "# Renamed\n");
+      expect(await flushPendingWrites()).toBe(true);
+      const savedSource = await readFile(join(linkVault, "work", "Source.md"), "utf8");
+      expect(savedSource).toContain(`[[zerus:${target.id}|Target]]`);
+      expect(getNoteProperties(savedSource).Related).toBe(`zerus:${target.id}|Target`);
+      expect(await readFile(join(linkVault, "work", "Renamed.md"), "utf8")).toContain(`zerus-id: ${target.id}`);
+      await switchDesktopVault(vault);
+      await switchDesktopVault(linkVault);
+      const reopenedTarget = getNotes().find((note) => noteTitle(note) === "Renamed")!;
+      expect(reopenedTarget.id).toBe(target.id);
+      const groups = getBacklinksGroupedByType(reopenedTarget, getNotes(), { work: [{ name: "Related", type: "relation" }] });
+      expect([...groups.values()].flat().map((note) => note.id)).toEqual([source.id]);
     } finally {
       await switchDesktopVault(vault);
     }

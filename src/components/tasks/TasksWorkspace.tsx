@@ -1,3 +1,5 @@
+import { DateInput } from "@/components/ui/date-input";
+import { formatDate, useDateFormat } from "@/lib/date-format";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
@@ -260,6 +262,7 @@ function TaskDetails({
   onRequestDelete: () => void;
   onOpenNote: (id: string) => void;
 }) {
+  const dateFormat = useDateFormat();
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const linkedNotes = task.linkedNoteIds
     .map((id) => notes.find((note) => note.id === id))
@@ -312,20 +315,19 @@ function TaskDetails({
           </label>
           <label className="block text-xs text-muted-foreground">
             Date
-            <Input
+            <DateInput
               className="mt-1 h-8"
-              type="date"
               value={task.date}
-              onChange={(event) => onUpdate({ date: event.target.value })}
+              onValueChange={(next) => onUpdate({ date: next })}
             />
           </label>
           <label className="block text-xs text-muted-foreground">
             Due date
-            <Input
+            <DateInput
               className="mt-1 h-8"
-              type="date"
               value={task.dueDate ?? ""}
-              onChange={(event) => onUpdate({ dueDate: event.target.value || null })}
+              aria-label="Due date"
+              onValueChange={(next) => onUpdate({ dueDate: next || null })}
             />
           </label>
           <div className="border-t border-border/60 pt-5">
@@ -367,13 +369,13 @@ function TaskDetails({
         </div>
         {task.completedAt && (
           <p className="mt-2 text-xs text-muted-foreground">
-            Completed {new Date(task.completedAt).toLocaleString()}
+            Completed {formatDate(task.completedAt, dateFormat) + " " + new Date(task.completedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </p>
         )}
       </div>
       <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 px-5 py-3">
         <span className="text-xs text-muted-foreground">
-          Created {new Date(task.createdAt).toLocaleDateString()}
+          Created {formatDate(task.createdAt, dateFormat)}
         </span>
         <Button
           type="button"

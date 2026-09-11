@@ -753,3 +753,25 @@ fn renames_type_metadata_and_blocks_unrelated_file_deletion() {
     assert!(vault.path().join("projects/Plan.md").is_file());
     assert!(vault.path().join("projects/keep.bin").is_file());
 }
+
+#[test]
+fn stable_id_backlinks_survive_renames_and_do_not_match_prefixes_or_stale_labels() {
+    let vault = fixture();
+    fs::write(vault.path().join("work/Plan.md"),
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\n---\n# Renamed Plan\n").unwrap();
+    fs::create_dir_all(vault.path().join(".zerus")).unwrap();
+    fs::write(vault.path().join(".zerus/properties.json"),
+        r#"{"work":[{"name":"Related","type":"relation"}]}"#).unwrap();
+    fs::write(vault.path().join("work/Source.md"),
+        "---\nRelated: \"zerus:019f7922-8fae-7733-8357-48b16a134c38|Old title\"\n---\n# Source\n\n[[zerus:019f7922-8fae-7733-8357-48b16a134c38|Old title]]\n").unwrap();
+    fs::write(vault.path().join("work/Unrelated.md"),
+        "# Unrelated\n\n[[Renamed Plan Extended]] [[zerus:missing|Renamed Plan]]\n").unwrap();
+    let output = cli().args(["--vault", vault.path().to_str().unwrap(), "--json", "links", "work/Plan.md"])
+        .output().unwrap();
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let backlinks = value["data"]["backlinks"].as_array().unwrap();
+    assert_eq!(backlinks.len(), 1);
+    assert_eq!(backlinks[0]["viaBody"], true);
+    assert_eq!(backlinks[0]["viaRelation"], true);
+}

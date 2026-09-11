@@ -1,3 +1,5 @@
+import { reciprocalRelation } from "@/lib/reciprocal-relations";
+import { stabilizeNoteLinks } from "@/lib/stable-note-links";
 import { useSyncExternalStore } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -72,6 +74,8 @@ import {
 import type { VaultBackend, VaultFile, VaultFileEntry } from "@/lib/vault/backend";
 import { BrowserVault } from "@/lib/vault/browser";
 import { DesktopVault } from "@/lib/vault/desktop";
+import { GoogleDriveVault } from "@/lib/vault/google-drive";
+import { savedDriveVault, saveDriveVault, type DriveVaultSelection } from "@/lib/google-drive";
 import { MobileFolderVault, MobileVault } from "@/lib/vault/mobile";
 import {
   clearMobileVaultFolder,
@@ -153,6 +157,7 @@ const SAVED_LINKS_INDEX_PATH = ".zerus/links.json";
 const TRASHED_IMAGES_INDEX_PATH = ".zerus/trashed-images.json";
 const FLUSH_DELAY_MS = 5_000;
 const MOBILE_NOTE_PAGE_SIZE = 30;
+const MOBILE_SYNC_INTERVAL_MS = 60_000;
 
 function isManagedSavedLink(note: Note): boolean {
   return isSavedLinkNote(note) && note.path.startsWith(`${SAVED_LINKS_DIR}/`);
@@ -258,6 +263,8 @@ let desktopSyncTimer: ReturnType<typeof setInterval> | null = null;
 let desktopSyncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let desktopSyncInFlight = false;
 let desktopSyncRequested = false;
+let mobileSyncTimer: ReturnType<typeof setInterval> | null = null;
+let mobileSyncInFlight = false;
 let desktopWatchGeneration = 0;
 let stopDesktopWatch: UnwatchFn | null = null;
 const desktopVaultChangeListeners = new Set<() => void>();
@@ -762,6 +769,8 @@ interface StartupCachedNote {
   archived: boolean;
   createdAt?: string;
   updatedAt: string;
+  /** Full content is retained when space permits so a note opens immediately. */
+  content?: string;
 }
 
 interface StartupVaultCache {
@@ -803,7 +812,7 @@ function cachedNotePlaceholder(note: StartupCachedNote): Note {
   return {
     id: note.id,
     path: note.path,
-    content: `# ${note.title}\n\n${note.snippet}`,
+    content: note.content ?? `# ${note.title}\n\n${note.snippet}`,
     pinned: note.pinned,
     archived: note.archived,
     createdAt: note.createdAt ?? note.updatedAt,
@@ -821,7 +830,7 @@ function saveStartupCache(
   fileLocations: FileLocationDefinition[],
 ) {
   const cachedNotes = notes
-    .filter((note) => !isExternalNote(note))
+    .filter((note) => !isExternalNote(note) && !isManagedSavedLink(note))
     .map<StartupCachedNote>((note) => ({
       id: note.id,
       path: note.path,
@@ -831,6 +840,7 @@ function saveStartupCache(
       archived: note.archived === true,
       createdAt: note.createdAt ?? note.updatedAt,
       updatedAt: note.updatedAt,
+      content: note.content,
     }))
     .sort((left, right) => {
       if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
@@ -853,6 +863,23 @@ function saveStartupCache(
   }
 }
 
+function vaultCacheIdentity(target: VaultBackend): string {
+  return target.cacheIdentity ?? target.location;
+}
+
+function saveCurrentStartupCache() {
+  if (!backend || backend.kind === "browser" || state.status !== "ready") return;
+  saveStartupCache(
+    vaultCacheIdentity(backend),
+    state.notes,
+    state.extraTypes,
+    state.schemas,
+    state.typeIcons,
+    state.typeViews,
+    state.fileLocations,
+  );
+}
+
 function noteFromVaultFile(
   file: Awaited<ReturnType<DesktopVault["loadFile"]>>,
   pinnedPaths: Set<string>,
@@ -861,7 +888,7 @@ function noteFromVaultFile(
 ): Note {
   const metadata = readZerusMetadata(file.content);
   return {
-    id: existingId ?? metadata.id ?? crypto.randomUUID(),
+    id: metadata.id ?? existingId ?? crypto.randomUUID(),
     path: file.path,
     content: file.content,
     pinned: metadata.pinned || pinnedPaths.has(file.path),
@@ -972,10 +999,10 @@ async function loadVault(nextBackend: VaultBackend) {
     error: null,
   });
   try {
-    const startupCache =
-      nextBackend.kind === "desktop"
-        ? loadStartupCache(nextBackend.location)
-        : null;
+    const cacheIdentity = vaultCacheIdentity(nextBackend);
+    const startupCache = nextBackend.kind === "browser"
+      ? null
+      : loadStartupCache(cacheIdentity);
     if (startupCache) {
       const cachedNotes = startupCache.notes.map(cachedNotePlaceholder);
       setState({
@@ -986,7 +1013,11 @@ async function loadVault(nextBackend: VaultBackend) {
         typeIcons: startupCache.typeIcons,
         typeViews: normalizeTypeViewConfigs(startupCache.typeViews),
         fileLocations: startupCache.fileLocations,
-        loadingNoteIds: new Set(cachedNotes.map((note) => note.id)),
+        loadingNoteIds: new Set(
+          startupCache.notes
+            .filter((note) => note.content === undefined)
+            .map((note) => note.id),
+        ),
         isRefreshing: true,
       });
     }
@@ -1067,10 +1098,39 @@ async function loadVault(nextBackend: VaultBackend) {
     if (canPage) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
     }
+    const driveDrafts = nextBackend instanceof GoogleDriveVault ? nextBackend.drafts() : {};
+    const cachedFiles = canPage
+      ? mobileNoteEntries.flatMap((entry) => {
+          const cached = startupCache?.notes.find(
+            (note) =>
+              note.path === entry.path &&
+              note.updatedAt === entry.updatedAt &&
+              note.content !== undefined,
+          );
+          return cached
+            ? [{
+                path: entry.path,
+                content: cached.content as string,
+                createdAt: entry.createdAt,
+                updatedAt: entry.updatedAt,
+              }]
+            : [];
+        })
+      : [];
+    const cachedFilePaths = new Set(cachedFiles.map((file) => file.path));
+    const initialMobilePaths = canPage
+      ? [...new Set([
+          ...mobileNoteEntries.slice(0, MOBILE_NOTE_PAGE_SIZE).map((entry) => entry.path),
+          ...mobileNoteEntries.filter((entry) => driveDrafts[entry.path]).map((entry) => entry.path),
+        ])]
+      : [];
     const files = canPage
-      ? await nextBackend.loadFiles!(
-          mobileNoteEntries.slice(0, MOBILE_NOTE_PAGE_SIZE).map((entry) => entry.path),
-        )
+      ? [
+          ...cachedFiles,
+          ...await nextBackend.loadFiles!(
+            initialMobilePaths.filter((path) => !cachedFilePaths.has(path)),
+          ),
+        ]
       : (noteSource as VaultFile[]);
     if (!isCurrentLoad()) return;
     const vaultNotes: Note[] = files.map((file) => {
@@ -1116,9 +1176,9 @@ async function loadVault(nextBackend: VaultBackend) {
         (note) => !vaultPaths.has(normalizeFsPath(note.externalPath as string)),
       );
     }
-    // folders are types — except the assets folder, which holds images
+    // Attachment storage folders and their children are not note types.
     const extraTypes = dirs
-      .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
+      .filter(isNoteTypeDirectory)
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
     let loadedNotes = [...externalNotes, ...savedLinkNotes, ...vaultNotes];
     const mobileSummary = canPage
@@ -1145,6 +1205,22 @@ async function loadVault(nextBackend: VaultBackend) {
         diskSnapshots.set(note.id, note.content);
       }
     }
+    if (nextBackend instanceof GoogleDriveVault) {
+      for (const [path, draft] of Object.entries(driveDrafts)) {
+        let note = loadedNotes.find((candidate) => candidate.path === path && !candidate.externalPath);
+        const remoteContent = note?.content ?? null;
+        if (remoteContent === draft.content) { nextBackend.clearDraft(path, draft.content); continue; }
+        if (!note) {
+          note = noteFromVaultFile({ path, content: draft.content, updatedAt: new Date().toISOString() }, pinned, archived);
+          loadedNotes.push(note);
+        }
+        note.content = draft.content;
+        if (draft.snapshot !== undefined) diskSnapshots.set(note.id, draft.snapshot);
+        if (remoteContent !== (draft.snapshot ?? null)) {
+          restoredSession.conflicts[note.id] = { noteId: note.id, currentContent: draft.content, diskContent: remoteContent, diskPath: path, kind: remoteContent === null ? "deleted" : "modified" };
+        } else startupEditedNoteIds.add(note.id);
+      }
+    }
     const editedIds = [...startupEditedNoteIds].filter((id) =>
       loadedNotes.some((note) => note.id === id),
     );
@@ -1168,6 +1244,7 @@ async function loadVault(nextBackend: VaultBackend) {
       loadingNoteIds: new Set(),
       isRefreshing: false,
     });
+    stabilizeVaultLinks();
     startupEditedNoteIds.clear();
     for (const id of editedIds) {
       pendingFlush.set(
@@ -1175,10 +1252,9 @@ async function loadVault(nextBackend: VaultBackend) {
         setTimeout(() => void flushNote(id), FLUSH_DELAY_MS),
       );
     }
-    if (nextBackend.kind === "desktop") {
-      void watchDesktopVault(nextBackend.location);
+    if (nextBackend.kind !== "browser") {
       saveStartupCache(
-        nextBackend.location,
+        cacheIdentity,
         vaultNotes,
         extraTypes,
         recoveredSchemas,
@@ -1186,6 +1262,9 @@ async function loadVault(nextBackend: VaultBackend) {
         typeViews,
         fileLocations,
       );
+    }
+    if (nextBackend.kind === "desktop") {
+      void watchDesktopVault(nextBackend.location);
       void invoke("cli_register_vault", {
         vaultPath: nextBackend.location,
       }).catch((error) => reportError("register vault with CLI", error));
@@ -1199,6 +1278,10 @@ async function loadVault(nextBackend: VaultBackend) {
       notes: loadedNotes.length,
       directories: dirs.length,
     });
+    if (canPage && state.hasMoreNotes) {
+      // Complete the warm cache without delaying the first usable screen.
+      setTimeout(() => void loadAllNotes(), 0);
+    }
     void drainDesktopOpenPaths();
   } catch (error) {
     if (!isCurrentLoad()) return;
@@ -1243,11 +1326,16 @@ async function loadNextMobileNoteBatch(limit = MOBILE_NOTE_PAGE_SIZE): Promise<v
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
       );
       const afterPaths = new Set(notes.map((note) => note.path));
+      const hasMoreNotes = mobileNoteEntries.some(
+        (entry) => !afterPaths.has(entry.path),
+      );
       setState({
         notes,
-        hasMoreNotes: mobileNoteEntries.some((entry) => !afterPaths.has(entry.path)),
+        hasMoreNotes,
         isLoadingMoreNotes: false,
       });
+      stabilizeVaultLinks();
+      if (!hasMoreNotes) saveCurrentStartupCache();
     } catch (error) {
       setState({ isLoadingMoreNotes: false });
       reportError("load more notes", error);
@@ -1277,7 +1365,13 @@ export function initStore() {
   initialized = true;
   if (isTauri()) {
     if (isIOSRuntime()) {
+      installMobileFileSync();
       void (async () => {
+        const drive = savedDriveVault();
+        if (drive) {
+          await loadVault(new GoogleDriveVault(drive));
+          return;
+        }
         try {
           const saved = await restoreMobileVaultFolder();
           if (saved) {
@@ -1321,6 +1415,21 @@ async function canChangeMobileVault(): Promise<boolean> {
   return !backend || (await flushAll());
 }
 
+export async function prepareGoogleDriveConnection(): Promise<boolean> {
+  // Reauthorization must remain reachable when an expired token blocks pending saves.
+  return isIOSRuntime() && (backend instanceof GoogleDriveVault || await canChangeMobileVault());
+}
+
+export async function openGoogleDriveVault(selection: DriveVaultSelection): Promise<boolean> {
+  if (!isIOSRuntime() || !(await canChangeMobileVault())) return false;
+  const vault = new GoogleDriveVault(selection);
+  await vault.validate();
+  await loadVault(vault);
+  if (state.status !== "ready") return false;
+  saveDriveVault(selection);
+  return true;
+}
+
 export async function locateMobileVault(): Promise<boolean> {
   if (!isIOSRuntime()) return false;
   mobileDiagnostic("store.locate.started");
@@ -1342,6 +1451,7 @@ export async function locateMobileVault(): Promise<boolean> {
       return false;
     }
     await loadVault(vault);
+    if (state.status === "ready") saveDriveVault(null);
     mobileDiagnostic("store.locate.completed", { status: state.status });
     return state.status === "ready";
   } catch (error) {
@@ -1359,6 +1469,7 @@ export async function createMobileVaultAtLocation(): Promise<boolean> {
   const selected = await pickMobileVaultFolder();
   if (!selected) return false;
   await loadVault(await MobileFolderVault.create(selected.url, selected.name));
+  if (state.status === "ready") saveDriveVault(null);
   return state.status === "ready";
 }
 
@@ -1367,6 +1478,7 @@ export async function createMobileVaultOnDevice(): Promise<boolean> {
   if (!(await canChangeMobileVault())) return false;
   await clearMobileVaultFolder();
   await loadVault(await MobileVault.open());
+  if (state.status === "ready") saveDriveVault(null);
   return state.status === "ready";
 }
 
@@ -1407,9 +1519,10 @@ export async function reloadVault() {
   await loadVault(backend);
 }
 
-/** Reconciles changes made outside Zerus when the desktop app regains focus. */
+/** Reconciles changes made outside Zerus when the app regains focus. */
 export async function refreshVaultFromDisk() {
-  await synchronizeDesktopFiles();
+  if (backend?.kind === "mobile") await synchronizeMobileFiles();
+  else await synchronizeDesktopFiles();
 }
 
 /** Notifies stores with files outside the note index when the vault changes. */
@@ -1428,6 +1541,94 @@ const DESKTOP_WATCH_DEBOUNCE_MS = 500;
 
 function notifyDesktopVaultChanged() {
   for (const listener of desktopVaultChangeListeners) listener();
+}
+
+function requestMobileFileSync() {
+  if (
+    document.visibilityState !== "visible" ||
+    state.status !== "ready" ||
+    backend?.kind !== "mobile"
+  ) return;
+  void synchronizeMobileFiles();
+}
+
+function installMobileFileSync() {
+  if (mobileSyncTimer) return;
+  mobileSyncTimer = setInterval(requestMobileFileSync, MOBILE_SYNC_INTERVAL_MS);
+  window.addEventListener("focus", requestMobileFileSync);
+  document.addEventListener("visibilitychange", requestMobileFileSync);
+}
+
+/**
+ * Refreshes a mobile/iCloud/Drive vault incrementally. Unchanged notes stay in
+ * memory; only new or modified bodies are read, so this is safe to run often.
+ */
+export async function synchronizeMobileFiles() {
+  if (
+    mobileSyncInFlight ||
+    mobileNoteLoad ||
+    state.status !== "ready" ||
+    backend?.kind !== "mobile" ||
+    !backend.listNoteEntries ||
+    !backend.loadFiles ||
+    pendingFlush.size > 0 ||
+    inFlightFlush.size > 0 ||
+    startupEditedNoteIds.size > 0
+  ) return;
+
+  mobileSyncInFlight = true;
+  const activeBackend = backend;
+  try {
+    const entries = (await activeBackend.listNoteEntries()).filter(isPageableMobileEntry);
+    if (backend !== activeBackend || state.status !== "ready") return;
+    const entriesByPath = new Map(entries.map((entry) => [entry.path, entry] as const));
+    const managedNotes = state.notes.filter(
+      (note) => !isExternalNote(note) && !isManagedSavedLink(note),
+    );
+    const notesByPath = new Map(managedNotes.map((note) => [note.path, note] as const));
+    const changedPaths = entries
+      .filter((entry) => notesByPath.get(entry.path)?.updatedAt !== entry.updatedAt)
+      .map((entry) => entry.path);
+    const changedFiles = await activeBackend.loadFiles(changedPaths);
+    if (backend !== activeBackend || state.status !== "ready") return;
+
+    const pinned = loadPinnedPaths();
+    const archived = loadArchivedPaths();
+    const changedByPath = new Map(changedFiles.map((file) => [file.path, file] as const));
+    const refreshedNotes = entries.map((entry) => {
+      const existing = notesByPath.get(entry.path);
+      const changed = changedByPath.get(entry.path);
+      if (!changed) return existing!;
+      const note = noteFromVaultFile(changed, pinned, archived, existing?.id);
+      diskSnapshots.set(note.id, note.content);
+      return note;
+    });
+    for (const note of managedNotes) {
+      if (!entriesByPath.has(note.path)) diskSnapshots.delete(note.id);
+    }
+    const retainedSpecialNotes = state.notes.filter(
+      (note) => isExternalNote(note) || isManagedSavedLink(note),
+    );
+    const notes = [...retainedSpecialNotes, ...refreshedNotes].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+    const summary = summarizeMobileEntries(entries);
+    mobileNoteEntries = entries;
+    sortMobileEntries();
+    setState({
+      notes,
+      totalNoteCount: summary.totalNoteCount,
+      typeNoteCounts: summary.typeNoteCounts,
+      hasMoreNotes: false,
+      isLoadingMoreNotes: false,
+    });
+    stabilizeVaultLinks();
+    saveCurrentStartupCache();
+  } catch (error) {
+    console.error("Zerus: failed to synchronize mobile files", error);
+  } finally {
+    mobileSyncInFlight = false;
+  }
 }
 
 function desktopWatchEventIsRelevant(event: WatchEvent): boolean {
@@ -1631,7 +1832,7 @@ export async function synchronizeDesktopFiles() {
       if (snapshot === undefined || note.content !== snapshot) continue;
       const candidates = [...unmatchedFiles]
         .map((candidateKey) => filesByPath.get(candidateKey))
-        .filter((file) => file?.content === snapshot);
+        .filter((file) => file && (readZerusMetadata(file.content).id === note.id || file.content === snapshot));
       if (candidates.length !== 1) continue;
       const renamedFile = candidates[0] as (typeof files)[number];
       const renamedKey = relativePathKey(renamedFile.path);
@@ -1699,15 +1900,7 @@ export async function synchronizeDesktopFiles() {
     for (const file of files) {
       const key = relativePathKey(file.path);
       if (matchedFilePaths.has(key)) continue;
-      const note: Note = {
-        id: crypto.randomUUID(),
-        path: file.path,
-        content: file.content,
-        pinned: false,
-        archived: false,
-        createdAt: file.createdAt ?? file.updatedAt,
-        updatedAt: file.updatedAt,
-      };
+      const note = noteFromVaultFile(file, new Set(), new Set());
       latestNotes.push(note);
       diskSnapshots.set(note.id, note.content);
       notesChanged = true;
@@ -1749,7 +1942,7 @@ export async function synchronizeDesktopFiles() {
     }
 
     const extraTypes = dirs
-      .filter((dir) => dir !== IMAGE_DIR && !dir.startsWith(`${IMAGE_DIR}/`))
+      .filter(isNoteTypeDirectory)
       .map((dir) => dir.split("/").slice(0, MAX_TYPE_DEPTH));
     const typesChanged =
       JSON.stringify(extraTypes) !== JSON.stringify(state.extraTypes);
@@ -1775,9 +1968,15 @@ export async function synchronizeDesktopFiles() {
         conflicts: nextConflicts,
         fileLocations: locationsChanged ? fileLocations : state.fileLocations,
       });
-      if (notesChanged) saveNoteDisplayState();
+      if (notesChanged) {
+        stabilizeVaultLinks();
+        saveNoteDisplayState();
+      }
     }
     if (registryChanged) saveExternalPaths();
+    if (notesChanged || typesChanged || locationsChanged) {
+      saveCurrentStartupCache();
+    }
   } catch (error) {
     console.error("Zerus: failed to synchronize files", error);
   } finally {
@@ -1928,7 +2127,9 @@ async function readNoteFromDisk(note: Note): Promise<string | null> {
     if (note.externalPath) return await readTextFile(note.externalPath);
     if (!backend || !(await backend.exists(note.path))) return null;
     return await backend.readText(note.path);
-  } catch {
+  } catch (error) {
+    // A failed cloud download is not evidence that the note was deleted.
+    if (backend instanceof GoogleDriveVault) throw error;
     return null;
   }
 }
@@ -1942,13 +2143,42 @@ async function diskStillMatchesSnapshot(note: Note): Promise<boolean> {
   return false;
 }
 
+/** Persist identities and bind legacy references using the pre-rename catalogue. */
+function stabilizeVaultLinks(catalogue = state.notes) {
+  for (const note of state.notes) {
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note) ||
+        state.loadingNoteIds.has(note.id) || state.conflicts[note.id]) continue;
+    const content = state.hasMoreNotes ? note.content : stabilizeNoteLinks(note, catalogue, state.schemas);
+    const identified = readZerusMetadata(content).id ? content : setZerusState(content, { id: note.id });
+    if (identified !== note.content) queueNoteContent(note.id, identified);
+  }
+}
+
 export function updateNoteContent(id: string, content: string) {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note || closingAfterFlush || state.busyNoteIds.has(id) || state.loadingNoteIds.has(id)) return;
+  if (!isExternalNote(note) && !isSavedLinkNote(note)) {
+    if (noteTitle(note) !== noteTitle({ ...note, content })) stabilizeVaultLinks();
+    if (!state.hasMoreNotes) content = stabilizeNoteLinks({ ...note, content }, state.notes, state.schemas);
+    content = setZerusState(content, { id: note.id });
+  }
+  queueNoteContent(id, content);
+}
+
+function queueNoteContent(id: string, content: string) {
   if (
     closingAfterFlush ||
     state.busyNoteIds.has(id) ||
     state.loadingNoteIds.has(id)
   ) {
     return;
+  }
+  if (backend instanceof GoogleDriveVault) {
+    const note = state.notes.find((candidate) => candidate.id === id);
+    if (note && !note.externalPath) {
+      try { backend.stageDraft(note.path, content, diskSnapshots.get(id)); }
+      catch (error) { reportError("keep a local copy of your Drive edit", error); return; }
+    }
   }
   updateNote(id, { content, updatedAt: new Date().toISOString() });
   if (state.isRefreshing) {
@@ -1982,6 +2212,16 @@ async function persistNote(
   let note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return true;
   try {
+    const priorContent = diskSnapshots.get(id);
+    if (state.hasMoreNotes && priorContent !== undefined &&
+        noteTitle({ ...note, content: priorContent }) !== noteTitle(note)) {
+      if (!(await loadAllNotes())) return false;
+      note = state.notes.find((candidate) => candidate.id === id);
+      if (!note) return true;
+      stabilizeVaultLinks(state.notes.map((candidate) => candidate.id === id
+        ? { ...note!, content: priorContent } : candidate));
+      note = state.notes.find((candidate) => candidate.id === id)!;
+    }
     if (!force) {
       if (state.conflicts[id]) return false;
       if (!(await diskStillMatchesSnapshot(note))) return false;
@@ -2001,9 +2241,11 @@ async function persistNote(
     const historySource = pendingHistorySource.get(id) ?? localHistorySource();
     if (isSavedLinkNote(note)) {
       await backend.write(note.path, note.content);
+      if (backend instanceof GoogleDriveVault) backend.clearDraft(note.path, note.content);
       diskSnapshots.set(id, note.content);
       pendingHistorySource.delete(id);
       await recordHistorySafely(id, previousContent, note.content, historySource);
+      saveCurrentStartupCache();
       return true;
     }
     let path = note.path;
@@ -2034,11 +2276,15 @@ async function persistNote(
       }
     }
     await backend.write(path, note.content);
+    if (backend instanceof GoogleDriveVault) backend.clearDraft(note.path, note.content);
     diskSnapshots.set(id, note.content);
     pendingHistorySource.delete(id);
     await recordHistorySafely(id, previousContent, note.content, historySource);
+    saveCurrentStartupCache();
     return true;
   } catch (error) {
+    // Retain failed cloud saves for the next flush; switching/reloading must not discard them.
+    if (backend instanceof GoogleDriveVault) startupEditedNoteIds.add(id);
     reportError("save note", error);
     return false;
   }
@@ -2121,6 +2367,7 @@ export async function resolveNoteConflict(
 
   if (resolution === "disk") {
     if (conflict.diskContent === null) {
+      if (backend instanceof GoogleDriveVault) backend.clearDraft(note.path);
       diskSnapshots.delete(id);
       clearNoteConflict(id);
       if (note.externalPath) {
@@ -2143,6 +2390,7 @@ export async function resolveNoteConflict(
       updatedAt: new Date().toISOString(),
     });
     clearNoteConflict(id);
+    if (backend instanceof GoogleDriveVault) backend.clearDraft(note.path);
     await recordHistorySafely(id, previousContent, diskContent, "external");
     return true;
   }
@@ -3196,6 +3444,12 @@ export async function revealNoteAttachment(
 
 const IMAGE_DIR = "assets";
 
+function isNoteTypeDirectory(dir: string): boolean {
+  return ![IMAGE_DIR, "_attachments"].some(
+    (root) => dir === root || dir.startsWith(`${root}/`),
+  );
+}
+
 const EXT_BY_MIME: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
@@ -3711,6 +3965,19 @@ export function setNoteProperty(
   if (next !== note.content) updateNoteContent(id, next);
 }
 
+/** Adds the reverse metadata for a relation selected or created inline. */
+export function ensureReciprocalRelation(sourceId: string, targetId: string) {
+  const source = state.notes.find(note => note.id === sourceId);
+  const target = state.notes.find(note => note.id === targetId);
+  if (!source || !target) return;
+  const reverse = reciprocalRelation(source, target, state.schemas);
+  if (!reverse) return;
+  if (reverse.createDefinition) {
+    addTypeProperty(noteTypePath(target).join("/"), reverse.definition);
+  }
+  setNoteProperty(target.id, reverse.definition.name, reverse.value);
+}
+
 /** Replaces the note body from the editor, preserving frontmatter properties. */
 export function updateNoteBody(id: string, body: string) {
   const note = state.notes.find((candidate) => candidate.id === id);
@@ -3996,9 +4263,10 @@ export async function createNote(
     createdAt,
     updatedAt: createdAt,
   };
+  if (!state.hasMoreNotes) note.content = stabilizeNoteLinks(note, [...state.notes, note], state.schemas);
   try {
-    await backend.write(path, persistedContent);
-    diskSnapshots.set(note.id, persistedContent);
+    await backend.write(path, note.content);
+    diskSnapshots.set(note.id, note.content);
     if (state.isNotePaginationEnabled) {
       mobileNoteEntries.push({
         path,
@@ -4011,6 +4279,7 @@ export async function createNote(
       ? summarizeMobileEntries(mobileNoteEntries)
       : { totalNoteCount: state.totalNoteCount + 1 };
     setState({ notes: [note, ...state.notes], ...summary });
+    saveCurrentStartupCache();
   } catch (error) {
     reportError("create note", error);
     return null;

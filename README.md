@@ -32,11 +32,20 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   lists, links, tags, pasted images, keyboard-friendly formatting, and advanced
   GFM tables, including spreadsheet paste and a compact large-table editor.
 - **Connected notes** — autocomplete `[[wikilinks]]`, follow links from the
-  editor, create missing notes, and inspect backlinks grouped by note type.
+  editor, create missing notes, and inspect backlinks grouped by note type. Links and Relation
+  properties use stable `zerus-id` targets, so backlinks survive title and path
+  changes. Markdown stores readable labels as `[[zerus:<id>|Label]]`; Relation
+  values use `zerus:<id>|Label`. Existing unambiguous title links are upgraded by
+  the app. Missing or ambiguous legacy targets remain unchanged; links already
+  broken by an earlier rename need their target selected again.
 - **Structured properties** — define text, URL, number, date, checkbox, list,
   and note-relation fields. Values remain readable YAML frontmatter.
 - **Fast organization** — search and filter by type, date, and properties;
   reorder types; pin or archive notes; and use a recoverable vault-local trash.
+- **Warm note startup** — desktop and mobile keep a device-local copy of loaded
+  note bodies, make that copy usable immediately on the next launch, finish
+  warming uncached mobile notes without blocking the first screen, and reconcile
+  changed files periodically and whenever the app returns to the foreground.
 - **Projects and planning** — keep tasks and categories beside notes, link tasks
   to their supporting material, and switch between multiple registered vaults.
 - **Navigation and recovery** — work across note tabs, move backward and forward
@@ -260,3 +269,19 @@ the interface, but its vault is stored in browser local storage; use the desktop
 app when you want Zerus to work directly with files on disk.
 
 Zerus is available under the [MIT License](LICENSE).
+
+### Google Drive vaults on iOS
+
+The iOS app includes a direct Google Drive connection in vault setup, bypassing
+Drive's unsupported folder selection in Apple's Files picker. It opens an existing
+My Drive folder and reads/writes its Markdown notes and assets. An iOS Google OAuth
+client must be configured before sign-in works; see [Google Drive setup](docs/google-drive-ios.md).
+
+This initial integration requires connectivity for loading and saving. It keeps
+local recovery copies of note edits, warms previously loaded note bodies for a
+faster launch, checks for conflicting remote changes, and refreshes periodically
+while Zerus is active and whenever it returns to the foreground. It is not an
+offline or iOS system-background sync service.
+Shared drives, shortcuts, external Drive file-location mappings, and uploads above
+25 MB are not supported. Actual Google sign-in and file operations must be verified
+on an iPhone with the configured OAuth client before shipping.

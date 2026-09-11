@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-google-drive"
+description = "Enables the google_drive command without any pre-configured scope."
+commands.allow = ["google_drive"]
+
+[[permission]]
+identifier = "deny-google-drive"
+description = "Denies the google_drive command without any pre-configured scope."
+commands.deny = ["google_drive"]

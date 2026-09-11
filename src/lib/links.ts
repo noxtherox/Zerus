@@ -3,10 +3,11 @@ import { effectiveProperties, type PropertySchemas } from "@/lib/properties";
 import {
   type Note,
   getOutgoingLinkTitles,
+  findNoteByTitle,
   isArchived,
   isExternalNote,
   isTrashed,
-  noteTitle,
+  noteReferenceMatches,
   noteTypePath,
   notesOfTypeKey,
   typeKey,
@@ -54,12 +55,11 @@ export function hasRelationTo(
   target: Note,
   schemas: PropertySchemas,
 ): boolean {
-  const targetTitle = noteTitle(target).toLowerCase();
   return getOutgoingRelationTitles(
     source.content,
     noteTypePath(source),
     schemas,
-  ).some((title) => title.toLowerCase() === targetTitle);
+  ).some((title) => noteReferenceMatches(title, target));
 }
 
 /** All titles this note links to: body wikilinks plus relation properties. */
@@ -83,12 +83,6 @@ export function getBacklinksGroupedByType(
   schemas: PropertySchemas,
   includeArchived = false,
 ): Map<string, Note[]> {
-  const targetTitle = noteTitle(target).toLowerCase();
-  const targetRelationTitles = new Set(
-    getOutgoingRelationTitles(target.content, noteTypePath(target), schemas).map(
-      (title) => title.toLowerCase(),
-    ),
-  );
   const groups = new Map<string, Note[]>();
   for (const note of notes) {
     if (
@@ -99,16 +93,16 @@ export function getBacklinksGroupedByType(
     )
       continue;
     const bodyLinksToTarget = getOutgoingLinkTitles(note.content).some(
-      (title) => title.toLowerCase() === targetTitle,
+      (title) => findNoteByTitle(title, notes)?.id === target.id,
     );
     const relationLinksToTarget = getOutgoingRelationTitles(
       note.content,
       noteTypePath(note),
       schemas,
-    ).some((title) => title.toLowerCase() === targetTitle);
+    ).some((title) => findNoteByTitle(title, notes)?.id === target.id);
     const reciprocalRelation =
       relationLinksToTarget &&
-      targetRelationTitles.has(noteTitle(note).toLowerCase());
+      hasRelationTo(target, note, schemas);
     // A reciprocal relation is already shown in Properties. Keep body mentions,
     // since they provide separate context even when the two notes are related.
     if (!bodyLinksToTarget && (!relationLinksToTarget || reciprocalRelation))

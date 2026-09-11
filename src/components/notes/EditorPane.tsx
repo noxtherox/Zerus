@@ -1,3 +1,4 @@
+import { parseNoteReference } from "@/lib/wikilinks";
 import { usePdfSearch } from "@/lib/pdf-search";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -296,10 +297,10 @@ export function EditorPane({
   onNavigateBack,
   onNavigateForward,
 }: EditorPaneProps) {
-  const [showBacklinks, setShowBacklinks] = useState(false);
   const [keepPropertiesOpen, setKeepPropertiesOpen] = useState(
     loadPropertiesPanelKeepOpen,
   );
+  const [showBacklinks, setShowBacklinks] = useState(keepPropertiesOpen);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [externalImportMode, setExternalImportMode] =
     useState<ExternalImportMode>("copy");
@@ -350,11 +351,8 @@ export function EditorPane({
   const [editorReadyNoteId, setEditorReadyNoteId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (
-      previousNoteIdRef.current !== activeNoteId &&
-      !keepPropertiesOpen
-    ) {
-      setShowBacklinks(false);
+    if (previousNoteIdRef.current !== activeNoteId) {
+      setShowBacklinks(keepPropertiesOpen);
     }
     previousNoteIdRef.current = activeNoteId;
   }, [activeNoteId, keepPropertiesOpen]);
@@ -570,7 +568,9 @@ export function EditorPane({
       onOpenNote(existing.id);
       return;
     }
-    const created = await createNote(noteTypePath(note), `# ${title}\n\n`);
+    const reference = parseNoteReference(title);
+    if (reference.id !== null) return;
+    const created = await createNote(noteTypePath(note), `# ${reference.target}\n\n`);
     if (created) onOpenNote(created.id);
   };
 
@@ -700,7 +700,7 @@ export function EditorPane({
       <div
         className={cn(
           "h-full min-h-0 min-w-0 flex-1",
-          showBacklinks && expandBacklinks && "hidden",
+          backlinksPanel && expandBacklinks && "hidden",
         )}
       >
         <MarkdownEditor
@@ -1118,7 +1118,7 @@ export function EditorPane({
               direction="vertical"
               className={cn(
                 "min-h-0 min-w-0 flex-1",
-                showBacklinks && expandBacklinks && "hidden",
+                backlinksPanel && expandBacklinks && "hidden",
               )}
             >
               <ResizablePanel

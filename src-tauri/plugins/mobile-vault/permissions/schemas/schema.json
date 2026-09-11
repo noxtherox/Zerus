@@ -391,6 +391,18 @@
           "markdownDescription": "Denies the generate_cloud_ai command without any pre-configured scope."
         },
         {
+          "description": "Enables the google_drive command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-google-drive",
+          "markdownDescription": "Enables the google_drive command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the google_drive command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-google-drive",
+          "markdownDescription": "Denies the google_drive command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_file command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-file",
@@ -511,10 +523,10 @@
           "markdownDescription": "Denies the stop_speech_recognition command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`",
+          "description": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-google-drive`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`"
+          "markdownDescription": "Default permissions for the plugin\n#### This default permission set includes:\n\n- `allow-pick-vault-folder`\n- `allow-google-drive`\n- `allow-restore-vault-folder`\n- `allow-clear-vault-folder`\n- `allow-pick-external-notes`\n- `allow-pick-files`\n- `allow-pick-external-folder`\n- `allow-open-file`\n- `allow-cloud-ai-status`\n- `allow-configure-cloud-ai`\n- `allow-connect-openrouter`\n- `allow-cloud-ai-models`\n- `allow-generate-cloud-ai`\n- `allow-stop-cloud-ai`\n- `allow-start-speech-recognition`\n- `allow-speech-recognition-progress`\n- `allow-stop-speech-recognition`\n- `allow-cancel-speech-recognition`\n- `allow-device-name`"
         }
       ]
     }

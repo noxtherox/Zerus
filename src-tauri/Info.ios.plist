@@ -8,26 +8,38 @@
 			<key>CFBundleURLName</key>
 			<string>com.zerus.notes.openrouter</string>
 			<key>CFBundleURLSchemes</key>
-			<array><string>zerus</string></array>
+			<array>
+				<string>zerus</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.zerus.notes.google-drive</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.126630902143-qqq93rlgus679vplfmgtgk5upn33endl</string>
+			</array>
 		</dict>
 	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Zerus uses the microphone to dictate messages to your private on-device notes chat.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Zerus converts your speech to text on this device so you can talk to your notes chat.</string>
-	<key>UIUserInterfaceStyle</key>
-	<string>Dark</string>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<key>ZerusGoogleDriveClientID</key>
+	<string>126630902143-qqq93rlgus679vplfmgtgk5upn33endl.apps.googleusercontent.com</string>
 </dict>
 </plist>

@@ -143,6 +143,9 @@ function navigationEntriesEqual(
 
 const Index = () => {
   const vault = useVault();
+  // A full warm cache is safe to read and edit while disk reconciliation runs.
+  // Legacy metadata-only caches stay locked until their note bodies arrive.
+  const isColdRefreshing = vault.isRefreshing && vault.loadingNoteIds.size > 0;
   const tasks = useTasks();
   const taskLists = useTaskLists();
   const generalTaskListName = useGeneralTaskListName();
@@ -743,7 +746,7 @@ const Index = () => {
             isLoading={
               selectedNote ? vault.loadingNoteIds.has(selectedNote.id) : false
             }
-            isRefreshing={vault.isRefreshing}
+            isRefreshing={isColdRefreshing}
             onOpenNote={handleOpenNote}
             onOpenTask={handleOpenTask}
             onCopyExternalToVault={(id, typePath) =>
@@ -809,7 +812,7 @@ const Index = () => {
         <div
           className={cn(
             "absolute inset-y-0 left-0 w-12",
-            vault.isRefreshing && "pointer-events-none",
+            isColdRefreshing && "pointer-events-none",
           )}
         >
           <CollapsedSidebar
@@ -850,7 +853,7 @@ const Index = () => {
           <div
             className={cn(
               "h-full",
-              vault.isRefreshing && "pointer-events-none",
+              isColdRefreshing && "pointer-events-none",
             )}
           >
             <Sidebar
@@ -923,7 +926,7 @@ const Index = () => {
                       notes={notes}
                       schemas={vault.schemas}
                       config={activeTypeView}
-                      isRefreshing={vault.isRefreshing}
+                      isRefreshing={isColdRefreshing}
                       isDesktop={vault.isDesktop}
                       aiOpen={aiOpen}
                       editorOpen={expandedEditorOpen}
@@ -972,7 +975,7 @@ const Index = () => {
                       listFilters={listFilters}
                       selectedNoteId={selectedNoteId}
                       search={search}
-                      isRefreshing={vault.isRefreshing}
+                      isRefreshing={isColdRefreshing}
                       onSearchChange={setSearch}
                       onListFiltersChange={setListFilters}
                       visibleProperties={activeTypeView?.visibleProperties ?? listVisibleProperties}

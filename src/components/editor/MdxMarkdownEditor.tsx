@@ -1,3 +1,4 @@
+import { prepareNoteLinks, restoreNoteLinks, noteReferenceFromHref } from "./note-link-markdown";
 import type { PdfSearch } from "@/lib/pdf-search";
 import { keepMobileCaretVisible } from "./mobile-caret";
 import { nativeFileDropPoint } from "@/lib/native-file-drop";
@@ -109,6 +110,7 @@ interface MarkdownEditorProps {
   findContainer?: HTMLDivElement | null;
   insertTextRequest?: { id: number; text: string; at?: number } | null;
   onTextSelectionChange?: (hasSelection: boolean) => void;
+  onScrollTopChange?: (scrollTop: number) => void;
   attachments?: NoteAttachment[];
   onAttachmentAction?: (id: string, action: AttachmentAction) => void;
   onAttachmentDrop?: (paths: string[], at: number) => void;
@@ -380,6 +382,7 @@ const editorPlugins = [
 export function MarkdownEditor({
   noteId,
   initialContent,
+  onFollowLink,
   onChange,
   readOnly = false,
   autoFocus = true,
@@ -393,6 +396,7 @@ export function MarkdownEditor({
   findContainer,
   insertTextRequest = null,
   onTextSelectionChange,
+  onScrollTopChange,
   attachments = [],
   onAttachmentAction,
   onAttachmentDrop,
@@ -453,7 +457,7 @@ export function MarkdownEditor({
   useEffect(() => {
     if (consumeLocalMarkdownEcho(pendingLocalEchoes.current, initialContent)) return;
     const editor = editorRef.current;
-    const compatibleMarkdown = prepareMarkdownForMdxEditor(initialContent);
+    const compatibleMarkdown = prepareMarkdownForMdxEditor(prepareNoteLinks(initialContent));
     if (!editor || editor.getMarkdown() === compatibleMarkdown) return;
     editor.setMarkdown(compatibleMarkdown);
   }, [initialContent]);
@@ -469,7 +473,7 @@ export function MarkdownEditor({
     lastInsertRequest.current = insertTextRequest.id;
     editorRef.current?.focus(() => {
       editorRef.current?.insertMarkdown(
-        prepareMarkdownForMdxEditor(insertTextRequest.text),
+        prepareMarkdownForMdxEditor(prepareNoteLinks(insertTextRequest.text)),
       );
     });
   }, [insertTextRequest, readOnly]);
@@ -510,6 +514,13 @@ export function MarkdownEditor({
   const handleClick = (event: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (event.target as Element).closest<HTMLAnchorElement>("a");
     const href = anchor?.getAttribute("href") ?? "";
+    const reference = noteReferenceFromHref(href);
+    if (reference !== null) {
+      event.preventDefault();
+      event.stopPropagation();
+      onFollowLink(reference);
+      return;
+    }
     const attachmentId = attachmentIdFromHref(href);
     if (!anchor || !attachmentId || !onAttachmentAction) return;
     event.preventDefault();
@@ -541,6 +552,15 @@ export function MarkdownEditor({
         onKeyUp={reportSelection}
         onPointerUp={reportSelection}
         onBlur={() => onTextSelectionChange?.(false)}
+        onScrollCapture={(event) => {
+          const target = event.target;
+          if (
+            target instanceof HTMLElement &&
+            target.classList.contains("mdxeditor-root-contenteditable")
+          ) {
+            onScrollTopChange?.(target.scrollTop);
+          }
+        }}
       >
         <EditorRecoveryBoundary
           key={noteId}
@@ -552,7 +572,7 @@ export function MarkdownEditor({
           <MDXEditor
             key={noteId}
             ref={editorRef}
-            markdown={prepareMarkdownForMdxEditor(initialContent)}
+            markdown={prepareMarkdownForMdxEditor(prepareNoteLinks(initialContent))}
             plugins={editorPlugins}
             readOnly={readOnly}
             autoFocus={autoFocus}
@@ -562,7 +582,7 @@ export function MarkdownEditor({
             toMarkdownOptions={{ bullet: "-" }}
             onChange={(markdown, initialMarkdownNormalize) => {
               if (initialMarkdownNormalize) return;
-              const cleanedMarkdown = cleanMarkdownFromMdxEditor(markdown);
+              const cleanedMarkdown = restoreNoteLinks(cleanMarkdownFromMdxEditor(markdown));
               recordLocalMarkdownEcho(pendingLocalEchoes.current, cleanedMarkdown);
               onChange(cleanedMarkdown);
             }}

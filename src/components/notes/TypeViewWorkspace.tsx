@@ -1,3 +1,4 @@
+import { DateInput } from "@/components/ui/date-input";
 import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import {
   DndContext,
@@ -563,6 +564,9 @@ function PropertyEditor({
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }) {
   const value = propertyValue(note, def.name);
+  if (def.type === "date") {
+    return <DateInput aria-label={`${def.name} for ${noteTitle(note)}`} value={typeof value === "string" ? value : ""} onValueChange={(next) => onSetProperty(note.id, def.name, next || null)} className="h-8 border-transparent bg-transparent px-1 text-xs hover:border-border focus:border-border" />;
+  }
   if (def.type === "checkbox") {
     return (
       <input
@@ -589,7 +593,7 @@ function PropertyEditor({
   }
   return (
     <Input
-      type={def.type === "date" ? "date" : def.type === "number" ? "number" : "text"}
+      type={def.type === "number" ? "number" : "text"}
       value={Array.isArray(value) ? value.join(", ") : value === undefined ? "" : String(value)}
       className="h-8 border-transparent bg-transparent px-1 text-xs hover:border-border focus:border-border"
       onChange={(event) => {

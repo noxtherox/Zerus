@@ -123,3 +123,8 @@ pub(crate) async fn cancel_speech_recognition<R: Runtime>(app: AppHandle<R>) -> 
 pub(crate) async fn device_name<R: Runtime>(app: AppHandle<R>) -> Result<DeviceNameResponse> {
     app.mobile_vault().device_name()
 }
+
+#[command]
+pub(crate) async fn google_drive<R: Runtime>(app: AppHandle<R>, request: serde_json::Value) -> Result<serde_json::Value> {
+    app.mobile_vault().google_drive(request)
+}

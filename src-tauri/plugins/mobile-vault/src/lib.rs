@@ -37,6 +37,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("mobile-vault")
         .invoke_handler(tauri::generate_handler![
             commands::pick_vault_folder,
+            commands::google_drive,
             commands::restore_vault_folder,
             commands::clear_vault_folder,
             commands::pick_external_notes,

@@ -25,6 +25,10 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct MobileVault<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> MobileVault<R> {
+    pub fn google_drive(&self, request: serde_json::Value) -> crate::Result<serde_json::Value> {
+        self.0.run_mobile_plugin("googleDrive", request).map_err(Into::into)
+    }
+
     pub fn pick_vault_folder(&self) -> crate::Result<VaultLocationResponse> {
         self.0
             .run_mobile_plugin("pickVaultFolder", EmptyRequest::default())

@@ -14,6 +14,10 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
 pub struct MobileVault<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> MobileVault<R> {
+    pub fn google_drive(&self, _request: serde_json::Value) -> crate::Result<serde_json::Value> {
+        Err(crate::Error::Unavailable("Google Drive connection is available in the iOS app".into()))
+    }
+
     pub fn pick_vault_folder(&self) -> crate::Result<VaultLocationResponse> {
         Ok(VaultLocationResponse::default())
     }
