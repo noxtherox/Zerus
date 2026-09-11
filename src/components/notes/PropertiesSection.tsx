@@ -1,5 +1,4 @@
 import { DateInput } from "@/components/ui/date-input";
-import { parseNoteReference } from "@/lib/wikilinks";
 import { useState } from "react";
 import {
   Archive,
@@ -60,6 +59,7 @@ import {
   type Note,
   findNoteByTitle,
   noteReference,
+  noteReferenceLabel,
   getAllTypePaths,
   isArchived,
   noteTitle,
@@ -468,8 +468,7 @@ function RelationValueEditor({
       ? []
       : [String(value)];
   const selectedLower = new Set(titles.map((title) => {
-    const linked = findNoteByTitle(title, allNotes);
-    return (linked ? noteTitle(linked) : parseNoteReference(title).label).toLowerCase();
+    return noteReferenceLabel(title, allNotes).toLowerCase();
   }));
   const selectedIds = new Set(titles.map((title) => findNoteByTitle(title, allNotes)?.id));
 
@@ -622,7 +621,7 @@ function RelationValueEditor({
           return (
             <RelationChip
               key={title}
-              title={linkedNote ? noteTitle(linkedNote) : parseNoteReference(title).label}
+              title={noteReferenceLabel(title, allNotes)}
               note={linkedNote}
               reciprocal={
                 linkedNote

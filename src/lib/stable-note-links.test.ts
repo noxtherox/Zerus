@@ -41,6 +41,19 @@ describe("stable note references", () => {
     expect(stabilizeNoteLinks({ ...source, content }, [target], schemas)).toBe(content);
   });
 
+  it("repairs ID-only references with readable fallback labels", () => {
+    const target = note("target-id", "# Readable target");
+    const source = note(
+      "source-id",
+      '---\nRelated: "zerus:target-id"\n---\n# Source\n\n[[zerus:target-id]]',
+    );
+    const content = stabilizeNoteLinks(source, [source, target], schemas);
+    expect(getNoteProperties(content).Related).toBe(
+      "zerus:target-id|Readable target",
+    );
+    expect(content).toContain("[[zerus:target-id|Readable target]]");
+  });
+
   it("handles reciprocal ID relations without hiding a separate body backlink", () => {
     const a = note("a", '---\nRelated: "zerus:b|Old B"\n---\n# New A');
     const b = note("b", '---\nRelated: "zerus:a|Old A"\n---\n# New B');

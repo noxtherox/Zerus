@@ -1,6 +1,6 @@
 import { formatDate, useDateFormat } from "@/lib/date-format";
 import { effectivePropertyDefinitions, inferPropertyType } from "@/lib/properties";
-import { noteTypePath } from "@/lib/note-utils";
+import { noteReferenceLabel, noteTypePath } from "@/lib/note-utils";
 import { useVault } from "@/store/notes-store";
 import { badgeVariants } from "@/components/ui/badge-variants";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
@@ -23,11 +23,18 @@ export function PropertyPills({
   className?: string;
 }) {
   const dateFormat = useDateFormat();
-  const { schemas } = useVault();
+  const { notes, schemas } = useVault();
   const definitions = effectivePropertyDefinitions(noteTypePath(note), schemas);
   const label = (name: string, value: PropertyValue) => {
     const type = definitions.find(({ def }) => def.name.toLowerCase() === name.toLowerCase())?.def.type ?? inferPropertyType(value);
-    return type === "date" && typeof value === "string" ? formatDate(value, dateFormat) : propertyLabel(value);
+    if (type === "date" && typeof value === "string") return formatDate(value, dateFormat);
+    if (type === "relation") {
+      const references = Array.isArray(value) ? value : [String(value)];
+      return references.length
+        ? references.map((reference) => noteReferenceLabel(reference, notes)).join(", ")
+        : "No value";
+    }
+    return propertyLabel(value);
   };
   if (!visibleProperties.length) return null;
   const properties = getNoteProperties(note.content);

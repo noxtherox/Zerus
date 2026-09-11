@@ -797,7 +797,11 @@ fn codex_ai_status_impl() -> Result<CodexAiStatus, String> {
                 .and_then(|value| value.as_str())
                 .unwrap_or(&id)
                 .to_string();
-            Some(CloudAiModel { id, name, context_window: model.get("contextWindow").and_then(|value| value.as_u64()) })
+            Some(CloudAiModel {
+                id,
+                name,
+                context_window: model.get("contextWindow").and_then(|value| value.as_u64()),
+            })
         })
         .collect();
     Ok(CodexAiStatus {
@@ -1206,6 +1210,21 @@ fn cloud_ai_error(payload: &serde_json::Value, fallback: &str) -> String {
         .or_else(|| payload.get("message").and_then(|value| value.as_str()))
         .unwrap_or(fallback)
         .to_string()
+}
+
+fn cloud_ai_error_body(body: &str, fallback: &str) -> String {
+    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(body) {
+        return cloud_ai_error(&payload, fallback);
+    }
+    let text = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return fallback.to_string();
+    }
+    let mut text = text.chars().take(300).collect::<String>();
+    if body.chars().count() > 300 {
+        text.push_str("…");
+    }
+    text
 }
 
 fn cloud_ai_keyring_account(base_url: &str) -> String {
@@ -1877,7 +1896,10 @@ async fn cloud_ai_models(
             Some(CloudAiModel {
                 id: id.to_string(),
                 name: name.to_string(),
-                context_window: model.get("context_length").or_else(|| model.get("context_window")).and_then(|value| value.as_u64()),
+                context_window: model
+                    .get("context_length")
+                    .or_else(|| model.get("context_window"))
+                    .and_then(|value| value.as_u64()),
             })
         })
         .collect::<Vec<_>>();
@@ -1933,13 +1955,13 @@ async fn cloud_ai_chat(
             .map_err(|error| format!("Could not reach the AI provider: {error}"))?;
         let status = response.status();
         if !status.is_success() {
-            let payload = response
-                .json::<serde_json::Value>()
+            let body = response
+                .text()
                 .await
-                .map_err(|error| format!("The AI provider returned invalid JSON: {error}"))?;
+                .map_err(|error| format!("Could not read the AI provider error: {error}"))?;
             return Err(format!(
                 "Cloud AI request failed ({status}): {}",
-                cloud_ai_error(&payload, "Unknown provider error")
+                cloud_ai_error_body(&body, "Unknown provider error")
             ));
         }
         collect_chat_stream(response, &app, &stream_id, "cloud AI provider", provider).await
@@ -2269,7 +2291,7 @@ pub fn run() {
 mod tests {
     use super::{
         ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_export_skill,
-        cloud_ai_keyring_account, cloud_ai_request_body, codex_ai_prompt,
+        cloud_ai_error_body, cloud_ai_keyring_account, cloud_ai_request_body, codex_ai_prompt,
         codex_thread_start_params, codex_turn_input, copy_file_into_vault, desktop_open_paths,
         normalized_cloud_ai_base_url, remove_legacy_model_directory, skill_markdown,
         sync_opened_vault_record, write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage,
@@ -2572,6 +2594,25 @@ mod tests {
         assert_eq!(
             chat_stream_delta(&details_payload).1,
             Some("First second".to_string())
+        );
+    }
+
+    #[test]
+    fn cloud_ai_error_body_accepts_json_plain_text_and_empty_errors() {
+        assert_eq!(
+            cloud_ai_error_body(
+                r#"{"error":{"message":"Rate limited"}}"#,
+                "Unknown provider error"
+            ),
+            "Rate limited"
+        );
+        assert_eq!(
+            cloud_ai_error_body("Bad Gateway\n", "Unknown provider error"),
+            "Bad Gateway"
+        );
+        assert_eq!(
+            cloud_ai_error_body("  ", "Unknown provider error"),
+            "Unknown provider error"
         );
     }
 

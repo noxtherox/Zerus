@@ -14,6 +14,16 @@ export interface SharedAiSettings {
   updatedAt: string;
 }
 
+export function shouldApplySharedAiSettings(
+  local: AiProviderConfig,
+  shared: AiProviderConfig,
+): boolean {
+  // ChatGPT/Codex authentication and selection are device-local. A vault may
+  // still contain the last shared cloud provider, but it must not replace an
+  // explicitly selected local ChatGPT profile when the panel opens.
+  return local.provider !== "codex" && shared.provider !== "codex";
+}
+
 function isProvider(value: unknown): value is AiProvider {
   return value === "codex" || value === "openai" || value === "anthropic" ||
     value === "openrouter" || value === "compatible";

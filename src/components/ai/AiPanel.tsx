@@ -78,6 +78,7 @@ import {
 } from "@/store/notes-store";
 import {
   readSharedAiSettings,
+  shouldApplySharedAiSettings,
   writeSharedAiSettings,
 } from "@/lib/shared-ai-settings";
 import {
@@ -377,7 +378,8 @@ export function AiPanel({
     if (!backend) return;
     let active = true;
     void readSharedAiSettings(backend).then((shared) => {
-      if (!active || !shared || shared.active.provider === "codex") return;
+      const local = readAiProviderConfig();
+      if (!active || !shared || !shouldApplySharedAiSettings(local, shared.active)) return;
       saveAiProviderConfig(shared.active);
       setProviderConfig(shared.active);
     });

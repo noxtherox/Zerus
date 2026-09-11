@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { readSharedAiSettings, writeSharedAiSettings } from "./shared-ai-settings";
+import {
+  readSharedAiSettings,
+  shouldApplySharedAiSettings,
+  writeSharedAiSettings,
+} from "./shared-ai-settings";
 import type { VaultBackend } from "./vault/backend";
 
 function memoryBackend(): VaultBackend {
@@ -29,6 +33,40 @@ function memoryBackend(): VaultBackend {
 }
 
 describe("shared AI provider settings", () => {
+  it("does not replace a device-local ChatGPT selection with a shared cloud provider", () => {
+    expect(shouldApplySharedAiSettings(
+      {
+        provider: "codex",
+        baseUrl: "codex://chatgpt",
+        model: "gpt-5.4",
+        favoriteModels: [],
+      },
+      {
+        provider: "compatible",
+        baseUrl: "https://inference-api.nousresearch.com/v1",
+        model: "Hermes-4",
+        favoriteModels: [],
+      },
+    )).toBe(false);
+  });
+
+  it("continues to synchronize shared cloud provider selections", () => {
+    expect(shouldApplySharedAiSettings(
+      {
+        provider: "openai",
+        baseUrl: "https://api.openai.com/v1",
+        model: "gpt-5.4-mini",
+        favoriteModels: [],
+      },
+      {
+        provider: "compatible",
+        baseUrl: "https://models.example.test/v1",
+        model: "local-model",
+        favoriteModels: [],
+      },
+    )).toBe(true);
+  });
+
   it("preserves independent OpenRouter and compatible profiles", async () => {
     const backend = memoryBackend();
 

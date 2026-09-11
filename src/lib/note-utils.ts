@@ -233,6 +233,12 @@ export function findNoteByTitle(
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+/** Human-readable text for a legacy title or stable note reference. */
+export function noteReferenceLabel(reference: string, notes: Note[]): string {
+  const linked = findNoteByTitle(reference, notes);
+  return linked ? noteTitle(linked) : parseNoteReference(reference).label;
+}
+
 export interface TypeNode {
   name: string;
   path: string[];

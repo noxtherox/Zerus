@@ -3,6 +3,7 @@ import {
   firstNoteImage,
   getOutgoingLinkTitles,
   noteMatchesSearch,
+  noteReferenceLabel,
   noteSnippet,
   noteTitle,
   type Note,
@@ -57,5 +58,21 @@ describe("escaped Markdown in derived note text", () => {
     expect(getOutgoingLinkTitles("Open \\[\\[Project Atlas]]")).toEqual([
       "Project Atlas",
     ]);
+  });
+});
+
+describe("stable reference labels", () => {
+  it("uses the current note title for ID-only and stale-label references", () => {
+    const target = note("# Current title");
+    expect(noteReferenceLabel("zerus:note-1", [target])).toBe("Current title");
+    expect(noteReferenceLabel("zerus:note-1|Old title", [target])).toBe(
+      "Current title",
+    );
+  });
+
+  it("keeps the stored fallback when the target is unavailable", () => {
+    expect(noteReferenceLabel("zerus:missing|Readable fallback", [])).toBe(
+      "Readable fallback",
+    );
   });
 });
