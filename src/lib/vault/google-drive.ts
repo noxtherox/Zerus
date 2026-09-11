@@ -109,23 +109,31 @@ export class GoogleDriveVault implements VaultBackend {
       await this.validate();
       const next = new Map<string, DriveFile>();
       const seen = new Set<string>();
-      const walk = async (id: string, parent: string, depth: number): Promise<void> => {
-        if (depth > 64 || seen.has(id)) throw new Error("The Google Drive folder tree is too deep or contains a cycle.");
-        seen.add(id);
-        const entries = await listDriveChildren(this.transport, id);
-        for (const entry of entries) {
-          // Google allows names that cannot be represented by a filesystem vault.
-          if (entry.name.includes("/") || entry.name.includes("\\") || entry.name === "." || entry.name === "..") {
-            throw new Error(`Rename “${entry.name}” in Google Drive before opening this vault.`);
-          }
-          const path = safePath(parent ? `${parent}/${entry.name}` : entry.name);
-          if (next.has(path)) throw new Error(`Google Drive contains multiple items named “${path}”. Rename the duplicates before opening the vault.`);
-          next.set(path, entry);
-          // Shortcuts are deliberately not traversed outside the selected vault.
-          if (entry.mimeType === DRIVE_FOLDER) await walk(entry.id, path, depth + 1);
+      const folders = [{ id: this.selection.folderId, parent: "", depth: 0 }];
+      // A breadth-first scan keeps a conservative number of Drive requests in
+      // flight while avoiding one full network round trip per folder in series.
+      while (folders.length) {
+        const batch = folders.splice(0, 4);
+        for (const folder of batch) {
+          if (folder.depth > 64 || seen.has(folder.id)) throw new Error("The Google Drive folder tree is too deep or contains a cycle.");
+          seen.add(folder.id);
         }
-      };
-      await walk(this.selection.folderId, "", 0);
+        const pages = await Promise.all(batch.map((folder) => listDriveChildren(this.transport, folder.id)));
+        for (let index = 0; index < batch.length; index += 1) {
+          const folder = batch[index];
+          for (const entry of pages[index]) {
+            // Google allows names that cannot be represented by a filesystem vault.
+            if (entry.name.includes("/") || entry.name.includes("\\") || entry.name === "." || entry.name === "..") {
+              throw new Error(`Rename “${entry.name}” in Google Drive before opening this vault.`);
+            }
+            const path = safePath(folder.parent ? `${folder.parent}/${entry.name}` : entry.name);
+            if (next.has(path)) throw new Error(`Google Drive contains multiple items named “${path}”. Rename the duplicates before opening the vault.`);
+            next.set(path, entry);
+            // Shortcuts are deliberately not traversed outside the selected vault.
+            if (entry.mimeType === DRIVE_FOLDER) folders.push({ id: entry.id, parent: path, depth: folder.depth + 1 });
+          }
+        }
+      }
       this.files = next;
       this.loaded = true;
     })();

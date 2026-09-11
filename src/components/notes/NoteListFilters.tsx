@@ -41,7 +41,7 @@ import {
   propertyValueKey,
   propertyValueLabel,
 } from "@/lib/filters";
-import { type Note, noteTypePath, typeKey } from "@/lib/note-utils";
+import { noteReferenceLabel, type Note, noteTypePath, typeKey } from "@/lib/note-utils";
 import { cn } from "@/lib/utils";
 import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 
@@ -120,7 +120,13 @@ export function NoteListFilters({
         const values = Array.isArray(rawValue) ? rawValue : [rawValue];
         for (const value of values) {
           const key = propertyValueKey(value);
-          property.values.set(key, String(value) || "Empty");
+          const rawLabel = String(value);
+          property.values.set(
+            key,
+            rawLabel.startsWith("zerus:")
+              ? noteReferenceLabel(rawLabel, notes)
+              : rawLabel || "Empty",
+          );
         }
         properties.set(normalizedName, property);
       }
@@ -488,7 +494,15 @@ export function NoteListFilters({
               label={
                 property.valueKey === null
                   ? `Has ${property.name}`
-                  : `${property.name}: ${propertyValueLabel(property.valueKey)}`
+                  : `${property.name}: ${
+                      propertyOptions
+                        .find(
+                          (option) =>
+                            option.name.toLowerCase() === property.name.toLowerCase(),
+                        )
+                        ?.values.find((value) => value.value === property.valueKey)
+                        ?.label ?? propertyValueLabel(property.valueKey)
+                    }`
               }
               onRemove={() => removeProperty(property.name)}
             />

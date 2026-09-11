@@ -163,4 +163,29 @@ describe("Google Drive vault", () => {
     expect(tokens).toEqual([undefined, "next"]);
     expect(files.map((file) => file.id)).toEqual(["one", "two"]);
   });
+  it("scans independent Drive folders concurrently with a bounded request count", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const folders: DriveFile[] = Array.from({ length: 8 }, (_, index) => ({
+      id: `folder${index}`,
+      name: `Folder ${index}`,
+      parents: ["vault"],
+      mimeType: DRIVE_FOLDER,
+      version: "1",
+    }));
+    const transport: DriveTransport = async (request) => {
+      if (request.path !== "/drive/v3/files") {
+        return { status: 200, body: driveJSON({ id: "vault", name: "Zerus", mimeType: DRIVE_FOLDER, capabilities: { canAddChildren: true } }) };
+      }
+      const parent = request.query!.q.split("'")[1];
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { status: 200, body: driveJSON({ files: parent === "vault" ? folders : [] }) };
+    };
+    const vault = new GoogleDriveVault({ accountId: "account", email: "test@example.com", folderId: "vault", name: "Zerus" }, transport);
+    expect(await vault.listDirs()).toHaveLength(8);
+    expect(maximumActive).toBe(4);
+  });
 });

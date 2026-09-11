@@ -848,7 +848,7 @@ const Index = () => {
           collapsedSize={0}
           onCollapse={() => setIsSidebarCollapsed(true)}
           onExpand={() => setIsSidebarCollapsed(false)}
-          className={isFocusMode ? "invisible" : undefined}
+          className={cn("min-w-0 overflow-hidden", isFocusMode && "invisible")}
         >
           <div
             className={cn(
@@ -885,6 +885,7 @@ const Index = () => {
           order={2}
           defaultSize={WORKSPACE_DEFAULT_SIZE}
           minSize={55}
+          className="min-w-0 overflow-hidden"
         >
           <div className="flex h-full min-w-0 flex-col">
             {noteTabs.enabled && (

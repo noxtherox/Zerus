@@ -75,8 +75,10 @@ import {
   type TypeViewConfig,
 } from "@/lib/note-views";
 import {
+  findNoteByTitle,
   firstNoteImage,
   type Note,
+  noteReferenceLabel,
   noteSnippet,
   noteTitle,
 } from "@/lib/note-utils";
@@ -211,7 +213,7 @@ function NoteCard({
   return (
     <button
       type="button"
-      className="block w-full cursor-pointer rounded-lg border border-border/70 bg-zerus-surface p-3.5 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="block min-w-0 w-full cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-zerus-surface p-3.5 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       onClick={() => onOpen(note.id)}
     >
       <span className="block">
@@ -244,11 +246,13 @@ function NoteCard({
 function GalleryView({
   notes,
   groupBy,
+  groupByDef,
   visibleProperties,
   onOpen,
 }: {
   notes: Note[];
   groupBy: string | null;
+  groupByDef: PropertyDef | undefined;
   visibleProperties: string[];
   onOpen: (id: string) => void;
 }) {
@@ -284,26 +288,30 @@ function GalleryView({
 
   if (!notes.length) return <EmptyView message="No notes match this view." />;
   return (
-    <div className="space-y-8 p-6">
+    <div className="min-w-0 space-y-8 p-6">
       {groups.map(([label, groupNotes], index) => {
         const collapsed = collapsedGroups.has(label);
         const contentId = `${galleryId}-group-${index}`;
         return (
-          <section key={label}>
+          <section key={label} className="min-w-0">
             {(groupBy || groups.length > 1) && (
               <button
                 type="button"
-                className="mb-3 flex items-center gap-2 rounded-sm text-sm font-semibold hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="mb-3 flex max-w-full min-w-0 items-start gap-2 rounded-sm text-left text-sm font-semibold hover:text-foreground/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 aria-expanded={!collapsed}
                 aria-controls={contentId}
                 onClick={() => toggleGroup(label)}
               >
                 <ChevronDown
                   size={15}
-                  className={cn("transition-transform", collapsed && "-rotate-90")}
+                  className={cn("mt-0.5 shrink-0 transition-transform", collapsed && "-rotate-90")}
                 />
-                {label}
-                <span className="text-xs font-normal text-muted-foreground">
+                <span className="min-w-0 break-words">
+                  {groupByDef?.type === "relation"
+                    ? noteReferenceLabel(label, notes)
+                    : label}
+                </span>
+                <span className="shrink-0 text-xs font-normal text-muted-foreground">
                   {groupNotes.length}
                 </span>
               </button>
@@ -311,7 +319,7 @@ function GalleryView({
             {!collapsed && (
               <div
                 id={contentId}
-                className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3"
+                className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-3"
               >
                 {groupNotes.map((note) => (
                   <NoteCard key={note.id} note={note} visibleProperties={visibleProperties} onOpen={onOpen} />
@@ -337,7 +345,7 @@ function DraggableBoardCard({ note, visibleProperties, onOpen }: { note: Note; v
       ref={setNodeRef}
       style={style}
       className={cn(
-        "block w-full cursor-pointer rounded-md border bg-background p-3 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "block min-w-0 w-full cursor-pointer overflow-hidden rounded-md border bg-background p-3 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isDragging && "z-50 opacity-70",
       )}
       {...listeners}
@@ -557,13 +565,49 @@ function BoardView({
 function PropertyEditor({
   note,
   def,
+  allNotes,
+  onOpen,
   onSetProperty,
 }: {
   note: Note;
   def: PropertyDef;
+  allNotes: Note[];
+  onOpen: (id: string) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }) {
   const value = propertyValue(note, def.name);
+  if (def.type === "relation") {
+    const references = Array.isArray(value)
+      ? value
+      : value === undefined || value === ""
+        ? []
+        : [String(value)];
+    if (!references.length) {
+      return <span className="px-1 text-muted-foreground">No value</span>;
+    }
+    return (
+      <span className="flex max-w-56 flex-wrap gap-1 px-1">
+        {references.map((reference) => {
+          const related = findNoteByTitle(reference, allNotes);
+          return related ? (
+            <button
+              key={reference}
+              type="button"
+              className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 text-left hover:underline"
+              title={noteReferenceLabel(reference, allNotes)}
+              onClick={() => onOpen(related.id)}
+            >
+              {noteReferenceLabel(reference, allNotes)}
+            </button>
+          ) : (
+            <span key={reference} className="max-w-full truncate rounded bg-muted px-1.5 py-0.5" title={noteReferenceLabel(reference, allNotes)}>
+              {noteReferenceLabel(reference, allNotes)}
+            </span>
+          );
+        })}
+      </span>
+    );
+  }
   if (def.type === "date") {
     return <DateInput aria-label={`${def.name} for ${noteTitle(note)}`} value={typeof value === "string" ? value : ""} onValueChange={(next) => onSetProperty(note.id, def.name, next || null)} className="h-8 border-transparent bg-transparent px-1 text-xs hover:border-border focus:border-border" />;
   }
@@ -620,8 +664,8 @@ function TableView({
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }) {
   return (
-    <div className="p-6">
-      <div className="overflow-auto rounded-lg border border-border/70">
+    <div className="min-w-0 p-6">
+      <div className="max-w-full overflow-auto rounded-lg border border-border/70">
         <table className="w-full min-w-[720px] border-collapse text-left text-xs">
           <thead className="bg-zerus-surface text-muted-foreground">
             <tr>
@@ -652,7 +696,7 @@ function TableView({
                 </td>
                 {properties.map((property) => (
                   <td key={property.name} className="border-b border-r border-border/50 px-2 py-1 last:border-r-0">
-                    <PropertyEditor note={note} def={property} onSetProperty={onSetProperty} />
+                    <PropertyEditor note={note} def={property} allNotes={notes} onOpen={onOpen} onSetProperty={onSetProperty} />
                   </td>
                 ))}
               </tr>
@@ -701,7 +745,7 @@ function CalendarView({
   }
 
   return (
-    <div className="grid min-h-full grid-cols-[minmax(720px,1fr)_230px]">
+    <div className="grid min-h-full min-w-[950px] grid-cols-[minmax(720px,1fr)_230px]">
       <div className="p-6 pr-4">
         <h2 className="mb-4 text-sm font-semibold">
           {today.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
@@ -844,10 +888,10 @@ export function TypeViewWorkspace({
   }
 
   return (
-    <div className={cn("flex h-full min-w-0 flex-col bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}>
-      <header className="shrink-0 border-b border-border/60">
-        <div className="flex items-center gap-2 px-4 py-3">
-          <Breadcrumb className="mr-auto min-w-0">
+    <div className={cn("flex h-full min-w-0 flex-col overflow-hidden bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}>
+      <header className="min-w-0 shrink-0 border-b border-border/60">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-3">
+          <Breadcrumb className="min-w-40 flex-1">
             <BreadcrumbList className="flex-nowrap gap-1.5 overflow-hidden text-base sm:gap-1.5">
               {typeParentPath.map((segment, index) => (
                 <Fragment key={typePath.slice(0, index + 1).join("/")}>
@@ -866,7 +910,7 @@ export function TypeViewWorkspace({
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
-          <div className="relative w-52">
+          <div className="relative w-52 min-w-40 max-w-full shrink">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this view…" className="h-8 bg-zerus-surface pl-8 text-xs" />
           </div>
@@ -901,7 +945,7 @@ export function TypeViewWorkspace({
             <Plus size={15} /> New
           </Button>
         </div>
-        <div className="flex min-h-10 items-center gap-3 border-t border-border/40 px-4">
+        <div className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-4 py-1">
           <TypeViewSwitcher
             typeName={typeName}
             mode={config.mode}
@@ -946,8 +990,8 @@ export function TypeViewWorkspace({
           </span>
         </div>
       </header>
-      <main className="min-h-0 flex-1 overflow-auto">
-        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
+      <main className="min-h-0 min-w-0 w-full flex-1 overflow-auto">
+        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} groupByDef={activeGroupProperty} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
         {config.mode === "board" && (
           <BoardView
             notes={filteredNotes}

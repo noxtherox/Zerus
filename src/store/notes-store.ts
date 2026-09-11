@@ -76,6 +76,7 @@ import { BrowserVault } from "@/lib/vault/browser";
 import { DesktopVault } from "@/lib/vault/desktop";
 import { GoogleDriveVault } from "@/lib/vault/google-drive";
 import { savedDriveVault, saveDriveVault, type DriveVaultSelection } from "@/lib/google-drive";
+import { hasLargeStartupCache, readLargeStartupCache, writeLargeStartupCache } from "@/lib/startup-cache";
 import { MobileFolderVault, MobileVault } from "@/lib/vault/mobile";
 import {
   clearMobileVaultFolder,
@@ -775,6 +776,7 @@ interface StartupCachedNote {
 
 interface StartupVaultCache {
   version: 1;
+  savedAt?: number;
   location: string;
   notes: StartupCachedNote[];
   extraTypes: string[][];
@@ -788,24 +790,27 @@ function startupCacheKey(location: string): string {
   return `${STARTUP_CACHE_KEY_PREFIX}${location}`;
 }
 
-function loadStartupCache(location: string): StartupVaultCache | null {
+function validStartupCache(value: unknown, location: string): value is StartupVaultCache {
+  if (!value || typeof value !== "object") return false;
+  const parsed = value as Partial<StartupVaultCache>;
+  return parsed.version === 1 && parsed.location === location && Array.isArray(parsed.notes) && Array.isArray(parsed.extraTypes);
+}
+
+async function loadStartupCache(location: string): Promise<StartupVaultCache | null> {
+  let local: StartupVaultCache | null = null;
   try {
-    const parsed = JSON.parse(
+    const parsed: unknown = JSON.parse(
       localStorage.getItem(startupCacheKey(location)) ?? "null",
-    ) as StartupVaultCache | null;
-    if (
-      !parsed ||
-      parsed.version !== 1 ||
-      parsed.location !== location ||
-      !Array.isArray(parsed.notes) ||
-      !Array.isArray(parsed.extraTypes)
-    ) {
-      return null;
-    }
-    return parsed;
+    );
+    if (validStartupCache(parsed, location)) local = parsed;
   } catch {
-    return null;
+    // The small fallback cache is optional.
   }
+  const large = await readLargeStartupCache<StartupVaultCache>(startupCacheKey(location));
+  const persistent = validStartupCache(large, location) ? large : null;
+  if (!persistent) return local;
+  if (!local) return persistent;
+  return (persistent.savedAt ?? 0) >= (local.savedAt ?? 0) ? persistent : local;
 }
 
 function cachedNotePlaceholder(note: StartupCachedNote): Note {
@@ -848,6 +853,7 @@ function saveStartupCache(
     });
   const cache: StartupVaultCache = {
     version: 1,
+    savedAt: Date.now(),
     location,
     notes: cachedNotes,
     extraTypes,
@@ -856,8 +862,17 @@ function saveStartupCache(
     typeViews,
     fileLocations,
   };
+  if (hasLargeStartupCache()) {
+    void writeLargeStartupCache(startupCacheKey(location), cache).catch(() => undefined);
+  }
   try {
-    localStorage.setItem(startupCacheKey(location), JSON.stringify(cache));
+    // Keep a compact fallback for environments where IndexedDB later becomes
+    // unavailable. Full note bodies live in IndexedDB and do not hit the much
+    // smaller localStorage quota.
+    const fallback = hasLargeStartupCache()
+      ? { ...cache, notes: cache.notes.map(({ content: _content, ...note }) => note) }
+      : cache;
+    localStorage.setItem(startupCacheKey(location), JSON.stringify(fallback));
   } catch {
     // The startup index is an optional speed-up and can always be rebuilt.
   }
@@ -1002,7 +1017,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const cacheIdentity = vaultCacheIdentity(nextBackend);
     const startupCache = nextBackend.kind === "browser"
       ? null
-      : loadStartupCache(cacheIdentity);
+      : await loadStartupCache(cacheIdentity);
     if (startupCache) {
       const cachedNotes = startupCache.notes.map(cachedNotePlaceholder);
       setState({
@@ -1099,14 +1114,15 @@ async function loadVault(nextBackend: VaultBackend) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
     }
     const driveDrafts = nextBackend instanceof GoogleDriveVault ? nextBackend.drafts() : {};
+    const cachedNotesByPath = new Map(
+      startupCache?.notes.map((note) => [note.path, note] as const) ?? [],
+    );
     const cachedFiles = canPage
       ? mobileNoteEntries.flatMap((entry) => {
-          const cached = startupCache?.notes.find(
-            (note) =>
-              note.path === entry.path &&
-              note.updatedAt === entry.updatedAt &&
-              note.content !== undefined,
-          );
+          const candidate = cachedNotesByPath.get(entry.path);
+          const cached = candidate?.updatedAt === entry.updatedAt && candidate.content !== undefined
+            ? candidate
+            : undefined;
           return cached
             ? [{
                 path: entry.path,
