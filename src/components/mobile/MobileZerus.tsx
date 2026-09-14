@@ -115,6 +115,7 @@ import {
   saveNoteTypeOrder,
 } from "@/lib/note-preferences";
 import {
+  blocksMobileNoteSwipe,
   horizontalSwipeDirection,
   noteHeaderCollapseProgress,
   shouldDismissBottomSheet,
@@ -969,9 +970,7 @@ function NoteView({
     if (isSettling) return;
     if (
       event.target instanceof Element &&
-      event.target.closest(
-        "input, textarea, select, button, [contenteditable]",
-      )
+      blocksMobileNoteSwipe(event.target)
     ) {
       touchStart.current = null;
       return;
@@ -1070,6 +1069,7 @@ function NoteView({
         "--mobile-note-header-bg-opacity": "0",
         "--mobile-note-header-border-opacity": "0",
         "--mobile-note-button-bg-opacity": "0.08",
+        touchAction: "pan-y",
       } as CSSProperties}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}

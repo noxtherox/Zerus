@@ -32,6 +32,14 @@ export interface TypeViewConfig {
 
 export type TypeViewConfigs = Record<string, TypeViewConfig>;
 
+export interface SavedTypeView {
+  id: string;
+  name: string;
+  config: TypeViewConfig;
+}
+
+export type SavedTypeViews = Record<string, SavedTypeView[]>;
+
 export function defaultTypeViewConfig(): TypeViewConfig {
   return {
     mode: "list",
@@ -180,6 +188,38 @@ export function normalizeTypeViewConfigs(value: unknown): TypeViewConfigs {
     configs[normalizedKey] = normalizeTypeViewConfig(config);
   }
   return configs;
+}
+
+export function normalizeSavedTypeViews(value: unknown): SavedTypeViews {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const savedViews: SavedTypeViews = {};
+  for (const [key, entries] of Object.entries(value)) {
+    const normalizedKey = key
+      .split("/")
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .join("/");
+    if (!normalizedKey || !Array.isArray(entries)) continue;
+    const seenIds = new Set<string>();
+    const normalized = entries.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const candidate = entry as Partial<SavedTypeView>;
+      const id = typeof candidate.id === "string" ? candidate.id.trim() : "";
+      const name = typeof candidate.name === "string" ? candidate.name.trim() : "";
+      if (!id || !name || seenIds.has(id)) return [];
+      seenIds.add(id);
+      return [{ id, name, config: normalizeTypeViewConfig(candidate.config) }];
+    });
+    if (normalized.length) savedViews[normalizedKey] = normalized;
+  }
+  return savedViews;
+}
+
+export function sameTypeViewConfig(
+  left: TypeViewConfig,
+  right: TypeViewConfig,
+): boolean {
+  return JSON.stringify(normalizeTypeViewConfig(left)) === JSON.stringify(normalizeTypeViewConfig(right));
 }
 
 export function typeViewConfigFor(

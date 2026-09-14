@@ -7,6 +7,18 @@ interface SwipePoint {
   y: number;
 }
 
+const MOBILE_NOTE_SWIPE_BLOCKED_SELECTOR =
+  "input, textarea, select, button, [data-mobile-swipe-ignore]";
+
+/**
+ * Keeps note-level navigation gestures away from controls without excluding the
+ * contenteditable editor itself. Horizontal swipes in the note body should be
+ * available for navigation while vertical movement remains native scrolling.
+ */
+export function blocksMobileNoteSwipe(target: Element): boolean {
+  return Boolean(target.closest(MOBILE_NOTE_SWIPE_BLOCKED_SELECTOR));
+}
+
 /**
  * Recognises an intentional horizontal swipe while rejecting ordinary vertical
  * scrolling and small taps. Kept separate from React so the gesture thresholds

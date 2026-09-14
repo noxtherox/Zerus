@@ -19,6 +19,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   Calendar,
+  Bookmark,
   CheckCircle2,
   ChevronDown,
   FileText,
@@ -72,7 +73,9 @@ import {
   propertyGroupLabels,
   reconcileBoardColumnOrder,
   type NoteViewMode,
+  type SavedTypeView,
   type TypeViewConfig,
+  sameTypeViewConfig,
 } from "@/lib/note-views";
 import {
   findNoteByTitle,
@@ -84,6 +87,14 @@ import {
 } from "@/lib/note-utils";
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const NO_PROPERTY = "__none__";
 const NO_VALUE = "__no_value__";
@@ -114,74 +125,168 @@ function propertyValue(note: Note, propertyName: string): PropertyValue | undefi
 
 export function TypeViewSwitcher({
   typeName,
-  mode,
+  config,
+  savedViews,
   hideSubtypeNotes,
   onChange,
+  onApplySavedView,
+  onSaveView,
   onHideSubtypeNotesChange,
 }: {
   typeName: string;
-  mode: NoteViewMode;
+  config: TypeViewConfig;
+  savedViews: SavedTypeView[];
   hideSubtypeNotes: boolean;
   onChange: (mode: NoteViewMode) => void;
+  onApplySavedView: (view: SavedTypeView) => void;
+  onSaveView: (name: string) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [viewName, setViewName] = useState("");
+  const mode = config.mode;
   const current = viewDefinition(mode);
   const CurrentIcon = current.icon;
+
+  const openSaveDialog = () => {
+    setMenuOpen(false);
+    setViewName("");
+    setSaveDialogOpen(true);
+  };
+
+  const saveView = () => {
+    const name = viewName.trim();
+    if (!name) return;
+    onSaveView(name);
+    setSaveDialogOpen(false);
+  };
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 gap-2 px-2 text-sm font-medium"
-          aria-label="Change view"
-        >
-          <CurrentIcon size={16} />
-          {current.label}
-          <ChevronDown size={14} className="text-muted-foreground" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-60 p-1.5">
-        <DropdownMenuLabel className="px-2 py-2 text-[11px] uppercase tracking-wider text-muted-foreground">
-          View for {typeName}
-        </DropdownMenuLabel>
-        {VIEW_DEFS.map(({ mode: itemMode, label, icon: Icon }) => (
-          <DropdownMenuItem
-            key={itemMode}
-            className="min-h-10 gap-3 px-2.5"
-            onSelect={() => onChange(itemMode)}
+    <>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-2 px-2 text-sm font-medium"
+            aria-label="Change view"
           >
-            <Icon size={17} className="text-muted-foreground" />
-            <span className="flex-1">{label}</span>
-            {mode === itemMode && (
-              <CheckCircle2 size={16} className="text-zerus-accent" />
-            )}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <div className="flex min-h-10 items-center gap-2 rounded-sm px-2.5 text-sm">
-          <Folder size={17} className="text-muted-foreground" />
-          <label
-            htmlFor="hide-subfolder-notes"
-            className="flex-1 cursor-pointer whitespace-nowrap"
+            <CurrentIcon size={16} />
+            {current.label}
+            <ChevronDown size={14} className="text-muted-foreground" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64 p-1.5">
+          <DropdownMenuLabel className="px-2 py-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+            View for {typeName}
+          </DropdownMenuLabel>
+          {VIEW_DEFS.map(({ mode: itemMode, label, icon: Icon }) => (
+            <DropdownMenuItem
+              key={itemMode}
+              className="min-h-10 gap-3 px-2.5"
+              onSelect={() => onChange(itemMode)}
+            >
+              <Icon size={17} className="text-muted-foreground" />
+              <span className="flex-1">{label}</span>
+              {mode === itemMode && (
+                <CheckCircle2 size={16} className="text-zerus-accent" />
+              )}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="flex items-center px-2 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
+            <span className="flex-1">Saved views</span>
+            <button
+              type="button"
+              aria-label="Save current view"
+              title="Save current view"
+              className="flex h-7 w-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={openSaveDialog}
+            >
+              <Plus size={16} />
+            </button>
+          </DropdownMenuLabel>
+          {savedViews.length ? (
+            savedViews.map((view) => {
+              const active = sameTypeViewConfig(config, view.config);
+              return (
+                <DropdownMenuItem
+                  key={view.id}
+                  className="min-h-10 gap-3 px-2.5"
+                  onSelect={() => onApplySavedView(view)}
+                >
+                  <Bookmark size={17} className="text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                  {active && <CheckCircle2 size={16} className="text-zerus-accent" />}
+                </DropdownMenuItem>
+              );
+            })
+          ) : (
+            <div className="px-2.5 py-2 text-xs text-muted-foreground">
+              Save this setup for quick switching.
+            </div>
+          )}
+          <DropdownMenuSeparator />
+          <div className="flex min-h-10 items-center gap-2 rounded-sm px-2.5 text-sm">
+            <Folder size={17} className="text-muted-foreground" />
+            <label
+              htmlFor="hide-subfolder-notes"
+              className="flex-1 cursor-pointer whitespace-nowrap"
+            >
+              Hide subfolder notes
+            </label>
+            <Switch
+              id="hide-subfolder-notes"
+              checked={hideSubtypeNotes}
+              onCheckedChange={onHideSubtypeNotesChange}
+              aria-label="Hide subfolder notes"
+              className="h-5 w-9 [&>span]:h-4 [&>span]:w-4 [&>span]:data-[state=checked]:translate-x-4"
+            />
+          </div>
+          <DropdownMenuSeparator />
+          <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-muted-foreground">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Saved for this type
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <form
+            className="grid gap-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveView();
+            }}
           >
-            Hide subfolder notes
-          </label>
-          <Switch
-            id="hide-subfolder-notes"
-            checked={hideSubtypeNotes}
-            onCheckedChange={onHideSubtypeNotesChange}
-            aria-label="Hide subfolder notes"
-            className="h-5 w-9 [&>span]:h-4 [&>span]:w-4 [&>span]:data-[state=checked]:translate-x-4"
-          />
-        </div>
-        <DropdownMenuSeparator />
-        <div className="flex items-center gap-2 px-2.5 py-2 text-xs text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          Saved for this type
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+            <DialogHeader>
+              <DialogTitle>Save current view</DialogTitle>
+              <DialogDescription>
+                Save this layout, grouping, filters, and visible properties for {typeName}.
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              autoFocus
+              value={viewName}
+              onChange={(event) => setViewName(event.target.value)}
+              placeholder="View name"
+              aria-label="View name"
+            />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setSaveDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!viewName.trim()}>
+                Save view
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -810,6 +915,7 @@ interface TypeViewWorkspaceProps {
   notes: Note[];
   schemas: PropertySchemas;
   config: TypeViewConfig;
+  savedViews: SavedTypeView[];
   isRefreshing: boolean;
   isDesktop: boolean;
   aiOpen: boolean;
@@ -820,6 +926,8 @@ interface TypeViewWorkspaceProps {
   onCreateNote: () => void;
   onToggleAi: () => void;
   onConfigChange: (patch: Partial<TypeViewConfig>) => void;
+  onApplySavedView: (view: SavedTypeView) => void;
+  onSaveView: (name: string) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }
@@ -829,6 +937,7 @@ export function TypeViewWorkspace({
   notes,
   schemas,
   config,
+  savedViews,
   isRefreshing,
   isDesktop,
   aiOpen,
@@ -839,6 +948,8 @@ export function TypeViewWorkspace({
   onCreateNote,
   onToggleAi,
   onConfigChange,
+  onApplySavedView,
+  onSaveView,
   onHideSubtypeNotesChange,
   onSetProperty,
 }: TypeViewWorkspaceProps) {
@@ -948,9 +1059,12 @@ export function TypeViewWorkspace({
         <div className="flex min-h-10 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/40 px-4 py-1">
           <TypeViewSwitcher
             typeName={typeName}
-            mode={config.mode}
+            config={config}
+            savedViews={savedViews}
             hideSubtypeNotes={hideSubtypeNotes}
             onChange={(mode) => onConfigChange({ mode })}
+            onApplySavedView={onApplySavedView}
+            onSaveView={onSaveView}
             onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
           {(config.mode === "gallery" || config.mode === "board") && (

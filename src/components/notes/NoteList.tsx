@@ -70,7 +70,7 @@ import {
 import { NoteListFilters } from "./NoteListFilters";
 import { TypeViewSwitcher } from "./TypeViewWorkspace";
 import { PropertyPills } from "./PropertyPills";
-import type { NoteViewMode } from "@/lib/note-views";
+import type { SavedTypeView, TypeViewConfig } from "@/lib/note-views";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import { AddLinkDialog } from "./AddLinkDialog";
@@ -78,9 +78,10 @@ import {
   fileManagerName,
   primaryModifierLabel,
 } from "@/lib/desktop-platform";
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 
-const INITIAL_NOTE_COUNT = 100;
-const NOTE_LOAD_INCREMENT = 50;
+const INITIAL_NOTE_COUNT = 40;
+const NOTE_LOAD_INCREMENT = 30;
 
 function formatNoteDate(iso: string): string {
   const date = new Date(iso);
@@ -108,8 +109,11 @@ interface NoteListProps {
   onCreateFile: () => void;
   onCreateLink: (url: string) => Promise<void>;
   onOpenExternalNotes: () => void;
-  viewMode?: NoteViewMode;
-  onViewModeChange?: (mode: NoteViewMode) => void;
+  viewConfig?: TypeViewConfig;
+  savedViews: SavedTypeView[];
+  onViewModeChange?: (mode: TypeViewConfig["mode"]) => void;
+  onApplySavedView: (view: SavedTypeView) => void;
+  onSaveView: (name: string) => void;
   hideSubtypeNotes: boolean;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
 }
@@ -133,8 +137,11 @@ export function NoteList({
   onCreateFile,
   onCreateLink,
   onOpenExternalNotes,
-  viewMode,
+  viewConfig,
+  savedViews,
   onViewModeChange,
+  onApplySavedView,
+  onSaveView,
   hideSubtypeNotes,
   onHideSubtypeNotesChange,
 }: NoteListProps) {
@@ -206,12 +213,15 @@ export function NoteList({
         )}
       >
         <span className="flex-1 truncate text-sm font-semibold">{heading}</span>
-        {filter.kind === "type" && viewMode && onViewModeChange && (
+        {filter.kind === "type" && viewConfig && onViewModeChange && (
           <TypeViewSwitcher
             typeName={heading}
-            mode={viewMode}
+            config={viewConfig}
+            savedViews={savedViews}
             hideSubtypeNotes={hideSubtypeNotes}
             onChange={onViewModeChange}
+            onApplySavedView={onApplySavedView}
+            onSaveView={onSaveView}
             onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
         )}
@@ -372,11 +382,11 @@ export function NoteList({
               <ContextMenuTrigger asChild disabled={isRefreshing}>
                 <button
                   onClick={() => onSelectNote(note.id)}
-                  onAuxClick={(event) => {
-                    if (event.button !== 1) return;
-                    event.preventDefault();
-                    onOpenNoteInNewTab(note.id);
-                  }}
+                  onMouseDown={(event) =>
+                    handleMiddleMouseDown(event, () =>
+                      onOpenNoteInNewTab(note.id),
+                    )
+                  }
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     note.id === selectedNoteId

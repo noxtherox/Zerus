@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Archive,
   ArrowUpDown,
@@ -86,7 +86,9 @@ export function NoteListFilters({
   onChange,
   onVisiblePropertiesChange,
 }: NoteListFiltersProps) {
+  const [open, setOpen] = useState(false);
   const typeOptions = useMemo(() => {
+    if (!open) return [];
     const values = new Map<string, string>();
     for (const note of notes) {
       const key = typeKey(noteTypePath(note));
@@ -95,9 +97,10 @@ export function NoteListFilters({
     return [...values]
       .map(([value, label]) => ({ value, label }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [notes]);
+  }, [notes, open]);
 
   const propertyOptions = useMemo(() => {
+    if (!open) return [];
     const properties = new Map<
       string,
       { name: string; values: Map<string, string> }
@@ -140,9 +143,10 @@ export function NoteListFilters({
         })),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [notes]);
+  }, [notes, open]);
 
   const fileTypeOptions = useMemo(() => {
+    if (!open) return [];
     const extensions = new Set<string>();
     for (const note of notes) {
       const fileHub = getFileHubReference(note);
@@ -152,7 +156,7 @@ export function NoteListFilters({
       .filter(Boolean)
       .sort()
       .map((value) => ({ value, label: value.toUpperCase() }));
-  }, [notes]);
+  }, [notes, open]);
 
   const activeCount =
     (filters.date ? 1 : 0) +
@@ -174,7 +178,7 @@ export function NoteListFilters({
 
   return (
     <>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
             variant={activeCount ? "secondary" : "outline"}

@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   boardColumnOrderKey,
   defaultTypeViewConfig,
+  normalizeSavedTypeViews,
   normalizeTypeViewConfigs,
   propertyGroupLabels,
   reconcileBoardColumnOrder,
+  sameTypeViewConfig,
   typeViewConfigFor,
 } from "./note-views";
 
@@ -98,5 +100,40 @@ describe("note view configuration", () => {
     ]);
     expect(propertyGroupLabels([])).toEqual(["No value"]);
     expect(propertyGroupLabels("Epic One")).toEqual(["Epic One"]);
+  });
+
+  it("normalizes named saved views per type", () => {
+    expect(
+      normalizeSavedTypeViews({
+        " Work / Epics ": [
+          { id: " active ", name: " Active epics ", config: { mode: "board" } },
+          { id: "active", name: "Duplicate", config: { mode: "gallery" } },
+          { id: "", name: "Missing id", config: {} },
+        ],
+      }),
+    ).toEqual({
+      "Work/Epics": [
+        {
+          id: "active",
+          name: "Active epics",
+          config: { ...defaultTypeViewConfig(), mode: "board" },
+        },
+      ],
+    });
+  });
+
+  it("compares normalized view configurations", () => {
+    expect(
+      sameTypeViewConfig(
+        { ...defaultTypeViewConfig(), mode: "board", groupBy: " Status " },
+        { ...defaultTypeViewConfig(), mode: "board", groupBy: "Status" },
+      ),
+    ).toBe(true);
+    expect(
+      sameTypeViewConfig(
+        { ...defaultTypeViewConfig(), mode: "board" },
+        { ...defaultTypeViewConfig(), mode: "gallery" },
+      ),
+    ).toBe(false);
   });
 });

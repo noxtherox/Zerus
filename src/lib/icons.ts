@@ -16,6 +16,7 @@ export {
   IconArrowUp as ArrowUp,
   IconArrowsSort as ArrowUpDown,
   IconBold as Bold,
+  IconBookmark as Bookmark,
   IconRobot as Bot,
   IconCalendar as Calendar,
   IconCalendarWeek as CalendarDays,

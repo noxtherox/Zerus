@@ -1,9 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
+  blocksMobileNoteSwipe,
   horizontalSwipeDirection,
   noteHeaderCollapseProgress,
   shouldDismissBottomSheet,
 } from "./mobile-gestures";
+
+function selectorTarget(match: string): Element {
+  return {
+    closest: (selector: string) => selector.includes(match) ? {} : null,
+  } as unknown as Element;
+}
+
+describe("blocksMobileNoteSwipe", () => {
+  it("allows a swipe that starts in the editable note body", () => {
+    expect(blocksMobileNoteSwipe(selectorTarget("[contenteditable]"))).toBe(false);
+  });
+
+  it("blocks swipes that start on interactive note controls", () => {
+    expect(blocksMobileNoteSwipe(selectorTarget("button"))).toBe(true);
+    expect(blocksMobileNoteSwipe(selectorTarget("input"))).toBe(true);
+    expect(blocksMobileNoteSwipe(selectorTarget("[data-mobile-swipe-ignore]"))).toBe(true);
+  });
+});
 
 describe("horizontalSwipeDirection", () => {
   it("recognises swipes in both directions", () => {

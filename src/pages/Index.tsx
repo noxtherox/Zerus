@@ -40,6 +40,7 @@ import {
   prioritizeNoteLoad,
   refreshVaultFromDisk,
   setNoteProperty,
+  saveTypeViewPreset,
   updateTypeView,
   useVault,
 } from "@/store/notes-store";
@@ -65,7 +66,7 @@ import {
 import { DEFAULT_TYPE, typeKey } from "@/lib/note-utils";
 import type { AiKnowledgeScope } from "@/lib/ai-context";
 import { noteCreationType } from "@/lib/note-creation";
-import { typeViewConfigFor } from "@/lib/note-views";
+import { typeViewConfigFor, type SavedTypeView } from "@/lib/note-views";
 import {
   loadDefaultNoteType,
   loadHideSubtypeNotes,
@@ -101,6 +102,7 @@ import {
 
 const SIDEBAR_DEFAULT_SIZE = 15;
 const NOTE_LIST_DEFAULT_SIZE = 18;
+const NOTE_LIST_MIN_SIZE = 15;
 const EDITOR_DEFAULT_SIZE = 67;
 const WORKSPACE_DEFAULT_SIZE = NOTE_LIST_DEFAULT_SIZE + EDITOR_DEFAULT_SIZE;
 const NOTE_LIST_WORKSPACE_SIZE =
@@ -294,6 +296,9 @@ const Index = () => {
   const activeTypeView = activeTypeKey
     ? typeViewConfigFor(vault.typeViews, activeTypeKey)
     : null;
+  const activeSavedTypeViews = activeTypeKey
+    ? vault.savedTypeViews[activeTypeKey] ?? []
+    : [];
   const structuredTypeViewOpen =
     filter.kind === "type" && activeTypeView?.mode !== "list";
 
@@ -502,6 +507,15 @@ const Index = () => {
       }
       setIsFocusMode(false);
     }
+  };
+
+  const handleSaveTypeView = (name: string) => {
+    if (!activeTypeKey || !activeTypeView) return;
+    saveTypeViewPreset(activeTypeKey, name, activeTypeView);
+  };
+
+  const handleApplySavedTypeView = (view: SavedTypeView) => {
+    handleTypeViewChange(view.config);
   };
 
   const handleOpenNoteInNewTab = (id: string) => {
@@ -927,6 +941,7 @@ const Index = () => {
                       notes={notes}
                       schemas={vault.schemas}
                       config={activeTypeView}
+                      savedViews={activeSavedTypeViews}
                       isRefreshing={isColdRefreshing}
                       isDesktop={vault.isDesktop}
                       aiOpen={aiOpen}
@@ -937,6 +952,8 @@ const Index = () => {
                       onCreateNote={() => void handleCreateNote()}
                       onToggleAi={() => setAiOpen((current) => !current)}
                       onConfigChange={handleTypeViewChange}
+                      onApplySavedView={handleApplySavedTypeView}
+                      onSaveView={handleSaveTypeView}
                       onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
                       onSetProperty={setNoteProperty}
                     />
@@ -963,7 +980,7 @@ const Index = () => {
                     id="note-list"
                     order={1}
                     defaultSize={NOTE_LIST_WORKSPACE_SIZE}
-                    minSize={isFocusMode ? 0 : NOTE_LIST_WORKSPACE_SIZE}
+                    minSize={isFocusMode ? 0 : NOTE_LIST_MIN_SIZE}
                     maxSize={48}
                     collapsible={isFocusMode}
                     className={isFocusMode ? "invisible" : undefined}
@@ -990,8 +1007,11 @@ const Index = () => {
                       onCreateFile={() => void handleCreateFile()}
                       onCreateLink={handleCreateLink}
                       onOpenExternalNotes={() => void handleOpenExternalNotes()}
-                      viewMode={activeTypeView?.mode}
+                      viewConfig={activeTypeView ?? undefined}
+                      savedViews={activeSavedTypeViews}
                       onViewModeChange={(mode) => handleTypeViewChange({ mode })}
+                      onApplySavedView={handleApplySavedTypeView}
+                      onSaveView={handleSaveTypeView}
                       hideSubtypeNotes={hideSubtypeNotes}
                       onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
                     />

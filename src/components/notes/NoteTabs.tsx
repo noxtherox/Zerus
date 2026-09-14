@@ -10,6 +10,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 import { TypeIcon } from "./TypeIcon";
 
 interface NoteTabsProps {
@@ -60,11 +61,9 @@ export function NoteTabs({
                 aria-selected={active}
                 title={fullTitle}
                 onClick={() => onActivate(tab.id)}
-                onAuxClick={(event) => {
-                  if (event.button !== 1) return;
-                  event.preventDefault();
-                  onClose(tab.id);
-                }}
+                onMouseDown={(event) =>
+                  handleMiddleMouseDown(event, () => onClose(tab.id))
+                }
                 className={cn(
                   "group flex h-8 min-w-28 max-w-56 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors",
                   active

@@ -22,6 +22,25 @@ export function PropertyPills({
   visibleProperties: string[];
   className?: string;
 }) {
+  if (!visibleProperties.length) return null;
+  return (
+    <VisiblePropertyPills
+      note={note}
+      visibleProperties={visibleProperties}
+      className={className}
+    />
+  );
+}
+
+function VisiblePropertyPills({
+  note,
+  visibleProperties,
+  className,
+}: {
+  note: Note;
+  visibleProperties: string[];
+  className?: string;
+}) {
   const dateFormat = useDateFormat();
   const { notes, schemas } = useVault();
   const definitions = effectivePropertyDefinitions(noteTypePath(note), schemas);
@@ -36,7 +55,6 @@ export function PropertyPills({
     }
     return propertyLabel(value);
   };
-  if (!visibleProperties.length) return null;
   const properties = getNoteProperties(note.content);
   const entries = visibleProperties.flatMap((visibleName) => {
     const match = Object.entries(properties).find(

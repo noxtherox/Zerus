@@ -114,8 +114,11 @@ import {
 } from "@/lib/link-hubs";
 import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
 import {
+  normalizeSavedTypeViews,
   normalizeTypeViewConfig,
   normalizeTypeViewConfigs,
+  type SavedTypeView,
+  type SavedTypeViews,
   type TypeViewConfig,
   type TypeViewConfigs,
 } from "@/lib/note-views";
@@ -187,6 +190,8 @@ export interface VaultState {
   typeIcons: TypeIcons;
   /** Portable view configuration per folder-backed note type. */
   typeViews: TypeViewConfigs;
+  /** Named portable view presets per folder-backed note type. */
+  savedTypeViews: SavedTypeViews;
   /** Synced names/IDs for portable base folders. Absolute roots stay local. */
   fileLocations: FileLocationDefinition[];
   /** Notes temporarily locked while a close or move operation commits. */
@@ -236,6 +241,7 @@ let state: VaultState = {
   schemas: {},
   typeIcons: {},
   typeViews: {},
+  savedTypeViews: {},
   fileLocations: [],
   busyNoteIds: new Set(),
   loadingNoteIds: new Set(),
@@ -270,6 +276,7 @@ let desktopWatchGeneration = 0;
 let stopDesktopWatch: UnwatchFn | null = null;
 const desktopVaultChangeListeners = new Set<() => void>();
 let typeViewsWriteInFlight: Promise<void> = Promise.resolve();
+let savedTypeViewsWriteInFlight: Promise<void> = Promise.resolve();
 const pendingDesktopOpenPaths: string[] = [];
 const pendingStartupNoteLoads = new Map<string, Promise<void>>();
 const startupEditedNoteIds = new Set<string>();
@@ -721,6 +728,7 @@ async function loadSchemas(
 
 const TYPE_ICONS_PATH = ".zerus/type-icons.json";
 const TYPE_VIEWS_PATH = ".zerus/views.json";
+const SAVED_TYPE_VIEWS_PATH = ".zerus/saved-views.json";
 const FILE_LOCATIONS_PATH = ".zerus/file-locations.json";
 
 async function loadTypeIcons(fromBackend: VaultBackend): Promise<TypeIcons> {
@@ -745,6 +753,18 @@ async function loadTypeViews(
   try {
     return normalizeTypeViewConfigs(
       JSON.parse(await fromBackend.readText(TYPE_VIEWS_PATH)),
+    );
+  } catch {
+    return {};
+  }
+}
+
+async function loadSavedTypeViews(
+  fromBackend: VaultBackend,
+): Promise<SavedTypeViews> {
+  try {
+    return normalizeSavedTypeViews(
+      JSON.parse(await fromBackend.readText(SAVED_TYPE_VIEWS_PATH)),
     );
   } catch {
     return {};
@@ -783,6 +803,7 @@ interface StartupVaultCache {
   schemas: PropertySchemas;
   typeIcons: TypeIcons;
   typeViews?: TypeViewConfigs;
+  savedTypeViews?: SavedTypeViews;
   fileLocations: FileLocationDefinition[];
 }
 
@@ -832,6 +853,7 @@ function saveStartupCache(
   schemas: PropertySchemas,
   typeIcons: TypeIcons,
   typeViews: TypeViewConfigs,
+  savedTypeViews: SavedTypeViews,
   fileLocations: FileLocationDefinition[],
 ) {
   const cachedNotes = notes
@@ -860,6 +882,7 @@ function saveStartupCache(
     schemas,
     typeIcons,
     typeViews,
+    savedTypeViews,
     fileLocations,
   };
   if (hasLargeStartupCache()) {
@@ -891,6 +914,7 @@ function saveCurrentStartupCache() {
     state.schemas,
     state.typeIcons,
     state.typeViews,
+    state.savedTypeViews,
     state.fileLocations,
   );
 }
@@ -1004,6 +1028,7 @@ async function loadVault(nextBackend: VaultBackend) {
     schemas: {},
     typeIcons: {},
     typeViews: {},
+    savedTypeViews: {},
     fileLocations: [],
     busyNoteIds: new Set(),
     loadingNoteIds: new Set(),
@@ -1027,6 +1052,7 @@ async function loadVault(nextBackend: VaultBackend) {
         schemas: startupCache.schemas,
         typeIcons: startupCache.typeIcons,
         typeViews: normalizeTypeViewConfigs(startupCache.typeViews),
+        savedTypeViews: normalizeSavedTypeViews(startupCache.savedTypeViews),
         fileLocations: startupCache.fileLocations,
         loadingNoteIds: new Set(
           startupCache.notes
@@ -1088,6 +1114,7 @@ async function loadVault(nextBackend: VaultBackend) {
       dirs,
       typeIcons,
       typeViews,
+      savedTypeViews,
       fileLocations,
       historySettings,
       trashedImages,
@@ -1105,6 +1132,7 @@ async function loadVault(nextBackend: VaultBackend) {
       nextBackend.listDirs(),
       loadTypeIcons(nextBackend),
       loadTypeViews(nextBackend),
+      loadSavedTypeViews(nextBackend),
       loadFileLocations(nextBackend),
       loadHistorySettings(nextBackend),
       loadTrashedImages(nextBackend),
@@ -1253,6 +1281,7 @@ async function loadVault(nextBackend: VaultBackend) {
       schemas: recoveredSchemas,
       typeIcons,
       typeViews,
+      savedTypeViews,
       fileLocations,
       historySettings,
       trashedImages,
@@ -1276,6 +1305,7 @@ async function loadVault(nextBackend: VaultBackend) {
         recoveredSchemas,
         typeIcons,
         typeViews,
+        savedTypeViews,
         fileLocations,
       );
     }
@@ -2370,6 +2400,7 @@ async function flushAll(
     )
   );
   await typeViewsWriteInFlight;
+  await savedTypeViewsWriteInFlight;
   return saved;
 }
 
@@ -4032,6 +4063,47 @@ export function updateTypeView(
   saveTypeViews({ ...state.typeViews, [ownerKey]: next });
 }
 
+function saveNamedTypeViews(savedTypeViews: SavedTypeViews) {
+  setState({ savedTypeViews });
+  const targetBackend = backend;
+  if (!targetBackend) return;
+  savedTypeViewsWriteInFlight = savedTypeViewsWriteInFlight
+    .catch(() => undefined)
+    .then(async () => {
+      if (backend !== targetBackend) return;
+      await targetBackend.write(
+        SAVED_TYPE_VIEWS_PATH,
+        JSON.stringify(state.savedTypeViews, null, 2),
+      );
+    })
+    .catch((error) => reportError("save named type views", error));
+}
+
+/** Saves the current portable type view under a user-provided name. */
+export function saveTypeViewPreset(
+  typeKeyOrPath: string,
+  name: string,
+  config: TypeViewConfig,
+): SavedTypeView | null {
+  const ownerKey = schemaOwnerKey(typeKeyOrPath);
+  const normalizedName = name.trim();
+  if (!ownerKey || !normalizedName) return null;
+  const existing = state.savedTypeViews[ownerKey] ?? [];
+  const nameMatch = existing.find(
+    (view) => view.name.toLocaleLowerCase() === normalizedName.toLocaleLowerCase(),
+  );
+  const next: SavedTypeView = {
+    id: nameMatch?.id ?? crypto.randomUUID(),
+    name: normalizedName,
+    config: normalizeTypeViewConfig(config),
+  };
+  const views = nameMatch
+    ? existing.map((view) => (view.id === nameMatch.id ? next : view))
+    : [...existing, next];
+  saveNamedTypeViews({ ...state.savedTypeViews, [ownerKey]: views });
+  return next;
+}
+
 // ---- type icons ---------------------------------------------------------------
 
 function saveTypeIcons(typeIcons: TypeIcons) {
@@ -4149,6 +4221,15 @@ export async function deleteType(typePath: string[]): Promise<boolean> {
     }
   }
   if (viewsChanged) saveTypeViews(typeViews);
+  const savedTypeViews = { ...state.savedTypeViews };
+  let savedViewsChanged = false;
+  for (const viewKey of Object.keys(savedTypeViews)) {
+    if (viewKey === key || viewKey.startsWith(`${key}/`)) {
+      delete savedTypeViews[viewKey];
+      savedViewsChanged = true;
+    }
+  }
+  if (savedViewsChanged) saveNamedTypeViews(savedTypeViews);
   setState({
     extraTypes: state.extraTypes.filter((path) => {
       const otherKey = typeKey(path);
@@ -4247,11 +4328,23 @@ export async function renameType(
     }
   }
 
+  const savedTypeViews: SavedTypeViews = {};
+  let savedViewsChanged = false;
+  for (const [key, views] of Object.entries(state.savedTypeViews)) {
+    if (key === oldKey || key.startsWith(oldPrefix)) {
+      savedTypeViews[remapKey(key)] = views;
+      savedViewsChanged = true;
+    } else {
+      savedTypeViews[key] = views;
+    }
+  }
+
   setState({ notes, extraTypes });
   saveNoteDisplayState();
   if (schemasChanged) saveSchemas(schemas);
   if (iconsChanged) saveTypeIcons(typeIcons);
   if (viewsChanged) saveTypeViews(typeViews);
+  if (savedViewsChanged) saveNamedTypeViews(savedTypeViews);
   return true;
 }
 
