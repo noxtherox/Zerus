@@ -33,6 +33,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   GFM tables, including spreadsheet paste and a compact large-table editor.
   Typing reuses parsed links from unchanged notes and avoids reparsing the
   editor’s own Markdown on each render, reducing work during text entry.
+  Title edits also reuse unchanged link-stabilization results and skip title
+  lookups for labelled ID links, while preserving older title-based links.
 - **Connected notes** — autocomplete `[[wikilinks]]`, follow links from the
   editor, create missing notes, and inspect backlinks grouped by note type. Links and Relation
   properties use stable `zerus-id` targets, so backlinks survive title and path
