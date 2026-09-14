@@ -3,7 +3,7 @@ import { effectiveProperties, type PropertySchemas } from "@/lib/properties";
 import {
   type Note,
   getOutgoingLinkTitles,
-  findNoteByTitle,
+  createNoteResolver,
   isArchived,
   isExternalNote,
   isTrashed,
@@ -73,6 +73,17 @@ export function getOutgoingTitles(
   ];
 }
 
+// Store updates replace edited Note objects; unchanged notes retain their identity.
+// Weak keys release parsed links when a note or vault is replaced.
+const bodyLinkCache = new WeakMap<Note, { content: string; links: string[] }>();
+function cachedBodyLinks(note: Note): string[] {
+  const cached = bodyLinkCache.get(note);
+  if (cached?.content === note.content) return cached.links;
+  const links = getOutgoingLinkTitles(note.content);
+  bodyLinkCache.set(note, { content: note.content, links });
+  return links;
+}
+
 /**
  * Notes that link to `target` — via body wikilinks or relation properties —
  * grouped by each linking note's type path.
@@ -84,6 +95,7 @@ export function getBacklinksGroupedByType(
   includeArchived = false,
 ): Map<string, Note[]> {
   const groups = new Map<string, Note[]>();
+  const resolve = createNoteResolver(notes);
   for (const note of notes) {
     if (
       isExternalNote(note) ||
@@ -92,14 +104,14 @@ export function getBacklinksGroupedByType(
       note.id === target.id
     )
       continue;
-    const bodyLinksToTarget = getOutgoingLinkTitles(note.content).some(
-      (title) => findNoteByTitle(title, notes)?.id === target.id,
+    const bodyLinksToTarget = cachedBodyLinks(note).some(
+      (title) => resolve(title)?.id === target.id,
     );
     const relationLinksToTarget = getOutgoingRelationTitles(
       note.content,
       noteTypePath(note),
       schemas,
-    ).some((title) => findNoteByTitle(title, notes)?.id === target.id);
+    ).some((title) => resolve(title)?.id === target.id);
     const reciprocalRelation =
       relationLinksToTarget &&
       hasRelationTo(target, note, schemas);

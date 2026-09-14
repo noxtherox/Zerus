@@ -11,6 +11,8 @@ export function mapWikilinks(
   source: string,
   transform: (reference: string, original: string) => string,
 ): string {
+  // Avoid building a Markdown AST when there is no candidate wikilink.
+  if (!/\\?\[\\?\[([^\][]+)\]\]/.test(source)) return source;
   const tableRanges: { start: number; end: number }[] = [];
   const protectedRanges: { start: number; end: number }[] = [];
   function visit(node: RootContent) {

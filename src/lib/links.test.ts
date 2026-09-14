@@ -135,3 +135,16 @@ describe("relation picker", () => {
     ).toEqual(["active", "archived"]);
   });
 });
+
+it("refreshes backlinks after edits and ambiguous target titles", () => {
+  const target = note("a", "work/a.md", "# Target");
+  const source = note("b", "work/b.md", "# Source\n\n[[Target]]");
+  const linked = (notes: Note[]) => [...getBacklinksGroupedByType(target, notes, {}).values()].flat().map(n => n.id);
+  expect(linked([target, source])).toEqual(["b"]);
+  const duplicate = note("c", "work/c.md", "# Target");
+  expect(linked([target, source, duplicate])).toEqual([]);
+  source.content = "# Source\n\n[[zerus:a|Target]]";
+  expect(linked([target, source, duplicate])).toEqual(["b"]);
+  expect(linked([target, { ...source, content: "# Source" }])).toEqual([]);
+  expect(linked([target, { ...source, path: ".trash/b.md" }])).toEqual([]);
+});

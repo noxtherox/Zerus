@@ -220,6 +220,22 @@ export function getOutgoingLinkTitles(content: string): string[] {
   return titles;
 }
 
+/** Build once per catalogue scan, preserving ambiguous-title resolution. */
+export function createNoteResolver(notes: Note[]): (reference: string) => Note | undefined {
+  const byId = new Map<string, Note>();
+  const byTitle = new Map<string, Note | undefined>();
+  for (const note of notes) {
+    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note)) continue;
+    if (!byId.has(note.id)) byId.set(note.id, note);
+    const title = noteTitle(note).toLowerCase();
+    byTitle.set(title, byTitle.has(title) ? undefined : note);
+  }
+  return (reference) => {
+    const { target, id } = parseNoteReference(reference);
+    return id !== null ? byId.get(id) : byTitle.get(target.toLowerCase());
+  };
+}
+
 export function findNoteByTitle(
   title: string,
   notes: Note[],

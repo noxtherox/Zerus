@@ -31,6 +31,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Focused Markdown editing** — the MDXEditor/Lexical editor supports headings,
   lists, links, tags, pasted images, keyboard-friendly formatting, and advanced
   GFM tables, including spreadsheet paste and a compact large-table editor.
+  Typing reuses parsed links from unchanged notes and avoids reparsing the
+  editor’s own Markdown on each render, reducing work during text entry.
 - **Connected notes** — autocomplete `[[wikilinks]]`, follow links from the
   editor, create missing notes, and inspect backlinks grouped by note type. Links and Relation
   properties use stable `zerus-id` targets, so backlinks survive title and path

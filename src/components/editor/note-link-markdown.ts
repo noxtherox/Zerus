@@ -20,6 +20,7 @@ export function prepareNoteLinks(markdown: string): string {
 }
 
 export function restoreNoteLinks(markdown: string): string {
+  if (!markdown.includes(PREFIX)) return markdown;
   const edits: { start: number; end: number; value: string }[] = [];
   function visit(node: RootContent, inTable = false) {
     inTable ||= node.type === "table";

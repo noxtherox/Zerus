@@ -4,6 +4,7 @@ import { keepMobileCaretVisible } from "./mobile-caret";
 import { nativeFileDropPoint } from "@/lib/native-file-drop";
 import {
   createContext,
+  type ComponentProps,
   useCallback,
   useContext,
   useEffect,
@@ -380,6 +381,15 @@ const editorPlugins = [
   }),
 ];
 
+// Prepare once for each actual editor mount, including recovery retries.
+// Subsequent external edits are applied through setMarkdown below.
+function MountedMDXEditor(props: ComponentProps<typeof MDXEditor>) {
+  const [markdown] = useState(() =>
+    prepareMarkdownForMdxEditor(prepareNoteLinks(props.markdown)),
+  );
+  return <MDXEditor {...props} markdown={markdown} />;
+}
+
 export function MarkdownEditor({
   noteId,
   initialContent,
@@ -463,7 +473,7 @@ export function MarkdownEditor({
     const compatibleMarkdown = prepareMarkdownForMdxEditor(prepareNoteLinks(initialContent));
     if (!editor || editor.getMarkdown() === compatibleMarkdown) return;
     editor.setMarkdown(compatibleMarkdown);
-  }, [initialContent]);
+  }, [initialContent, noteId]);
 
   useEffect(() => {
     if (
@@ -578,10 +588,10 @@ export function MarkdownEditor({
           onChange={onChange}
           readOnly={readOnly}
         >
-          <MDXEditor
+          <MountedMDXEditor
             key={noteId}
             ref={editorRef}
-            markdown={prepareMarkdownForMdxEditor(prepareNoteLinks(initialContent))}
+            markdown={initialContent}
             plugins={editorPlugins}
             readOnly={readOnly}
             autoFocus={autoFocus}
