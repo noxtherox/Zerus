@@ -41,7 +41,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Structured properties** — define text, URL, number, date, checkbox, list,
   and note-relation fields. Values remain readable YAML frontmatter.
 - **Fast organization** — search and filter by type, date, and properties;
-  reorder types; pin or archive notes; and use a recoverable vault-local trash.
+  progressively render large All Notes lists; reorder types; pin or archive
+  notes; and use a recoverable vault-local trash.
 - **Warm note startup** — desktop and mobile keep a device-local copy of loaded
   note bodies, make that copy usable immediately on the next launch, finish
   warming uncached mobile notes without blocking the first screen, and reconcile
@@ -76,7 +77,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
-  light and dark themes, type icons, and alternative type views.
+  light and dark themes, type icons, and list, gallery, board, table, or calendar
+  type views. Save named view presets to reuse a type's layout, grouping, visible
+  properties, sorting, and filters.
 
 ## Platforms
 
