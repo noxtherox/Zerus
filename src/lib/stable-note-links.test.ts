@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as wikilinks from "./wikilinks";
 import { stabilizeNoteLinks } from "./stable-note-links";
 import { findNoteByTitle, getOutgoingLinkTitles, noteReference, type Note } from "./note-utils";
 import { getBacklinksGroupedByType } from "./links";
@@ -8,6 +9,40 @@ const note = (id: string, content: string): Note => ({ id, content, path: `work/
 const schemas = { work: [{ name: "Related", type: "relation" as const, relationMultiple: true }] };
 
 describe("stable note references", () => {
+  it("does not reparse unchanged notes or resolve labelled IDs while typing a title", () => {
+    const target = note("target", "# Original");
+    const source = note("source", "# Source\n\n[[zerus:target|Original]]");
+    const parse = vi.spyOn(wikilinks, "mapWikilinks");
+    const resolve = vi.fn(() => target);
+    try {
+      for (const title of ["N", "Ne", "New"]) {
+        const renamed = { ...target, content: `# ${title}` };
+        expect(stabilizeNoteLinks(source, [source, renamed], {}, resolve)).toBe(source.content);
+      }
+      expect(parse).toHaveBeenCalledTimes(1);
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("rechecks unresolved and ambiguous legacy links when the catalogue changes", () => {
+    const source = note("source", "# Source\n\n[[Target]]");
+    const target = note("target", "# Target");
+    expect(stabilizeNoteLinks(source, [source], {})).toBe(source.content);
+    expect(stabilizeNoteLinks(source, [source, target], {})).toContain("[[zerus:target|Target]]");
+    expect(stabilizeNoteLinks(source, [source, target, note("duplicate", "# Target")], {})).toBe(source.content);
+  });
+
+  it("invalidates cached results for content and relation schema changes", () => {
+    const target = note("target", "# Target");
+    const source = note("source", "---\nRelated: Target\n---\n# Source");
+    expect(stabilizeNoteLinks(source, [target], {})).toBe(source.content);
+    expect(getNoteProperties(stabilizeNoteLinks(source, [target], schemas)).Related).toBe("zerus:target|Target");
+    source.content += "\n\n[[Target]]";
+    expect(stabilizeNoteLinks(source, [target], schemas)).toContain("[[zerus:target|Target]]");
+  });
+
   it("keeps body and relation backlinks after renaming, moving, and reopening", () => {
     const target = note("target-id", "# Original");
     const source = note("source-id", "---\nRelated:\n  - Original\n---\n# Source\n\n[[Original|My label]]");

@@ -18,6 +18,7 @@ import {
 } from "@tauri-apps/plugin-fs";
 import {
   DEFAULT_TYPE,
+  createNoteResolver,
   MAX_TYPE_DEPTH,
   TRASH_DIR,
   type Note,
@@ -2191,10 +2192,11 @@ async function diskStillMatchesSnapshot(note: Note): Promise<boolean> {
 
 /** Persist identities and bind legacy references using the pre-rename catalogue. */
 function stabilizeVaultLinks(catalogue = state.notes) {
+  const resolve = createNoteResolver(catalogue);
   for (const note of state.notes) {
     if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note) ||
         state.loadingNoteIds.has(note.id) || state.conflicts[note.id]) continue;
-    const content = state.hasMoreNotes ? note.content : stabilizeNoteLinks(note, catalogue, state.schemas);
+    const content = state.hasMoreNotes ? note.content : stabilizeNoteLinks(note, catalogue, state.schemas, resolve);
     const identified = readZerusMetadata(content).id ? content : setZerusState(content, { id: note.id });
     if (identified !== note.content) queueNoteContent(note.id, identified);
   }
