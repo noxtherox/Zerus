@@ -1129,6 +1129,9 @@ async function loadVault(nextBackend: VaultBackend) {
       const loadedByPath = new Map(
         files.map((file) => {
           const existing = existingByPath.get(file.path);
+          if (existing && startupEditedNoteIds.has(existing.id)) {
+            return [file.path, existing] as const;
+          }
           const note = noteFromVaultFile(file, pinned, archived, existing?.id);
           diskSnapshots.set(note.id, file.content);
           return [file.path, note] as const;
@@ -1292,6 +1295,9 @@ async function loadVault(nextBackend: VaultBackend) {
         ? restoreDesktopConflicts(nextBackend.location, loadedNotes)
         : { notes: loadedNotes, conflicts: {} };
     loadedNotes = restoredSession.notes;
+    // A startup edit may have been saved while the scan still held older file
+    // contents. Preserve that verified save as the baseline for the next edit.
+    const snapshotsDuringLoad = new Map(diskSnapshots);
     diskSnapshots.clear();
     for (const note of loadedNotes) {
       const restoredConflict = restoredSession.conflicts[note.id];
@@ -1303,7 +1309,8 @@ async function loadVault(nextBackend: VaultBackend) {
       }
       if (startupEditedNoteIds.has(note.id)) {
         const diskFile = files.find((file) => file.path === note.path);
-        if (diskFile) diskSnapshots.set(note.id, diskFile.content);
+        const snapshot = snapshotsDuringLoad.get(note.id) ?? diskFile?.content;
+        if (snapshot !== undefined) diskSnapshots.set(note.id, snapshot);
       } else {
         diskSnapshots.set(note.id, note.content);
       }
@@ -2449,8 +2456,11 @@ async function flushAll(
   let saved = true;
   for (const id of [...startupEditedNoteIds]) {
     if (conflictIds.has(id)) continue;
-    if (await flushUntilIdle(id)) startupEditedNoteIds.delete(id);
-    else saved = false;
+    // The active startup scan still needs this marker to preserve the edit,
+    // even if it has already reached disk. loadVault clears it after merging.
+    if (await flushUntilIdle(id)) {
+      if (!state.isRefreshing) startupEditedNoteIds.delete(id);
+    } else saved = false;
   }
   do {
     const ids = new Set(

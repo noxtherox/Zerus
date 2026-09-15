@@ -57,6 +57,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   note bodies, make that copy usable immediately on the next launch, finish
   warming uncached mobile notes without blocking the first screen, and reconcile
   changed files periodically and whenever the app returns to the foreground.
+  Edits saved during startup keep their content and conflict-check baseline when
+  the background scan finishes, preventing false conflicts on the next edit.
   Opening a mobile note loads its full body before enabling the editor; cached
   list snippets are never treated as complete note content. Older startup indexes
   keep the note list available while bodies reload. Mobile startup offers retry

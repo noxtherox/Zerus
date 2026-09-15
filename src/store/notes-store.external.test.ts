@@ -265,6 +265,9 @@ describe("external note store workflow", () => {
       "cached-welcome",
       "# Welcome\n\nEdited safely while other notes were loading.\n",
     );
+    // Finish the save before the original startup scan is allowed to finish.
+    // Its older copy must not replace either this edit or its saved baseline.
+    expect(await flushPendingWrites()).toBe(true);
     releaseStartupRead();
     await waitFor(() =>
       getNotes().some(
@@ -272,6 +275,9 @@ describe("external note store workflow", () => {
           note.path === "inbox/Later.md" && note.content === "# Later\n",
       ),
     );
+    await waitFor(() => mocks.watch.mock.calls.length > 0);
+    expect(getNotes().find((note) => note.id === "cached-welcome")?.content)
+      .toContain("Edited safely while other notes were loading.");
     await flushPendingWrites();
     await waitFor(async () =>
       (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
