@@ -333,14 +333,17 @@ describe("external note store workflow", () => {
       vaultNote!.id,
       "# Welcome\n\nWritten in Zerus while a disk scan was running.\n",
     );
-    await flushPendingWrites();
-    await waitFor(async () =>
-      (await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).includes(
-        "Written in Zerus",
-      ),
-    );
-    releaseStaleScan();
-    await staleScan;
+    try {
+      const saved = await flushPendingWrites();
+      expect(saved, JSON.stringify({
+        note: getNotes().find((note) => note.id === vaultNote!.id),
+        conflict: getNoteConflict(vaultNote!.id),
+      })).toBe(true);
+      expect(await readFile(join(vault, "inbox", "Welcome.md"), "utf8")).toContain("Written in Zerus");
+    } finally {
+      releaseStaleScan();
+      await staleScan;
+    }
     expect(getNoteConflict(vaultNote!.id)).toBeNull();
     expect(getNotes().find((note) => note.id === vaultNote!.id)?.content).toContain(
       "Written in Zerus",
