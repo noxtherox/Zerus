@@ -35,6 +35,7 @@ import {
 } from "@lexical/table";
 import { useCellValue } from "@mdxeditor/gurx";
 import {
+  ButtonWithTooltip,
   rootEditor$,
   exportVisitors$,
   jsxComponentDescriptors$,
@@ -601,7 +602,7 @@ export function InsertElementTable() {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
+        <ButtonWithTooltip
           type="button"
           className="zerus-mdx-toolbar-action"
           title="Insert table"
@@ -609,7 +610,7 @@ export function InsertElementTable() {
           disabled={!editor}
         >
           <Table2 size={16} />
-        </button>
+        </ButtonWithTooltip>
       </PopoverTrigger>
       <PopoverContent className="zerus-table-insert">
         <strong>Insert table</strong>

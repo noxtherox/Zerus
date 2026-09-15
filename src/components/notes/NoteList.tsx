@@ -42,6 +42,7 @@ import {
   isArchived,
   isExternalNote,
   noteSnippet,
+  noteListTitle,
   noteTitle,
   noteTypePath,
   typeKey,
@@ -366,7 +367,7 @@ export function NoteList({
           </ContextMenu>
         ))}
         {visibleNotes.map((note) => {
-          const noteName = noteTitle(note);
+          const noteName = noteListTitle(note);
           const external = isExternalNote(note);
           const archived = isArchived(note);
           const fileHub = getFileHubReference(note);

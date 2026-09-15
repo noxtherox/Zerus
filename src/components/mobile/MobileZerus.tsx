@@ -1,3 +1,4 @@
+import { EditorSettings } from "@/components/notes/EditorSettings";
 import type { DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
 import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
@@ -92,6 +93,7 @@ import {
   isExternalNote,
   isTrashed,
   noteSnippet,
+  noteListTitle,
   noteTitle,
   noteTypePath,
   parseTypePath,
@@ -217,7 +219,7 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
     : typePath.join(" / ") || "Inbox";
   return {
     id: note.id,
-    title: noteTitle(note),
+    title: noteListTitle(note),
     preview: file?.name ?? (noteSnippet(note) || "Empty note"),
     imagePath: firstNoteImagePath(note),
     body: editorBody(note),
@@ -1800,7 +1802,7 @@ function MobileSettings({
           </div>
         )}
 
-        {page === "general" && <div className="pt-5"><DateFormatSetting />
+        {page === "general" && <div className="pt-5"><DateFormatSetting /><EditorSettings />
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-zerus-text/45">New notes</p>
           <div className="rounded-[16px] bg-zerus-surface p-4">
             <label htmlFor="mobile-default-note-type" className="block text-[15px] font-semibold">Default type</label>

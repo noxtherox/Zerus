@@ -69,7 +69,7 @@ export function cleanMarkdownFromMdxEditor(source: string): string {
  * their original source. Valid HTML remains formatted; malformed HTML is shown
  * literally if the editor's JSX tokenizer cannot parse it.
  */
-export function prepareMarkdownForMdxEditor(input: string): string {
+export function prepareMarkdownForMdxEditor(input: string, allowCodeBlocks = true): string {
   const source = expandAutolinks(cleanMarkdownFromMdxEditor(input));
   const tree = markdownParser.parse(source);
 
@@ -79,11 +79,14 @@ export function prepareMarkdownForMdxEditor(input: string): string {
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
       if (node.type === "code" && start !== undefined && end !== undefined &&
-          !/^[ \t]*(`{3,}|~{3,})/u.test(source.slice(start, end))) {
-        // MDX disables indented code. Fences preserve its literal contents.
+          (!allowCodeBlocks || !/^[ \t]*(`{3,}|~{3,})/u.test(source.slice(start, end)))) {
+        // Indentation in notes is prose, never an implicit request for code.
+        // Escape literal contents so punctuation cannot become Markdown or JSX.
         const prefix = source.slice(source.lastIndexOf("\n", start - 1) + 1, start)
           .replace(/[^> \t]/gu, " ");
-        const value = toMarkdown(node, { fences: true }).trimEnd().replace(/\n/gu, `\n${prefix}`);
+        const value = node.value.split("\n").map(line =>
+          line.replace(/([!-/:-@[-`{-~])/gu, "\\$1")
+        ).join(`  \n${prefix}`);
         replacements.push({ start, end, value });
       } else if ((node.type === "text" || node.type === "html") && start !== undefined && end !== undefined) {
         const original = source.slice(start, end);

@@ -188,18 +188,42 @@ describe("arbitrary note text in the formatted editor", () => {
     expect(() => parseInEditor(source)).not.toThrow();
   });
 
-  it("converts indented code to fences without changing its contents", () => {
+  it("opens indented prose without creating code blocks", () => {
     for (const source of [
       "    </s {name}\n    <dose",
       ">     </s {name}\n>     <dose",
       "- Example\n\n      </s {name}\n      <dose",
     ]) {
       const prepared = prepareMarkdownForMdxEditor(source);
-      expect(prepared).toContain("```");
-      expect(withoutPositions(parseInEditor(prepared))).toEqual(
-        withoutPositions(unified().use(remarkParse).parse(source)),
-      );
+      expect(prepared).not.toContain("```");
+      expect(JSON.stringify(parseInEditor(prepared))).not.toContain('"type":"code"');
+      expect(JSON.stringify(parseInEditor(prepared))).toContain("</s {name}");
       expect(prepareMarkdownForMdxEditor(prepared)).toBe(prepared);
     }
+  });
+});
+
+
+describe("code block insertion preferences", () => {
+  it("keeps saved fenced blocks available regardless of the new-block preference", () => {
+    const source = "```text\n**literal** {name}\n```";
+    expect(prepareMarkdownForMdxEditor(source)).toBe(source);
+  });
+
+  it("inserts fenced content as literal prose when code blocks are disabled", () => {
+    const prepared = prepareMarkdownForMdxEditor("```text\n**literal** {name}\nsecond line\n```", false);
+    const tree = parseInEditor(prepared);
+    expect(JSON.stringify(tree)).not.toContain('"type":"code"');
+    expect(JSON.stringify(tree)).not.toContain('"type":"strong"');
+    expect(JSON.stringify(tree)).toContain("**literal** {name}");
+    expect(prepareMarkdownForMdxEditor(prepared)).toBe(prepared);
+  });
+
+  it("does not interpret punctuation in indented prose as lists or headings", () => {
+    const prepared = prepareMarkdownForMdxEditor("    - item\n    # heading\n    1. number\n    + item");
+    const tree = JSON.stringify(parseInEditor(prepared));
+    expect(tree).not.toMatch(/"type":"(?:list|heading|code)"/);
+    expect(tree).toContain("- item");
+    expect(tree).toContain("# heading");
   });
 });

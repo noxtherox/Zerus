@@ -1,3 +1,7 @@
+import { codeBlockToParagraph } from "./code-block-text";
+import { loadCodeBlocksEnabled } from "@/lib/editor-preferences";
+import { ConvertibleCodeEditor, InsertEnabledCodeBlock } from "./code-block-controls";
+import { proseShortcutsPlugin } from "./prose-shortcuts";
 import { prepareNoteLinks, restoreNoteLinks, noteReferenceFromHref } from "./note-link-markdown";
 import type { PdfSearch } from "@/lib/pdf-search";
 import { keepMobileCaretVisible } from "./mobile-caret";
@@ -15,9 +19,6 @@ import {
 import { createPortal } from "react-dom";
 import { useCellValues } from "@mdxeditor/gurx";
 import {
-  $createLineBreakNode,
-  $createParagraphNode,
-  $createTextNode,
   $getNodeByKey,
   HISTORY_PUSH_TAG,
 } from "lexical";
@@ -35,7 +36,6 @@ import {
   CodeToggle,
   ConditionalContents,
   CreateLink,
-  InsertCodeBlock,
   InsertImage,
   InsertThematicBreak,
   ListsToggle,
@@ -50,7 +50,6 @@ import {
   linkDialogPlugin,
   linkPlugin,
   listsPlugin,
-  markdownShortcutPlugin,
   quotePlugin,
   searchPlugin,
   thematicBreakPlugin,
@@ -275,7 +274,7 @@ function SearchControl() {
   }
 
   return (
-    <button
+    <ButtonWithTooltip
       type="button"
       className="zerus-mdx-toolbar-action"
       title="Find in note"
@@ -283,7 +282,7 @@ function SearchControl() {
       onClick={() => { pdfSearch?.setScope("note"); onFindScopeChange?.("note"); openSearch(); }}
     >
       <Search size={16} />
-    </button>
+    </ButtonWithTooltip>
   );
 }
 
@@ -303,17 +302,11 @@ function ConvertCodeBlockToText() {
         editor.update(() => {
           const node = $getNodeByKey(nodeKey);
           if (!$isCodeBlockNode(node) || !node.isAttached()) return;
-          const paragraph = $createParagraphNode();
-          node.getCode().split("\n").forEach((line, index) => {
-            if (index > 0) paragraph.append($createLineBreakNode());
-            if (line) paragraph.append($createTextNode(line));
-          });
-          node.replace(paragraph);
-          paragraph.selectEnd();
+          codeBlockToParagraph(node).selectEnd();
         }, { tag: HISTORY_PUSH_TAG });
       }}
     >
-      Convert to text
+      Turn back into text
     </ButtonWithTooltip>
   );
 }
@@ -329,7 +322,7 @@ function ZerusToolbarControls() {
     <div className="zerus-mdx-toolbar-end">
       <SearchControl />
       {onRequestAttachments && (
-        <button
+        <ButtonWithTooltip
           type="button"
           className="zerus-mdx-toolbar-action"
           title="Attach files"
@@ -337,10 +330,10 @@ function ZerusToolbarControls() {
           onClick={onRequestAttachments}
         >
           <Paperclip size={16} />
-        </button>
+        </ButtonWithTooltip>
       )}
       {onToggleFullHeight && (
-        <button
+        <ButtonWithTooltip
           type="button"
           className="zerus-mdx-toolbar-action zerus-mdx-toolbar-action-end"
           title={isFullHeight ? "Restore preview split" : "Expand editor"}
@@ -349,7 +342,7 @@ function ZerusToolbarControls() {
           onClick={onToggleFullHeight}
         >
           {isFullHeight ? <Minimize size={16} /> : <Maximize size={16} />}
-        </button>
+        </ButtonWithTooltip>
       )}
     </div>
   );
@@ -378,9 +371,9 @@ const editorPlugins = [
   // Note properties are stripped by noteBody before reaching this editor.
   // Parsing frontmatter here mistakes a leading horizontal rule (after the
   // mobile title is removed) for YAML and can reject ordinary Markdown tables.
-  codeBlockPlugin({ defaultCodeBlockLanguage: "" }),
+  codeBlockPlugin({ defaultCodeBlockLanguage: "", codeBlockEditorDescriptors: [{ priority: 100, match: () => true, Editor: ConvertibleCodeEditor }] }),
   codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
-  markdownShortcutPlugin(),
+  proseShortcutsPlugin(),
   searchPlugin(),
   preserveEmptyParagraphsPlugin(),
   toolbarPlugin({
@@ -413,7 +406,7 @@ const editorPlugins = [
                   <InsertElementTable />
                   <InsertImage />
                   <InsertThematicBreak />
-                  <InsertCodeBlock />
+                  <InsertEnabledCodeBlock />
                 </>
               ),
             },
@@ -531,7 +524,7 @@ export function MarkdownEditor({
     lastInsertRequest.current = insertTextRequest.id;
     editorRef.current?.focus(() => {
       editorRef.current?.insertMarkdown(
-        prepareMarkdownForMdxEditor(prepareNoteLinks(insertTextRequest.text)),
+        prepareMarkdownForMdxEditor(prepareNoteLinks(insertTextRequest.text), loadCodeBlocksEnabled()),
       );
     });
   }, [insertTextRequest, readOnly]);

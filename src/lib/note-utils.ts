@@ -1,8 +1,11 @@
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import type { RootContent, Root } from "mdast";
 import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
 import { getNoteProperties, noteBody } from "@/lib/frontmatter";
 import {
   decodeMarkdownEscapes,
-  transformPreservingMarkdownEscapes,
 } from "@/lib/markdown-escapes";
 
 export const TRASH_DIR = ".trash";
@@ -182,27 +185,37 @@ export function noteTitle(note: Note): string {
   );
 }
 
+const previewParser = unified().use(remarkParse).use(remarkGfm);
+
+/** Readable text only: keep labels and code, omit formatting and image sources. */
+function markdownPreview(source: string): string {
+  const tree = previewParser.parse(
+    source.replace(WIKILINK_REGEX, (_, reference: string) => parseNoteReference(reference).label),
+  ) as Root;
+  function text(node: Root | RootContent): string {
+    if (node.type === "image" || node.type === "imageReference" ||
+        node.type === "definition" || node.type === "html") return "";
+    if (node.type === "break") return " ";
+    if ("value" in node) return node.value;
+    if ("children" in node) {
+      const separator = ["root", "blockquote", "list", "listItem", "table", "tableRow"].includes(node.type) ? " " : "";
+      return node.children.map((child) => text(child)).join(separator);
+    }
+    return "";
+  }
+  return text(tree).replace(/\s+/g, " ").trim();
+}
+
+/** Display-only title; keep noteTitle unchanged for editing and link resolution. */
+export function noteListTitle(note: Note): string {
+  const firstLine = noteBody(note.content).split("\n").find((line) => line.trim());
+  return firstLine ? markdownPreview(firstLine.trim()) || "Untitled" : fileStem(note.path) || "Untitled";
+}
+
 export function noteSnippet(note: Note): string {
-  const lines = noteBody(note.content)
-    .split("\n")
-    .map((line) => line.trim());
-  const firstIdx = lines.findIndex((line) => line.length > 0);
-  const restSource = lines
-    .slice(firstIdx + 1)
-    .filter((line) => line.length > 0)
-    .join(" ")
-    .replace(IMAGE_MD_REGEX, "")
-    .replace(WIKILINK_REGEX, (_, reference: string) => parseNoteReference(reference).label);
-  const rest = transformPreservingMarkdownEscapes(restSource, (value) =>
-    value
-      .replace(/(\*\*|__|~~)(?=\S)(.+?\S)\1/g, "$2")
-      .replace(/(`+)([^`]+?)\1/g, "$2")
-      .replace(/\*([^*]+)\*/g, "$1")
-      .replace(/_([^_]+)_/g, "$1")
-      .replace(/^(?:#{1,6}|>+)\s+/u, ""),
-  )
-    .trim();
-  return rest.slice(0, 120);
+  const lines = noteBody(note.content).split("\n");
+  const firstIdx = lines.findIndex((line) => line.trim().length > 0);
+  return markdownPreview(lines.slice(firstIdx + 1).join("\n")).slice(0, 120);
 }
 
 /** First image embedded in the note body, used by note-card previews. */

@@ -12,6 +12,13 @@
   position: relative;
 }
 
+/* Editor tooltips are portaled beside the app and must clear its stacking context. */
+.zerus-mdx-editor.mdxeditor-popup-container {
+  z-index: 60;
+  height: auto;
+  flex: none;
+}
+
 .zerus-mdx-editor {
   --basePageBg: rgb(var(--zerus-editor-bg));
   --baseBase: rgb(var(--zerus-sidebar-bg));

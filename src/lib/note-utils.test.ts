@@ -5,6 +5,7 @@ import {
   noteMatchesSearch,
   noteReferenceLabel,
   noteSnippet,
+  noteListTitle,
   noteTitle,
   type Note,
 } from "./note-utils";
@@ -74,5 +75,26 @@ describe("stable reference labels", () => {
     expect(noteReferenceLabel("zerus:missing|Readable fallback", [])).toBe(
       "Readable fallback",
     );
+  });
+});
+
+describe("plain text note list", () => {
+  it("hides formatting in titles without changing the editable title", () => {
+    const item = note("# **Filter WPQ** by *WPS* and `code` with ~~old~~ [link](https://example.com)");
+    expect(noteListTitle(item)).toBe("Filter WPQ by WPS and code with old link");
+    expect(noteTitle(item)).toContain("**Filter WPQ**");
+  });
+
+  it("keeps escaped punctuation and underscores inside words", () => {
+    expect(noteListTitle(note(String.raw`# \*literal\* file_name_here`))).toBe("*literal* file_name_here");
+  });
+
+  it("removes block syntax and link destinations from snippets", () => {
+    expect(noteSnippet(note("# Title\n\n## Heading\n\n> **Quote**\n\n- [x] Done\n- [Guide](https://example.com)\n\n![Image](assets/image.png)"))).toBe("Heading Quote Done Guide");
+  });
+
+  it("keeps wikilink labels and falls back to the filename for empty notes", () => {
+    expect(noteListTitle(note("# [[zerus:123|Project Atlas]]"))).toBe("Project Atlas");
+    expect(noteListTitle(note(""))).toBe("example");
   });
 });
