@@ -22,7 +22,7 @@ API credentials are kept using the operating system's secure credential storage 
 
 Zerus does not include advertising or a third-party behavioral analytics SDK in this Windows release. Its publisher does not receive your notes through a Zerus-hosted synchronization service. Optional AI features and external links connect to the services you choose.
 
-Microsoft Store handles acquisition and updates for the Store version. Microsoft may collect Store, device, installation, and diagnostic information under Microsoft's privacy statement, and may make app-level reports available to the publisher. The Store version disables Zerus's separate in-app update checks. WebView2, Windows, and any third-party software you use may collect their own diagnostic information according to their settings and policies.
+Microsoft Store handles acquisition and updates for the Store version. Microsoft may collect Store, device, installation, and diagnostic information under Microsoft's privacy statement, and may make app-level reports available to the publisher. The Store version checks for updates through Microsoft's Store services on launch and periodically, and can request installation after you choose Update. It does not use Zerus's separate direct-download updater. WebView2, Windows, and any third-party software you use may collect their own diagnostic information according to their settings and policies.
 
 Local application settings, logs, or recovery data may remain on your device. If you voluntarily share a log, screenshot, support report, or file with the project, the information you include is processed by the support platform and can be viewed by the publisher. Public GitHub issues are visible to everyone.
 

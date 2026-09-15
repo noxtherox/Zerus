@@ -7,6 +7,27 @@
   limitations. Add newly relevant information, update changed behavior, and
   remove obsolete claims before creating the version commit and tag.
 
+## Microsoft Store release requirement
+
+- A request to **make a new release** includes the Microsoft Store release,
+  unless the user explicitly limits the release to another platform or channel.
+  The request authorizes building, submitting, and publishing the matching Store
+  version; do not ask for separate permission for these release steps.
+- The user's **Microsoft Store notarized version** means the MSIX certified and
+  signed by Microsoft through Store publishing. Follow `docs/WINDOWS.md` for
+  Store identity, packaging, validation, and submission requirements.
+- Build and validate the release's `_store.msix` with the configured production
+  Store identity, submit it to the matching product in Microsoft Partner Center,
+  and complete certification and publication. A GitHub release containing an
+  unsigned MSIX does not fulfill this requirement.
+- Verify that Microsoft's live Store package metadata serves the intended
+  release version before reporting the Store release as complete. Account for
+  the documented app-to-MSIX version mapping.
+- If Store access or credentials are missing, report the exact missing setup
+  and the prepared package's location. If certification or publication is still
+  pending, report that status explicitly. Do not claim the full release is
+  complete while the Microsoft Store version is blocked or pending.
+
 ## Web preview handoff
 
 - After every new implementation or feature, start or refresh the web version and

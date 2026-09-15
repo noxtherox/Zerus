@@ -1,3 +1,5 @@
+mod store_updates;
+
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
@@ -2216,6 +2218,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_mobile_vault::init())
         .invoke_handler(tauri::generate_handler![
+            store_updates::check_store_update,
+            store_updates::install_store_update,
             open_file_in_default_app,
             reveal_in_file_manager,
             write_new_vault_file,

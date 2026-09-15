@@ -65,7 +65,7 @@ function main() {
   const config = JSON.parse(readFileSync(join(root, "src-tauri/tauri.conf.json"), "utf8"));
   msixVersion(config.version);
   if (process.platform !== "win32" || process.arch !== "x64") throw new Error("Build MSIX on x64 Windows with the Windows SDK installed.");
-  // Compile a separate Store frontend, with in-app updates disabled.
+  // Compile a separate frontend using Microsoft Store updates instead of the direct updater.
   execFileSync("cmd.exe", ["/d", "/s", "/c", "pnpm exec tauri build --no-bundle"], {
     cwd: root, stdio: "inherit", env: { ...process.env, VITE_DISTRIBUTION: "ms-store" },
   });

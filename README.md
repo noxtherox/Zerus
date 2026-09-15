@@ -108,14 +108,14 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 | Platform | Status | Vault storage |
 | --- | --- | --- |
 | macOS Apple Silicon | Desktop release with signed automatic updates | Local filesystem |
-| Windows 10/11 | Unsigned per-user EXE; MSIX packaging for Store submission | Local filesystem |
+| Windows 10/11 | Microsoft Store app; unsigned per-user EXE download | Local filesystem |
 | iOS 17+ | Native mobile app | Files selected through the mobile vault picker |
 | Browser | Development and interface preview | Browser local storage |
 
 Download the current macOS DMG or Windows installer from
 [GitHub Releases](https://github.com/noxtherox/zerus/releases/latest). The iOS
 build is produced and distributed separately through the App Store/TestFlight
-workflow.
+workflow. Windows users can also install [Zerus from Microsoft Store](https://apps.microsoft.com/detail/9P019ZG6HD8Q).
 
 ## How the vault works
 
@@ -190,6 +190,13 @@ Connect API key, and require both Gatekeeper acceptance and stapled
 notarization tickets before the draft release is published.
 
 ## Releases and automatic updates
+
+Microsoft Store builds check for Store updates on launch and every six hours.
+The in-app prompt offers **Update** or **Remind me later** (24 hours). Zerus saves
+pending notes before installation and blocks it on save errors or unresolved
+conflicts. Microsoft handles confirmation and installation and may close the app.
+These checks are included starting with Windows v0.3.25 and require the
+Store-installed app; they do not run in the web preview.
 
 To publish a new desktop version, start from a clean, up-to-date `main` branch
 and run the command with the intended next semantic version:

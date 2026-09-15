@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import type { Update } from "@tauri-apps/plugin-updater";
+import { checkForAppUpdate, installAppUpdate, type AppUpdate } from "./app-update";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -44,7 +44,7 @@ function deferUpdate(version: string) {
 }
 
 export function AutoUpdater() {
-  const availableUpdate = useRef<Update | null>(null);
+  const availableUpdate = useRef<AppUpdate | null>(null);
   const checkInProgress = useRef(false);
   const lastCheckAt = useRef(0);
   const [version, setVersion] = useState<string | null>(null);
@@ -76,7 +76,8 @@ export function AutoUpdater() {
     let total: number | undefined;
 
     try {
-      await update.downloadAndInstall((event) => {
+      const { flushPendingWrites } = await import("@/store/notes-store");
+      const result = await installAppUpdate(update, flushPendingWrites, (event) => {
         if (event.event === "Started") {
           total = event.data.contentLength;
           setProgress(total ? 0 : null);
@@ -91,20 +92,30 @@ export function AutoUpdater() {
           setProgress(100);
         }
       });
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
+      setInstalling(false);
+      if (result === "canceled") {
+        setProgress(null);
+        return;
+      }
+      if (update.source === "ms-store") {
+        toast.success(result === "up-to-date"
+          ? "Microsoft Store reports no pending updates."
+          : "Microsoft Store finished the update. Reopen Zerus if needed.");
+      }
+      await closeAvailableUpdate();
     } catch (error) {
-      toast.error(`Zerus ${update.version} could not be installed.`, {
+      toast.error(update.source === "ms-store" ? "The Microsoft Store update could not be installed." : `Zerus ${update.version} could not be installed.`, {
         description: String(error),
       });
       setInstalling(false);
-      await closeAvailableUpdate();
+      setProgress(null);
     }
   };
 
   useEffect(() => {
-    if (import.meta.env.VITE_DISTRIBUTION === "ms-store" || !import.meta.env.PROD || !isTauri()) return undefined;
+    if (!import.meta.env.PROD || !isTauri()) return undefined;
 
+    let disposed = false;
     const checkForUpdate = async () => {
       const now = Date.now();
       if (
@@ -119,9 +130,12 @@ export function AutoUpdater() {
       lastCheckAt.current = now;
 
       try {
-        const { check } = await import("@tauri-apps/plugin-updater");
-        const update = await check({ timeout: 30_000 });
+        const update = await checkForAppUpdate(import.meta.env.VITE_DISTRIBUTION);
         if (!update) return;
+        if (disposed) {
+          await update.close();
+          return;
+        }
 
         const deferred = loadDeferredUpdate();
         if (
@@ -154,6 +168,7 @@ export function AutoUpdater() {
     document.addEventListener("visibilitychange", checkWhenVisible);
 
     return () => {
+      disposed = true;
       window.clearInterval(interval);
       window.removeEventListener("focus", check);
       document.removeEventListener("visibilitychange", checkWhenVisible);
@@ -163,18 +178,24 @@ export function AutoUpdater() {
     };
   }, []);
 
+  const isStore = availableUpdate.current?.source === "ms-store";
+
   return (
     <AlertDialog
       open={version !== null}
       onOpenChange={(open) => {
-        if (!open) remindLater();
+        if (!open && !installing) remindLater();
       }}
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Zerus {version} is available</AlertDialogTitle>
+          <AlertDialogTitle>{isStore ? "A Zerus update is available" : `Zerus ${version} is available`}</AlertDialogTitle>
           <AlertDialogDescription>
-            {installing
+            {isStore
+              ? installing
+                ? "Saving your changes and updating through Microsoft Store… Follow any Windows prompts. Zerus may close during installation."
+                : "Microsoft Store has an update for Zerus. Your changes will be saved first. Windows may ask for confirmation and close Zerus to install it."
+              : installing
               ? progress === null
                 ? "Downloading the update…"
                 : progress < 100
@@ -200,12 +221,14 @@ export function AutoUpdater() {
             }}
           >
             {installing
-              ? progress === null
+              ? isStore
+                ? "Updating…"
+                : progress === null
                 ? "Downloading…"
                 : progress < 100
                   ? `Downloading… ${progress}%`
                   : "Installing…"
-              : "Download and install"}
+              : isStore ? "Update" : "Download and install"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

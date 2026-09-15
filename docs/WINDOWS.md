@@ -83,7 +83,8 @@ pnpm windows:build
 pnpm windows:msix
 ```
 
-The MSIX command rebuilds the app with in-app update checks disabled, stages the
+The MSIX command rebuilds the app with Microsoft Store update checks (instead
+of the direct-download updater), stages the
 native executable, DLLs, bundled CLI, and Store icons, then runs Windows SDK
 manifest validation and checks the unpacked payload against the source files.
 Output: `src-tauri/target/release/bundle/msix/Zerus_<version>_x64_store.msix`.
@@ -100,8 +101,10 @@ pnpm windows:msix --development
 
 This explicitly permits a development identity and labels the artifact
 `_development.msix`. The manual Windows workflow uses this mode when its `build_msix` input is enabled;
-normal manual and pull-request builds produce only the EXE. These
-development packages must not be submitted to the Store.
+normal manual and pull-request builds produce only the EXE. The manual Windows
+workflow can also build a production package with `store_release=true`, using
+the repository Store identity variables. Production mode takes precedence over
+the development MSIX option. Development packages must not be submitted to the Store.
 
 ### Certification and runtime checks
 
@@ -123,6 +126,27 @@ Upload the `_store.msix` from the GitHub release to the matching Partner Center
 product, complete the listing and certification requirements, then publish
 there. Store updates are managed by Microsoft Store; the EXE continues to use
 manual installer downloads.
+
+### In-app Store update checks
+
+Production Store builds check Microsoft's package update API on launch and every
+six hours, including when returning to the app after that interval. Available
+updates show an **Update** / **Remind me later** prompt; reminders are deferred
+for 24 hours. Zerus saves pending notes before asking Microsoft Store to download
+and install. Failed saves or unresolved note conflicts block installation.
+Windows can display its own confirmation and close the app during installation.
+Canceling or a failed installation leaves the prompt available to retry.
+
+These calls require a Store-installed MSIX with package identity, working Store
+services, and network access. They do not run in the web preview or development
+frontend. Store failures never fall back to the direct-download updater. Microsoft
+Store's own automatic updates continue to work independently.
+
+Before publishing this integration, test on Windows with an older Store-installed
+build containing it and a newer package available to that account (a Store flight
+can be used). Verify discovery, deferral, save/conflict handling, Windows consent
+and cancellation, successful installation, and offline/Store-service errors.
+A development MSIX or a browser mock cannot verify Store delivery.
 
 References: [Microsoft's MSIX packaging guide](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion)
 and [Tauri apps with MSIX](https://learn.microsoft.com/en-us/windows/apps/dev-tools/winapp-cli/guides/tauri).
