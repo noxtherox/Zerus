@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, normalize } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -66,7 +66,8 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
     readFile: async (path: string) => new Uint8Array(await fs.readFile(path)),
     readTextFile: async (path: string) => {
       const content = await fs.readFile(path, "utf8");
-      if (path === mocks.readTextGatePath && mocks.readTextGate) {
+      // DesktopVault can join a native Windows root with slash-separated note paths.
+      if (mocks.readTextGatePath !== null && normalize(path) === normalize(mocks.readTextGatePath) && mocks.readTextGate) {
         const gate = mocks.readTextGate;
         const onGate = mocks.onReadTextGate;
         mocks.readTextGatePath = null;

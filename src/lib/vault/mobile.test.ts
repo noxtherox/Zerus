@@ -44,7 +44,10 @@ describe("MobileFolderVault discovery", () => {
 
     expect(vault).not.toBeNull();
     expect(vault?.location).toBe("My Notes");
-    expect(vault?.absolutePath("Ideas/Existing.md")).toBe(notePath);
+    // Mobile paths follow file-URL pathname semantics, even on a Windows test host.
+    expect(vault?.absolutePath("Ideas/Existing.md")).toBe(
+      decodeURIComponent(pathToFileURL(notePath).pathname),
+    );
     expect((await vault?.loadAll())?.map((file) => file.path)).toEqual([
       "Ideas/Existing.md",
     ]);
