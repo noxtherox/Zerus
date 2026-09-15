@@ -142,8 +142,25 @@ export class GoogleDriveVault implements VaultBackend {
 
   private async lookup(path: string): Promise<DriveFile | undefined> {
     safePath(path);
-    await this.index();
-    return this.files.get(path);
+    if (this.loaded || this.files.has(path)) return this.files.get(path);
+    // Opening a known note must not wait for unrelated folders in the full scan.
+    let parent = this.selection.folderId;
+    const parts = path.split("/");
+    let item: DriveFile | undefined;
+    for (let index = 0; index < parts.length; index++) {
+      const relative = parts.slice(0, index + 1).join("/");
+      const known = this.files.get(relative);
+      const matches = (known ? [known] : await listDriveChildren(this.transport, parent, parts[index]))
+        .filter((candidate) => candidate.name === parts[index]);
+      if (matches.length > 1) throw new Error(`Google Drive contains multiple items named “${path}”. Rename the duplicates before opening the vault.`);
+      item = matches[0];
+      if (!item) return undefined;
+      if (index < parts.length - 1 && item.mimeType !== DRIVE_FOLDER) return undefined;
+      this.files.set(relative, item);
+      parent = item.id;
+    }
+    if (item) this.files.set(path, item);
+    return item;
   }
 
   async listNoteEntries(): Promise<VaultFileEntry[]> {

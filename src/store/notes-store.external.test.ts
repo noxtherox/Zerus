@@ -183,7 +183,7 @@ describe("external note store workflow", () => {
     storage.set(
       `zerus.startupCache.v1.${vault}`,
       JSON.stringify({
-        version: 1,
+        version: 2,
         location: vault,
         notes: [
           {

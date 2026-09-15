@@ -1167,10 +1167,9 @@ export function EditorPane({
           </div>
         )
       ) : linkHub ? (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <LinkHubPanel note={note} />
+        <LinkHubPanel key={`${linkHub.id}:${linkHub.url}`} note={note}>
           {editorContent}
-        </div>
+        </LinkHubPanel>
       ) : (
         editorContent
       )}

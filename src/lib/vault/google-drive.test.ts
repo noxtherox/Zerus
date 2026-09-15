@@ -52,6 +52,32 @@ function fixture() {
 
 describe("Google Drive vault", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("looks up exact names and reuses known folders when opening another note", async () => {
+    const { vault, files, content, calls } = fixture();
+    files.set("second", { id: "second", name: "Second.md", parents: ["folder"], mimeType: "text/markdown", version: "1" });
+    content.set("second", new TextEncoder().encode("# Second\nComplete body"));
+    await vault.readText("Notes/Hello.md");
+    const before = calls.length;
+    await vault.readText("Notes/Second.md");
+    const lookups = calls.slice(before).filter((request) => request.query?.q);
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0].query?.q).toContain("name = 'Second.md'");
+  });
+
+  it("opens a known note while an unrelated folder scan is stalled", async () => {
+    const source = fixture();
+    source.files.set("slow", { id: "slow", name: "Slow", parents: ["vault"], mimeType: DRIVE_FOLDER, version: "1" });
+    let release!: (value: DriveResponse) => void;
+    const stalled = new Promise<DriveResponse>((resolve) => { release = resolve; });
+    const transport: DriveTransport = (request) => request.query?.q?.includes("'slow'")
+      ? stalled : source.transport(request);
+    const vault = new GoogleDriveVault(source.vault.selection, transport);
+    const scan = vault.listNoteEntries();
+    const note = await vault.loadFiles(["Notes/Hello.md"]);
+    expect(note[0].content).toBe("# Hello\nOriginal");
+    release({ status: 200, body: driveJSON({ files: [] }) });
+    await scan;
+  });
   it("recovers pending edits per account and vault without clearing a newer edit", () => {
     const data = new Map<string, string>();
     vi.stubGlobal("localStorage", { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => data.set(key, value), removeItem: (key: string) => data.delete(key) });

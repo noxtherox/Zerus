@@ -51,6 +51,14 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   note bodies, make that copy usable immediately on the next launch, finish
   warming uncached mobile notes without blocking the first screen, and reconcile
   changed files periodically and whenever the app returns to the foreground.
+  Opening a mobile note loads its full body before enabling the editor; cached
+  list snippets are never treated as complete note content. Older startup indexes
+  keep the note list available while bodies reload. Mobile startup offers retry
+  and vault selection if storage stops responding, and Google Drive can open a
+  known note without waiting for unrelated folders to finish scanning. Recently
+  opened full notes are saved immediately in a bounded fallback cache, and slower
+  local-cache reads can fill in the list without another cloud download. Drive
+  note lookups request exact filenames and reuse known parent folders.
 - **Projects and planning** — keep tasks and categories beside notes, link tasks
   to their supporting material, and switch between multiple registered vaults.
 - **Navigation and recovery** — work across note tabs, move backward and forward
@@ -62,6 +70,10 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   folder on every device. File hubs resolve the saved relative path beneath that
   root, including Windows extended paths such as `\\?\G:\My Drive`.
 - **Saved links** — keep web links with editable notes in the Links section.
+  Choose **Render page** for a live, isolated preview above your notes, resize the
+  split, or expand the page. The choice is remembered per URL on this device.
+  Sites that block embedding or need browser features may require **Open Link**;
+  live previews require a network connection and are not offline HTML copies.
   Markdown autolinks such as `<https://example.com>` open in the formatted editor,
   including links saved by earlier versions.
 - **Search PDFs** — switch Find between a file's note and its PDF, highlight

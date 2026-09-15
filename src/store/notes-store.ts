@@ -1,3 +1,4 @@
+import { withTimeout } from "@/lib/async-timeout";
 import { reciprocalRelation } from "@/lib/reciprocal-relations";
 import { stabilizeNoteLinks } from "@/lib/stable-note-links";
 import { useSyncExternalStore } from "react";
@@ -77,7 +78,7 @@ import { BrowserVault } from "@/lib/vault/browser";
 import { DesktopVault } from "@/lib/vault/desktop";
 import { GoogleDriveVault } from "@/lib/vault/google-drive";
 import { savedDriveVault, saveDriveVault, type DriveVaultSelection } from "@/lib/google-drive";
-import { hasLargeStartupCache, readLargeStartupCache, writeLargeStartupCache } from "@/lib/startup-cache";
+import { compactStartupNotes, hasLargeStartupCache, readLargeStartupCache, writeLargeStartupCache } from "@/lib/startup-cache";
 import { MobileFolderVault, MobileVault } from "@/lib/vault/mobile";
 import {
   clearMobileVaultFolder,
@@ -415,7 +416,7 @@ export function getNotes(): Note[] {
 }
 
 export function prioritizeNoteLoad(id: string): Promise<void> {
-  if (!state.loadingNoteIds.has(id) || !(backend instanceof DesktopVault)) {
+  if (!state.loadingNoteIds.has(id) || !backend) {
     return Promise.resolve();
   }
   const existing = pendingStartupNoteLoads.get(id);
@@ -423,12 +424,21 @@ export function prioritizeNoteLoad(id: string): Promise<void> {
   const activeBackend = backend;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return Promise.resolve();
-  const operation = activeBackend
-    .loadFile(note.path)
+  const fileLoad = activeBackend instanceof DesktopVault
+    ? activeBackend.loadFile(note.path)
+    : activeBackend.loadFiles
+      ? activeBackend.loadFiles([note.path]).then((files) => {
+          const file = files.find((candidate) => candidate.path === note.path);
+          if (!file) throw new Error(`Note could not be loaded: ${note.path}`);
+          return file;
+        })
+      : activeBackend.readText(note.path).then((content) => ({ ...note, content }));
+  const operation = withTimeout(fileLoad, 30_000,
+    "The note is taking too long to load. Check your connection and retry.")
     .then((file) => {
       if (backend !== activeBackend) return;
       const current = state.notes.find((candidate) => candidate.id === id);
-      if (!current) return;
+      if (!current || !state.loadingNoteIds.has(id)) return;
       const loaded = noteFromVaultFile(
         file,
         loadPinnedPaths(),
@@ -444,6 +454,7 @@ export function prioritizeNoteLoad(id: string): Promise<void> {
         ),
         loadingNoteIds,
       });
+      saveCurrentStartupCache(id);
     })
     .catch((error) => {
       console.error("Zerus: failed to prioritize startup note", error);
@@ -796,7 +807,8 @@ interface StartupCachedNote {
 }
 
 interface StartupVaultCache {
-  version: 1;
+  // Legacy indexes remain useful, but their bodies must be reloaded.
+  version: 2;
   savedAt?: number;
   location: string;
   notes: StartupCachedNote[];
@@ -812,27 +824,47 @@ function startupCacheKey(location: string): string {
   return `${STARTUP_CACHE_KEY_PREFIX}${location}`;
 }
 
-function validStartupCache(value: unknown, location: string): value is StartupVaultCache {
-  if (!value || typeof value !== "object") return false;
-  const parsed = value as Partial<StartupVaultCache>;
-  return parsed.version === 1 && parsed.location === location && Array.isArray(parsed.notes) && Array.isArray(parsed.extraTypes);
+function normalizeStartupCache(value: unknown, location: string): StartupVaultCache | null {
+  if (!value || typeof value !== "object") return null;
+  const parsed = value as Omit<Partial<StartupVaultCache>, "version"> & { version?: number };
+  if ((parsed.version !== 1 && parsed.version !== 2) || parsed.location !== location ||
+      !Array.isArray(parsed.notes) || !Array.isArray(parsed.extraTypes)) return null;
+  const cache = parsed as StartupVaultCache;
+  // A version-1 body may actually be a list snippet. Preserve navigation without
+  // ever exposing that body to the editor or writing it back to the vault.
+  return parsed.version === 1
+    ? { ...cache, version: 2, notes: cache.notes.map(({ content: _content, ...note }) => note) }
+    : cache;
 }
 
-async function loadStartupCache(location: string): Promise<StartupVaultCache | null> {
+async function loadStartupCache(location: string, onLateCache?: (cache: StartupVaultCache) => void): Promise<StartupVaultCache | null> {
   let local: StartupVaultCache | null = null;
   try {
     const parsed: unknown = JSON.parse(
       localStorage.getItem(startupCacheKey(location)) ?? "null",
     );
-    if (validStartupCache(parsed, location)) local = parsed;
+    local = normalizeStartupCache(parsed, location);
   } catch {
     // The small fallback cache is optional.
   }
-  const large = await readLargeStartupCache<StartupVaultCache>(startupCacheKey(location));
-  const persistent = validStartupCache(large, location) ? large : null;
+  const pending = readLargeStartupCache<StartupVaultCache>(startupCacheKey(location))
+    .then((value) => normalizeStartupCache(value, location));
+  let timedOut = false;
+  const persistent = await withTimeout(pending, 1_500, "Startup cache is unavailable.")
+    .catch(() => { timedOut = true; return null; });
+  if (timedOut) void pending.then((cache) => {
+    if (cache) onLateCache?.(cache);
+  }).catch(() => undefined);
   if (!persistent) return local;
   if (!local) return persistent;
-  return (persistent.savedAt ?? 0) >= (local.savedAt ?? 0) ? persistent : local;
+  const [newer, older] = (persistent.savedAt ?? 0) >= (local.savedAt ?? 0)
+    ? [persistent, local] : [local, persistent];
+  const olderByPath = new Map<string, StartupCachedNote>(older.notes.map((note) => [note.path, note]));
+  return { ...newer, notes: newer.notes.map((note) => {
+    const other = olderByPath.get(note.path);
+    return note.content === undefined && other?.updatedAt === note.updatedAt && other.id === note.id
+      ? { ...note, content: other.content } : note;
+  }) };
 }
 
 function cachedNotePlaceholder(note: StartupCachedNote): Note {
@@ -856,6 +888,8 @@ function saveStartupCache(
   typeViews: TypeViewConfigs,
   savedTypeViews: SavedTypeViews,
   fileLocations: FileLocationDefinition[],
+  loadingNoteIds: ReadonlySet<string> = new Set(),
+  priorityNoteId?: string,
 ) {
   const cachedNotes = notes
     .filter((note) => !isExternalNote(note) && !isManagedSavedLink(note))
@@ -868,14 +902,14 @@ function saveStartupCache(
       archived: note.archived === true,
       createdAt: note.createdAt ?? note.updatedAt,
       updatedAt: note.updatedAt,
-      content: note.content,
+      content: loadingNoteIds.has(note.id) ? undefined : note.content,
     }))
     .sort((left, right) => {
       if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
       return right.updatedAt.localeCompare(left.updatedAt);
     });
   const cache: StartupVaultCache = {
-    version: 1,
+    version: 2,
     savedAt: Date.now(),
     location,
     notes: cachedNotes,
@@ -890,13 +924,18 @@ function saveStartupCache(
     void writeLargeStartupCache(startupCacheKey(location), cache).catch(() => undefined);
   }
   try {
-    // Keep a compact fallback for environments where IndexedDB later becomes
-    // unavailable. Full note bodies live in IndexedDB and do not hit the much
-    // smaller localStorage quota.
+    // Recently opened full bodies remain available even when IndexedDB is slow.
     const fallback = hasLargeStartupCache()
-      ? { ...cache, notes: cache.notes.map(({ content: _content, ...note }) => note) }
+      ? { ...cache, notes: compactStartupNotes(cache.notes, priorityNoteId) }
       : cache;
-    localStorage.setItem(startupCacheKey(location), JSON.stringify(fallback));
+    try {
+      localStorage.setItem(startupCacheKey(location), JSON.stringify(fallback));
+    } catch {
+      // Preserve the list even if the device cannot fit any full bodies.
+      localStorage.setItem(startupCacheKey(location), JSON.stringify({
+        ...cache, notes: compactStartupNotes(cache.notes, undefined, 0),
+      }));
+    }
   } catch {
     // The startup index is an optional speed-up and can always be rebuilt.
   }
@@ -906,7 +945,7 @@ function vaultCacheIdentity(target: VaultBackend): string {
   return target.cacheIdentity ?? target.location;
 }
 
-function saveCurrentStartupCache() {
+function saveCurrentStartupCache(priorityNoteId?: string) {
   if (!backend || backend.kind === "browser" || state.status !== "ready") return;
   saveStartupCache(
     vaultCacheIdentity(backend),
@@ -917,6 +956,8 @@ function saveCurrentStartupCache() {
     state.typeViews,
     state.savedTypeViews,
     state.fileLocations,
+    state.loadingNoteIds,
+    priorityNoteId,
   );
 }
 
@@ -1043,7 +1084,20 @@ async function loadVault(nextBackend: VaultBackend) {
     const cacheIdentity = vaultCacheIdentity(nextBackend);
     const startupCache = nextBackend.kind === "browser"
       ? null
-      : await loadStartupCache(cacheIdentity);
+      : await loadStartupCache(cacheIdentity, (cache) => {
+          if (!isCurrentLoad() || state.status !== "ready") return;
+          const byPath = new Map(cache.notes.map((note) => [note.path, note]));
+          const loadingNoteIds = new Set(state.loadingNoteIds);
+          const notes = state.notes.map((note) => {
+            const cached = byPath.get(note.path);
+            if (!loadingNoteIds.has(note.id) || cached?.content === undefined ||
+                cached.id !== note.id || cached.updatedAt !== note.updatedAt) return note;
+            loadingNoteIds.delete(note.id);
+            return { ...note, content: cached.content };
+          });
+          if (loadingNoteIds.size !== state.loadingNoteIds.size) setState({ notes, loadingNoteIds });
+        });
+    if (!isCurrentLoad()) return;
     if (startupCache) {
       const cachedNotes = startupCache.notes.map(cachedNotePlaceholder);
       setState({
@@ -1108,6 +1162,10 @@ async function loadVault(nextBackend: VaultBackend) {
       nextBackend.kind === "mobile" &&
       nextBackend.listNoteEntries !== undefined &&
       nextBackend.loadFiles !== undefined;
+    const readForStartup = <T>(operation: Promise<T>): Promise<T> =>
+      nextBackend.kind === "mobile"
+        ? withTimeout(operation, 60_000, "The vault is taking too long to respond. Check your connection and that the folder is available, then retry.")
+        : operation;
     const [
       noteSource,
       savedLinkNotes,
@@ -1119,7 +1177,7 @@ async function loadVault(nextBackend: VaultBackend) {
       fileLocations,
       historySettings,
       trashedImages,
-    ] = await Promise.all([
+    ] = await readForStartup(Promise.all([
       canPage
         ? nextBackend.listNoteEntries!()
         : nextBackend instanceof DesktopVault
@@ -1137,7 +1195,7 @@ async function loadVault(nextBackend: VaultBackend) {
       loadFileLocations(nextBackend),
       loadHistorySettings(nextBackend),
       loadTrashedImages(nextBackend),
-    ]);
+    ]));
     if (!isCurrentLoad()) return;
     if (canPage) {
       mobileNoteEntries = (noteSource as VaultFileEntry[]).filter(isPageableMobileEntry);
@@ -1172,9 +1230,9 @@ async function loadVault(nextBackend: VaultBackend) {
     const files = canPage
       ? [
           ...cachedFiles,
-          ...await nextBackend.loadFiles!(
+          ...await withTimeout(nextBackend.loadFiles!(
             initialMobilePaths.filter((path) => !cachedFilePaths.has(path)),
-          ),
+          ), 60_000, "Downloading notes is taking too long. Check your connection, then retry."),
         ]
       : (noteSource as VaultFile[]);
     if (!isCurrentLoad()) return;
@@ -1413,30 +1471,7 @@ export function initStore() {
   if (isTauri()) {
     if (isIOSRuntime()) {
       installMobileFileSync();
-      void (async () => {
-        const drive = savedDriveVault();
-        if (drive) {
-          await loadVault(new GoogleDriveVault(drive));
-          return;
-        }
-        try {
-          const saved = await restoreMobileVaultFolder();
-          if (saved) {
-            await loadVault(await MobileFolderVault.restore(saved.url, saved.name));
-            return;
-          }
-        } catch {
-          await clearMobileVaultFolder();
-        }
-
-        const localVault = await MobileVault.restore();
-        if (localVault) {
-          await loadVault(localVault);
-          return;
-        }
-        setState({ status: "pick-vault", location: null, error: null });
-      })()
-        .catch((error) => setState({ status: "error", error: String(error) }));
+      void restoreMobileStartup();
       return;
     }
     installDesktopCloseHook();
@@ -1451,6 +1486,32 @@ export function initStore() {
     }
   } else {
     void loadVault(new BrowserVault());
+  }
+}
+
+async function restoreMobileStartup(): Promise<void> {
+  setState({ status: "loading", error: null });
+  try {
+    const drive = savedDriveVault();
+    if (drive) {
+      await loadVault(new GoogleDriveVault(drive));
+      return;
+    }
+    const saved = await withTimeout(restoreMobileVaultFolder(), 30_000,
+      "The saved folder is not responding. Check that it is available in Files, then retry.");
+    if (saved) {
+      const restored = await withTimeout(MobileFolderVault.restore(saved.url, saved.name), 30_000,
+        "The saved folder is taking too long to open. Check that it is available in Files, then retry.");
+      await loadVault(restored);
+      return;
+    }
+    const localVault = await withTimeout(MobileVault.restore(), 30_000,
+      "On-device storage is taking too long to open. Retry opening your notes.");
+    if (localVault) await loadVault(localVault);
+    else setState({ status: "pick-vault", location: null, error: null });
+  } catch (error) {
+    // Keep the saved folder selection so a temporary provider outage is retryable.
+    setState({ status: "error", error: String(error) });
   }
 }
 
@@ -1561,7 +1622,10 @@ export async function chooseVaultFolder(): Promise<boolean> {
 }
 
 export async function reloadVault() {
-  if (!backend) return;
+  if (!backend) {
+    if (isIOSRuntime()) await restoreMobileStartup();
+    return;
+  }
   if (!(await flushAll())) return;
   await loadVault(backend);
 }
@@ -1613,6 +1677,7 @@ function installMobileFileSync() {
 export async function synchronizeMobileFiles() {
   if (
     mobileSyncInFlight ||
+    state.isRefreshing ||
     mobileNoteLoad ||
     state.status !== "ready" ||
     backend?.kind !== "mobile" ||

@@ -133,6 +133,7 @@ import {
   createMobileVaultOnDevice,
   initStore,
   loadAllNotes,
+  prioritizeNoteLoad,
   loadMoreNotes,
   locateMobileVault,
   openGoogleDriveVault,
@@ -2117,6 +2118,12 @@ export function MobileZerus() {
     setDefaultNoteTypeState(loadDefaultNoteType(vault.location));
   }, [vault.location]);
 
+  useEffect(() => {
+    if (selectedNoteId && vault.loadingNoteIds.has(selectedNoteId)) {
+      void prioritizeNoteLoad(selectedNoteId);
+    }
+  }, [selectedNoteId, vault.loadingNoteIds]);
+
   const selectedSourceNote = vault.notes.find((note) => note.id === selectedNoteId) ?? null;
   const selectedNote = selectedSourceNote
     ? presentNote(selectedSourceNote, vault.typeIcons)
@@ -2454,7 +2461,14 @@ export function MobileZerus() {
             </div>
             {selectedNote && selectedSourceNote && (
               <div className="absolute inset-0 z-40 flex min-h-0 overflow-hidden">
-                <NoteView
+                {vault.loadingNoteIds.has(selectedSourceNote.id) ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-4 bg-background px-6" role="status">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <p>Loading full note…</p>
+                    <Button variant="ghost" onClick={() => void prioritizeNoteLoad(selectedSourceNote.id)}>Retry loading</Button>
+                    <Button variant="ghost" onClick={() => window.history.back()}>Back to notes</Button>
+                  </div>
+                ) : <NoteView
                   key={selectedSourceNote.id}
                   note={selectedSourceNote}
                   allNotes={vault.notes}
@@ -2470,7 +2484,7 @@ export function MobileZerus() {
                   onOpenNote={(id) => openNote(id, noteOrigin)}
                   onOpenFile={(id, mode) => void openFileHub(id, mode)}
                   onChat={(nextScope) => openChat(nextScope)}
-                />
+                />}
               </div>
             )}
           </div>

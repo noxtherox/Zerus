@@ -81,3 +81,25 @@ export function writeLargeStartupCache(key: string, value: unknown): Promise<voi
   void next.then(cleanup, cleanup);
   return next;
 }
+
+/** Keep a small set of complete bodies beside the list index for fast reopening. */
+export function compactStartupNotes<T extends { id: string; content?: string }>(
+  notes: T[], priorityId?: string, maxBytes = 256 * 1024,
+): T[] {
+  const retained = new Set<string>();
+  let remaining = maxBytes;
+  const prioritized = [...notes].sort((a, b) => Number(b.id === priorityId) - Number(a.id === priorityId));
+  for (const note of prioritized) {
+    if (note.content === undefined) continue;
+    // localStorage stores UTF-16; count JSON escaping as well as the body.
+    const bytes = JSON.stringify(note.content).length * 2;
+    if (bytes > remaining) continue;
+    retained.add(note.id);
+    remaining -= bytes;
+  }
+  return notes.map((note) => {
+    if (retained.has(note.id)) return note;
+    const { content: _content, ...index } = note;
+    return index as T;
+  });
+}

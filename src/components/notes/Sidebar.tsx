@@ -754,15 +754,15 @@ export function Sidebar({
               label="Files"
               count={fileCount}
             />
-            <SidebarRow
-              active={filter.kind === "links"}
-              onClick={() => onFilterChange({ kind: "links" })}
-              icon={<Link2 size={15} />}
-              label="Links"
-              count={linkCount}
-            />
           </>
         )}
+        <SidebarRow
+          active={filter.kind === "links"}
+          onClick={() => onFilterChange({ kind: "links" })}
+          icon={<Link2 size={15} />}
+          label="Links"
+          count={linkCount}
+        />
         <div className="flex items-center justify-between pb-1 pl-3 pr-2 pt-4">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-zerus-sidebar-fg/40">
             Types

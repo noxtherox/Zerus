@@ -111,7 +111,7 @@ export function BacklinksPanel({
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Link2 size={13} />
-          Relations & backlinks
+          Relations
           {connectionTotal > 0 && (
             <span className="rounded-full bg-muted px-1.5 tabular-nums">
               {connectionTotal}
@@ -161,15 +161,7 @@ export function BacklinksPanel({
             </ul>
           </div>
         )}
-        {total === 0 && relationTotal === 0 && linkedTasks.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No notes link here yet. Reference this note elsewhere with{" "}
-            <code className="rounded bg-muted px-1">
-              [[{noteTitle(note)}]]
-            </code>{" "}
-            or a relation property.
-          </p>
-        ) : total > 0 ? (
+        {total > 0 ? (
             <div className={cn("space-y-4", (relationTotal > 0 || linkedTasks.length > 0) && "mt-4")}>
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>

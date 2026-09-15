@@ -13,10 +13,23 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useCellValues } from "@mdxeditor/gurx";
+import {
+  $createLineBreakNode,
+  $createParagraphNode,
+  $createTextNode,
+  $getNodeByKey,
+  HISTORY_PUSH_TAG,
+} from "lexical";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   BlockTypeSelect,
+  ButtonWithTooltip,
+  $isCodeBlockNode,
+  activeEditor$,
+  editorInFocus$,
+  readOnly$,
   BoldItalicUnderlineToggles,
   ChangeCodeMirrorLanguage,
   CodeToggle,
@@ -274,6 +287,37 @@ function SearchControl() {
   );
 }
 
+function ConvertCodeBlockToText() {
+  const [editor, focusedEditor, readOnly] = useCellValues(activeEditor$, editorInFocus$, readOnly$);
+  const nodeKey = $isCodeBlockNode(focusedEditor?.rootNode)
+    ? focusedEditor.rootNode.getKey()
+    : null;
+
+  return (
+    <ButtonWithTooltip
+      title="Convert code block to regular text"
+      disabled={readOnly || !editor || !nodeKey}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={() => {
+        if (!editor || !nodeKey) return;
+        editor.update(() => {
+          const node = $getNodeByKey(nodeKey);
+          if (!$isCodeBlockNode(node) || !node.isAttached()) return;
+          const paragraph = $createParagraphNode();
+          node.getCode().split("\n").forEach((line, index) => {
+            if (index > 0) paragraph.append($createLineBreakNode());
+            if (line) paragraph.append($createTextNode(line));
+          });
+          node.replace(paragraph);
+          paragraph.selectEnd();
+        }, { tag: HISTORY_PUSH_TAG });
+      }}
+    >
+      Convert to text
+    </ButtonWithTooltip>
+  );
+}
+
 function ZerusToolbarControls() {
   const {
     isFullHeight,
@@ -359,6 +403,7 @@ const editorPlugins = [
               contents: () => (
                 <div className="zerus-mdx-code-language">
                   <ChangeCodeMirrorLanguage />
+                  <ConvertCodeBlockToText />
                 </div>
               ),
             },

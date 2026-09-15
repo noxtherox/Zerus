@@ -66,13 +66,14 @@ export function driveId(id: string): string {
   if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Invalid Google Drive file ID.");
   return id;
 }
-export async function listDriveChildren(transport: DriveTransport, parent: string): Promise<DriveFile[]> {
+export async function listDriveChildren(transport: DriveTransport, parent: string, name?: string): Promise<DriveFile[]> {
+  const nameFilter = name === undefined ? "" : ` and name = '${name.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
   const files: DriveFile[] = [];
   let pageToken: string | undefined;
   do {
     const page = parseDriveJSON<{ files: DriveFile[]; nextPageToken?: string }>(await driveFetch(transport, {
       path: "/drive/v3/files",
-      query: { q: `'${driveId(parent)}' in parents and trashed = false`, fields: `nextPageToken,files(${DRIVE_FIELDS})`,
+      query: { q: `'${driveId(parent)}' in parents and trashed = false${nameFilter}`, fields: `nextPageToken,files(${DRIVE_FIELDS})`,
         pageSize: "1000", spaces: "drive", ...(pageToken ? { pageToken } : {}) },
     }));
     files.push(...page.files);

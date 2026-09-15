@@ -1329,9 +1329,8 @@ export function RelationsSection({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 gap-1 px-1 text-xs text-muted-foreground hover:text-foreground"
+              className="mx-auto flex h-8 border border-border px-3 text-xs text-muted-foreground hover:text-foreground"
             >
-              <Plus size={12} />
               Add relation
             </Button>
           </PopoverTrigger>
