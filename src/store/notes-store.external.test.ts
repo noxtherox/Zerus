@@ -372,9 +372,13 @@ describe("external note store workflow", () => {
     );
 
     await revealNoteInDesktop(vaultNote!.id);
-    expect(mocks.invoke).toHaveBeenCalledWith("reveal_in_file_manager", {
-      path: join(vault, "inbox", "Welcome.md"),
-    });
+    const revealCalls = mocks.invoke.mock.calls.filter(
+      ([command]) => command === "reveal_in_file_manager",
+    );
+    expect(revealCalls).toHaveLength(1);
+    expect(normalize(revealCalls[0][1]!.path as string)).toBe(
+      join(vault, "inbox", "Welcome.md"),
+    );
 
     mocks.picked = join(vault, "inbox", "Welcome.md");
     await expect(openExternalNotes()).resolves.toEqual([vaultNote?.id]);
