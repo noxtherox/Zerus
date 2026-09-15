@@ -31,6 +31,10 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Focused Markdown editing** — the MDXEditor/Lexical editor supports headings,
   lists, links, tags, pasted images, keyboard-friendly formatting, and advanced
   GFM tables, including spreadsheet paste and a compact large-table editor.
+  Code blocks are off by default; enable them in **Settings → General → Editor**
+  to create blocks with the toolbar, triple backticks, or pasted code.
+  Indented prose stays ordinary text. Existing fenced blocks remain editable
+  with the setting off, and each offers **Turn back into text**, with Undo support.
   Typing reuses parsed links from unchanged notes and avoids reparsing the
   editor’s own Markdown on each render, reducing work during text entry.
   Title edits also reuse unchanged link-stabilization results and skip title
@@ -47,6 +51,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Fast organization** — search and filter by type, date, and properties;
   progressively render large All Notes lists; reorder types; pin or archive
   notes; and use a recoverable vault-local trash.
+  Note-list titles and snippets show readable text without Markdown formatting
+  markers or image sources, while preserving the underlying note content.
 - **Warm note startup** — desktop and mobile keep a device-local copy of loaded
   note bodies, make that copy usable immediately on the next launch, finish
   warming uncached mobile notes without blocking the first screen, and reconcile
