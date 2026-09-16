@@ -37,10 +37,14 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   with the setting off, and each offers **Turn back into text**, with Undo support.
   Typing reuses parsed links from unchanged notes and avoids reparsing the
   editor’s own Markdown on each render, reducing work during text entry.
+  Images offer expand, edit, and undoable removal actions. A heading outline
+  lets you jump through longer notes and can stay pinned open.
   Title edits also reuse unchanged link-stabilization results and skip title
   lookups for labelled ID links, while preserving older title-based links.
-- **Connected notes** — autocomplete `[[wikilinks]]`, follow links from the
-  editor, create missing notes, and inspect backlinks grouped by note type. Links and Relation
+- **Connected notes** — use `@` or `[[` to find notes while writing, or choose
+  a vault note or web URL from the link dialog. Inline note-link shortcuts can
+  be disabled in **Settings → General → Editor**. Preview and follow links from
+  the editor, create missing notes, and inspect backlinks grouped by note type. Links and Relation
   properties use stable `zerus-id` targets, so backlinks survive title and path
   changes. Markdown stores readable labels as `[[zerus:<id>|Label]]`; Relation
   values use `zerus:<id>|Label`. Existing unambiguous title links are upgraded by
@@ -69,8 +73,10 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   note lookups request exact filenames and reuse known parent folders.
 - **Projects and planning** — keep tasks and categories beside notes, link tasks
   to their supporting material, and switch between multiple registered vaults.
-- **Navigation and recovery** — work across note tabs, move backward and forward
-  through navigation history, and restore earlier versions of a note.
+- **Navigation and recovery** — work across note, type, and global-view tabs;
+  middle-click types or global navigation items to open them in a tab from either
+  the expanded or collapsed sidebar. Existing tabs are reused. Move backward and
+  forward through navigation history and restore earlier versions of a note.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them; attach files; associate notes with PDFs and common office
   documents; preview HTML; and export rendered notes as HTML, PDF, or DOCX.
