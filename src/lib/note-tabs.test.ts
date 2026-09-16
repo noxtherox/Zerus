@@ -4,6 +4,8 @@ import {
   activeWorkspaceTab,
   closeNoteTab,
   openNoteInActiveTab,
+  openGlobalInNewTab,
+  replaceActiveTabNote,
   openNoteInNewTab,
   openTypeInActiveTab,
   openTypeInNewTab,
@@ -80,6 +82,37 @@ describe("workspace tabs", () => {
       editorOpen: true,
     });
   });
+
+  it("preserves the current global view when opening a type", () => {
+    const state = openTypeInNewTab(
+      INITIAL_NOTE_TABS_STATE,
+      { kind: "global", filter: allNotes, selectedNoteId: null },
+      ["work"],
+    );
+    expect(state.tabs).toHaveLength(2);
+    expect(state.tabs[0]).toMatchObject({ kind: "global", filter: allNotes });
+    expect(activeWorkspaceTab(state)).toMatchObject({ kind: "type", typePath: ["work"] });
+  });
+
+  it.each(["all", "tasks", "external", "files", "links", "trash"] as const)(
+    "opens and restores the %s global view without replacing a pinned type",
+    (kind) => {
+      let state = openTypeInNewTab(INITIAL_NOTE_TABS_STATE, null, ["work"]);
+      state = toggleNoteTabPinned(state, state.activeTabId!);
+      state = openGlobalInNewTab(state, null, { kind });
+      const globalId = state.activeTabId!;
+      state = replaceActiveTabNote(state, "note-a");
+      state = openTypeInNewTab(state, null, ["work"]);
+      state = openGlobalInNewTab(state, null, { kind });
+      expect(state.tabs).toHaveLength(2);
+      expect(state.activeTabId).toBe(globalId);
+      expect(activeWorkspaceTab(state)).toMatchObject({
+        kind: "global", filter: { kind }, selectedNoteId: "note-a",
+      });
+      state = closeNoteTab(state, globalId);
+      expect(activeWorkspaceTab(state)).toMatchObject({ kind: "type", pinned: true });
+    },
+  );
 
   it("selects an adjacent workspace when the active tab closes", () => {
     let state = openNoteInNewTab(

@@ -1,7 +1,9 @@
+import { imageActionsPlugin } from "./image-actions";
 import { codeBlockToParagraph } from "./code-block-text";
 import { loadCodeBlocksEnabled } from "@/lib/editor-preferences";
 import { ConvertibleCodeEditor, InsertEnabledCodeBlock } from "./code-block-controls";
 import { proseShortcutsPlugin } from "./prose-shortcuts";
+import { noteLinkShortcutsPlugin } from "./note-link-shortcuts";
 import { prepareNoteLinks, restoreNoteLinks, noteReferenceFromHref } from "./note-link-markdown";
 import type { PdfSearch } from "@/lib/pdf-search";
 import { keepMobileCaretVisible } from "./mobile-caret";
@@ -90,6 +92,8 @@ import {
 } from "./mdx-compat";
 import { preserveEmptyParagraphsPlugin } from "./empty-paragraphs";
 import { linkDialogPositionPlugin } from "./link-dialog-position";
+import { VaultLinkDialog } from "./VaultLinkDialog";
+import { NoteLinkContext } from "./note-link-context";
 import {
   attachmentClickAction,
   attachmentIdFromHref,
@@ -99,6 +103,7 @@ import {
 } from "./element-table-controls";
 import { EditorRecoveryBoundary } from "./editor-recovery";
 import { elementTablePlugin } from "./element-table-plugin";
+import { NoteOutline } from "./NoteOutline";
 import { IndentControls } from "./IndentControls";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
@@ -353,8 +358,9 @@ const editorPlugins = [
   quotePlugin(),
   listsPlugin(),
   linkPlugin(),
-  linkDialogPlugin(),
+  linkDialogPlugin({ LinkDialog: VaultLinkDialog }),
   linkDialogPositionPlugin(),
+  noteLinkShortcutsPlugin(),
   imagePlugin({
     imageUploadHandler: async (file) => {
       const path = await savePastedImage(
@@ -366,6 +372,7 @@ const editorPlugins = [
     },
     imagePreviewHandler: async (source) => (await getImageUrl(source)) ?? source,
   }),
+  imageActionsPlugin(),
   elementTablePlugin(),
   thematicBreakPlugin(),
   // Note properties are stripped by noteBody before reaching this editor.
@@ -574,8 +581,6 @@ export function MarkdownEditor({
     const reference = noteReferenceFromHref(href);
     if (reference !== null) {
       event.preventDefault();
-      event.stopPropagation();
-      onFollowLink(reference);
       return;
     }
     const attachmentId = attachmentIdFromHref(href);
@@ -595,6 +600,7 @@ export function MarkdownEditor({
     : null;
 
   return (
+    <NoteLinkContext.Provider value={onFollowLink}>
     <ToolbarContext.Provider value={toolbarContext}>
       <div
         ref={captureWrapper}
@@ -646,6 +652,7 @@ export function MarkdownEditor({
             onError={({ error }) => recoveryRef.current?.recover(error)}
           />
         </EditorRecoveryBoundary>
+        <NoteOutline key={`outline-${noteId}`} container={searchContainer} />
         <DropdownMenu
           open={!!menuAttachment}
           onOpenChange={(open) => {
@@ -701,5 +708,6 @@ export function MarkdownEditor({
         </DropdownMenu>
       </div>
     </ToolbarContext.Provider>
+    </NoteLinkContext.Provider>
   );
 }

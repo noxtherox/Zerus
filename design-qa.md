@@ -62,3 +62,62 @@ The View dropdown was inspected at readable scale in both images. Typography, sp
 - P3: consider a small management affordance for renaming or deleting saved views in a later iteration.
 
 final result: blocked
+
+## Linked note preview and Link dialog — 2026-09-15
+
+Scope: compact linked-note preview and Vault note / Web URL picker only. This review does not change the earlier Saved Views verdict.
+
+Source: `/Users/tiagopereira/.codex/generated_images/01a0a054-9aa3-7811-99ee-0023452c6b2e/exec-c84b3bd0-5e87-4ebe-abdc-50a5e8e43ef2.png`, with the user's requested centering beneath the clicked link.
+
+Compared source and implementation together in one browser tool output. The source is an enlarged mock; the implementation uses actual editor density at 1280 × 720, sample vault content, and the existing theme. Comparison is scoped to the popover: document icon, compact title/action row, one-line excerpt, restrained border, and centered placement. The source's surrounding invented navigation is outside scope. No P0/P1/P2 visual differences remain. Edit/copy/remove controls remain available on hover or keyboard focus and on touch devices.
+
+Browser checks passed: clicking a note link preserves the current note; Open note navigates; vault search finds a destination; selected words survive insertion; Web URL insertion uses the display label; last-used Web URL persists after reload; editing an existing note link selects Vault note; Escape and outside-click dismissal work. A double-cancel error and a missing Lexical editor context in the click handler were fixed and retested on a freshly loaded page, with no new console errors.
+
+Validation: 19 focused tests, TypeScript, targeted ESLint, and frontend production build with bundle verification passed. Both frontend and private Serve `/app` routes returned HTTP 200. Desktop native and iOS device behavior were not exercised.
+
+Linked-note scope final result: passed.
+
+## Type-view filter pill placement — 2026-09-16
+
+- Source visual truth: `/Users/tiagopereira/.codex/attachments/768b02ec-dbb5-4703-ad92-2ab9a59c2d80/codex-clipboard-01b5d2e2-4da8-4a76-8b56-77b6b89c3ab4.png` (697 × 921 px).
+- Implementation: `https://mac-mini-m4-nox.ibex-oratrice.ts.net/app`.
+- Implementation screenshot: captured and inspected inline in the Codex in-app browser; the browser did not expose a filesystem path for the capture.
+- Viewport: 1280 × 720 CSS px at device scale factor 2; the browser capture was normalized to the visible 1280 × 720 viewport.
+- State: dark theme, `work` type, Kanban view, `Updated: Last 30 days` active, Sort & filter popover open.
+
+### Comparison evidence
+
+The focused toolbar region was compared against the annotated source. The active pill now precedes `Search this view…`, followed by the fixed-width `Sort & filter` control. Browser measurements confirmed the pill at x=665 px, search at x=834 px, and sort at x=1049 px. Removing and restoring the filter left the sort control at the same x position and 132 px width.
+
+A separate full-view comparison was not needed because the requested change is limited to toolbar child order and control stability; the surrounding type view remains unchanged.
+
+### Required fidelity surfaces
+
+- Fonts and typography: existing Zerus pill, input, and button typography is unchanged.
+- Spacing and layout rhythm: the pill uses the existing 8 px toolbar gap and sits immediately left of search; the sort control no longer shifts between inactive and active states.
+- Colors and visual tokens: existing secondary badge, surface, border, muted text, and accent tokens are reused.
+- Image quality and asset fidelity: no image assets were added or changed; existing library icons are preserved.
+- Copy and content: filter labels, search placeholder, sort label, badge count, and remove-button accessible label are unchanged.
+
+### Functional verification
+
+- Added and removed the Last 30 days filter in the rendered app.
+- Confirmed the pill appears to the left of search.
+- Confirmed the sort control remains at the same measured position and width with and without an active filter.
+- Confirmed the filter popover, clear action, and removable pill remain operable.
+- Browser console warnings/errors: none.
+- Frontend `/app`: HTTP 200.
+- Tailscale Serve `/app`: HTTP 200.
+- TypeScript, ESLint, and all 553 tests passed.
+
+### Findings
+
+- No actionable P0, P1, or P2 differences remain in the requested toolbar region.
+
+### Comparison history
+
+- Initial pass: pill order matched the request, but the sort button shifted by 2 px when its active variant appeared.
+- Fix: assigned the sort trigger a stable 132 px width while preserving the full-width sidebar override.
+- Post-fix evidence: inactive and active sort-trigger measurements both reported x=1048.664 px and width=132 px.
+
+final result: passed

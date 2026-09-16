@@ -2258,6 +2258,9 @@ pub fn run() {
             }
             #[cfg(desktop)]
             {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_title(&format!("Zerus - v{}", app.package_info().version))?;
+                }
                 app.handle().plugin(tauri_plugin_process::init())?;
                 app.handle()
                     .plugin(tauri_plugin_updater::Builder::new().build())?;

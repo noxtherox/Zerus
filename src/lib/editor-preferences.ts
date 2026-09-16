@@ -20,3 +20,15 @@ function subscribe(listener: () => void) {
 export function useCodeBlocksEnabled() {
   return useSyncExternalStore(subscribe, loadCodeBlocksEnabled, () => false);
 }
+
+const NOTE_SHORTCUTS_KEY = "zerus.noteLinkShortcuts";
+export function loadNoteLinkShortcutsEnabled(): boolean {
+  try { return localStorage.getItem(NOTE_SHORTCUTS_KEY) !== "false"; } catch { return true; }
+}
+export function saveNoteLinkShortcutsEnabled(enabled: boolean) {
+  localStorage.setItem(NOTE_SHORTCUTS_KEY, String(enabled));
+  window.dispatchEvent(new Event(EVENT));
+}
+export function useNoteLinkShortcutsEnabled() {
+  return useSyncExternalStore(subscribe, loadNoteLinkShortcutsEnabled, () => true);
+}

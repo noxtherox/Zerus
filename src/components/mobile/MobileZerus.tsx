@@ -168,6 +168,7 @@ import {
   setNoteType,
   setTypeIcon,
   toggleNoteArchived,
+  duplicateNote,
   toggleNotePinned,
   trashNote,
   updateNoteBody,
@@ -622,9 +623,10 @@ interface NoteActionSheetProps {
   onChat: () => void;
   onShowHistory: () => void;
   onExport: () => void;
+  onDuplicate: () => void;
 }
 
-function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory, onExport }: NoteActionSheetProps) {
+function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFile, onRefreshFile, onCopyFileIntoVault, onLocateFile, onReplaceFile, onDetachFile, onMoveToTrash, onFind, onInsertImage, onMoveType, onChat, onShowHistory, onExport, onDuplicate }: NoteActionSheetProps) {
   const archived = isArchived(note);
   const trashed = isTrashed(note);
   const external = isExternalNote(note);
@@ -755,6 +757,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           {!external && action("Version history", <History className="h-5 w-5" />, onShowHistory)}
           {!trashed && action("Export", <Download className="h-5 w-5" />, onExport)}
           {!external && !trashed && action("Insert image", <ImagePlus className="h-5 w-5" />, onInsertImage)}
+          {!external && !trashed && action("Duplicate note", <Copy className="h-5 w-5" />, onDuplicate)}
           {!external && !trashed && action("Move to folder", <FolderCog className="h-5 w-5" />, onMoveType)}
           {!file && !external && !trashed && action("Attach file to note", <FilePlus2 className="h-5 w-5" />, onReplaceFile)}
         </div>
@@ -1365,6 +1368,9 @@ function NoteView({
           onChat={() => onChat({ kind: "note", noteId: note.id, title: noteTitle(note) })}
           onShowHistory={() => setHistoryOpen(true)}
           onExport={() => setExportOpen(true)}
+          onDuplicate={() => void duplicateNote(note.id).then((copy) => {
+            if (copy) onOpenNote(copy.id);
+          })}
         />
       )}
       <NoteExportDialog

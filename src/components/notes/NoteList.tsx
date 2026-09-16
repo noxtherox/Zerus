@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isToday, isYesterday } from "date-fns";
 import {
   Archive,
+  Copy,
   ArchiveRestore,
   FolderSearch,
   FileText,
@@ -56,6 +57,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   closeExternalNote,
+  duplicateNote,
   deleteTrashedImageForever,
   deleteNoteForever,
   emptyTrash,
@@ -475,6 +477,11 @@ export function NoteList({
                   </>
                 ) : (
                   <>
+                    <ContextMenuItem onClick={() => void duplicateNote(note.id).then((copy) => {
+                      if (copy) onSelectNote(copy.id);
+                    })}>
+                      <Copy size={14} className="mr-2" /> Duplicate note
+                    </ContextMenuItem>
                     <ContextMenuItem onClick={() => toggleNoteArchived(note.id)}>
                       {archived ? (
                         <ArchiveRestore size={14} className="mr-2" />
@@ -568,7 +575,10 @@ export function NoteList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle
+              className="line-clamp-3"
+              title={closeExternalTarget ? noteTitle(closeExternalTarget) : "this note"}
+            >
               Close “{closeExternalTarget
                 ? noteTitle(closeExternalTarget)
                 : "this note"}”?

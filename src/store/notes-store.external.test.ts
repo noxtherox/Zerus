@@ -111,6 +111,8 @@ import {
   closeExternalNote,
   copyExternalNoteToVault,
   createNote,
+  duplicateNote,
+  toggleNoteArchived,
   deleteNoteForever,
   flushPendingWrites,
   getNotes,
@@ -747,4 +749,44 @@ describe("external note store workflow", () => {
       getNotes().filter((note) => getLinkHubReference(note)?.url === url),
     ).toHaveLength(1);
   });
+  it("duplicates the latest content independently without overwriting files", async () => {
+    const original = await createNote(["inbox"], "# Duplicate source\n\nInitial text\n");
+    expect(original).not.toBeNull();
+    setNoteProperty(original!.id, "Status", "Draft");
+    updateNoteBody(original!.id, "# Duplicate source\n\nLatest unsaved text\n");
+    toggleNoteArchived(original!.id);
+    await writeFile(join(vault, "inbox", "Duplicate source copy.md"), "Unloaded file");
+    const copy = await duplicateNote(original!.id);
+    expect(copy).not.toBeNull();
+    expect(copy!.id).not.toBe(original!.id);
+    expect(copy!.path).toBe("inbox/Duplicate source copy 2.md");
+    expect(copy!.content).toContain("Latest unsaved text");
+    expect(getNoteProperties(copy!.content).Status).toBe("Draft");
+    expect(getNoteProperties(copy!.content)["zerus-id"]).toBe(copy!.id);
+    expect(copy!.archived).toBe(false);
+    expect(getNoteProperties(copy!.content)["zerus-archived"]).toBeUndefined();
+    expect(await readFile(join(vault, copy!.path), "utf8")).toBe(copy!.content);
+    expect(await readFile(join(vault, "inbox", "Duplicate source copy.md"), "utf8")).toBe("Unloaded file");
+    updateNoteBody(copy!.id, "# Edited duplicate\n");
+    await flushPendingWrites();
+    expect(getNotes().find((note) => note.id === original!.id)!.content).toContain("Latest unsaved text");
+    await trashNote(copy!.id);
+    expect(await duplicateNote(copy!.id)).toBeNull();
+    expect(await duplicateNote("missing-note")).toBeNull();
+  });
+
+  it("keeps a managed attachment safe when its duplicate is deleted", async () => {
+    const document = join(root, "duplicate-attachment.pdf");
+    await writeFile(document, "attachment bytes");
+    const original = await createNote(["inbox"], "# Attachment duplicate source\n");
+    await attachFileToNote(original!.id, document, "copy");
+    const source = getNotes().find((note) => note.id === original!.id)!;
+    const copy = await duplicateNote(source.id);
+    const reference = getFileHubReference(source)!;
+    expect(getFileHubReference(copy!)).toMatchObject({ path: reference.path, managed: false });
+    await trashNote(copy!.id);
+    await deleteNoteForever(copy!.id);
+    expect(await readFile(join(vault, reference.path!), "utf8")).toBe("attachment bytes");
+  });
+
 });

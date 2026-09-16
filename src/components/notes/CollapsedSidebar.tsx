@@ -1,3 +1,4 @@
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 import { useState } from "react";
 import { CheckSquare, FileStack, Files, Link2, Notebook, Settings, Trash2 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
@@ -25,6 +26,7 @@ interface CollapsedSidebarProps {
   hideSubtypeNotes: boolean;
   onDefaultNoteTypeChange: (typePath: string[]) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
+  onOpenFilterInNewTab: (filter: NoteFilter) => void;
   onFilterChange: (filter: NoteFilter) => void;
   onRestore: () => void;
 }
@@ -67,6 +69,7 @@ export function CollapsedSidebar({
   onDefaultNoteTypeChange,
   onHideSubtypeNotesChange,
   onFilterChange,
+  onOpenFilterInNewTab,
   onRestore,
 }: CollapsedSidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -112,6 +115,11 @@ export function CollapsedSidebar({
         key={key}
         type="button"
         onClick={() => onFilterChange({ kind: "type", path: node.path })}
+        onMouseDown={(event) =>
+          handleMiddleMouseDown(event, () =>
+            onOpenFilterInNewTab({ kind: "type", path: node.path }),
+          )
+        }
         title={label}
         aria-label={`Type: ${label}`}
         aria-current={selected ? "page" : undefined}
@@ -176,6 +184,11 @@ export function CollapsedSidebar({
         <button
           type="button"
           onClick={() => onFilterChange({ kind: "all" })}
+          onMouseDown={(event) =>
+            handleMiddleMouseDown(event, () =>
+              onOpenFilterInNewTab({ kind: "all" }),
+            )
+          }
           title="All Notes"
           aria-label="All Notes"
           className={iconButtonClass(filter.kind === "all")}
@@ -185,6 +198,11 @@ export function CollapsedSidebar({
         <button
           type="button"
           onClick={() => onFilterChange({ kind: "tasks" })}
+          onMouseDown={(event) =>
+            handleMiddleMouseDown(event, () =>
+              onOpenFilterInNewTab({ kind: "tasks" }),
+            )
+          }
           title="Tasks"
           aria-label="Tasks"
           className={iconButtonClass(filter.kind === "tasks")}
@@ -197,6 +215,11 @@ export function CollapsedSidebar({
             <button
               type="button"
               onClick={() => onFilterChange({ kind: "external" })}
+              onMouseDown={(event) =>
+                handleMiddleMouseDown(event, () =>
+                  onOpenFilterInNewTab({ kind: "external" }),
+                )
+              }
               title="External Notes"
               aria-label="External Notes"
               className={iconButtonClass(filter.kind === "external")}
@@ -206,6 +229,11 @@ export function CollapsedSidebar({
             <button
               type="button"
               onClick={() => onFilterChange({ kind: "files" })}
+              onMouseDown={(event) =>
+                handleMiddleMouseDown(event, () =>
+                  onOpenFilterInNewTab({ kind: "files" }),
+                )
+              }
               title="Files"
               aria-label="Files"
               className={iconButtonClass(filter.kind === "files")}
@@ -215,6 +243,11 @@ export function CollapsedSidebar({
             <button
               type="button"
               onClick={() => onFilterChange({ kind: "links" })}
+              onMouseDown={(event) =>
+                handleMiddleMouseDown(event, () =>
+                  onOpenFilterInNewTab({ kind: "links" }),
+                )
+              }
               title="Links"
               aria-label="Links"
               className={iconButtonClass(filter.kind === "links")}
@@ -244,6 +277,11 @@ export function CollapsedSidebar({
         <button
           type="button"
           onClick={() => onFilterChange({ kind: "trash" })}
+          onMouseDown={(event) =>
+            handleMiddleMouseDown(event, () =>
+              onOpenFilterInNewTab({ kind: "trash" }),
+            )
+          }
           title="Trash"
           aria-label="Trash"
           className={iconButtonClass(filter.kind === "trash")}

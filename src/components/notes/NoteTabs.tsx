@@ -1,6 +1,6 @@
 import { Pin, X } from "@/lib/icons";
 import { noteTitle, type Note } from "@/lib/note-utils";
-import type { WorkspaceTab } from "@/lib/note-tabs";
+import { GLOBAL_TAB_LABELS, type WorkspaceTab } from "@/lib/note-tabs";
 import type { TypeIcons } from "@/lib/type-icons";
 import {
   ContextMenu,
@@ -46,9 +46,11 @@ export function NoteTabs({
         const title =
           tab.kind === "type"
             ? (tab.typePath.at(-1) ?? "Type")
-            : note
-              ? noteTitle(note)
-              : "Closed note";
+            : tab.kind === "global"
+              ? GLOBAL_TAB_LABELS[tab.filter.kind]
+              : note
+                ? noteTitle(note)
+                : "Closed note";
         const fullTitle =
           tab.kind === "type" ? tab.typePath.join(" / ") : title;
         const active = tab.id === activeTabId;

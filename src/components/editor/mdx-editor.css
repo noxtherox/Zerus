@@ -409,7 +409,7 @@
    the way until the image is hovered, keyboard-focused, or selected. */
 .zerus-mdx-content
   [data-editor-block-type="image"]
-  > [class*="_editImageToolbar_"] {
+  > .zerus-image-actions {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
@@ -420,10 +420,10 @@
 
 .zerus-mdx-content
   [data-editor-block-type="image"]:is(:hover, :focus-within)
-  > [class*="_editImageToolbar_"],
+  > .zerus-image-actions,
 .zerus-mdx-content
   [data-editor-block-type="image"]:has(img[class*="_focusedImage_"])
-  > [class*="_editImageToolbar_"] {
+  > .zerus-image-actions {
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
@@ -589,4 +589,186 @@
 @media (max-width: 640px) {
   .zerus-table-dialog.is-editing .zerus-table-grid,
   .zerus-table-dialog.is-editing .zerus-table-pagination { display: none; }
+}
+
+.zerus-link-popover {
+  z-index: 90;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  max-height: var(--radix-popover-content-available-height);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid rgb(var(--zerus-text) / .16);
+  border-radius: 8px;
+  background: rgb(var(--zerus-editor-bg));
+  color: rgb(var(--zerus-text));
+  box-shadow: 0 6px 20px rgb(0 0 0 / .15);
+  font-size: 13px;
+}
+.zerus-link-preview { width: 320px; padding: 10px 12px; }
+.zerus-link-preview-row { display: flex; align-items: center; gap: 7px; }
+.zerus-link-preview-row > svg { flex: none; opacity: .75; }
+.zerus-link-preview-row strong { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.zerus-link-popover button { cursor: pointer; }
+.zerus-link-popover button:disabled { cursor: default; opacity: .45; }
+.zerus-link-popover button:focus-visible, .zerus-link-popover input:focus-visible { outline: 2px solid rgb(var(--zerus-accent)); outline-offset: 2px; }
+.zerus-link-open { display: flex; align-items: center; gap: 4px; flex: none; color: var(--accent-11, #8bb9ff); font-size: 12px; }
+.zerus-link-excerpt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 6px 0 0; opacity: .65; font-size: 12px; }
+.zerus-link-tools { display: flex; justify-content: flex-end; gap: 9px; height: 0; overflow: hidden; }
+.zerus-link-preview:hover .zerus-link-tools, .zerus-link-preview:focus-within .zerus-link-tools { height: auto; padding-top: 6px; }
+.zerus-link-tools button { opacity: .65; padding: 3px; }
+@media (hover: none) { .zerus-link-preview .zerus-link-tools { height: auto; padding-top: 6px; } }
+.zerus-link-form { display: flex; flex-direction: column; gap: 8px; }
+.zerus-link-options { display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid rgb(var(--zerus-text) / .12); }
+.zerus-link-options button { flex: 1; padding: 7px; border-bottom: 2px solid transparent; opacity: .65; }
+.zerus-link-options button[aria-selected="true"] { border-bottom-color: currentColor; opacity: 1; }
+.zerus-link-form label { display: block; font-size: 12px; margin-bottom: 4px; }
+.zerus-link-form input { width: 100%; border: 1px solid rgb(var(--zerus-text) / .18); border-radius: 5px; padding: 7px 9px; background: transparent; color: inherit; }
+.zerus-link-form input[readonly] { opacity: .65; }
+.zerus-link-results { max-height: 190px; overflow-y: auto; margin-top: 7px; }
+.zerus-link-results button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px; text-align: left; border-radius: 4px; }
+.zerus-link-results button:hover, .zerus-link-results button[aria-pressed="true"] { background: rgb(var(--zerus-text) / .09); }
+.zerus-link-results button > span { min-width: 0; }
+.zerus-link-results strong, .zerus-link-results small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zerus-link-results strong { font-weight: 500; }
+.zerus-link-results small, .zerus-link-selected, .zerus-link-form > small { opacity: .6; font-size: 11px; }
+.zerus-link-selected { margin: 6px 0 0; }
+.zerus-link-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.zerus-link-footer button { padding: 6px 10px; border-radius: 5px; }
+.zerus-link-save { background: rgb(var(--zerus-text) / .12); }
+
+.zerus-note-picker-anchor { z-index: 100; }
+.zerus-note-picker {
+  width: min(320px, calc(100vw - 24px));
+  max-height: min(360px, 45dvh);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 8px 30px #0002;
+  font: 13px/1.4 var(--font-sans, sans-serif);
+}
+.zerus-note-picker-heading { padding: 6px 8px; font-weight: 600; }
+.zerus-note-picker ul { list-style: none; padding: 0; margin: 0; }
+.zerus-note-picker li { padding: 8px; border-radius: 6px; cursor: pointer; }
+.zerus-note-picker li[aria-selected="true"] { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.zerus-note-picker strong, .zerus-note-picker small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zerus-note-picker small, .zerus-note-picker-hint { color: hsl(var(--muted-foreground)); font-size: 11px; }
+.zerus-note-picker-hint, .zerus-note-picker p { padding: 6px 8px; }
+
+/* Reserve room so actions above the first image are never clipped. */
+.zerus-mdx-content [data-editor-block-type="image"] {
+  margin-top: 48px;
+}
+.zerus-image-actions {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  width: max-content;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
+  background: hsl(var(--background));
+  box-shadow: 0 2px 8px #0002;
+}
+/* Keep hover active while crossing the gap between the image and toolbar. */
+.zerus-image-actions::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 8px;
+}
+.zerus-image-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: hsl(var(--foreground));
+}
+.zerus-image-actions button:hover { background: hsl(var(--accent)); }
+.zerus-image-actions button:focus-visible { outline: 2px solid hsl(var(--ring)); }
+.zerus-image-viewer {
+  width: calc(100vw - 2rem);
+  max-width: 1600px;
+  height: calc(100dvh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  padding: 48px 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.zerus-image-viewer-image { width: 100%; height: 100%; object-fit: contain; }
+.zerus-image-viewer > button { min-width: 44px; min-height: 44px; display: grid; place-items: center; top: 2px; right: 2px; }
+@media (max-width: 767px), (hover: none), (pointer: coarse) {
+  .zerus-mdx-content [data-editor-block-type="image"] { margin-top: 60px; }
+  .zerus-image-actions button { min-width: 44px; min-height: 44px; }
+}
+
+/* A quiet heading map that opens over the note without shifting its text. */
+.zerus-note-outline {
+  position: absolute;
+  z-index: 20;
+  right: 10px;
+  top: 100px;
+  max-height: calc(100% - 120px);
+  display: flex;
+  align-items: flex-start;
+}
+.zerus-outline-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 12px 6px;
+  width: 32px;
+  max-height: 240px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgb(var(--zerus-editor-bg) / 0.9);
+}
+.zerus-outline-rail span {
+  height: 2px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background: rgb(var(--zerus-text) / 0.25);
+}
+.zerus-outline-rail span.is-active { background: rgb(var(--zerus-accent)); }
+.zerus-outline-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: min(260px, calc(100vw - 64px));
+  max-height: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgb(var(--zerus-text) / 0.14);
+  border-radius: 10px;
+  background: rgb(var(--zerus-editor-bg));
+  color: rgb(var(--zerus-text));
+  box-shadow: 0 8px 30px rgb(0 0 0 / 0.18);
+}
+.zerus-note-outline:has(.zerus-outline-panel) { height: min(360px, calc(100% - 120px)); }
+.zerus-outline-header { display: flex; align-items: center; gap: 4px; padding: 8px; border-bottom: 1px solid rgb(var(--zerus-text) / 0.1); }
+.zerus-outline-header > span { flex: 1; padding-left: 4px; font-size: 12px; font-weight: 600; }
+.zerus-outline-header button { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 5px; }
+.zerus-outline-list { overflow-y: auto; overscroll-behavior: contain; padding: 5px; }
+.zerus-outline-list button { display: block; width: 100%; padding: 7px 10px; text-align: left; font-size: 12px; line-height: 1.5; border-radius: 5px; overflow-wrap: anywhere; }
+.zerus-outline-list button:hover, .zerus-outline-header button:hover { background: rgb(var(--zerus-text) / 0.07); }
+.zerus-outline-list button[aria-current], .zerus-outline-header button[aria-pressed="true"] { background: rgb(var(--zerus-accent) / 0.12); color: rgb(var(--zerus-accent)); }
+.zerus-note-outline button:focus-visible { outline: 2px solid rgb(var(--zerus-accent)); outline-offset: -2px; }
+@media (max-width: 640px) {
+  .zerus-note-outline { right: 0; }
 }

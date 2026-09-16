@@ -1,3 +1,4 @@
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
@@ -116,6 +117,7 @@ interface SidebarProps {
   onDefaultNoteTypeChange: (typePath: string[]) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
   onTypeOrderChange: (order: string[]) => void;
+  onOpenFilterInNewTab: (filter: NoteFilter) => void;
   onFilterChange: (filter: NoteFilter) => void;
   onOpenTypeInNewTab: (typePath: string[]) => void;
   onCollapse: () => void;
@@ -131,6 +133,7 @@ function flattenTypeKeys(nodes: TypeNode[]): string[] {
 function SidebarRow({
   active,
   onClick,
+  onOpenInNewTab,
   icon,
   label,
   count,
@@ -140,6 +143,7 @@ function SidebarRow({
 }: {
   active: boolean;
   onClick: () => void;
+  onOpenInNewTab?: () => void;
   icon: React.ReactNode;
   label: string;
   count?: number;
@@ -159,6 +163,9 @@ function SidebarRow({
     >
       <button
         onClick={onClick}
+        onMouseDown={(event) => {
+          if (onOpenInNewTab) handleMiddleMouseDown(event, onOpenInNewTab);
+        }}
         className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
       >
         <span className="shrink-0 opacity-80">{icon}</span>
@@ -408,6 +415,7 @@ function SortableTypeRow({
             <SidebarRow
               active={active}
               onClick={() => onFilterChange({ kind: "type", path: node.path })}
+              onOpenInNewTab={() => onOpenTypeInNewTab(node.path)}
               icon={
                 <TypeIcon
                   icon={typeIcon}
@@ -492,6 +500,7 @@ export function Sidebar({
   onHideSubtypeNotesChange,
   onTypeOrderChange,
   onFilterChange,
+  onOpenFilterInNewTab,
   onOpenTypeInNewTab,
   onCollapse,
 }: SidebarProps) {
@@ -727,6 +736,7 @@ export function Sidebar({
         <SidebarRow
           active={filter.kind === "all"}
           onClick={() => onFilterChange({ kind: "all" })}
+          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "all" })}
           icon={<Notebook size={15} />}
           label="All Notes"
           count={activeCount}
@@ -734,6 +744,7 @@ export function Sidebar({
         <SidebarRow
           active={filter.kind === "tasks"}
           onClick={() => onFilterChange({ kind: "tasks" })}
+          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "tasks" })}
           icon={<CheckSquare size={15} />}
           label="Tasks"
           count={taskCount}
@@ -743,6 +754,7 @@ export function Sidebar({
             <SidebarRow
               active={filter.kind === "external"}
               onClick={() => onFilterChange({ kind: "external" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "external" })}
               icon={<Files size={15} />}
               label="External Notes"
               count={externalCount}
@@ -750,6 +762,7 @@ export function Sidebar({
             <SidebarRow
               active={filter.kind === "files"}
               onClick={() => onFilterChange({ kind: "files" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "files" })}
               icon={<FileStack size={15} />}
               label="Files"
               count={fileCount}
@@ -759,6 +772,7 @@ export function Sidebar({
         <SidebarRow
           active={filter.kind === "links"}
           onClick={() => onFilterChange({ kind: "links" })}
+          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "links" })}
           icon={<Link2 size={15} />}
           label="Links"
           count={linkCount}
@@ -811,6 +825,7 @@ export function Sidebar({
         <SidebarRow
           active={filter.kind === "trash"}
           onClick={() => onFilterChange({ kind: "trash" })}
+          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "trash" })}
           icon={<Trash2 size={15} />}
           label="Trash"
           count={trashCount}

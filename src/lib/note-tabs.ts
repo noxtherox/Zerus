@@ -19,7 +19,24 @@ export interface TypeTab extends WorkspaceTabBase {
   editorOpen: boolean;
 }
 
-export type WorkspaceTab = NoteTab | TypeTab;
+export type GlobalFilter = Exclude<NoteFilter, { kind: "type" }>;
+
+export const GLOBAL_TAB_LABELS: Record<GlobalFilter["kind"], string> = {
+  all: "All Notes",
+  tasks: "Tasks",
+  external: "External Notes",
+  files: "Files",
+  links: "Links",
+  trash: "Trash",
+};
+
+export interface GlobalTab extends WorkspaceTabBase {
+  kind: "global";
+  filter: GlobalFilter;
+  selectedNoteId: string | null;
+}
+
+export type WorkspaceTab = NoteTab | TypeTab | GlobalTab;
 
 export interface NoteTabsState {
   enabled: boolean;
@@ -29,6 +46,7 @@ export interface NoteTabsState {
 }
 
 export type WorkspaceTabSeed =
+  | { kind: "global"; filter: GlobalFilter; selectedNoteId: string | null }
   | { kind: "note"; noteId: string; filter: NoteFilter }
   | {
       kind: "type";
@@ -151,6 +169,20 @@ export function openTypeInNewTab(
   });
 }
 
+export function openGlobalInNewTab(
+  state: NoteTabsState,
+  current: WorkspaceTabSeed | null,
+  filter: GlobalFilter,
+): NoteTabsState {
+  let next = state;
+  if (!next.enabled && current) next = appendTab(next, current);
+  const existing = next.tabs.find(
+    (tab) => tab.kind === "global" && tab.filter.kind === filter.kind,
+  );
+  if (existing) return { ...next, activeTabId: existing.id };
+  return appendTab(next, { kind: "global", filter, selectedNoteId: null });
+}
+
 export function updateActiveTypeTab(
   state: NoteTabsState,
   patch: Partial<Pick<TypeTab, "selectedNoteId" | "editorOpen">>,
@@ -174,6 +206,14 @@ export function replaceActiveTabNote(
   if (!active) return state;
   if (active.kind === "type") {
     return updateActiveTypeTab(state, { selectedNoteId: noteId });
+  }
+  if (active.kind === "global") {
+    return {
+      ...state,
+      tabs: state.tabs.map((tab) =>
+        tab.id === active.id ? { ...tab, selectedNoteId: noteId } : tab,
+      ),
+    };
   }
   if (!noteId) return state;
   return {

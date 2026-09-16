@@ -118,6 +118,7 @@ import {
   setNoteType,
   toggleNotePinned,
   toggleNoteArchived,
+  duplicateNote,
   trashNote,
   updateNoteBody,
 } from "@/store/notes-store";
@@ -971,6 +972,11 @@ export function EditorPane({
                   </DropdownMenuItem>
                 ) : (
                   <>
+                    <DropdownMenuItem onSelect={() => void duplicateNote(note.id).then((copy) => {
+                      if (copy) onOpenNote(copy.id);
+                    })}>
+                      <Copy className="mr-2" size={14} /> Duplicate note
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => toggleNoteArchived(note.id)}
                     >
@@ -1189,7 +1195,7 @@ export function EditorPane({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="line-clamp-3" title={noteTitle(note)}>
               Close “{noteTitle(note)}”?
             </AlertDialogTitle>
             <AlertDialogDescription>

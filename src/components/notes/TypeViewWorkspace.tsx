@@ -59,7 +59,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { NoteListFilters } from "@/components/notes/NoteListFilters";
+import {
+  NoteListFilterPills,
+  NoteListFilters,
+} from "@/components/notes/NoteListFilters";
 import { PropertyPills } from "@/components/notes/PropertyPills";
 import { filterNotes, type NoteFilter } from "@/lib/filters";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
@@ -1021,6 +1024,11 @@ export function TypeViewWorkspace({
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>
+          <NoteListFilterPills
+            filters={config.filters}
+            onChange={(filters) => onConfigChange({ filters })}
+            className="max-w-full shrink"
+          />
           <div className="relative w-52 min-w-40 max-w-full shrink">
             <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this view…" className="h-8 bg-zerus-surface pl-8 text-xs" />
@@ -1032,6 +1040,7 @@ export function TypeViewWorkspace({
             showArchivedToggle
             filters={config.filters}
             visibleProperties={config.visibleProperties}
+            showActivePills={false}
             onChange={(filters) => onConfigChange({ filters })}
             onVisiblePropertiesChange={(visibleProperties) => onConfigChange({ visibleProperties })}
           />

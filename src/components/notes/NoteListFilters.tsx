@@ -71,6 +71,7 @@ interface NoteListFiltersProps {
   filters: NoteListFilterState;
   visibleProperties?: string[];
   triggerClassName?: string;
+  showActivePills?: boolean;
   onChange: (filters: NoteListFilterState) => void;
   onVisiblePropertiesChange?: (properties: string[]) => void;
 }
@@ -83,6 +84,7 @@ export function NoteListFilters({
   filters,
   visibleProperties = [],
   triggerClassName,
+  showActivePills = true,
   onChange,
   onVisiblePropertiesChange,
 }: NoteListFiltersProps) {
@@ -165,17 +167,6 @@ export function NoteListFilters({
     filters.fileExtensions.length +
     filters.properties.length;
 
-  const removeType = (value: string) =>
-    onChange({
-      ...filters,
-      typeKeys: filters.typeKeys.filter((key) => key !== value),
-    });
-  const removeProperty = (name: string) =>
-    onChange({
-      ...filters,
-      properties: filters.properties.filter((item) => item.name !== name),
-    });
-
   return (
     <>
       <Popover open={open} onOpenChange={setOpen}>
@@ -184,7 +175,7 @@ export function NoteListFilters({
             variant={activeCount ? "secondary" : "outline"}
             size="sm"
             className={cn(
-              "relative h-8 shrink-0 gap-1.5 px-2.5",
+              "relative h-8 w-[132px] shrink-0 justify-center gap-1.5 px-2.5",
               triggerClassName,
             )}
             title="Sort and filter notes"
@@ -459,61 +450,108 @@ export function NoteListFilters({
         </PopoverContent>
       </Popover>
 
-      {activeCount > 0 && (
-        <div className="col-span-2 flex flex-wrap gap-1 pt-0.5">
-          {filters.showArchived && (
-            <FilterPill
-              label="Archived shown"
-              onRemove={() => onChange({ ...filters, showArchived: false })}
-            />
-          )}
-          {filters.date && (
-            <FilterPill
-              label={`Updated: ${DATE_OPTIONS.find((option) => option.value === filters.date)?.label ?? filters.date}`}
-              onRemove={() => onChange({ ...filters, date: null })}
-            />
-          )}
-          {filters.typeKeys.map((key) => (
-            <FilterPill
-              key={key || "unfiled"}
-              label={`Type: ${key ? key.split("/").join(" / ") : "Unfiled"}`}
-              onRemove={() => removeType(key)}
-            />
-          ))}
-          {filters.fileExtensions.map((extension) => (
-            <FilterPill
-              key={extension}
-              label={`File: ${extension.toUpperCase()}`}
-              onRemove={() =>
-                onChange({
-                  ...filters,
-                  fileExtensions: filters.fileExtensions.filter((value) => value !== extension),
-                })
-              }
-            />
-          ))}
-          {filters.properties.map((property) => (
-            <FilterPill
-              key={property.name}
-              label={
-                property.valueKey === null
-                  ? `Has ${property.name}`
-                  : `${property.name}: ${
-                      propertyOptions
-                        .find(
-                          (option) =>
-                            option.name.toLowerCase() === property.name.toLowerCase(),
-                        )
-                        ?.values.find((value) => value.value === property.valueKey)
-                        ?.label ?? propertyValueLabel(property.valueKey)
-                    }`
-              }
-              onRemove={() => removeProperty(property.name)}
-            />
-          ))}
-        </div>
+      {showActivePills && (
+        <NoteListFilterPills
+          filters={filters}
+          propertyOptions={propertyOptions}
+          onChange={onChange}
+          className="col-span-2 pt-0.5"
+        />
       )}
     </>
+  );
+}
+
+interface NoteListFilterPillsProps {
+  filters: NoteListFilterState;
+  propertyOptions?: Array<{
+    name: string;
+    values: Array<{ value: string; label: string }>;
+  }>;
+  className?: string;
+  onChange: (filters: NoteListFilterState) => void;
+}
+
+export function NoteListFilterPills({
+  filters,
+  propertyOptions = [],
+  className,
+  onChange,
+}: NoteListFilterPillsProps) {
+  const activeCount =
+    (filters.date ? 1 : 0) +
+    (filters.showArchived ? 1 : 0) +
+    filters.typeKeys.length +
+    filters.fileExtensions.length +
+    filters.properties.length;
+
+  if (activeCount === 0) return null;
+
+  return (
+    <div className={cn("flex min-w-0 flex-wrap gap-1", className)}>
+      {filters.showArchived && (
+        <FilterPill
+          label="Archived shown"
+          onRemove={() => onChange({ ...filters, showArchived: false })}
+        />
+      )}
+      {filters.date && (
+        <FilterPill
+          label={`Updated: ${DATE_OPTIONS.find((option) => option.value === filters.date)?.label ?? filters.date}`}
+          onRemove={() => onChange({ ...filters, date: null })}
+        />
+      )}
+      {filters.typeKeys.map((key) => (
+        <FilterPill
+          key={key || "unfiled"}
+          label={`Type: ${key ? key.split("/").join(" / ") : "Unfiled"}`}
+          onRemove={() =>
+            onChange({
+              ...filters,
+              typeKeys: filters.typeKeys.filter((value) => value !== key),
+            })
+          }
+        />
+      ))}
+      {filters.fileExtensions.map((extension) => (
+        <FilterPill
+          key={extension}
+          label={`File: ${extension.toUpperCase()}`}
+          onRemove={() =>
+            onChange({
+              ...filters,
+              fileExtensions: filters.fileExtensions.filter((value) => value !== extension),
+            })
+          }
+        />
+      ))}
+      {filters.properties.map((property) => (
+        <FilterPill
+          key={property.name}
+          label={
+            property.valueKey === null
+              ? `Has ${property.name}`
+              : `${property.name}: ${
+                  propertyOptions
+                    .find(
+                      (option) =>
+                        option.name.toLowerCase() === property.name.toLowerCase(),
+                    )
+                    ?.values.find((value) => value.value === property.valueKey)
+                    ?.label ?? propertyValueLabel(property.valueKey)
+                }`
+          }
+          onRemove={() =>
+            onChange({
+              ...filters,
+              properties: filters.properties.filter(
+                (item) => item.name !== property.name,
+              ),
+            })
+          }
+        />
+      ))}
+    </div>
   );
 }
 

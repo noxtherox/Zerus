@@ -93,6 +93,7 @@ import {
   openNoteInNewTab,
   openTypeInActiveTab,
   openTypeInNewTab,
+  openGlobalInNewTab,
   replaceActiveTabNote,
   toggleNoteTabPinned,
   updateActiveTypeTab,
@@ -305,6 +306,13 @@ const Index = () => {
   const currentWorkspaceSeed = (): WorkspaceTabSeed | null => {
     const active = activeWorkspaceTab(noteTabs);
     if (active) {
+      if (active.kind === "global") {
+        return {
+          kind: "global",
+          filter: active.filter,
+          selectedNoteId: active.selectedNoteId,
+        };
+      }
       return active.kind === "type"
         ? {
             kind: "type",
@@ -328,10 +336,15 @@ const Index = () => {
     }
     return selectedNoteId
       ? { kind: "note", noteId: selectedNoteId, filter }
-      : null;
+      : { kind: "global", filter, selectedNoteId: null };
   };
 
   const showWorkspaceTab = (tab: WorkspaceTab) => {
+    if (tab.kind === "global") {
+      navigate({ filter: tab.filter, selectedNoteId: tab.selectedNoteId });
+      setExpandedEditorOpen(false);
+      return;
+    }
     if (tab.kind === "type") {
       navigate({
         filter: { kind: "type", path: tab.typePath },
@@ -396,6 +409,10 @@ const Index = () => {
       setNoteTabs((tabs) =>
         updateActiveTypeTab(tabs, { selectedNoteId: id, editorOpen }),
       );
+      return;
+    }
+    if (active?.kind === "global") {
+      setNoteTabs((tabs) => replaceActiveTabNote(tabs, id));
       return;
     }
     setNoteTabs((tabs) => openNoteInActiveTab(tabs, id, filter));
@@ -564,6 +581,23 @@ const Index = () => {
       noteTabs,
       currentWorkspaceSeed(),
       typePath,
+    );
+    setNoteTabs(nextTabs);
+    const nextTab = activeWorkspaceTab(nextTabs);
+    if (nextTab) showWorkspaceTab(nextTab);
+    setListFilters(EMPTY_NOTE_LIST_FILTERS);
+    setSearch("");
+  };
+
+  const handleOpenFilterInNewTab = (nextFilter: NoteFilter) => {
+    if (nextFilter.kind === "type") {
+      handleOpenTypeInNewTab(nextFilter.path);
+      return;
+    }
+    const nextTabs = openGlobalInNewTab(
+      noteTabs,
+      currentWorkspaceSeed(),
+      nextFilter,
     );
     setNoteTabs(nextTabs);
     const nextTab = activeWorkspaceTab(nextTabs);
@@ -841,6 +875,7 @@ const Index = () => {
             onDefaultNoteTypeChange={handleDefaultNoteTypeChange}
             onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
             onFilterChange={handleFilterChange}
+            onOpenFilterInNewTab={handleOpenFilterInNewTab}
             onRestore={handleRestoreSidebar}
           />
         </div>
@@ -886,6 +921,7 @@ const Index = () => {
               onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
               onTypeOrderChange={handleTypeOrderChange}
               onFilterChange={handleFilterChange}
+              onOpenFilterInNewTab={handleOpenFilterInNewTab}
               onOpenTypeInNewTab={handleOpenTypeInNewTab}
               onCollapse={() => sidebarPanelRef.current?.collapse()}
             />

@@ -4473,6 +4473,54 @@ export async function createNote(
   return note;
 }
 
+/** Creates an independent note in the same folder, retaining linked resources. */
+export async function duplicateNote(id: string): Promise<Note | null> {
+  if (!backend || state.busyNoteIds.has(id)) return null;
+  const initial = state.notes.find((note) => note.id === id);
+  if (!initial || isExternalNote(initial) || isTrashed(initial)) return null;
+  setNoteBusy(id, true);
+  try {
+    if (!(await flushUntilIdle(id))) return null;
+    const source = state.notes.find((note) => note.id === id);
+    if (!source || isExternalNote(source) || isTrashed(source)) return null;
+    const copiedId = crypto.randomUUID();
+    const createdAt = new Date().toISOString();
+    let content = setZerusState(source.content, {
+      id: copiedId,
+      pinned: false,
+      archived: false,
+    });
+    // The duplicate references the same document without taking ownership of it.
+    const file = getFileHubReference(source);
+    if (file?.managed) content = setFileHubReference(content, { ...file, managed: false });
+    const path = await writeUniquePathOnDisk(
+      source.path.split("/").slice(0, -1).join("/"),
+      `${fileStem(source.path)} copy`,
+      content,
+    );
+    const copied: Note = {
+      id: copiedId, path, content, pinned: false, archived: false,
+      createdAt, updatedAt: createdAt,
+    };
+    diskSnapshots.set(copied.id, content);
+    if (state.isNotePaginationEnabled) {
+      mobileNoteEntries.push({ path, createdAt, updatedAt: createdAt });
+      sortMobileEntries();
+    }
+    const summary = state.isNotePaginationEnabled
+      ? summarizeMobileEntries(mobileNoteEntries)
+      : { totalNoteCount: state.totalNoteCount + 1 };
+    setState({ notes: [copied, ...state.notes], ...summary });
+    saveCurrentStartupCache();
+    return copied;
+  } catch (error) {
+    reportError("duplicate note", error);
+    return null;
+  } finally {
+    setNoteBusy(id, false);
+  }
+}
+
 async function uniqueManagedDocumentPath(
   dir: string,
   name: string,
