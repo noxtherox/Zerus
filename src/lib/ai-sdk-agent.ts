@@ -82,6 +82,55 @@ const EMPTY_USAGE: LanguageModelV4GenerateResult["usage"] = {
   },
 };
 
+const READ_ONLY_CLI_COMMANDS = new Set([
+  "doctor",
+  "history",
+  "links",
+  "search",
+]);
+
+function positionalCliArgs(args: string[]): string[] {
+  const positional: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--vault") {
+      index += 1;
+    } else if (!argument.startsWith("-")) {
+      positional.push(argument);
+    }
+  }
+  return positional;
+}
+
+export function isReadOnlyCliCall(args: string[]): boolean {
+  if (
+    args.some((argument) =>
+      argument === "--help" || argument === "-h" ||
+      argument === "--version" || argument === "-V"
+    )
+  ) {
+    return true;
+  }
+  const [command, subcommand, leaf] = positionalCliArgs(args);
+  if (!command) return true;
+  if (READ_ONLY_CLI_COMMANDS.has(command)) return true;
+  if (command === "vault") return subcommand === "list" || subcommand === "current";
+  if (command === "note") {
+    return subcommand === "list" || subcommand === "get" ||
+      (subcommand === "property" && leaf === "list");
+  }
+  if (command === "type") {
+    return (subcommand === "icon" || subcommand === "view") && leaf === "get";
+  }
+  if (command === "schema" || command === "attachment") return subcommand === "list";
+  if (command === "task") {
+    return subcommand === "list" || subcommand === "get" ||
+      (subcommand === "category" && leaf === "list");
+  }
+  if (command === "saved-link") return subcommand === "list" || subcommand === "get";
+  return command === "file" && subcommand === "get";
+}
+
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   const chunkSize = 0x8000;
@@ -314,7 +363,9 @@ export async function runZerusAgent(
     options.abortSignal?.throwIfAborted();
     options.onToolStart?.({ call });
     const isMutation =
-      call.name === "note_append" || call.name === "note_set_body";
+      call.name === "note_append" ||
+      call.name === "note_set_body" ||
+      (call.name === "zerus_cli" && !isReadOnlyCliCall(call.arguments.args));
     const result =
       isMutation && !options.mutationAuthorized
         ? {
@@ -362,6 +413,14 @@ export async function runZerusAgent(
         "Replace the current note's Markdown body when the user explicitly asks to update or rewrite it.",
       inputSchema: z.object({ body: z.string().min(1).max(100_000) }),
       execute: (input) => execute({ name: "note_set_body", arguments: input }),
+    }),
+    zerus_cli: tool({
+      description:
+        "Run any Zerus CLI command in the desktop app. Pass each argument after the `zerus` executable as a separate array item. The active vault, --json, and --no-input are added by default unless explicitly supplied. Use --help to discover commands and flags. For operations requiring --yes, first run the preview without --yes, report the impact, and wait for explicit user confirmation in a later message before applying it.",
+      inputSchema: z.object({
+        args: z.array(z.string().min(1).max(100_000)).min(1).max(128),
+      }),
+      execute: (input) => execute({ name: "zerus_cli", arguments: input }),
     }),
   };
   const agent = new ToolLoopAgent({

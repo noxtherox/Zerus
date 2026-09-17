@@ -24,6 +24,7 @@ import type * as Mdast from "mdast";
 
 import { LargeTableNode } from "./large-table-node";
 import { isLargeTable, normalizeTable } from "./table-data";
+import { getTableColumnWidths, setTableColumnWidths } from "./table-widths";
 
 type ImportChildren = (
   source: Mdast.Parent,
@@ -49,6 +50,9 @@ export function $createElementTable(
   importChildren: ImportChildren,
 ): TableNode {
   const table = $createTableNode();
+
+  const widths = getTableColumnWidths(mdastTable);
+  if (widths) table.setColWidths(widths);
 
   mdastTable.children.forEach((mdastRow, rowIndex) => {
     const row = $createTableRowNode();
@@ -92,7 +96,7 @@ export function $exportElementTable(
       : null;
   });
 
-  return {
+  const exported: Mdast.Table = {
     type: "table",
     align,
     children: rows.map((row): Mdast.TableRow => ({
@@ -120,6 +124,8 @@ export function $exportElementTable(
         }),
     })),
   };
+  setTableColumnWidths(exported, table.getColWidths());
+  return exported;
 }
 
 export const MdastElementTableVisitor: MdastImportVisitor<Mdast.Table> = {

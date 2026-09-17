@@ -46,6 +46,7 @@ export function chatActivityLabel(name: string): string {
       note_list: "Finding notes",
       note_append: "Adding to your note",
       note_set_body: "Updating your note",
+      zerus_cli: "Running the Zerus CLI",
     }[name] ?? "Working with your notes"
   );
 }

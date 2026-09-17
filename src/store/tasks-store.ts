@@ -118,7 +118,7 @@ export function createTask(title: string, listId: string | null = null): Task | 
   const cleanTitle = title.trim();
   if (!cleanTitle) return null;
   const now = new Date();
-  const task: Task = { id: crypto.randomUUID(), listId: lists.some((list) => list.id === listId) ? listId : null, title: cleanTitle, completed: false, category: null, priority: "none", date: localDateKey(now), dueDate: null, completedAt: null, linkedNoteIds: [], createdAt: now.toISOString() };
+  const task: Task = { id: crypto.randomUUID(), listId: lists.some((list) => list.id === listId) ? listId : null, title: cleanTitle, completed: false, category: null, priority: "none", date: localDateKey(now), dueDate: null, completedAt: null, linkedNoteIds: [], createdAt: now.toISOString(), updatedAt: now.toISOString() };
   tasks = [...tasks, task]; localRevision += 1; emit(); persist(tasks); return task;
 }
 
@@ -127,7 +127,7 @@ export function updateTask(id: string, patch: TaskPatch): void {
   tasks = tasks.map((task) => {
     if (task.id !== id) return task;
     const completed = patch.completed ?? task.completed;
-    return { ...task, ...patch, id: task.id, createdAt: task.createdAt,
+    return { ...task, ...patch, id: task.id, createdAt: task.createdAt, updatedAt: now,
       completedAt: completed ? (task.completedAt ?? now) : null,
       linkedNoteIds: patch.linkedNoteIds ? [...new Set(patch.linkedNoteIds)] : task.linkedNoteIds,
     };

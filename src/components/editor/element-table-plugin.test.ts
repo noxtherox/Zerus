@@ -16,8 +16,17 @@ import {
   TableRowNode,
 } from "@lexical/table";
 import type * as Mdast from "mdast";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import { gfmTableFromMarkdown, gfmTableToMarkdown } from "mdast-util-gfm-table";
+import { toMarkdown } from "mdast-util-to-markdown";
+import { gfmTable } from "micromark-extension-gfm-table";
 import { describe, expect, it } from "vitest";
 import { $createElementTable, $exportElementTable } from "./element-table-model";
+import {
+  getTableColumnWidths,
+  tableWidthsFromMarkdown,
+  withTableWidthSerialization,
+} from "./table-widths";
 
 function tableFixture(rows: number, columns: number): Mdast.Table {
   return {
@@ -99,5 +108,47 @@ describe("element table plugin", () => {
       },
       { discrete: true },
     );
+  });
+
+  it("preserves resized column widths through Markdown", () => {
+    const fixture = tableFixture(2, 3);
+    const editor = createEditor({ nodes: [TableNode, TableRowNode, TableCellNode] });
+    let exported: Mdast.Table | null = null;
+
+    editor.update(
+      () => {
+        const table = $createElementTable(fixture, appendPlainText);
+        table.setColWidths([120, 240, 160]);
+        $getRoot().append(table);
+        exported = $exportElementTable(table, {
+          visit() {},
+          visitChildren(node, parent) {
+            if (!$isElementNode(node)) return;
+            node.getChildren().forEach((child) => {
+              if ($isTextNode(child)) {
+                parent.children.push({ type: "text", value: child.getTextContent() });
+              }
+            });
+          },
+        });
+      },
+      { discrete: true },
+    );
+
+    expect(exported).not.toBeNull();
+    const markdown = toMarkdown(exported!, {
+      extensions: [withTableWidthSerialization(gfmTableToMarkdown())],
+    });
+    expect(markdown).toContain("<!-- zerus-table-widths: 120,240,160 -->");
+
+    const reparsed = fromMarkdown(markdown, {
+      extensions: [gfmTable()],
+      mdastExtensions: [gfmTableFromMarkdown(), tableWidthsFromMarkdown],
+    });
+    const table = reparsed.children[0];
+    expect(table.type).toBe("table");
+    if (table.type === "table") {
+      expect(getTableColumnWidths(table)).toEqual([120, 240, 160]);
+    }
   });
 });

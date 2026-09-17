@@ -1,3 +1,4 @@
+import { GlobalSearchButton } from "@/components/search/GlobalSearch";
 import { handleMiddleMouseDown } from "@/lib/middle-click";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -733,6 +734,7 @@ export function Sidebar({
         ref={typeScrollContainerRef}
         className="flex-1 space-y-0.5 overflow-y-auto px-2"
       >
+        <GlobalSearchButton className="w-full" />
         <SidebarRow
           active={filter.kind === "all"}
           onClick={() => onFilterChange({ kind: "all" })}

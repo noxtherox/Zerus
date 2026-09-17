@@ -607,7 +607,7 @@ export function MarkdownEditor({
         className="zerus-mdx-shell"
         onClickCapture={handleClick}
         onKeyDownCapture={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+          if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
             event.preventDefault();
             setKeyboardFindRequest((request) => request + 1);
           }

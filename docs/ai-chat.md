@@ -8,6 +8,10 @@ Answers support Markdown, note links, Copy, Save as note, Append to note, and Re
 
 Desktop selects sibling excerpts by question relevance. Long requests use a 24,000-character recent-history budget, retaining complete turns and the current question. Older messages stay in history; available mobile conversation memory is also included, capped at 8,000 characters. The interface indicates when older history was omitted. This is a character budget, not a model-specific token estimate.
 
+## Desktop CLI access
+
+Desktop AI chat can run the complete bundled `zerus` CLI through its native tool bridge. The active vault, JSON output, and non-interactive mode are supplied automatically unless the tool call specifies alternatives. CLI arguments are passed directly to the executable rather than through a shell. Read commands can run whenever they help answer a request; commands that change vault data require an explicit instruction in the current user message. Operations guarded by `--yes` must be previewed first and require a later explicit confirmation before the AI can apply them. Mobile AI chat does not execute the desktop CLI.
+
 ## Development preview
 
 Run `pnpm dev` and open `/app`, then **Chat preview**. This development-only entry uses local note excerpts, clearly labelled as a preview; it does not call a provider. It exercises history, context selection, streaming controls, and answer actions in the browser's own vault. Real provider streaming and cancellation use the native desktop commands and require running the updated desktop app.

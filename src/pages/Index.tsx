@@ -1,3 +1,5 @@
+import { GlobalSearch } from "@/components/search/GlobalSearch";
+import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import {
   useEffect,
   useMemo,
@@ -157,12 +159,17 @@ const Index = () => {
     createNavigationHistory(INITIAL_NAVIGATION_ENTRY),
   );
   const { filter, selectedNoteId } = navigation.current;
+  useEffect(() => {
+    if (selectedNoteId) recordSearchVisit(vault.location, `note:${selectedNoteId}`);
+    if (selectedTaskId) recordSearchVisit(vault.location, `task:${selectedTaskId}`);
+  }, [selectedNoteId, selectedTaskId, vault.location]);
   const [search, setSearch] = useState("");
   const [listFilters, setListFilters] =
     useState<NoteListFilters>(EMPTY_NOTE_LIST_FILTERS);
   const [listVisibleProperties, setListVisibleProperties] = useState<string[]>([]);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [searchChatRequest, setSearchChatRequest] = useState<SearchChatRequest | null>(null);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
@@ -832,8 +839,10 @@ const Index = () => {
           />
         </div>
       </div>
-      {(vault.isDesktop || import.meta.env.DEV) && (
+      {(vault.isDesktop || import.meta.env.DEV || aiOpen) && (
         <AiPanel
+          searchRequest={searchChatRequest}
+          onSearchRequestHandled={() => setSearchChatRequest(null)}
           open={aiOpen}
           note={selectedNote}
           notes={notes}
@@ -849,6 +858,19 @@ const Index = () => {
   return (
     <>
       <AutoUpdater />
+      <GlobalSearch onOpenItem={item => {
+        if (item.note) handleOpenNote(item.id);
+        else if (item.task) handleOpenTask(item.id);
+        else if (item.chat) {
+          navigate({ filter: { kind: "all" }, selectedNoteId: null });
+          setSearchChatRequest({ id: crypto.randomUUID(), conversation: item.chat });
+          setAiOpen(true);
+        }
+      }} onAskAI={request => {
+        navigate({ filter: { kind: "all" }, selectedNoteId: null });
+        setSearchChatRequest(request);
+        setAiOpen(true);
+      }} />
       {import.meta.env.DEV && !vault.isDesktop && !aiOpen && filter.kind !== "tasks" && <button className="fixed bottom-4 right-4 z-50 rounded-full bg-zerus-accent px-4 py-2 text-sm text-white shadow-lg" onClick={() => setAiOpen(true)}>Chat preview</button>}
       <div
         className={cn(
@@ -994,8 +1016,10 @@ const Index = () => {
                       onSetProperty={setNoteProperty}
                     />
                   </div>
-                  {(vault.isDesktop || import.meta.env.DEV) && !expandedEditorOpen && (
+                  {(vault.isDesktop || import.meta.env.DEV || aiOpen) && !expandedEditorOpen && (
                     <AiPanel
+          searchRequest={searchChatRequest}
+          onSearchRequestHandled={() => setSearchChatRequest(null)}
                       open={aiOpen}
                       note={null}
                       notes={notes}

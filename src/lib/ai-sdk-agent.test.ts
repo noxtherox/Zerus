@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { runZerusAgent } from "@/lib/ai-sdk-agent";
+import { isReadOnlyCliCall, runZerusAgent } from "@/lib/ai-sdk-agent";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -107,6 +107,7 @@ describe("runZerusAgent", () => {
     };
     expect(firstRequest.request.systemPrompt).toContain("Input JSON schema");
     expect(firstRequest.request.systemPrompt).toContain("note_set_body");
+    expect(firstRequest.request.systemPrompt).toContain("zerus_cli");
     expect(firstRequest.request.systemPrompt).not.toContain("- web_search:");
 
     const secondRequest = vi.mocked(invoke).mock.calls[1][1] as {
@@ -115,6 +116,58 @@ describe("runZerusAgent", () => {
     expect(secondRequest.request.messages.some((message) =>
       message.content.includes("Zerus tool result for search")
     )).toBe(true);
+  });
+
+  it("lets the agent run a read-only Zerus CLI command", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        content:
+          '<zerus_tool>{"name":"zerus_cli","arguments":{"args":["note","list"]}}</zerus_tool>',
+        reasoning: null,
+      })
+      .mockResolvedValueOnce({ content: "You have one note.", reasoning: null });
+    const executeTool = vi.fn().mockResolvedValue({
+      ok: true,
+      result: { stdout: '{"ok":true}' },
+    });
+
+    const result = await runZerusAgent({
+      providerConfig,
+      streamId: "request-cli",
+      systemPrompt: "Use the Zerus CLI when useful.",
+      messages: [{ role: "user", content: "List my notes." }],
+      mutationAuthorized: false,
+      executeTool,
+    });
+
+    expect(result.text).toBe("You have one note.");
+    expect(executeTool).toHaveBeenCalledWith({
+      name: "zerus_cli",
+      arguments: { args: ["note", "list"] },
+    });
+  });
+
+  it("refuses a mutating CLI command without current user authorization", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        content:
+          '<zerus_tool>{"name":"zerus_cli","arguments":{"args":["note","archive","--path","Done.md"]}}</zerus_tool>',
+        reasoning: null,
+      })
+      .mockResolvedValueOnce({ content: "I did not archive it.", reasoning: null });
+    const executeTool = vi.fn();
+
+    const result = await runZerusAgent({
+      providerConfig,
+      streamId: "request-cli-write",
+      systemPrompt: "Use the Zerus CLI when useful.",
+      messages: [{ role: "user", content: "How do archives work?" }],
+      mutationAuthorized: false,
+      executeTool,
+    });
+
+    expect(result.text).toBe("I did not archive it.");
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("refuses a write tool when the current request did not authorize mutation", async () => {
@@ -147,6 +200,20 @@ describe("runZerusAgent", () => {
     expect(secondRequest.request.messages.some((message) =>
       message.content.includes("did not explicitly authorize")
     )).toBe(true);
+  });
+});
+
+describe("isReadOnlyCliCall", () => {
+  it("recognizes CLI reads even with global vault arguments", () => {
+    expect(isReadOnlyCliCall(["--vault", "/tmp/Vault", "note", "list"])).toBe(true);
+    expect(isReadOnlyCliCall(["task", "category", "list"])).toBe(true);
+    expect(isReadOnlyCliCall(["type", "view", "get", "Projects"])).toBe(true);
+  });
+
+  it("treats unknown and write commands as mutations", () => {
+    expect(isReadOnlyCliCall(["note", "archive", "--path", "Done.md"])).toBe(false);
+    expect(isReadOnlyCliCall(["task", "create", "Ship release"])).toBe(false);
+    expect(isReadOnlyCliCall(["future-command"])).toBe(false);
   });
 });
 

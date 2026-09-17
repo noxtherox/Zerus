@@ -1,3 +1,4 @@
+import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { AiMarkdown } from "@/components/ai/AiMarkdown";
 import { ChatAnswerActions } from "@/components/ai/ChatAnswerActions";
 import { ChatContextPicker } from "@/components/ai/ChatContextPicker";
@@ -257,6 +258,8 @@ function PersistedChatImage({ attachment }: { attachment: ChatImageAttachment })
 }
 
 export function PersistentAIChat({
+  searchRequest,
+  onSearchRequestHandled,
   notes,
   notesReady,
   notesPreparationError,
@@ -269,6 +272,8 @@ export function PersistentAIChat({
   onOpenNote,
   scope,
 }: {
+  searchRequest?: SearchChatRequest | null;
+  onSearchRequestHandled?: () => void;
   notes: Note[];
   notesReady: boolean;
   notesPreparationError: string | null;
@@ -284,6 +289,7 @@ export function PersistentAIChat({
   const nativeCloudAIAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   const fullViewportHeight = useRef(typeof window === "undefined" ? 0 : (window.visualViewport?.height ?? window.innerHeight));
   const returningFromNote = useRef(false);
+  const historySelectionGeneration = useRef(0);
   const previousScopeKey = useRef(JSON.stringify(scope));
   const previousOwner = useRef<string | null>(null);
   const speechDraftPrefix = useRef("");
@@ -381,6 +387,7 @@ export function PersistentAIChat({
     const backend = getVaultBackend();
     if (!backend || !device) return [];
     setHistoryLoading(true);
+    const selectionGeneration = historySelectionGeneration.current;
     try {
       let loaded = await loadChatConversations(backend);
       if (await purgeExpiredChats(backend, loaded, device)) {
@@ -388,6 +395,7 @@ export function PersistentAIChat({
       }
       setConversations(loaded);
       setConversationId((existingId) => {
+        if (selectionGeneration !== historySelectionGeneration.current) return existingId;
         if (selectedId) return selectedId;
         if (existingId && loaded.some((conversation) => conversation.id === existingId)) return existingId;
         if (!selectPreferred || blankChat) return null;
@@ -403,6 +411,29 @@ export function PersistentAIChat({
       setHistoryLoading(false);
     }
   }, [blankChat, device]);
+
+  useEffect(() => {
+    if (!visible || !device || !searchRequest || busy) return;
+    historySelectionGeneration.current += 1;
+    if (searchRequest.conversation) {
+      const chat = searchRequest.conversation;
+      setConversations(current => [chat, ...current.filter(item => item.id !== chat.id)]);
+      setConversationId(chat.id);
+      setBlankChat(false);
+    } else {
+      setConversationId(null);
+      setBlankChat(true);
+      setDraft(searchRequest.query ?? "");
+      setPendingDocuments(searchRequest.document ? [searchRequest.document] : []);
+      replacePendingImages([]);
+    }
+    onSearchRequestHandled?.();
+    // Consume after device initialization; keep the query unsent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, device, searchRequest, busy]);
+  useEffect(() => {
+    if (visible && conversationId) recordSearchVisit(getVaultBackend()?.location ?? null, `chat:${conversationId}`);
+  }, [visible, conversationId]);
 
   useEffect(() => { void getChatDevice().then(setDevice); }, []);
 
@@ -479,7 +510,7 @@ export function PersistentAIChat({
   }, [nativeCloudAIAvailable]);
 
   useEffect(() => {
-    if (!visible || !device) return;
+    if (!visible || !device || searchRequest) return;
     if (returningFromNote.current) {
       returningFromNote.current = false;
       void refreshHistory(false);
@@ -488,7 +519,7 @@ export function PersistentAIChat({
     } else {
       void refreshHistory(false);
     }
-  }, [blankChat, conversationId, device, refreshHistory, visible]);
+  }, [blankChat, conversationId, device, refreshHistory, visible, searchRequest]);
 
   useEffect(() => {
     if (!visible || !device) return;

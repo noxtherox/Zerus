@@ -6,10 +6,10 @@ Tables remain standard GFM Markdown. The integration uses MDXEditor's public rea
 
 - Insert table lets you choose 2–20 rows (including the header) and 1–12 columns.
 - Hover a cell with the mouse to reveal a subtle vertical ellipsis inside its right edge. Touch users select a cell to reveal it. The grouped menu contains column alignment, add/move/delete row and column actions, and secondary table-wide options. No text padding changes when controls appear.
-- Drag the right column border to resize it, or focus the resize handle and use Left/Right. Widths are editor-only and reset when the Markdown is reloaded.
+- Drag the right column border to resize it, or focus the resize handle and use Left/Right. Widths survive save and reload in a `zerus-table-widths` HTML comment immediately before the table. Other Markdown apps can ignore the comment and continue to read the standard GFM table.
 - Tab and Shift+Tab navigate cells. Enter moves to the same column in the next row, adding a row at the end. Escape closes an expanded table or exits an inline table.
 - Expand table keeps the existing editor and selection. Closing restores the note's scroll position.
-- The first row is always the Markdown header. Merged cells and custom cell backgrounds are disabled. Column widths are presentation only and are not saved in Markdown.
+- The first row is always the Markdown header. Merged cells and custom cell backgrounds are disabled. Column widths are presentation metadata; invalid or mismatched width comments are ignored.
 - Spreadsheet TSV paste supports rectangular ranges, empty cells, quoted tabs, and escaped quotes. Multiline spreadsheet cells become single-line text separated by spaces, matching GFM's inline cell model.
 
 ## Large tables

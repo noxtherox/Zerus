@@ -28,6 +28,16 @@ struct CliInstallStatus {
     update_available: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CliRunResult {
+    ok: bool,
+    exit_code: Option<i32>,
+    stdout: String,
+    stderr: String,
+    truncated: bool,
+}
+
 const BUNDLED_CLI_VERSION: &str = "0.2.0";
 const ZERUS_SKILL_VERSION: &str = "2";
 const ZERUS_SKILL_MARKDOWN: &str = include_str!("../skills/zerus-skill.md");
@@ -122,6 +132,124 @@ fn cli_install(app: tauri::AppHandle) -> Result<CliInstallStatus, String> {
             .map_err(|error| error.to_string())?;
     }
     cli_status()
+}
+
+fn cli_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let file_name = if cfg!(target_os = "windows") {
+        "zerus.exe"
+    } else {
+        "zerus"
+    };
+    let candidates = [
+        app.path()
+            .resource_dir()
+            .ok()
+            .map(|path| path.join("binaries").join(file_name)),
+        std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(|parent| parent.join(file_name))),
+        Some(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("target/release")
+                .join(file_name),
+        ),
+        Some(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("target/debug")
+                .join(file_name),
+        ),
+        cli_target_path().ok(),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| path.is_file())
+        .ok_or_else(|| "The Zerus CLI executable is not available in this build".to_string())
+}
+
+fn has_cli_option(args: &[String], name: &str) -> bool {
+    args.iter()
+        .any(|argument| argument == name || argument.starts_with(&format!("{name}=")))
+}
+
+fn bounded_cli_output(bytes: Vec<u8>) -> (String, bool) {
+    const MAX_OUTPUT_BYTES: usize = 100_000;
+    let truncated = bytes.len() > MAX_OUTPUT_BYTES;
+    let slice = if truncated {
+        &bytes[..MAX_OUTPUT_BYTES]
+    } else {
+        &bytes
+    };
+    (String::from_utf8_lossy(slice).into_owned(), truncated)
+}
+
+fn cli_command_args(args: Vec<String>, vault: Option<String>) -> Result<Vec<String>, String> {
+    if args.is_empty() || args.len() > 128 {
+        return Err("The Zerus CLI requires between 1 and 128 arguments".to_string());
+    }
+    if args
+        .iter()
+        .any(|argument| argument.is_empty() || argument.len() > 100_000 || argument.contains('\0'))
+    {
+        return Err("The Zerus CLI received an invalid argument".to_string());
+    }
+
+    let mut command_args = Vec::new();
+    if !has_cli_option(&args, "--no-input") {
+        command_args.push("--no-input".to_string());
+    }
+    if !has_cli_option(&args, "--json")
+        && !has_cli_option(&args, "--jsonl")
+        && !has_cli_option(&args, "--quiet")
+    {
+        command_args.push("--json".to_string());
+    }
+    if !has_cli_option(&args, "--vault") {
+        if let Some(vault) = vault.filter(|value| !value.trim().is_empty()) {
+            command_args.push("--vault".to_string());
+            command_args.push(vault);
+        }
+    }
+    command_args.extend(args);
+    Ok(command_args)
+}
+
+fn cli_run_blocking(
+    app: &tauri::AppHandle,
+    args: Vec<String>,
+    vault: Option<String>,
+) -> Result<CliRunResult, String> {
+    let command_args = cli_command_args(args, vault)?;
+    let executable = cli_executable(app)?;
+    let output = Command::new(&executable)
+        .args(&command_args)
+        .output()
+        .map_err(|error| {
+            format!(
+                "Could not run the Zerus CLI at {}: {error}",
+                executable.display()
+            )
+        })?;
+    let (stdout, stdout_truncated) = bounded_cli_output(output.stdout);
+    let (stderr, stderr_truncated) = bounded_cli_output(output.stderr);
+    Ok(CliRunResult {
+        ok: output.status.success(),
+        exit_code: output.status.code(),
+        stdout,
+        stderr,
+        truncated: stdout_truncated || stderr_truncated,
+    })
+}
+
+#[tauri::command]
+async fn cli_run(
+    app: tauri::AppHandle,
+    args: Vec<String>,
+    vault: Option<String>,
+) -> Result<CliRunResult, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_run_blocking(&app, args, vault))
+        .await
+        .map_err(|error| format!("The Zerus CLI task could not finish: {error}"))?
 }
 
 fn sync_opened_vault_record(
@@ -2237,6 +2365,7 @@ pub fn run() {
             codex_ai_chat,
             cli_status,
             cli_install,
+            cli_run,
             cli_register_vault,
             cli_install_skill,
             cli_skill_status,
@@ -2297,12 +2426,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_export_skill,
-        cloud_ai_error_body, cloud_ai_keyring_account, cloud_ai_request_body, codex_ai_prompt,
-        codex_thread_start_params, codex_turn_input, copy_file_into_vault, desktop_open_paths,
-        normalized_cloud_ai_base_url, remove_legacy_model_directory, skill_markdown,
-        sync_opened_vault_record, write_new_vault_file_impl, AiChatRequest, AiImage, AiMessage,
-        CloudAiProvider, BUNDLED_CLI_VERSION, ZERUS_SKILL_VERSION,
+        ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_command_args,
+        cli_export_skill, cloud_ai_error_body, cloud_ai_keyring_account, cloud_ai_request_body,
+        codex_ai_prompt, codex_thread_start_params, codex_turn_input, copy_file_into_vault,
+        desktop_open_paths, normalized_cloud_ai_base_url, remove_legacy_model_directory,
+        skill_markdown, sync_opened_vault_record, write_new_vault_file_impl, AiChatRequest,
+        AiImage, AiMessage, CloudAiProvider, BUNDLED_CLI_VERSION, ZERUS_SKILL_VERSION,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -2334,6 +2463,35 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove test root");
+    }
+
+    #[test]
+    fn cli_command_args_add_safe_automation_defaults() {
+        assert_eq!(
+            cli_command_args(
+                vec!["note".to_string(), "list".to_string()],
+                Some("/vault".to_string()),
+            )
+            .unwrap(),
+            vec!["--no-input", "--json", "--vault", "/vault", "note", "list"]
+        );
+    }
+
+    #[test]
+    fn cli_command_args_preserve_explicit_global_options() {
+        assert_eq!(
+            cli_command_args(
+                vec![
+                    "--jsonl".to_string(),
+                    "--vault=Other".to_string(),
+                    "search".to_string(),
+                    "Brazil".to_string(),
+                ],
+                Some("/vault".to_string()),
+            )
+            .unwrap(),
+            vec!["--no-input", "--jsonl", "--vault=Other", "search", "Brazil"]
+        );
     }
 
     #[test]

@@ -47,6 +47,16 @@ describe("parseAiToolResponse", () => {
     expect(parsed.toolError).toBeNull();
   });
 
+  it("parses unrestricted Zerus CLI arguments without a shell string", () => {
+    const parsed = parseAiToolResponse(
+      '<zerus_tool>{"name":"zerus_cli","arguments":{"args":["note","archive","--path","Inbox/Done.md"]}}</zerus_tool>',
+    );
+    expect(parsed.toolCall).toEqual({
+      name: "zerus_cli",
+      arguments: { args: ["note", "archive", "--path", "Inbox/Done.md"] },
+    });
+  });
+
   it("does not execute a malformed tool call", () => {
     expect(
       parseAiToolResponse(

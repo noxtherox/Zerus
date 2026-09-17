@@ -422,6 +422,10 @@ export function TasksWorkspace({
   const taskButtons = useRef(new Map<string, HTMLButtonElement>());
   const [isNarrow, setIsNarrow] = useState(false);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
+  useEffect(() => {
+    const target = tasks.find(task => task.id === selectedTaskId);
+    if (target) setSelectedListId(target.listId ?? null);
+  }, [selectedTaskId, tasks]);
   const activeListId = lists.some((list) => list.id === selectedListId) ? selectedListId : null;
   const [listDialogOpen, setListDialogOpen] = useState(false);
   const [listToRename, setListToRename] = useState<{ id: string | null; name: string } | null>(null);

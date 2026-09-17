@@ -16,7 +16,8 @@ export type AiToolCall =
   | { name: "note_list"; arguments: { limit?: number } }
   | { name: "search"; arguments: { query: string; limit?: number } }
   | { name: "note_append"; arguments: { text: string } }
-  | { name: "note_set_body"; arguments: { body: string } };
+  | { name: "note_set_body"; arguments: { body: string } }
+  | { name: "zerus_cli"; arguments: { args: string[] } };
 
 export interface ParsedAiToolResponse {
   content: string;
@@ -132,7 +133,7 @@ export function parseAiToolResponse(
     }
     return {
       content,
-      toolCall: { name, arguments: { body: value } },
+      toolCall: { name: "note_set_body", arguments: { body: value } },
       toolError: null,
     };
   }
@@ -237,6 +238,27 @@ export function parseAiToolResponse(
       return {
         content,
         toolCall: { name, arguments: { body } },
+        toolError: null,
+      };
+    }
+    if (name === "zerus_cli") {
+      const cliArgs = "args" in args ? args.args : null;
+      if (
+        !Array.isArray(cliArgs) ||
+        cliArgs.length === 0 ||
+        cliArgs.length > 128 ||
+        cliArgs.some((argument) =>
+          typeof argument !== "string" ||
+          !argument.length ||
+          argument.length > 100_000 ||
+          argument.includes("\0")
+        )
+      ) {
+        throw new Error("zerus_cli requires 1 to 128 valid command arguments.");
+      }
+      return {
+        content,
+        toolCall: { name, arguments: { args: cliArgs } },
         toolError: null,
       };
     }
@@ -346,6 +368,12 @@ export function runAiTool(
   currentNoteId: string | null,
   scopeOptions?: AiToolScopeOptions,
 ): AiToolResult {
+  if (call.name === "zerus_cli") {
+    return {
+      ok: false,
+      result: { error: "The Zerus CLI is available only in the desktop app." },
+    };
+  }
   const available = notes.filter((note) => !isTrashed(note));
   if (call.name === "note_get") {
     const resolved = resolveNote(

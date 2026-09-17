@@ -31,6 +31,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Focused Markdown editing** — the MDXEditor/Lexical editor supports headings,
   lists, links, tags, pasted images, keyboard-friendly formatting, and advanced
   GFM tables, including spreadsheet paste and a compact large-table editor.
+  Resized column widths survive save and reload through an unobtrusive HTML
+  comment while the table remains standard, portable GFM Markdown.
   Code blocks are off by default; enable them in **Settings → General → Editor**
   to create blocks with the toolbar, triple backticks, or pasted code.
   Indented prose stays ordinary text. Existing fenced blocks remain editable
@@ -52,6 +54,17 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   broken by an earlier rename need their target selected again.
 - **Structured properties** — define text, URL, number, date, checkbox, list,
   and note-relation fields. Values remain readable YAML frontmatter.
+- **Global search** — press ⌘F (Ctrl+F on Windows) or use Search everything to
+  find notes, external notes, files, saved links, tasks, and AI conversations.
+  Matches include note bodies and frontmatter keys/values, with titles ranked
+  first and typo-tolerant fallback. Filter by collection, date, archived state,
+  note type/properties, or task status/priority. Trash is excluded; attachments
+  match their names and metadata rather than extracted document contents.
+  Hover or use arrow keys to preview, click or press Enter to open, and press
+  Esc to close search. Find within the current note/PDF uses ⌘⇧F (Ctrl+Shift+F).
+  Search remembers queries and filters during the session and shows recently
+  opened items when cleared. Mobile provides full-screen search. Ask AI opens
+  chat with an unsent query and the selected result as editable context.
 - **Fast organization** — search and filter by type, date, and properties;
   progressively render large All Notes lists; reorder types; pin or archive
   notes; and use a recoverable vault-local trash.
@@ -103,6 +116,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   excerpts otherwise. Uploads have a 50 MB per-file and 100 MB total processing
   budget, with no fixed document-count limit. Scanned PDFs require external OCR;
   unsupported binary documents must first be exported as text or searchable PDF.
+  On desktop, AI chat can use the complete bundled `zerus` CLI against the
+  active vault; mutating commands require an explicit current request.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI.
@@ -217,10 +232,10 @@ The release command verifies the build and tests, keeps the Tauri and Rust
 versions in sync, commits the version bump, creates the matching version tag,
 and pushes both atomically. GitHub Actions then builds the notarized Apple
 Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE.
-Microsoft Store packaging is disabled by default. To include an unsigned MSIX,
-set `MS_STORE_BUILD_ENABLED=true` and configure all three Partner Center identity
-variables in [the Windows packaging guide](docs/WINDOWS.md). When enabled, an
-absent identity skips packaging; a partial identity blocks publication.
+This repository enables Microsoft Store packaging for tagged releases using
+`MS_STORE_BUILD_ENABLED=true` and the three configured Partner Center identity
+variables described in [the Windows packaging guide](docs/WINDOWS.md). An absent
+identity skips packaging; a partial identity blocks publication.
 
 The verified macOS release is published first, after notarization and stapling.
 The Windows job then builds and attaches the NSIS installer and, when enabled,

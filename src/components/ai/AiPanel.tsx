@@ -1,3 +1,4 @@
+import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { isTauri, invoke } from "@tauri-apps/api/core";
@@ -122,7 +123,17 @@ interface CodexAiStatus {
   models: CloudAiModel[];
 }
 
+interface ZerusCliResult {
+  ok: boolean;
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+}
+
 interface AiPanelProps {
+  searchRequest?: SearchChatRequest | null;
+  onSearchRequestHandled?: () => void;
   open: boolean;
   note: Note | null;
   notes: Note[];
@@ -264,6 +275,8 @@ function storedWidth(): number {
 }
 
 export function AiPanel({
+  searchRequest,
+  onSearchRequestHandled,
   open,
   note,
   notes,
@@ -587,6 +600,7 @@ export function AiPanel({
     requestIdRef.current += 1;
     setPendingDocuments([]);
     setDocumentContextStatus("");
+    recordSearchVisit(vaultLocation, `chat:${chat.id}`);
     setChatId(chat.id);
     setSharedConversation(chat);
     setMessages(desktopChatMessages(chat));
@@ -1044,18 +1058,37 @@ export function AiPanel({
             };
           }
           const signature = JSON.stringify(call);
-          let toolResult = executedToolCalls.has(signature)
-            ? { ok: false, result: { error: "This tool call already ran." } }
-            : runAiTool(
-                call,
-                notesInAiScope(getNotes(), effectiveScope),
-                currentContext.noteId,
-                {
-                  outsideNotes,
-                  scopeLabel: currentContext.scopeLabel,
-                  promptForExpansion: effectiveScope.kind === "type",
-                },
-              );
+          let toolResult: ReturnType<typeof runAiTool>;
+          if (executedToolCalls.has(signature)) {
+            toolResult = {
+              ok: false,
+              result: { error: "This tool call already ran." },
+            };
+          } else if (call.name === "zerus_cli") {
+            try {
+              const result = await invoke<ZerusCliResult>("cli_run", {
+                args: call.arguments.args,
+                vault: vaultLocation,
+              });
+              toolResult = { ok: result.ok, result };
+            } catch (error) {
+              toolResult = {
+                ok: false,
+                result: { error: String(error) },
+              };
+            }
+          } else {
+            toolResult = runAiTool(
+              call,
+              notesInAiScope(getNotes(), effectiveScope),
+              currentContext.noteId,
+              {
+                outsideNotes,
+                scopeLabel: currentContext.scopeLabel,
+                promptForExpansion: effectiveScope.kind === "type",
+              },
+            );
+          }
           executedToolCalls.add(signature);
           if (
             toolResult.ok &&
@@ -1306,6 +1339,20 @@ export function AiPanel({
     setStreamingToolCalls([]);
     setSending(false);
   };
+
+  useEffect(() => {
+    if (!open || !searchRequest || !historyReady || sending) return;
+    if (searchRequest.conversation) selectConversation(searchRequest.conversation);
+    else {
+      newSession();
+      setDraft(searchRequest.query ?? "");
+      setSelectedNoteIds(searchRequest.noteIds?.length ? searchRequest.noteIds : null);
+      setPendingDocuments(searchRequest.document ? [searchRequest.document] : []);
+    }
+    onSearchRequestHandled?.();
+    // A request is consumed once, after asynchronous history restoration finishes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, searchRequest, historyReady, sending]);
 
   const loadCloudModels = async (
     provider: AiProvider,

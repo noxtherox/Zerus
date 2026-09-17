@@ -759,7 +759,7 @@ export function EditorPane({
 
   return (
     <div ref={setFindContainer} className="relative flex h-full flex-col bg-zerus-editor" onKeyDownCapture={(event) => {
-      if (previewType === "pdf" && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+      if (previewType === "pdf" && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
         const target = event.target as HTMLElement;
@@ -896,7 +896,7 @@ export function EditorPane({
                   onSelect={() => setFindRequest((request) => request + 1)}
                 >
                   <Search className="mr-2" size={14} />
-                  {previewType === "pdf" ? "Find in note / PDF" : "Find in note"}
+                  {previewType === "pdf" ? "Find in note / PDF" : "Find in note"}<span className="ml-auto text-[10px] text-muted-foreground">⌘⇧F</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={() => {

@@ -1,3 +1,4 @@
+import { GlobalSearchButton } from "@/components/search/GlobalSearch";
 import { handleMiddleMouseDown } from "@/lib/middle-click";
 import { useState } from "react";
 import { CheckSquare, FileStack, Files, Link2, Notebook, Settings, Trash2 } from "@/lib/icons";
@@ -180,6 +181,7 @@ export function CollapsedSidebar({
         />
       </button>
 
+      <GlobalSearchButton compact className="px-2" />
       <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"

@@ -1,3 +1,7 @@
+import { GlobalSearch, GlobalSearchButton } from "@/components/search/GlobalSearch";
+import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
+import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
+import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
 import { EditorSettings } from "@/components/notes/EditorSettings";
 import type { DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
@@ -332,6 +336,7 @@ interface BottomSearchProps {
 function BottomSearch({ query, onQueryChange, onCreate, onChat, createLabel = "Create a new note" }: BottomSearchProps) {
   return (
     <div className="mobile-bottom-search pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-2.5 bg-gradient-to-t from-zerus-editor via-zerus-editor/95 to-transparent px-5 pb-7 pt-8">
+      <GlobalSearchButton compact className="pointer-events-auto h-[52px] shrink-0 rounded-full bg-zerus-surface" />
       <label className="pointer-events-auto relative min-w-0 flex-1">
         <span className="sr-only">Search notes</span>
         <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#f2f2f7]" strokeWidth={2.1} />
@@ -2032,6 +2037,13 @@ export function MobileZerus() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [searchRequest, setSearchRequest] = useState<SearchChatRequest | null>(null);
+  const [searchTaskId, setSearchTaskId] = useState<string | null>(null);
+  const tasks = useTasks();
+  const taskLists = useTaskLists();
+  const generalTaskListName = useGeneralTaskListName();
+  useEffect(() => { void loadTasks(vault.location); }, [vault.location]);
+  useEffect(() => { if (selectedNoteId) recordSearchVisit(vault.location, `note:${selectedNoteId}`); }, [selectedNoteId, vault.location]);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatScope, setChatScope] = useState<ChatScope>({ kind: "vault" });
   const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat">("notes");
@@ -2587,7 +2599,18 @@ export function MobileZerus() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+        <GlobalSearch mobile onOpenItem={item => {
+          if (item.note) openNote(item.id, "notes");
+          else if (item.task) { setSelectedNoteId(null); setChatOpen(false); setSearchTaskId(item.id); }
+          else if (item.chat) { openChat(); setSearchRequest({ id: crypto.randomUUID(), conversation: item.chat }); }
+        }} onAskAI={request => { setSearchTaskId(null); openChat(request.noteIds?.length ? { kind: "selection", noteIds: request.noteIds } : { kind: "vault" }); setSearchRequest(request); }} />
+        {searchTaskId && <div className="absolute inset-0 z-40 flex flex-col bg-zerus-editor pt-[env(safe-area-inset-top)]">
+          <button className="self-start p-4 text-sm" onClick={() => setSearchTaskId(null)}>← Back</button>
+          <div className="min-h-0 flex-1"><TasksWorkspace tasks={tasks} lists={taskLists} generalListName={generalTaskListName} notes={vault.notes} typeIcons={vault.typeIcons} selectedTaskId={searchTaskId} onSelectedTaskChange={setSearchTaskId} onCreateList={createTaskList} onRenameList={renameTaskList} onDeleteList={deleteTaskList} onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} onOpenNote={id => { setSearchTaskId(null); openNote(id, "notes"); }} /></div>
+        </div>}
         <PersistentAIChat
+          searchRequest={searchRequest}
+          onSearchRequestHandled={() => setSearchRequest(null)}
           notes={vault.notes}
           notesReady={!vault.hasMoreNotes}
           notesPreparationError={notesPreparationError}

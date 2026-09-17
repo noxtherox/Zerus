@@ -24,6 +24,10 @@ import {
 } from "./element-table-model";
 
 import { LargeTableNode } from "./large-table-node";
+import {
+  tableWidthsFromMarkdown,
+  withTableWidthSerialization,
+} from "./table-widths";
 
 /**
  * GFM table support backed by Lexical element nodes rather than MDXEditor's
@@ -37,7 +41,7 @@ export const elementTablePlugin = realmPlugin<GfmTableOptions>({
       tableCellSelected: "zerus-table-cell-selected",
     });
     realm.pubIn({
-      [addMdastExtension$]: gfmTableFromMarkdown(),
+      [addMdastExtension$]: [gfmTableFromMarkdown(), tableWidthsFromMarkdown],
       [addSyntaxExtension$]: gfmTable(),
       [addImportVisitor$]: MdastElementTableVisitor,
       [addLexicalNode$]: [
@@ -50,11 +54,13 @@ export const elementTablePlugin = realmPlugin<GfmTableOptions>({
         LexicalElementTableVisitor,
         LargeTableExportVisitor,
       ],
-      [addToMarkdownExtension$]: gfmTableToMarkdown({
-        tableCellPadding: options?.tableCellPadding ?? true,
-        // Avoid padding every row to the longest cell in a large table.
-        tablePipeAlign: options?.tablePipeAlign ?? false,
-      }),
+      [addToMarkdownExtension$]: withTableWidthSerialization(
+        gfmTableToMarkdown({
+          tableCellPadding: options?.tableCellPadding ?? true,
+          // Avoid padding every row to the longest cell in a large table.
+          tablePipeAlign: options?.tablePipeAlign ?? false,
+        }),
+      ),
       [addComposerChild$]: ElementTableBehavior,
     });
   },

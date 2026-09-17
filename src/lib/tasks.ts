@@ -21,9 +21,10 @@ export interface Task {
   completedAt: string | null;
   linkedNoteIds: string[];
   createdAt: string;
+  updatedAt?: string;
 }
 
-export type TaskPatch = Partial<Omit<Task, "id" | "createdAt">>;
+export type TaskPatch = Partial<Omit<Task, "id" | "createdAt" | "updatedAt">>;
 
 export interface TaskData {
   generalListName?: string;
@@ -86,6 +87,7 @@ export function normalizeTask(value: unknown): Task | null {
       ? [...new Set(candidate.linkedNoteIds.filter((id): id is string => typeof id === "string" && Boolean(id)))]
       : [],
     createdAt,
+    ...(typeof candidate.updatedAt === "string" ? { updatedAt: candidate.updatedAt } : {}),
   };
 }
 
