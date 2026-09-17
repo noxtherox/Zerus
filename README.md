@@ -118,6 +118,11 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   unsupported binary documents must first be exported as text or searchable PDF.
   On desktop, AI chat can use the complete bundled `zerus` CLI against the
   active vault; mutating commands require an explicit current request.
+  Destructive and CLI approval-gated actions are previewed with a concise
+  impact summary, then only the exact previewed action can run after the user
+  explicitly consents in a later message. Follow-up questions retain the prior
+  CLI activity and errors as untrusted history so Zerus can explain what
+  happened without treating tool output as instructions.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI.
@@ -232,18 +237,15 @@ The release command verifies the build and tests, keeps the Tauri and Rust
 versions in sync, commits the version bump, creates the matching version tag,
 and pushes both atomically. GitHub Actions then builds the notarized Apple
 Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE.
-This repository enables Microsoft Store packaging for tagged releases using
-`MS_STORE_BUILD_ENABLED=true` and the three configured Partner Center identity
-variables described in [the Windows packaging guide](docs/WINDOWS.md). An absent
-identity skips packaging; a partial identity blocks publication.
 
 The verified macOS release is published first, after notarization and stapling.
-The Windows job then builds and attaches the NSIS installer and, when enabled,
-the Store MSIX. The MSIX asset is for Store submission; certification, signing,
-and publication happen separately in Partner Center. A Windows packaging failure
-does not withdraw the already-verified macOS release. Installed macOS copies check
-`latest.json` on launch and every six hours. When an update is available, the
-user can install it or ask Zerus to remind them again in 24 hours.
+The Windows job then builds and attaches the NSIS installer. Microsoft Store
+MSIX packaging and Partner Center submission are separate, explicitly requested
+release operations documented in [the Windows packaging guide](docs/WINDOWS.md).
+A Windows packaging failure does not withdraw the already-verified macOS release.
+Installed macOS copies check `latest.json` on launch and every six hours. When an
+update is available, the user can install it or ask Zerus to remind them again
+in 24 hours.
 
 The updater private key is stored in the repository's
 `TAURI_SIGNING_PRIVATE_KEY` Actions secret. Back up the local key at

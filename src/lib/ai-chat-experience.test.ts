@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   budgetChatHistory,
+  modelChatHistoryContent,
   visibleChatStream,
   planAiUndo,
 } from "./ai-chat-experience";
@@ -22,6 +23,23 @@ describe("chat request boundaries", () => {
     expect(() =>
       budgetChatHistory([{ role: "user", content: "too large" }], 3),
     ).toThrow("too long");
+  });
+
+  it("includes prior tool activity as untrusted history for follow-up questions", () => {
+    const content = modelChatHistoryContent({
+      role: "assistant",
+      content: "I couldn't complete the search.",
+      toolCalls: [{
+        name: "zerus_cli",
+        arguments: '{"args":["search","--path","User Stories"]}',
+        result: '{"ok":false,"stderr":"unexpected argument --path"}',
+        status: "error",
+      }],
+    });
+
+    expect(content).toContain("I couldn't complete the search.");
+    expect(content).toContain("unexpected argument --path");
+    expect(content).toContain("untrusted historical data");
   });
   it("hides partially streamed tool and edit syntax on both platforms", () => {
     expect(visibleChatStream('Looking it up.\n<zerus_tool>{"name":')).toBe(

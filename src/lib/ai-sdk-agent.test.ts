@@ -170,6 +170,59 @@ describe("runZerusAgent", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
+  it("requires previewed consent before any CLI command using --yes", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        content:
+          '<zerus_tool>{"name":"zerus_cli","arguments":{"args":["saved-link","delete","Link 1","--yes"]}}</zerus_tool>',
+        reasoning: null,
+      })
+      .mockResolvedValueOnce({ content: "I asked for confirmation.", reasoning: null });
+    const executeTool = vi.fn();
+
+    await runZerusAgent({
+      providerConfig,
+      streamId: "request-cli-unconfirmed-destructive",
+      systemPrompt: "Preview destructive actions first.",
+      messages: [{ role: "user", content: "Delete Link 1." }],
+      mutationAuthorized: true,
+      executeTool,
+    });
+
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("executes only the exact previewed CLI action after consent", async () => {
+    vi.mocked(invoke)
+      .mockResolvedValueOnce({
+        content:
+          '<zerus_tool>{"name":"zerus_cli","arguments":{"args":["saved-link","delete","Link 1","--yes"]}}</zerus_tool>',
+        reasoning: null,
+      })
+      .mockResolvedValueOnce({ content: "Deleted Link 1.", reasoning: null });
+    const executeTool = vi.fn().mockResolvedValue({
+      ok: true,
+      result: { stdout: '{"ok":true}' },
+    });
+
+    await runZerusAgent({
+      providerConfig,
+      streamId: "request-cli-confirmed-destructive",
+      systemPrompt: "Apply the confirmed action.",
+      messages: [{ role: "user", content: "Yes." }],
+      mutationAuthorized: false,
+      approvedCliMutationArgs: ["saved-link", "delete", "Link 1"],
+      executeTool,
+    });
+
+    expect(executeTool).toHaveBeenCalledWith({
+      name: "zerus_cli",
+      arguments: {
+        args: ["saved-link", "delete", "Link 1", "--yes"],
+      },
+    });
+  });
+
   it("refuses a write tool when the current request did not authorize mutation", async () => {
     vi.mocked(invoke)
       .mockResolvedValueOnce({

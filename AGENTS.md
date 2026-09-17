@@ -7,12 +7,14 @@
   limitations. Add newly relevant information, update changed behavior, and
   remove obsolete claims before creating the version commit and tag.
 
-## Microsoft Store release requirement
+## Desktop release channels
 
-- A request to **make a new release** includes the Microsoft Store release,
-  unless the user explicitly limits the release to another platform or channel.
-  The request authorizes building, submitting, and publishing the matching Store
-  version; do not ask for separate permission for these release steps.
+- A request to **make a new release** includes the notarized macOS release and
+  the regular Windows release. It does not include building, submitting,
+  certifying, or publishing a Microsoft Store MSIX.
+- Only prepare or publish a Microsoft Store release when the user explicitly
+  requests a new Microsoft Store or Store MSIX version. Do not infer Store
+  authorization from a general release request.
 - The user's **Microsoft Store notarized version** means the MSIX certified and
   signed by Microsoft through Store publishing. Follow `docs/WINDOWS.md` for
   Store identity, packaging, validation, and submission requirements.

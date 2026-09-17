@@ -47,6 +47,7 @@ export interface RunZerusAgentOptions {
   systemPrompt: string;
   messages: ModelMessage[];
   mutationAuthorized: boolean;
+  approvedCliMutationArgs?: string[];
   abortSignal?: AbortSignal;
   onStepStart?: () => void;
   config?: ZerusAgentConfig;
@@ -366,8 +367,30 @@ export async function runZerusAgent(
       call.name === "note_append" ||
       call.name === "note_set_body" ||
       (call.name === "zerus_cli" && !isReadOnlyCliCall(call.arguments.args));
+    const cliArgs = call.name === "zerus_cli" ? call.arguments.args : null;
+    const isApprovedCliMutation = Boolean(
+      cliArgs &&
+      options.approvedCliMutationArgs &&
+      cliArgs.filter((argument) => argument !== "--yes").every(
+        (argument, index) => argument === options.approvedCliMutationArgs?.[index],
+      ) &&
+      cliArgs.filter((argument) => argument !== "--yes").length ===
+        options.approvedCliMutationArgs.length &&
+      cliArgs.filter((argument) => argument === "--yes").length === 1,
+    );
+    const bypassedApproval = Boolean(
+      cliArgs?.includes("--yes") && !isApprovedCliMutation,
+    );
     const result =
-      isMutation && !options.mutationAuthorized
+      bypassedApproval
+        ? {
+            ok: false,
+            result: {
+              error:
+                "This action must be previewed and explicitly confirmed by the user before running with --yes.",
+            },
+          }
+        : isMutation && !options.mutationAuthorized && !isApprovedCliMutation
         ? {
             ok: false,
             result: {
@@ -416,7 +439,7 @@ export async function runZerusAgent(
     }),
     zerus_cli: tool({
       description:
-        "Run any Zerus CLI command in the desktop app. Pass each argument after the `zerus` executable as a separate array item. The active vault, --json, and --no-input are added by default unless explicitly supplied. Use --help to discover commands and flags. For operations requiring --yes, first run the preview without --yes, report the impact, and wait for explicit user confirmation in a later message before applying it.",
+        "Run any Zerus CLI command in the desktop app. Pass each argument after the `zerus` executable as a separate array item. The active vault, --json, and --no-input are added by default unless explicitly supplied. Search syntax is `search QUERY` with optional `--type-path TYPE_PATH`; there is no `search --path` flag. Use `COMMAND --help` to discover other exact syntax, especially after an argument error. Note archive is reversible and needs no preview; bulk archive requires a preview because it affects multiple notes. For operations requiring --yes, first run the preview without --yes, report the impact, and wait for explicit user confirmation in a later message before applying it.",
       inputSchema: z.object({
         args: z.array(z.string().min(1).max(100_000)).min(1).max(128),
       }),

@@ -49,6 +49,7 @@ import { ChatContextPicker } from "./ChatContextPicker";
 import { ChatHistory } from "./ChatHistory";
 import {
   budgetChatHistory,
+  modelChatHistoryContent,
   visibleChatStream,
   chatActivityLabel,
 } from "@/lib/ai-chat-experience";
@@ -67,7 +68,10 @@ import {
 import { runAiTool, type AiToolCall } from "@/lib/ai-tools";
 import { previewChatAnswer } from "@/lib/ai-browser-preview";
 import { runZerusAgent } from "@/lib/ai-sdk-agent";
-import { authorizesAiNoteMutation } from "@/lib/ai-agent-policy";
+import {
+  approvedCliArgsForConsent,
+  authorizesAiNoteMutation,
+} from "@/lib/ai-agent-policy";
 import { noteBody } from "@/lib/frontmatter";
 import {
   getImageUrl,
@@ -949,7 +953,7 @@ export function AiPanel({
       setHistoryOmitted(budgeted.omitted);
       const historyMessages = await Promise.all(
         budgeted.messages.map(async (message): Promise<ModelMessage> => {
-          const content = message.content;
+          const content = modelChatHistoryContent(message);
           const attachments = message.attachments ?? [];
           const images = await Promise.all(
             attachments.map(async (attachment) => {
@@ -1018,6 +1022,9 @@ export function AiPanel({
       ];
       const mutationAuthorized =
         !regenerate && authorizesAiNoteMutation(content);
+      const approvedCliMutationArgs = !regenerate
+        ? approvedCliArgsForConsent(content, messages)
+        : null;
       const executedToolCalls = new Set<string>();
       let editApplied = false;
       let completedToolCalls: StoredAiToolCall[] = [];
@@ -1050,6 +1057,7 @@ export function AiPanel({
             : ""),
         messages: modelMessages,
         mutationAuthorized,
+        approvedCliMutationArgs: approvedCliMutationArgs ?? undefined,
         executeTool: async (call) => {
           if (requestIdRef.current !== requestId) {
             return {
