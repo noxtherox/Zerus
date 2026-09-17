@@ -1843,6 +1843,22 @@ interface DesktopSyncBasisEntry {
   diskSnapshot: string | undefined;
 }
 
+function externallyChangedNoteState(
+  note: Note,
+  previousContent: string,
+  nextContent: string,
+): Pick<Note, "pinned" | "archived"> {
+  const previous = readZerusMetadata(previousContent);
+  const next = readZerusMetadata(nextContent);
+  return {
+    // Keep legacy local-only state when an external edit only changes the body,
+    // but immediately reflect metadata transitions made by the CLI or another
+    // Zerus client. This also lets a CLI unarchive override the local fallback.
+    pinned: previous.pinned === next.pinned ? note.pinned : next.pinned,
+    archived: previous.archived === next.archived ? note.archived : next.archived,
+  };
+}
+
 function captureDesktopSyncBasis(): DesktopSyncBasisEntry[] {
   return state.notes.map((note) => ({
     id: note.id,
@@ -1961,6 +1977,7 @@ export async function synchronizeDesktopFiles() {
         ...note,
         path: renamedFile.path,
         content: renamedFile.content,
+        ...externallyChangedNoteState(note, snapshot, renamedFile.content),
         updatedAt: renamedFile.updatedAt,
       };
       diskSnapshots.set(note.id, renamedFile.content);
@@ -1997,6 +2014,11 @@ export async function synchronizeDesktopFiles() {
         latestNotes[index] = {
           ...note,
           content: historyContent,
+          ...externallyChangedNoteState(
+            note,
+            snapshot ?? note.content,
+            historyContent,
+          ),
           updatedAt: file.updatedAt,
         };
         diskSnapshots.set(note.id, historyContent);

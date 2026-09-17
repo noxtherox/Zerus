@@ -135,6 +135,7 @@ import {
 import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
+import { setZerusState } from "@/lib/zerus-metadata";
 
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
@@ -311,6 +312,25 @@ describe("external note store workflow", () => {
       expect.any(Function),
       { recursive: true, delayMs: 500 },
     );
+  });
+
+  it("reflects archive metadata changed by the CLI during desktop sync", async () => {
+    const note = getNotes().find(
+      (candidate) => candidate.path === "inbox/Welcome.md",
+    );
+    expect(note).toBeDefined();
+    const path = join(vault, note!.path);
+
+    await writeFile(path, setZerusState(note!.content, { archived: true }));
+    await synchronizeDesktopFiles();
+    expect(getNotes().find((candidate) => candidate.id === note!.id)?.archived)
+      .toBe(true);
+
+    const archivedContent = await readFile(path, "utf8");
+    await writeFile(path, setZerusState(archivedContent, { archived: false }));
+    await synchronizeDesktopFiles();
+    expect(getNotes().find((candidate) => candidate.id === note!.id)?.archived)
+      .toBe(false);
   });
 
   it("opens, edits, reveals, closes, and moves files from different folders", async () => {

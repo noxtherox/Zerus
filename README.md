@@ -125,7 +125,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   happened without treating tool output as instructions.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
-  `zerus` CLI.
+  `zerus` CLI. Changes made by the CLI are reflected in the open app, including
+  pinned and archived state; archived notes show an editor banner and an
+  unarchive action when they are included in the current view.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
   light and dark themes, type icons, and list, gallery, board, table, or calendar
   type views. Save named view presets to reuse a type's layout, grouping, visible
