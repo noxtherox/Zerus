@@ -35,11 +35,12 @@ export function getOutgoingRelationTitles(
   content: string,
   typePath: string[],
   schemas: PropertySchemas,
+  includeHidden = false,
 ): string[] {
   const props = getNoteProperties(content);
   const titles: string[] = [];
   for (const def of effectiveProperties(typePath, schemas)) {
-    if (def.type !== "relation") continue;
+    if (def.type !== "relation" || (!includeHidden && def.relationHidden)) continue;
     const value = props[def.name];
     if (value == null) continue;
     for (const title of Array.isArray(value) ? value : [value]) {

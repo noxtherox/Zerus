@@ -4,7 +4,7 @@ import { useCellValues, usePublisher, useRealm } from "@mdxeditor/gurx";
 import { activeEditor$, editorRootElementRef$, linkDialogState$, updateLink$, cancelLinkEdit$, switchFromPreviewToLinkEdit$, removeLink$, readOnly$, getNodeRectangle } from "@mdxeditor/editor";
 import { $getNearestNodeFromDOMNode, $getSelection } from "lexical";
 import { FileText, ExternalLink, Pencil, Link2Off, Copy } from "@/lib/icons";
-import { useVault, prioritizeNoteLoad } from "@/store/notes-store";
+import { useVaultSelector, prioritizeNoteLoad } from "@/store/notes-store";
 import { findNoteByTitle, noteTitle, noteReference, type Note } from "@/lib/note-utils";
 import { parseNoteReference } from "@/lib/wikilinks";
 import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
@@ -12,6 +12,8 @@ import { noteReferenceFromHref } from "./note-link-markdown";
 import { linkedNoteExcerpt, loadLinkOption, saveLinkOption, searchLinkNotes, type LinkOption } from "./vault-link-options";
 
 import { NoteLinkContext } from "./note-link-context";
+
+const EMPTY_NOTES: Note[] = [];
 
 function LinkForm({ url, text, title, withAnchorText, notes, selectionText, onSave, onCancel }: {
   url: string; text: string; title: string; withAnchorText: boolean; notes: Note[]; selectionText: string;
@@ -73,7 +75,8 @@ export function VaultLinkDialog() {
   const edit = usePublisher(switchFromPreviewToLinkEdit$);
   const remove = usePublisher(removeLink$);
   const follow = useContext(NoteLinkContext);
-  const { notes } = useVault();
+  const activeNotes = useVaultSelector((vault) => state.type === "inactive" ? null : vault.notes);
+  const notes = activeNotes ?? EMPTY_NOTES;
   const reference = state.type !== "inactive" ? noteReferenceFromHref(state.url) : null;
   const note = reference !== null ? findNoteByTitle(reference, notes) : undefined;
 

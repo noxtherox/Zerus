@@ -10,7 +10,7 @@ const notes: Note[] = [
   {
     id: "braskem-id",
     path: "Companies/Braskem.md",
-    content: "# Braskem\n\nBrazilian company",
+    content: "---\nstatus: Completed\ntags: [customer, brazil]\n---\n# Braskem\n\nBrazilian company",
     pinned: false,
     updatedAt: "2026-08-11T00:00:00.000Z",
   },
@@ -68,10 +68,37 @@ describe("parseAiToolResponse", () => {
 
 describe("runAiTool", () => {
   it("reads and searches notes", () => {
-    expect(runAiTool({ name: "note_get", arguments: {} }, notes, "braskem-id").ok).toBe(true);
+    expect(
+      runAiTool({ name: "note_get", arguments: {} }, notes, "braskem-id").result,
+    ).toMatchObject({
+      body: "# Braskem\n\nBrazilian company",
+      properties: { status: "Completed", tags: ["customer", "brazil"] },
+    });
     expect(
       runAiTool(
         { name: "search", arguments: { query: "Brazil", limit: 10 } },
+        notes,
+        "braskem-id",
+    ).result,
+    ).toHaveLength(1);
+  });
+
+  it("exposes frontmatter in list results and searches its keys and values", () => {
+    expect(
+      runAiTool(
+        { name: "note_list", arguments: { limit: 20 } },
+        notes,
+        "braskem-id",
+      ).result,
+    ).toEqual([
+      expect.objectContaining({
+        id: "braskem-id",
+        properties: { status: "Completed", tags: ["customer", "brazil"] },
+      }),
+    ]);
+    expect(
+      runAiTool(
+        { name: "search", arguments: { query: "Completed", limit: 10 } },
         notes,
         "braskem-id",
       ).result,

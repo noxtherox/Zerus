@@ -45,6 +45,11 @@ fn lists_active_notes_as_json() {
     assert_eq!(value["schemaVersion"], 1);
     assert_eq!(value["data"].as_array().unwrap().len(), 1);
     assert_eq!(value["data"][0]["title"], "Project Plan");
+    assert_eq!(value["data"][0]["properties"]["status"], "active");
+    assert_eq!(
+        value["data"][0]["properties"]["zerus-id"],
+        "019f7922-8fae-7733-8357-48b16a134c38"
+    );
 }
 
 #[test]
@@ -69,6 +74,8 @@ fn gets_a_note_by_id_prefix_with_body_only_json() {
     );
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["data"]["content"], "# Project Plan\n\nAction items\n");
+    assert_eq!(value["data"]["properties"]["status"], "active");
+    assert_eq!(value["data"]["note"]["properties"]["status"], "active");
 }
 
 #[test]
@@ -89,6 +96,7 @@ fn searches_body_and_properties() {
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(value["data"].as_array().unwrap().len(), 1);
+    assert_eq!(value["data"][0]["properties"]["status"], "active");
 }
 
 #[test]

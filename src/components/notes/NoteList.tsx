@@ -4,6 +4,7 @@ import {
   Archive,
   Copy,
   ArchiveRestore,
+  CheckSquare,
   FolderSearch,
   FileText,
   ImageIcon,
@@ -12,6 +13,7 @@ import {
   Pin,
   Plus,
   Search,
+  SlidersHorizontal,
   Trash2,
   Undo2,
   X,
@@ -65,8 +67,6 @@ import {
   restoreTrashedImage,
   openImageInDefaultApp,
   revealNoteInDesktop,
-  toggleNotePinned,
-  toggleNoteArchived,
   trashNote,
   type TrashedImage,
 } from "@/store/notes-store";
@@ -74,6 +74,7 @@ import { NoteListFilters } from "./NoteListFilters";
 import { TypeViewSwitcher } from "./TypeViewWorkspace";
 import { PropertyPills } from "./PropertyPills";
 import type { SavedTypeView, TypeViewConfig } from "@/lib/note-views";
+import type { PropertySchemas } from "@/lib/properties";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import { AddLinkDialog } from "./AddLinkDialog";
@@ -82,6 +83,11 @@ import {
   primaryModifierLabel,
 } from "@/lib/desktop-platform";
 import { handleMiddleMouseDown } from "@/lib/middle-click";
+import { useBulkSelection } from "@/lib/use-bulk-selection";
+import {
+  BulkActionsToolbar,
+  type BulkMutationRequest,
+} from "./BulkActionsToolbar";
 
 const INITIAL_NOTE_COUNT = 40;
 const NOTE_LOAD_INCREMENT = 30;
@@ -119,6 +125,8 @@ interface NoteListProps {
   onSaveView: (name: string) => void;
   hideSubtypeNotes: boolean;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
+  schemas: PropertySchemas;
+  vaultLocation: string | null;
 }
 
 export function NoteList({
@@ -147,6 +155,8 @@ export function NoteList({
   onSaveView,
   hideSubtypeNotes,
   onHideSubtypeNotesChange,
+  schemas,
+  vaultLocation,
 }: NoteListProps) {
   const [trashTarget, setTrashTarget] = useState<Note | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
@@ -156,6 +166,7 @@ export function NoteList({
   );
   const [visibleNoteCount, setVisibleNoteCount] = useState(INITIAL_NOTE_COUNT);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [bulkRequest, setBulkRequest] = useState<BulkMutationRequest | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const inTrash = filter.kind === "trash";
@@ -170,6 +181,11 @@ export function NoteList({
     [notes, visibleNoteCount],
   );
   const hasMoreNotes = visibleNoteCount < notes.length;
+  const noteIds = useMemo(() => notes.map((note) => note.id), [notes]);
+  const bulkSelection = useBulkSelection(
+    noteIds,
+    `${filterKey}:${listFilterKey}:${search}`,
+  );
   const heading =
     filter.kind === "type"
       ? filter.path.join(" / ")
@@ -208,7 +224,10 @@ export function NoteList({
   }, [hasMoreNotes, notes.length]);
 
   return (
-    <div className="flex h-full flex-col bg-zerus-surface">
+    <div
+      className="flex h-full flex-col bg-zerus-surface"
+      onKeyDown={bulkSelection.handleCollectionKeyDown}
+    >
       <div
         className={cn(
           "flex items-center gap-2 border-b border-border/60 px-3 py-2.5",
@@ -227,6 +246,20 @@ export function NoteList({
             onSaveView={onSaveView}
             onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
+        )}
+        {!inTrash && notes.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 gap-1 px-2 text-xs",
+              bulkSelection.selectMode && "border border-zerus-accent/60 bg-zerus-accent/20 text-zerus-accent ring-1 ring-inset ring-zerus-accent/25 hover:bg-zerus-accent/25 hover:text-zerus-accent",
+            )}
+            aria-pressed={bulkSelection.selectMode}
+            onClick={() => bulkSelection.setSelectMode(!bulkSelection.selectMode)}
+          >
+            <CheckSquare size={14} /> Select
+          </Button>
         )}
         {inTrash ? (
           notes.length + trashedImages.length > 0 && (
@@ -277,6 +310,19 @@ export function NoteList({
           </Button>
         )}
       </div>
+      {!inTrash && (bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
+        <BulkActionsToolbar
+          notes={notes}
+          selectedIds={bulkSelection.selectedIds}
+          schemas={schemas}
+          vaultLocation={vaultLocation}
+          onClear={bulkSelection.clearSelection}
+          onSelectAll={bulkSelection.selectAll}
+          onRemoveSelected={bulkSelection.removeSelected}
+          externalRequest={bulkRequest}
+          onExternalRequestHandled={() => setBulkRequest(null)}
+        />
+      )}
       <div
         className={cn(
           "grid grid-cols-1 gap-2 px-3 py-2",
@@ -380,19 +426,33 @@ export function NoteList({
               ? linkHub.url
               : noteSnippet(note);
           const type = typeKey(noteTypePath(note));
+          const bulkTargetIds = bulkSelection.selectedIds.has(note.id)
+            ? [...bulkSelection.selectedIds]
+            : [note.id];
           return (
             <ContextMenu key={note.id}>
               <ContextMenuTrigger asChild disabled={isRefreshing}>
                 <button
-                  onClick={() => onSelectNote(note.id)}
+                  onClick={(event) => {
+                    if (!inTrash && bulkSelection.handleModifiedClick(event, note.id)) return;
+                    bulkSelection.clearSelection();
+                    onSelectNote(note.id);
+                  }}
                   onMouseDown={(event) =>
                     handleMiddleMouseDown(event, () =>
                       onOpenNoteInNewTab(note.id),
                     )
                   }
+                  onContextMenu={() => {
+                    if (!bulkSelection.selectedIds.has(note.id)) {
+                      bulkSelection.selectOnly(note.id);
+                    }
+                  }}
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
-                    note.id === selectedNoteId
+                    bulkSelection.selectedIds.has(note.id)
+                      ? "bg-zerus-accent/15 ring-1 ring-inset ring-zerus-accent/35"
+                      : note.id === selectedNoteId
                       ? "bg-zerus-accent/10"
                       : "hover:bg-zerus-text/[0.03]",
                   )}
@@ -477,29 +537,50 @@ export function NoteList({
                   </>
                 ) : (
                   <>
-                    <ContextMenuItem onClick={() => void duplicateNote(note.id).then((copy) => {
-                      if (copy) onSelectNote(copy.id);
-                    })}>
-                      <Copy size={14} className="mr-2" /> Duplicate note
+                    {bulkSelection.selectedIds.size <= 1 && (
+                      <ContextMenuItem onClick={() => void duplicateNote(note.id).then((copy) => {
+                        if (copy) onSelectNote(copy.id);
+                      })}>
+                        <Copy size={14} className="mr-2" /> Duplicate note
+                      </ContextMenuItem>
+                    )}
+                    {bulkSelection.selectedIds.size > 1 ? (
+                      <>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: true } })}>
+                          <Archive size={14} className="mr-2" /> Archive {bulkTargetIds.length} notes
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: false } })}>
+                          <ArchiveRestore size={14} className="mr-2" /> Unarchive {bulkTargetIds.length} notes
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: true } })}>
+                          <Pin size={14} className="mr-2" /> Pin {bulkTargetIds.length} notes
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: false } })}>
+                          <Pin size={14} className="mr-2" /> Unpin {bulkTargetIds.length} notes
+                        </ContextMenuItem>
+                      </>
+                    ) : (
+                      <>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: !archived } })}>
+                          {archived ? <ArchiveRestore size={14} className="mr-2" /> : <Archive size={14} className="mr-2" />}
+                          {archived ? "Unarchive" : "Archive"}
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: !note.pinned } })}>
+                          <Pin size={14} className="mr-2" /> {note.pinned ? "Unpin" : "Pin"}
+                        </ContextMenuItem>
+                      </>
+                    )}
+                    <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, openProperties: true })}>
+                      <SlidersHorizontal size={14} className="mr-2" /> Edit properties…
                     </ContextMenuItem>
-                    <ContextMenuItem onClick={() => toggleNoteArchived(note.id)}>
-                      {archived ? (
-                        <ArchiveRestore size={14} className="mr-2" />
-                      ) : (
-                        <Archive size={14} className="mr-2" />
-                      )}
-                      {archived ? "Unarchive" : "Archive"}
-                    </ContextMenuItem>
-                    <ContextMenuItem onClick={() => toggleNotePinned(note.id)}>
-                      <Pin size={14} className="mr-2" />
-                      {note.pinned ? "Unpin" : "Pin"}
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      className="text-destructive"
-                      onClick={() => setTrashTarget(note)}
-                    >
-                      <Trash2 size={14} className="mr-2" /> Move to trash
-                    </ContextMenuItem>
+                    {bulkSelection.selectedIds.size <= 1 && (
+                      <ContextMenuItem
+                        className="text-destructive"
+                        onClick={() => setTrashTarget(note)}
+                      >
+                        <Trash2 size={14} className="mr-2" /> Move to trash
+                      </ContextMenuItem>
+                    )}
                   </>
                 )}
               </ContextMenuContent>

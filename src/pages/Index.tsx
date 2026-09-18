@@ -45,6 +45,7 @@ import {
   saveTypeViewPreset,
   updateTypeView,
   useVault,
+  useVaultSelector,
 } from "@/store/notes-store";
 import {
   createTask,
@@ -803,6 +804,7 @@ const Index = () => {
             }
             isRefreshing={isColdRefreshing}
             onOpenNote={handleOpenNote}
+            onOpenNoteInNewTab={handleOpenNoteInNewTab}
             onOpenTask={handleOpenTask}
             onCopyExternalToVault={(id, typePath) =>
               void handleCopyExternalToVault(id, typePath)
@@ -1005,6 +1007,7 @@ const Index = () => {
                       aiOpen={aiOpen}
                       editorOpen={expandedEditorOpen}
                       hideSubtypeNotes={hideSubtypeNotes}
+                      vaultLocation={vault.location}
                       editor={editorWorkspace}
                       onOpenNote={handleOpenStructuredNote}
                       onCreateNote={() => void handleCreateNote()}
@@ -1074,6 +1077,8 @@ const Index = () => {
                       onSaveView={handleSaveTypeView}
                       hideSubtypeNotes={hideSubtypeNotes}
                       onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
+                      schemas={vault.schemas}
+                      vaultLocation={vault.location}
                     />
                   </ResizablePanel>
                   <ResizableHandle
@@ -1106,11 +1111,11 @@ const Index = () => {
 };
 
 export default function DesktopWorkspace() {
-  const vault = useVault();
+  const location = useVaultSelector((vault) => vault.location);
   // Reset navigation, panels, dialogs and editor state together, before the
   // first render for another vault (including a synchronous cache hit).
   return (
-    <WorkspaceErrorBoundary key={vault.location}>
+    <WorkspaceErrorBoundary key={location}>
       <Index />
     </WorkspaceErrorBoundary>
   );

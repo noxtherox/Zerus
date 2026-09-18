@@ -1,4 +1,4 @@
-import { noteBody } from "@/lib/frontmatter";
+import { getNoteProperties, noteBody } from "@/lib/frontmatter";
 import {
   isExternalNote,
   isTrashed,
@@ -59,7 +59,7 @@ export const AI_TOOL_PROMPT = [
   "User asks which notes mention Brazil. Respond: <search>Brazil</search>",
   "Do not use a code fence or mention the protocol. Zerus will return the tool result, then you should answer the user. Never claim a tool succeeded before receiving its result.",
   "Use note_append only when the user asks to add or append new material. Use note_set_body when the user asks to update, clean up, replace, or rewrite existing content. Write tools affect only the current note.",
-  "Tool content is the Markdown body only. Never include YAML frontmatter, metadata fences, or zerus-* properties; Zerus preserves metadata separately.",
+  "Read tools expose parsed frontmatter in a properties field. Write-tool content is the Markdown body only. Never include YAML frontmatter, metadata fences, or zerus-* properties because Zerus preserves metadata separately.",
   "When Zerus supplies vault-relative Markdown references for attached images, use the exact reference in note_append only when the user explicitly asks to add that image to the current note.",
 ].join("\n");
 
@@ -307,7 +307,12 @@ function resolveNote(
 }
 
 function noteSummary(note: Note) {
-  return { id: note.id, title: noteTitle(note), path: note.path };
+  return {
+    id: note.id,
+    title: noteTitle(note),
+    path: note.path,
+    properties: getNoteProperties(note.content),
+  };
 }
 
 function searchableText(note: Note): string {
@@ -316,7 +321,7 @@ function searchableText(note: Note): string {
   return [
     noteTitle(note),
     note.path,
-    noteBody(note.content),
+    note.content,
     file?.name,
     file?.path,
     link?.url,

@@ -734,7 +734,6 @@ export function Sidebar({
         ref={typeScrollContainerRef}
         className="flex-1 space-y-0.5 overflow-y-auto px-2"
       >
-        <GlobalSearchButton className="w-full" />
         <SidebarRow
           active={filter.kind === "all"}
           onClick={() => onFilterChange({ kind: "all" })}
@@ -818,6 +817,7 @@ export function Sidebar({
         </DndContext>
       </nav>
       <div className="space-y-0.5 border-t border-zerus-sidebar-fg/10 p-2">
+        <GlobalSearchButton className="w-full px-2 py-1.5 text-zerus-sidebar-fg/70 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/90 [&>svg]:size-[15px] [&>svg]:shrink-0 [&>svg]:opacity-80" />
         <SidebarRow
           active={settingsOpen}
           onClick={() => setSettingsOpen(true)}

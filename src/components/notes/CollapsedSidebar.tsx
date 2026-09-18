@@ -181,7 +181,6 @@ export function CollapsedSidebar({
         />
       </button>
 
-      <GlobalSearchButton compact className="px-2" />
       <div className="flex min-h-0 w-full flex-1 flex-col items-center overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <button
           type="button"
@@ -267,6 +266,7 @@ export function CollapsedSidebar({
       </div>
 
       <div className="mt-2 flex w-full shrink-0 flex-col items-center border-t border-zerus-sidebar-fg/15 pt-2">
+        <GlobalSearchButton compact className="px-2" />
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}

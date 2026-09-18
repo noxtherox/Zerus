@@ -26,6 +26,12 @@ export interface PropertyDef {
   relationTypeKey?: string;
   /** relation only: allow linking more than one note. */
   relationMultiple?: boolean;
+  /** relation only: stable identity shared by the two synchronized definitions. */
+  relationPairId?: string;
+  /** relation only: keep this synchronized inverse field out of user-facing views. */
+  relationHidden?: boolean;
+  /** relation only: hide the paired field while keeping its values synchronized. */
+  relationInverseHidden?: boolean;
 }
 
 /** Type path key ("work/projects") -> definitions owned by that type tree. */

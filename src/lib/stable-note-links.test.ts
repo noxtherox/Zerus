@@ -9,6 +9,17 @@ const note = (id: string, content: string): Note => ({ id, content, path: `work/
 const schemas = { work: [{ name: "Related", type: "relation" as const, relationMultiple: true }] };
 
 describe("stable note references", () => {
+  it("skips parsing stable links across successive prose edits", () => {
+    const parse = vi.spyOn(wikilinks, "mapWikilinks");
+    try {
+      for (const text of ["a", "ab", "abc"]) {
+        const source = note("source", `# Source\n\n[[zerus:target|Target]] ${text}`);
+        expect(stabilizeNoteLinks(source, [], {})).toBe(source.content);
+      }
+      expect(parse).not.toHaveBeenCalled();
+    } finally { parse.mockRestore(); }
+  });
+
   it("does not reparse unchanged notes or resolve labelled IDs while typing a title", () => {
     const target = note("target", "# Original");
     const source = note("source", "# Source\n\n[[zerus:target|Original]]");
@@ -19,7 +30,7 @@ describe("stable note references", () => {
         const renamed = { ...target, content: `# ${title}` };
         expect(stabilizeNoteLinks(source, [source, renamed], {}, resolve)).toBe(source.content);
       }
-      expect(parse).toHaveBeenCalledTimes(1);
+      expect(parse).not.toHaveBeenCalled();
       expect(resolve).not.toHaveBeenCalled();
     } finally {
       parse.mockRestore();

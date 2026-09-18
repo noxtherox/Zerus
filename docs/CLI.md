@@ -28,6 +28,11 @@ Normal reads and bulk operations exclude `.trash`. Use `note list --trash` or
 combined read is intentional. Type listing includes empty folders but excludes
 `.zerus`, `.trash`, and `assets`.
 
+JSON results from `note list`, `note get`, and `search` include each note's
+parsed YAML frontmatter in `properties`. `note get` also returns the raw note
+content by default; `--body` limits `content` to the Markdown body without
+removing `properties` from the result.
+
 ## Tasks, links, files, and attachments
 
 - Tasks: `task list|get|create|update|complete|reopen|delete` and

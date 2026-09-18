@@ -20,6 +20,8 @@ export function NoteOutline({ container }: { container: HTMLDivElement | null })
     if (!container) return;
     let entries: Heading[] = [];
     let frame = 0;
+    let layoutTimer: ReturnType<typeof setTimeout> | undefined;
+    let needsScan = false;
     const updateActive = () => {
       const scroller = container.querySelector(".mdxeditor-root-contenteditable");
       if (!scroller) return;
@@ -31,7 +33,6 @@ export function NoteOutline({ container }: { container: HTMLDivElement | null })
       setActive(current);
     };
     const scan = () => {
-      frame = 0;
       const next = Array.from(container.querySelectorAll<HTMLElement>(
         ".zerus-mdx-content h1, .zerus-mdx-content h2, .zerus-mdx-content h3, .zerus-mdx-content h4, .zerus-mdx-content h5, .zerus-mdx-content h6",
       )).map((element) => ({
@@ -45,24 +46,56 @@ export function NoteOutline({ container }: { container: HTMLDivElement | null })
         entries = next;
         setHeadings(next);
       }
-      updateActive();
     };
-    const schedule = () => {
-      if (!frame) frame = requestAnimationFrame(scan);
+    const schedule = (headingsChanged = false) => {
+      needsScan ||= headingsChanged;
+      if (!frame) frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (needsScan) scan();
+        needsScan = false;
+        updateActive();
+      });
     };
-    const observer = new MutationObserver(schedule);
+    const headingSelector = "h1, h2, h3, h4, h5, h6";
+    const touchesHeading = (node: Node) => {
+      const element = node instanceof Element ? node : node.parentElement;
+      return !!element && (!!element.closest(headingSelector) || !!element.querySelector(headingSelector));
+    };
+    const observer = new MutationObserver((records) => {
+      // Ignore mutations in the outline itself, toolbar and floating dialogs.
+      const edits = records.filter(({ target, addedNodes, removedNodes }) => {
+        const element = target instanceof Element ? target : target.parentElement;
+        return !!element?.closest(".zerus-mdx-content") ||
+          [...addedNodes, ...removedNodes].some((node) => node instanceof Element &&
+            (node.matches(".zerus-mdx-content") || !!node.querySelector(".zerus-mdx-content")));
+      });
+      if (!edits.length) return;
+      if (edits.some(({ target, addedNodes, removedNodes }) =>
+        (target instanceof Element ? target : target.parentElement)?.closest(headingSelector) ||
+        [...addedNodes, ...removedNodes].some(touchesHeading),
+      )) schedule(true);
+      else {
+        // Ordinary prose can move headings, but measuring them can wait until
+        // a typing pause. Scrolling always refreshes the active heading.
+        clearTimeout(layoutTimer);
+        layoutTimer = setTimeout(() => schedule(), 100);
+      }
+    });
     observer.observe(container, { childList: true, subtree: true, characterData: true });
-    const resize = new ResizeObserver(schedule);
+    const scheduleLayout = () => schedule();
+    const resize = new ResizeObserver(scheduleLayout);
     resize.observe(container);
-    container.addEventListener("scroll", updateActive, true);
-    container.addEventListener("load", schedule, true);
+    container.addEventListener("scroll", scheduleLayout, true);
+    container.addEventListener("load", scheduleLayout, true);
     scan();
+    updateActive();
     return () => {
       observer.disconnect();
       resize.disconnect();
       cancelAnimationFrame(frame);
-      container.removeEventListener("scroll", updateActive, true);
-      container.removeEventListener("load", schedule, true);
+      clearTimeout(layoutTimer);
+      container.removeEventListener("scroll", scheduleLayout, true);
+      container.removeEventListener("load", scheduleLayout, true);
     };
   }, [container]);
 

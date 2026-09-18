@@ -1,7 +1,7 @@
 import { getNoteProperties, noteBody, setContentProperty, withBody } from "@/lib/frontmatter";
 import { effectiveProperties, type PropertySchemas } from "@/lib/properties";
 import { findNoteByTitle, noteReference, noteTypePath, type Note } from "@/lib/note-utils";
-import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
+import { mapWikilinks, parseNoteReference, WIKILINK_REGEX } from "@/lib/wikilinks";
 
 // Recheck bindings against the current catalogue, but only parse Markdown again
 // when the source, relation definitions, or a resolved binding actually changes.
@@ -49,7 +49,15 @@ export function stabilizeNoteLinks(
     return bound;
   };
   const body = noteBody(note.content);
-  const nextBody = mapWikilinks(body, (reference, original) => {
+  // Labelled stable IDs never need rebinding. Most edits only change prose
+  // around these links; avoid parsing the whole document in that common case.
+  // Tables still use the parser to normalize escaped alias separators.
+  const needsBodyBinding = /^\s*\|?\s*:?-+\s*(?:\||$)/m.test(body) ||
+    [...body.matchAll(WIKILINK_REGEX)].some((match) => {
+      const parsed = parseNoteReference(match[1]);
+      return parsed.id === null || parsed.label === parsed.target;
+    });
+  const nextBody = !needsBodyBinding ? body : mapWikilinks(body, (reference, original) => {
     const bound = cachedBind(reference);
     return bound === reference ? original : `[[${bound}]]`;
   });

@@ -26,6 +26,7 @@ import type { PropertySchemas } from "@/lib/properties";
 import { cn } from "@/lib/utils";
 import { AttachmentsSection } from "./AttachmentsSection";
 import type { Task } from "@/lib/tasks";
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 
 interface BacklinksPanelProps {
   note: Note;
@@ -33,6 +34,7 @@ interface BacklinksPanelProps {
   tasks: Task[];
   schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab: (id: string) => void;
   onOpenTask: (id: string) => void;
   expanded: boolean;
   onToggleExpanded: () => void;
@@ -46,6 +48,7 @@ export function BacklinksPanel({
   tasks,
   schemas,
   onOpenNote,
+  onOpenNoteInNewTab,
   onOpenTask,
   expanded,
   onToggleExpanded,
@@ -104,6 +107,7 @@ export function BacklinksPanel({
             note={note}
             allNotes={allNotes}
             onOpenNote={onOpenNote}
+            onOpenNoteInNewTab={onOpenNoteInNewTab}
             expanded={expanded}
           />
         </>
@@ -135,6 +139,7 @@ export function BacklinksPanel({
             note={note}
             allNotes={allNotes}
             onOpenNote={onOpenNote}
+            onOpenNoteInNewTab={onOpenNoteInNewTab}
             expanded={expanded}
             showArchived={showArchived}
           />
@@ -183,6 +188,11 @@ export function BacklinksPanel({
                     <li key={linkingNote.id}>
                       <button
                         onClick={() => onOpenNote(linkingNote.id)}
+                        onMouseDown={(event) =>
+                          handleMiddleMouseDown(event, () =>
+                            onOpenNoteInNewTab(linkingNote.id),
+                          )
+                        }
                         className="block h-full w-full rounded-md border border-border/50 bg-zerus-editor px-3 py-2 text-left transition-colors hover:border-zerus-accent/40 hover:bg-zerus-accent/5"
                       >
                         <span className="flex items-center gap-1.5 truncate text-sm font-medium text-zerus-link">

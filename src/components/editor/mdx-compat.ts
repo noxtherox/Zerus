@@ -40,6 +40,7 @@ function isEscaped(source: string, at: number): boolean {
 
 /** Removes mdast's encoding of invisible trailing spaces outside code fences. */
 export function cleanMarkdownFromMdxEditor(source: string): string {
+  if (!/&#x20;/iu.test(source)) return source;
   let fence: { marker: "`" | "~"; length: number } | null = null;
 
   return source

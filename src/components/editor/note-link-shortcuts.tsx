@@ -5,7 +5,7 @@ import { $createLinkNode, $isLinkNode } from "@lexical/link";
 import { $createTextNode, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
 import { addComposerChild$, addNestedEditorChild$, addTableCellEditorChild$, realmPlugin } from "@mdxeditor/editor";
 import { useNoteLinkShortcutsEnabled } from "@/lib/editor-preferences";
-import { useVault } from "@/store/notes-store";
+import { useVaultSelector } from "@/store/notes-store";
 import { noteReference, noteTitle, type Note } from "@/lib/note-utils";
 import { searchLinkNotes } from "./vault-link-options";
 import { matchNoteLinkTrigger } from "./note-link-trigger";
@@ -16,9 +16,9 @@ class NoteOption extends MenuOption {
 
 // eslint-disable-next-line react-refresh/only-export-components
 function NoteLinkPicker() {
-  const { notes } = useVault();
   const [query, setQuery] = useState<string | null>(null);
-  const options = useMemo(() => query === null ? [] : searchLinkNotes(notes, query).slice(0, 8).map(note => new NoteOption(note)), [notes, query]);
+  const notes = useVaultSelector((vault) => query === null ? null : vault.notes);
+  const options = useMemo(() => query === null || notes === null ? [] : searchLinkNotes(notes, query).slice(0, 8).map(note => new NoteOption(note)), [notes, query]);
   const trigger = useCallback<TriggerFn>((text) => {
     const selection = $getSelection();
     if (!$isRangeSelection(selection)) return null;

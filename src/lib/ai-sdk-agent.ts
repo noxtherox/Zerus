@@ -406,19 +406,21 @@ export async function runZerusAgent(
   const tools = {
     note_get: tool({
       description:
-        "Read the current note or a note selected by exact title, path, or ID.",
+        "Read the body and parsed frontmatter properties of the current note or a note selected by exact title, path, or ID.",
       inputSchema: z.object({ selector: z.string().optional() }),
       execute: (input) => execute({ name: "note_get", arguments: input }),
     }),
     note_list: tool({
-      description: "List available notes with their titles, paths, and IDs.",
+      description:
+        "List available notes with their titles, paths, IDs, and parsed frontmatter properties.",
       inputSchema: z.object({
         limit: z.number().int().min(1).max(50).optional(),
       }),
       execute: (input) => execute({ name: "note_list", arguments: input }),
     }),
     search: tool({
-      description: "Search note titles, paths, and Markdown bodies for text.",
+      description:
+        "Search note titles, paths, Markdown bodies, and frontmatter for text.",
       inputSchema: z.object({
         query: z.string().min(1),
         limit: z.number().int().min(1).max(50).optional(),

@@ -43,7 +43,6 @@ import { type PropertyValue, getNoteProperties } from "@/lib/frontmatter";
 import {
   PROPERTY_TYPES,
   type PropertyDef,
-  type PropertySchemas,
   type PropertyType,
   effectivePropertyDefinitions,
   inferPropertyType,
@@ -70,20 +69,20 @@ import {
 import {
   addTypeProperty,
   createNote,
-  ensureReciprocalRelation,
   removeTypeProperty,
   setNoteProperty,
   updateTypeProperty,
-  useVault,
+  useVaultSelector,
 } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
 import { FILE_HUB_PROPERTY_KEYS } from "@/lib/file-hubs";
 import { isReservedZerusProperty } from "@/lib/zerus-metadata";
-import { getRelationPickerNotes, hasRelationTo } from "@/lib/links";
+import { getRelationPickerNotes } from "@/lib/links";
 import {
   normalizeExternalUrl,
   openExternalUrl,
 } from "@/lib/external-links";
+import { handleMiddleMouseDown } from "@/lib/middle-click";
 
 const TYPE_ICONS: Record<PropertyType, typeof TypeIcon> = {
   text: TypeIcon,
@@ -106,8 +105,8 @@ interface ValueEditorProps {
   value: PropertyValue | undefined;
   allNotes: Note[];
   currentNote: Note;
-  schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab?: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
 }
 
@@ -372,16 +371,16 @@ function UrlValueEditor({
 function RelationChip({
   title,
   note,
-  reciprocal,
   expanded,
   onOpenNote,
+  onOpenNoteInNewTab,
   onRemove,
 }: {
   title: string;
   note: Note | undefined;
-  reciprocal: boolean;
   expanded?: boolean;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab?: (id: string) => void;
   onRemove: () => void;
 }) {
   return (
@@ -394,26 +393,22 @@ function RelationChip({
         expanded && "h-full",
       )}
     >
-      {reciprocal ? (
-        <ArrowLeftRight
-          size={13}
-          className="shrink-0 opacity-80"
-          aria-label="Bidirectional relation"
-          title="Bidirectional relation"
-        />
-      ) : (
-        <ArrowRight
-          size={13}
-          className="shrink-0 opacity-80"
-          aria-label="Outgoing relation"
-        />
-      )}
+      <ArrowLeftRight
+        size={13}
+        className="shrink-0 opacity-80"
+        aria-label="Synced relation"
+        title="Synced relation"
+      />
       {note ? (
         <button
           type="button"
           className="min-w-0 flex-1 truncate text-left font-medium"
           title={`Open "${title}"`}
           onClick={() => onOpenNote(note.id)}
+          onMouseDown={(event) => {
+            if (!onOpenNoteInNewTab) return;
+            handleMiddleMouseDown(event, () => onOpenNoteInNewTab(note.id));
+          }}
         >
           {title}
         </button>
@@ -442,8 +437,8 @@ function RelationValueEditor({
   value,
   allNotes,
   currentNote,
-  schemas,
   onOpenNote,
+  onOpenNoteInNewTab,
   onCommit,
   expanded,
   showArchived,
@@ -452,8 +447,8 @@ function RelationValueEditor({
   value: PropertyValue | undefined;
   allNotes: Note[];
   currentNote: Note;
-  schemas: PropertySchemas;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab?: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
   expanded?: boolean;
   showArchived?: boolean;
@@ -484,7 +479,6 @@ function RelationValueEditor({
 
   const pick = (note: Note) => {
     const title = noteReference(note);
-    ensureReciprocalRelation(currentNote.id, note.id);
     onCommit(def.relationMultiple ? [...titles, title] : title);
     setQuery("");
     setOpen(false);
@@ -623,13 +617,9 @@ function RelationValueEditor({
               key={title}
               title={noteReferenceLabel(title, allNotes)}
               note={linkedNote}
-              reciprocal={
-                linkedNote
-                  ? hasRelationTo(linkedNote, currentNote, schemas)
-                  : false
-              }
               expanded={expanded}
               onOpenNote={onOpenNote}
+              onOpenNoteInNewTab={onOpenNoteInNewTab}
               onRemove={() => remove(title)}
             />
           );
@@ -649,8 +639,8 @@ function ValueEditor({
   value,
   allNotes,
   currentNote,
-  schemas,
   onOpenNote,
+  onOpenNoteInNewTab,
   onCommit,
 }: ValueEditorProps) {
   const type = def.type;
@@ -661,8 +651,8 @@ function ValueEditor({
         value={value}
         allNotes={allNotes}
         currentNote={currentNote}
-        schemas={schemas}
         onOpenNote={onOpenNote}
+        onOpenNoteInNewTab={onOpenNoteInNewTab}
         onCommit={onCommit}
         expanded={false}
       />
@@ -726,6 +716,7 @@ interface DefFormProps {
   submitLabel: string;
   existingTypePaths: string[][];
   allowedTypes?: PropertyType[];
+  relationOwnerLabel?: string;
   onSubmit: (def: PropertyDef) => void;
   onDelete?: () => void;
 }
@@ -805,6 +796,7 @@ function DefForm({
   submitLabel,
   existingTypePaths,
   allowedTypes,
+  relationOwnerLabel,
   onSubmit,
   onDelete,
 }: DefFormProps) {
@@ -820,6 +812,9 @@ function DefForm({
   );
   const [relationMultiple, setRelationMultiple] = useState(
     initial?.relationMultiple ?? false,
+  );
+  const [relationInverseHidden, setRelationInverseHidden] = useState(
+    initial?.relationInverseHidden ?? false,
   );
   const [listOptions, setListOptions] = useState(
     normalizeListOptions(initial?.listOptions ?? []),
@@ -847,6 +842,9 @@ function DefForm({
                 type,
                 relationTypeKey: relationTypeKey || undefined,
                 relationMultiple,
+                relationPairId: initial?.relationPairId,
+                relationHidden: initial?.relationHidden,
+                relationInverseHidden,
               }
             : type === "list"
               ? { name: clean, type, listOptions, listMultiple }
@@ -901,6 +899,16 @@ function DefForm({
             />
             Allow multiple notes
           </label>
+          <label className="flex items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground">
+            <span>
+              Show only on {relationOwnerLabel?.split("/").at(-1) || "this type"}
+            </span>
+            <Switch
+              checked={relationInverseHidden}
+              onCheckedChange={setRelationInverseHidden}
+              aria-label="Show relation only on this type"
+            />
+          </label>
         </>
       )}
       {type === "list" && (
@@ -952,6 +960,7 @@ interface PropertiesSectionProps {
   note: Note;
   allNotes: Note[];
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab?: (id: string) => void;
   expanded?: boolean;
 }
 
@@ -963,10 +972,12 @@ export function PropertiesSection({
   note,
   allNotes,
   onOpenNote,
+  onOpenNoteInNewTab,
   expanded,
 }: PropertiesSectionProps) {
   const nameColumnClass = expanded ? "w-48" : "w-28";
-  const { schemas, extraTypes } = useVault();
+  const schemas = useVaultSelector((vault) => vault.schemas);
+  const extraTypes = useVaultSelector((vault) => vault.extraTypes);
   const [addOpen, setAddOpen] = useState(false);
   const [addOwnerKey, setAddOwnerKey] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -1076,8 +1087,8 @@ export function PropertiesSection({
                   value={valueFor(def.name)}
                   allNotes={allNotes}
                   currentNote={note}
-                  schemas={schemas}
                   onOpenNote={onOpenNote}
+                  onOpenNoteInNewTab={onOpenNoteInNewTab}
                   onCommit={(value) =>
                     setNoteProperty(note.id, def.name, value)
                   }
@@ -1155,8 +1166,8 @@ export function PropertiesSection({
                   value={value}
                   allNotes={allNotes}
                   currentNote={note}
-                  schemas={schemas}
                   onOpenNote={onOpenNote}
+                  onOpenNoteInNewTab={onOpenNoteInNewTab}
                   onCommit={(next) => setNoteProperty(note.id, key, next)}
                 />
               </div>
@@ -1222,10 +1233,12 @@ export function RelationsSection({
   note,
   allNotes,
   onOpenNote,
+  onOpenNoteInNewTab,
   expanded,
   showArchived = false,
 }: RelationsSectionProps) {
-  const { schemas, extraTypes } = useVault();
+  const schemas = useVaultSelector((vault) => vault.schemas);
+  const extraTypes = useVaultSelector((vault) => vault.extraTypes);
   const [addOpen, setAddOpen] = useState(false);
   const [addOwnerKey, setAddOwnerKey] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
@@ -1240,7 +1253,10 @@ export function RelationsSection({
     : currentKey;
   const selectedAddOwnerLabel = selectedAddOwnerKey || "unfiled";
   const relationEntries = effectivePropertyDefinitions(typePath, schemas).filter(
-    ({ def }) => def.type === "relation" && !isReservedZerusProperty(def.name),
+    ({ def }) =>
+      def.type === "relation" &&
+      !def.relationHidden &&
+      !isReservedZerusProperty(def.name),
   );
   const values = getNoteProperties(note.content);
   const existingTypePaths = getAllTypePaths(allNotes, extraTypes);
@@ -1293,6 +1309,7 @@ export function RelationsSection({
                     submitLabel="Save"
                     existingTypePaths={existingTypePaths}
                     allowedTypes={["relation"]}
+                    relationOwnerLabel={ownerLabel}
                     onSubmit={(next) => {
                       updateTypeProperty(ownerKey, def.name, next);
                       setEditing(null);
@@ -1309,8 +1326,8 @@ export function RelationsSection({
                 value={rawValue}
                 allNotes={allNotes}
                 currentNote={note}
-                schemas={schemas}
                 onOpenNote={onOpenNote}
+                onOpenNoteInNewTab={onOpenNoteInNewTab}
                 onCommit={(value) => setNoteProperty(note.id, def.name, value)}
                 expanded={expanded}
                 showArchived={showArchived}
@@ -1360,6 +1377,7 @@ export function RelationsSection({
               submitLabel="Add"
               existingTypePaths={existingTypePaths}
               allowedTypes={["relation"]}
+              relationOwnerLabel={selectedAddOwnerLabel}
               onSubmit={(def) => {
                 addTypeProperty(selectedAddOwnerKey, def);
                 setAddOpen(false);

@@ -1,7 +1,8 @@
 import { withTimeout } from "@/lib/async-timeout";
 import { reciprocalRelation } from "@/lib/reciprocal-relations";
 import { stabilizeNoteLinks } from "@/lib/stable-note-links";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
+import { createEditNotifications } from "@/lib/edit-notifications";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -33,6 +34,7 @@ import {
   normalizeFsPath,
   noteAbsolutePath,
   noteSnippet,
+  noteReference,
   noteTitle,
   noteTypePath,
   notesOfTypeKey,
@@ -62,6 +64,7 @@ import {
   type PropertySchemas,
   listPropertyValue,
   listSelections,
+  effectivePropertyDefinitions,
   propertyDefinitionOwner,
 } from "@/lib/properties";
 import {
@@ -397,9 +400,14 @@ async function recordHistorySafely(
   }
 }
 
-function setState(patch: Partial<VaultState>) {
+const editNotifications = createEditNotifications(emit);
+
+function setState(patch: Partial<VaultState>, editing = false) {
   state = { ...state, ...patch };
-  emit();
+  // The authoritative draft changes synchronously. Only React notifications
+  // wait briefly so list filtering and other vault UI stay off the typing path.
+  if (editing) editNotifications.schedule();
+  else editNotifications.flush();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -411,8 +419,18 @@ export function useVault(): VaultState {
   return useSyncExternalStore(subscribe, () => state);
 }
 
+/** Subscribe to a stable field instead of rerendering on every vault change. */
+export function useVaultSelector<T>(select: (vault: VaultState) => T): T {
+  const getSnapshot = useMemo(() => () => select(state), [select]);
+  return useSyncExternalStore(subscribe, getSnapshot);
+}
+
 export function getNotes(): Note[] {
   return state.notes;
+}
+
+export function getPropertySchemas(): PropertySchemas {
+  return state.schemas;
 }
 
 export function prioritizeNoteLoad(id: string): Promise<void> {
@@ -2191,7 +2209,7 @@ function isSafeTypePath(typePath: string[]): boolean {
   );
 }
 
-function updateNote(id: string, patch: Partial<Note>) {
+function updateNote(id: string, patch: Partial<Note>, editing = false) {
   const previous = state.notes.find((note) => note.id === id);
   const notes = state.notes.map((note) =>
     note.id === id ? { ...note, ...patch } : note,
@@ -2199,7 +2217,7 @@ function updateNote(id: string, patch: Partial<Note>) {
   if (previous && patch.path && patch.path !== previous.path) {
     updateMobileEntry(previous.path, patch.path, patch.updatedAt ?? previous.updatedAt);
   }
-  const summary = state.isNotePaginationEnabled
+  const summary = editing ? {} : state.isNotePaginationEnabled
     ? summarizeMobileEntries(mobileNoteEntries)
     : {
         totalNoteCount: notes.filter(
@@ -2209,7 +2227,7 @@ function updateNote(id: string, patch: Partial<Note>) {
   setState({
     notes,
     ...summary,
-  });
+  }, editing);
 }
 
 function setNoteBusy(id: string, busy: boolean) {
@@ -2296,7 +2314,7 @@ function stabilizeVaultLinks(catalogue = state.notes) {
   }
 }
 
-export function updateNoteContent(id: string, content: string) {
+export function updateNoteContent(id: string, content: string, editing = false) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || closingAfterFlush || state.busyNoteIds.has(id) || state.loadingNoteIds.has(id)) return;
   if (!isExternalNote(note) && !isSavedLinkNote(note)) {
@@ -2304,10 +2322,10 @@ export function updateNoteContent(id: string, content: string) {
     if (!state.hasMoreNotes) content = stabilizeNoteLinks({ ...note, content }, state.notes, state.schemas);
     content = setZerusState(content, { id: note.id });
   }
-  queueNoteContent(id, content);
+  queueNoteContent(id, content, editing);
 }
 
-function queueNoteContent(id: string, content: string) {
+function queueNoteContent(id: string, content: string, editing = false) {
   if (
     closingAfterFlush ||
     state.busyNoteIds.has(id) ||
@@ -2322,7 +2340,7 @@ function queueNoteContent(id: string, content: string) {
       catch (error) { reportError("keep a local copy of your Drive edit", error); return; }
     }
   }
-  updateNote(id, { content, updatedAt: new Date().toISOString() });
+  updateNote(id, { content, updatedAt: new Date().toISOString() }, editing);
   if (state.isRefreshing) {
     startupEditedNoteIds.add(id);
     return;
@@ -2454,6 +2472,12 @@ async function flushUntilIdle(id: string): Promise<boolean> {
 /** Immediately persists all pending debounced note edits. */
 export async function flushPendingWrites(): Promise<boolean> {
   return flushAll();
+}
+
+/** Immediately persists pending edits for one note. Used by cancellable bulk work. */
+export async function flushNoteWrites(id: string): Promise<boolean> {
+  if (state.conflicts[id]) return false;
+  return flushUntilIdle(id);
 }
 
 async function flushAll(
@@ -4049,7 +4073,22 @@ export function updateTypeProperty(
   );
   const next = defs.slice();
   next[idx] = def;
-  saveSchemas({ ...state.schemas, [ownerKey]: next });
+  let schemas = { ...state.schemas, [ownerKey]: next };
+  if (def.type === "relation" && def.relationPairId) {
+    schemas = Object.fromEntries(
+      Object.entries(schemas).map(([key, definitions]) => [
+        key,
+        definitions.map((candidate) =>
+          candidate.type === "relation" &&
+          candidate.relationPairId === def.relationPairId &&
+          !(key === ownerKey && candidate.name.toLowerCase() === def.name.toLowerCase())
+            ? { ...candidate, relationHidden: Boolean(def.relationInverseHidden) }
+            : candidate,
+        ),
+      ]),
+    );
+  }
+  saveSchemas(schemas);
   if (def.name !== oldName || (def.type === "list" && !def.listMultiple)) {
     for (const note of affectedNotes) {
       let migrated = note.content;
@@ -4099,7 +4138,7 @@ export function removeTypeProperty(typeKeyOrPath: string, name: string) {
 }
 
 /** Sets (or with `null`, clears) one property value in a note's frontmatter. */
-export function setNoteProperty(
+function setNotePropertyRaw(
   id: string,
   name: string,
   value: PropertyValue | null,
@@ -4111,17 +4150,188 @@ export function setNoteProperty(
   if (next !== note.content) updateNoteContent(id, next);
 }
 
-/** Adds the reverse metadata for a relation selected or created inline. */
-export function ensureReciprocalRelation(sourceId: string, targetId: string) {
-  const source = state.notes.find(note => note.id === sourceId);
-  const target = state.notes.find(note => note.id === targetId);
-  if (!source || !target) return;
-  const reverse = reciprocalRelation(source, target, state.schemas);
-  if (!reverse) return;
-  if (reverse.createDefinition) {
-    addTypeProperty(noteTypePath(target).join("/"), reverse.definition);
+function propertyValueFor(note: Note, name: string): PropertyValue | undefined {
+  const properties = getNoteProperties(note.content);
+  const key = Object.keys(properties).find(
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
+  );
+  return key === undefined ? undefined : properties[key];
+}
+
+function relationReferences(value: PropertyValue | undefined, noteId: string): boolean {
+  if (value == null || value === "") return false;
+  const resolve = createNoteResolver(state.notes);
+  return (Array.isArray(value) ? value : [value]).some(
+    (reference) => resolve(String(reference))?.id === noteId,
+  );
+}
+
+function relationTargetIds(value: PropertyValue | null | undefined): Set<string> {
+  const resolve = createNoteResolver(state.notes);
+  return new Set(
+    (value == null || value === "" ? [] : Array.isArray(value) ? value : [value])
+      .map((reference) => resolve(String(reference))?.id)
+      .filter((id): id is string => Boolean(id)),
+  );
+}
+
+function replaceSchemaDefinition(
+  ownerKey: string,
+  oldName: string,
+  definition: PropertyDef,
+) {
+  const definitions = state.schemas[ownerKey] ?? [];
+  const index = definitions.findIndex(
+    (candidate) => candidate.name.toLowerCase() === oldName.toLowerCase(),
+  );
+  if (index < 0) return;
+  const next = definitions.slice();
+  next[index] = definition;
+  saveSchemas({ ...state.schemas, [ownerKey]: next });
+}
+
+function effectiveRelationEntry(note: Note, name: string) {
+  return effectivePropertyDefinitions(noteTypePath(note), state.schemas).find(
+    ({ def }) =>
+      def.type === "relation" && def.name.toLowerCase() === name.toLowerCase(),
+  );
+}
+
+function pairedRelationEntry(note: Note, pairId: string) {
+  return effectivePropertyDefinitions(noteTypePath(note), state.schemas).find(
+    ({ def }) => def.type === "relation" && def.relationPairId === pairId,
+  );
+}
+
+function legacyReverseEntry(target: Note, source: Note) {
+  return effectivePropertyDefinitions(noteTypePath(target), state.schemas).find(
+    ({ def }) =>
+      def.type === "relation" &&
+      !def.relationPairId &&
+      relationReferences(propertyValueFor(target, def.name), source.id),
+  );
+}
+
+function ensureRelationPair(note: Note, name: string) {
+  const entry = effectiveRelationEntry(note, name);
+  if (!entry || entry.def.type !== "relation") return null;
+  if (entry.def.relationPairId) return entry;
+  const definition = { ...entry.def, relationPairId: crypto.randomUUID() };
+  replaceSchemaDefinition(entry.ownerKey, entry.def.name, definition);
+  return { ...entry, def: definition };
+}
+
+function ensureReverseDefinition(source: Note, target: Note, sourceDef: PropertyDef) {
+  const pairId = sourceDef.relationPairId;
+  if (!pairId) return null;
+  const paired = pairedRelationEntry(target, pairId);
+  if (paired) return paired;
+
+  const legacy = legacyReverseEntry(target, source);
+  if (legacy) {
+    const definition = {
+      ...legacy.def,
+      relationPairId: pairId,
+      relationHidden: Boolean(sourceDef.relationInverseHidden),
+    };
+    replaceSchemaDefinition(legacy.ownerKey, legacy.def.name, definition);
+    return { ...legacy, def: definition };
   }
-  setNoteProperty(target.id, reverse.definition.name, reverse.value);
+
+  const reverse = reciprocalRelation(source, target, state.schemas);
+  if (!reverse) return null;
+  const definition = {
+    ...reverse.definition,
+    relationPairId: pairId,
+    relationHidden: Boolean(sourceDef.relationInverseHidden),
+  };
+  if (reverse.createDefinition) {
+    const ownerKey = noteTypePath(target).join("/");
+    addTypeProperty(ownerKey, definition);
+    return { ownerKey, def: definition };
+  }
+  const existing = effectiveRelationEntry(target, reverse.definition.name);
+  if (!existing) return null;
+  replaceSchemaDefinition(existing.ownerKey, existing.def.name, definition);
+  return { ...existing, def: definition };
+}
+
+function removeReverseReference(source: Note, target: Note, pairId: string) {
+  const entry = pairedRelationEntry(target, pairId) ?? legacyReverseEntry(target, source);
+  if (!entry) return;
+  if (!entry.def.relationPairId) {
+    replaceSchemaDefinition(entry.ownerKey, entry.def.name, {
+      ...entry.def,
+      relationPairId: pairId,
+    });
+  }
+  const value = propertyValueFor(target, entry.def.name);
+  const resolve = createNoteResolver(state.notes);
+  const remaining = (value == null || value === "" ? [] : Array.isArray(value) ? value : [value])
+    .filter((reference) => resolve(String(reference))?.id !== source.id)
+    .map(String);
+  setNotePropertyRaw(
+    target.id,
+    entry.def.name,
+    remaining.length ? (entry.def.relationMultiple ? remaining : remaining[0]) : null,
+  );
+}
+
+function addReverseReference(source: Note, target: Note, sourceDef: PropertyDef) {
+  const entry = ensureReverseDefinition(source, target, sourceDef);
+  if (!entry) return;
+  const value = propertyValueFor(target, entry.def.name);
+  if (relationReferences(value, source.id)) return;
+  const values = value == null || value === "" ? [] : Array.isArray(value) ? value.map(String) : [String(value)];
+  const reference = noteReference(source);
+  setNotePropertyRaw(
+    target.id,
+    entry.def.name,
+    entry.def.relationMultiple ? [...values, reference] : reference,
+  );
+}
+
+/** Sets a property and keeps paired relation values synchronized in both notes. */
+export function setNoteProperty(
+  id: string,
+  name: string,
+  value: PropertyValue | null,
+) {
+  if (isReservedZerusProperty(name)) return;
+  const source = state.notes.find((note) => note.id === id);
+  if (!source) return;
+  const relation = ensureRelationPair(source, name);
+  if (!relation) {
+    setNotePropertyRaw(id, name, value);
+    return;
+  }
+
+  const before = relationTargetIds(propertyValueFor(source, name));
+  const after = relationTargetIds(value);
+  setNotePropertyRaw(id, name, value);
+  for (const targetId of before) {
+    if (after.has(targetId)) continue;
+    const target = state.notes.find((note) => note.id === targetId);
+    if (target) removeReverseReference(source, target, relation.def.relationPairId!);
+  }
+  for (const targetId of after) {
+    if (before.has(targetId)) continue;
+    const target = state.notes.find((note) => note.id === targetId);
+    if (target) addReverseReference(source, target, relation.def);
+  }
+}
+
+/** Backwards-compatible helper for callers that only know the two note IDs. */
+export function ensureReciprocalRelation(sourceId: string, targetId: string) {
+  const source = state.notes.find((note) => note.id === sourceId);
+  const target = state.notes.find((note) => note.id === targetId);
+  if (!source || !target) return;
+  const entry = effectivePropertyDefinitions(noteTypePath(source), state.schemas).find(
+    ({ def }) => def.type === "relation" && relationReferences(propertyValueFor(source, def.name), target.id),
+  );
+  if (!entry) return;
+  const paired = ensureRelationPair(source, entry.def.name);
+  if (paired) addReverseReference(source, target, paired.def);
 }
 
 /** Replaces the note body from the editor, preserving frontmatter properties. */
@@ -4129,7 +4339,7 @@ export function updateNoteBody(id: string, body: string) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return;
   const next = withBody(note.content, body);
-  if (next !== note.content) updateNoteContent(id, next);
+  if (next !== note.content) updateNoteContent(id, next, true);
 }
 
 // ---- per-type saved views ---------------------------------------------------
@@ -4624,26 +4834,50 @@ export async function setNoteType(id: string, typePath: string[]) {
   }
 }
 
-export function toggleNotePinned(id: string) {
+export function setNotePinned(id: string, pinned: boolean) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note)) return;
-  const pinned = !note.pinned;
+  if (note.pinned === pinned) return;
   updateNoteContent(id, setZerusState(note.content, { pinned }));
   updateNote(id, { pinned });
   savePinnedPaths();
 }
 
-export function toggleNoteArchived(id: string) {
+export function toggleNotePinned(id: string) {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note) return;
+  setNotePinned(id, !note.pinned);
+}
+
+export function setNoteArchived(id: string, archived: boolean) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note) || isTrashed(note)) return;
-  const archived = !note.archived;
-  const pinned = archived ? false : note.pinned;
+  if (Boolean(note.archived) === archived) return;
   updateNoteContent(
     id,
-    setZerusState(note.content, { archived, pinned }),
+    setZerusState(note.content, { archived }),
   );
-  updateNote(id, { archived, pinned });
+  updateNote(id, { archived });
   saveNoteDisplayState();
+}
+
+export function toggleNoteArchived(id: string) {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note) return;
+  setNoteArchived(id, !note.archived);
+}
+
+/** Why a note cannot safely participate in an app-level bulk mutation. */
+export function noteBulkBlockReason(id: string): string | null {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note) return "Note is no longer available";
+  if (isExternalNote(note)) return "External notes cannot be changed in bulk";
+  if (isSavedLinkNote(note)) return "Saved links cannot be changed in bulk";
+  if (isTrashed(note)) return "Trashed notes cannot be changed in bulk";
+  if (state.loadingNoteIds.has(id)) return "Note is still loading";
+  if (state.busyNoteIds.has(id)) return "Note is busy";
+  if (state.conflicts[id]) return "Note has an unresolved conflict";
+  return null;
 }
 
 export async function trashNote(id: string) {

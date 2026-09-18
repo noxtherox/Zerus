@@ -1,5 +1,5 @@
 import { DateInput } from "@/components/ui/date-input";
-import { Fragment, useEffect, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -21,6 +21,7 @@ import {
   Calendar,
   Bookmark,
   CheckCircle2,
+  CheckSquare,
   ChevronDown,
   FileText,
   Folder,
@@ -90,6 +91,11 @@ import {
 } from "@/lib/note-utils";
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
+import { useBulkSelection } from "@/lib/use-bulk-selection";
+import {
+  BulkActionsToolbar,
+  type BulkMutationRequest,
+} from "@/components/notes/BulkActionsToolbar";
 import {
   Dialog,
   DialogContent,
@@ -296,11 +302,15 @@ export function TypeViewSwitcher({
 function NoteCard({
   note,
   visibleProperties,
-  onOpen,
+  selected,
+  onActivate,
+  order,
 }: {
   note: Note;
   visibleProperties: string[];
-  onOpen: (id: string) => void;
+  selected: boolean;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
+  order: string[];
 }) {
   const image = useMemo(() => firstNoteImage(note.content), [note.content]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -321,8 +331,12 @@ function NoteCard({
   return (
     <button
       type="button"
-      className="block min-w-0 w-full cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-zerus-surface p-3.5 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      onClick={() => onOpen(note.id)}
+      className={cn(
+        "block min-w-0 w-full cursor-pointer overflow-hidden rounded-lg border border-border/70 bg-zerus-surface p-3.5 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        selected && "border-zerus-accent bg-zerus-accent/10 ring-1 ring-zerus-accent/40",
+      )}
+      aria-pressed={selected}
+      onClick={(event) => onActivate(event, note.id, order)}
     >
       <span className="block">
         <span className="flex items-start gap-2">
@@ -356,13 +370,15 @@ function GalleryView({
   groupBy,
   groupByDef,
   visibleProperties,
-  onOpen,
+  selectedIds,
+  onActivate,
 }: {
   notes: Note[];
   groupBy: string | null;
   groupByDef: PropertyDef | undefined;
   visibleProperties: string[];
-  onOpen: (id: string) => void;
+  selectedIds: ReadonlySet<string>;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
 }) {
   const galleryId = useId();
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(
@@ -400,6 +416,7 @@ function GalleryView({
       {groups.map(([label, groupNotes], index) => {
         const collapsed = collapsedGroups.has(label);
         const contentId = `${galleryId}-group-${index}`;
+        const groupOrder = groupNotes.map((note) => note.id);
         return (
           <section key={label} className="min-w-0">
             {(groupBy || groups.length > 1) && (
@@ -430,7 +447,7 @@ function GalleryView({
                 className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-3"
               >
                 {groupNotes.map((note) => (
-                  <NoteCard key={note.id} note={note} visibleProperties={visibleProperties} onOpen={onOpen} />
+                  <NoteCard key={note.id} note={note} visibleProperties={visibleProperties} selected={selectedIds.has(note.id)} onActivate={onActivate} order={groupOrder} />
                 ))}
               </div>
             )}
@@ -441,7 +458,13 @@ function GalleryView({
   );
 }
 
-function DraggableBoardCard({ note, visibleProperties, onOpen }: { note: Note; visibleProperties: string[]; onOpen: (id: string) => void }) {
+function DraggableBoardCard({ note, visibleProperties, selected, order, onActivate }: {
+  note: Note;
+  visibleProperties: string[];
+  selected: boolean;
+  order: string[];
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: note.id,
     data: { type: "card" },
@@ -455,16 +478,17 @@ function DraggableBoardCard({ note, visibleProperties, onOpen }: { note: Note; v
       className={cn(
         "block min-w-0 w-full cursor-pointer overflow-hidden rounded-md border bg-background p-3 text-left shadow-sm transition-colors hover:bg-zerus-text/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isDragging && "z-50 opacity-70",
+        selected && "border-zerus-accent bg-zerus-accent/10 ring-1 ring-zerus-accent/40",
       )}
       {...listeners}
       {...attributes}
       onClick={(event) => {
-        if (!event.defaultPrevented && !isDragging) onOpen(note.id);
+        if (!event.defaultPrevented && !isDragging) onActivate(event, note.id, order);
       }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          onOpen(note.id);
+          (event.currentTarget as HTMLButtonElement).click();
           return;
         }
         listeners?.onKeyDown?.(event);
@@ -485,18 +509,21 @@ function BoardColumn({
   value,
   notes,
   visibleProperties,
-  onOpen,
+  selectedIds,
+  onActivate,
   onMoveLeft,
   onMoveRight,
 }: {
   value: string;
   notes: Note[];
   visibleProperties: string[];
-  onOpen: (id: string) => void;
+  selectedIds: ReadonlySet<string>;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
   onMoveLeft: (() => void) | null;
   onMoveRight: (() => void) | null;
 }) {
   const id = `board-column:${value}`;
+  const noteOrder = notes.map((note) => note.id);
   const {
     attributes,
     isDragging,
@@ -566,7 +593,14 @@ function BoardColumn({
         )}
       >
         {notes.map((note) => (
-          <DraggableBoardCard key={note.id} note={note} visibleProperties={visibleProperties} onOpen={onOpen} />
+          <DraggableBoardCard
+            key={note.id}
+            note={note}
+            visibleProperties={visibleProperties}
+            selected={selectedIds.has(note.id)}
+            order={noteOrder}
+            onActivate={onActivate}
+          />
         ))}
       </div>
     </section>
@@ -579,7 +613,9 @@ function BoardView({
   propertyDef,
   visibleProperties,
   columnOrder,
-  onOpen,
+  selectedIds,
+  onActivate,
+  onRequestBulkMutation,
   onColumnOrderChange,
   onSetProperty,
 }: {
@@ -588,7 +624,9 @@ function BoardView({
   propertyDef: PropertyDef | undefined;
   visibleProperties: string[];
   columnOrder: string[] | undefined;
-  onOpen: (id: string) => void;
+  selectedIds: ReadonlySet<string>;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
+  onRequestBulkMutation: (noteIds: string[], mutation: { properties: Array<{ name: string; operation: "set" | "clear"; value?: PropertyValue }> }) => void;
   onColumnOrderChange: (order: string[]) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }) {
@@ -623,11 +661,19 @@ function BoardView({
     }
     if (active.data.current?.type !== "card" || over.data.current?.type !== "column") return;
     const value = String(over.data.current.value);
-    onSetProperty(
-      String(active.id),
-      property,
-      value === NO_VALUE ? null : propertyDef?.listMultiple ? [value] : value,
-    );
+    const activeId = String(active.id);
+    const targetValue = value === NO_VALUE ? null : propertyDef?.listMultiple ? [value] : value;
+    if (selectedIds.has(activeId) && selectedIds.size > 1) {
+      onRequestBulkMutation([...selectedIds], {
+        properties: [{
+          name: property,
+          operation: targetValue === null ? "clear" : "set",
+          ...(targetValue === null ? {} : { value: targetValue }),
+        }],
+      });
+    } else {
+      onSetProperty(activeId, property, targetValue);
+    }
   };
 
   const moveColumn = (index: number, offset: -1 | 1) => {
@@ -659,7 +705,8 @@ function BoardView({
                   : String(value) === column;
               })}
               visibleProperties={visibleProperties}
-              onOpen={onOpen}
+              selectedIds={selectedIds}
+              onActivate={onActivate}
               onMoveLeft={index > 0 ? () => moveColumn(index, -1) : null}
               onMoveRight={index < columns.length - 1 ? () => moveColumn(index, 1) : null}
             />
@@ -764,19 +811,45 @@ function TableView({
   notes,
   properties,
   onOpen,
+  selectedIds,
+  onActivate,
+  onToggle,
+  onSelectAll,
+  onClear,
   onSetProperty,
 }: {
   notes: Note[];
   properties: PropertyDef[];
   onOpen: (id: string) => void;
+  selectedIds: ReadonlySet<string>;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
+  onToggle: (id: string, range: boolean, order: string[]) => void;
+  onSelectAll: () => void;
+  onClear: () => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
 }) {
+  const allSelected = notes.length > 0 && notes.every((note) => selectedIds.has(note.id));
+  const someSelected = notes.some((note) => selectedIds.has(note.id));
+  const headerCheckbox = useRef<HTMLInputElement>(null);
+  const order = notes.map((note) => note.id);
+  useEffect(() => {
+    if (headerCheckbox.current) headerCheckbox.current.indeterminate = someSelected && !allSelected;
+  }, [allSelected, someSelected]);
   return (
     <div className="min-w-0 p-6">
       <div className="max-w-full overflow-auto rounded-lg border border-border/70">
         <table className="w-full min-w-[720px] border-collapse text-left text-xs">
           <thead className="bg-zerus-surface text-muted-foreground">
             <tr>
+              <th className="w-10 border-b border-r border-border/70 px-3 py-2 font-medium">
+                <input
+                  ref={headerCheckbox}
+                  type="checkbox"
+                  checked={allSelected}
+                  aria-label={allSelected ? "Clear note selection" : `Select all ${notes.length} notes`}
+                  onChange={() => allSelected ? onClear() : onSelectAll()}
+                />
+              </th>
               <th className="min-w-64 border-b border-r border-border/70 px-3 py-2 font-medium">Name</th>
               {properties.map((property) => (
                 <th key={property.name} className="min-w-36 border-b border-r border-border/70 px-3 py-2 font-medium last:border-r-0">
@@ -789,15 +862,23 @@ function TableView({
             {notes.map((note) => (
               <tr
                 key={note.id}
-                className="cursor-pointer hover:bg-zerus-text/[0.02]"
+                className={cn("cursor-pointer hover:bg-zerus-text/[0.02]", selectedIds.has(note.id) && "bg-zerus-accent/10")}
                 onClick={(event) => {
                   if (!(event.target as HTMLElement).closest("input, select, textarea, button, a")) {
-                    onOpen(note.id);
+                    onActivate(event, note.id, order);
                   }
                 }}
               >
+                <td className="w-10 border-b border-r border-border/50 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(note.id)}
+                    aria-label={`Select ${noteTitle(note)}`}
+                    onChange={(event) => onToggle(note.id, event.nativeEvent instanceof MouseEvent && event.nativeEvent.shiftKey, order)}
+                  />
+                </td>
                 <td className="border-b border-r border-border/50 px-3 py-2 last:border-b-0">
-                  <button className="flex items-center gap-2 font-medium hover:underline" onClick={() => onOpen(note.id)}>
+                  <button className="flex items-center gap-2 font-medium hover:underline" onClick={(event) => onActivate(event, note.id, order)}>
                     <FileText size={14} className="text-muted-foreground" />
                     {noteTitle(note)}
                   </button>
@@ -820,12 +901,14 @@ function CalendarView({
   notes,
   dateProperty,
   visibleProperties,
-  onOpen,
+  selectedIds,
+  onActivate,
 }: {
   notes: Note[];
   dateProperty: string | null;
   visibleProperties: string[];
-  onOpen: (id: string) => void;
+  selectedIds: ReadonlySet<string>;
+  onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
 }) {
   const today = new Date();
   const year = today.getFullYear();
@@ -847,6 +930,10 @@ function CalendarView({
     if (date.getFullYear() !== year || date.getMonth() !== month) continue;
     dated.set(date.getDate(), [...(dated.get(date.getDate()) ?? []), note]);
   }
+  const chronologicalOrder = [
+    ...[...dated.entries()].sort(([left], [right]) => left - right).flatMap(([, entries]) => entries),
+    ...undated,
+  ].map((note) => note.id);
 
   if (!dateProperty) {
     return <EmptyView message="Choose a date property above to place notes on Calendar." />;
@@ -874,8 +961,9 @@ function CalendarView({
                     {(dated.get(day) ?? []).map((note) => (
                       <button
                         key={note.id}
-                        className="mb-1 block w-full truncate rounded border-l-2 border-zerus-accent bg-zerus-accent/10 px-1.5 py-1 text-left text-[10px]"
-                        onClick={() => onOpen(note.id)}
+                        className={cn("mb-1 block w-full truncate rounded border-l-2 border-zerus-accent bg-zerus-accent/10 px-1.5 py-1 text-left text-[10px]", selectedIds.has(note.id) && "ring-2 ring-zerus-accent")}
+                        aria-pressed={selectedIds.has(note.id)}
+                        onClick={(event) => onActivate(event, note.id, chronologicalOrder)}
                       >
                         <span className="block truncate">{noteTitle(note)}</span>
                         <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1" />
@@ -894,7 +982,7 @@ function CalendarView({
         </div>
         <div className="space-y-2">
           {undated.map((note) => (
-            <button key={note.id} className="w-full rounded-md border bg-background p-2.5 text-left text-xs font-medium" onClick={() => onOpen(note.id)}>
+            <button key={note.id} className={cn("w-full rounded-md border bg-background p-2.5 text-left text-xs font-medium", selectedIds.has(note.id) && "border-zerus-accent bg-zerus-accent/10 ring-1 ring-zerus-accent")} aria-pressed={selectedIds.has(note.id)} onClick={(event) => onActivate(event, note.id, chronologicalOrder)}>
               <span className="block truncate">{noteTitle(note)}</span>
               <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1.5" />
             </button>
@@ -924,6 +1012,7 @@ interface TypeViewWorkspaceProps {
   aiOpen: boolean;
   editorOpen: boolean;
   hideSubtypeNotes: boolean;
+  vaultLocation: string | null;
   editor: ReactNode;
   onOpenNote: (id: string) => void;
   onCreateNote: () => void;
@@ -946,6 +1035,7 @@ export function TypeViewWorkspace({
   aiOpen,
   editorOpen,
   hideSubtypeNotes,
+  vaultLocation,
   editor,
   onOpenNote,
   onCreateNote,
@@ -972,6 +1062,24 @@ export function TypeViewWorkspace({
     () => filterNotes(notes, typeFilter, search, config.filters),
     [config.filters, notes, search, typeFilter],
   );
+  const filteredNoteIds = useMemo(
+    () => filteredNotes.map((note) => note.id),
+    [filteredNotes],
+  );
+  const selectionResetKey = useMemo(
+    () => `${typePath.join("/")}:${search}:${JSON.stringify(config.filters)}:${hideSubtypeNotes}`,
+    [config.filters, hideSubtypeNotes, search, typePath],
+  );
+  const bulkSelection = useBulkSelection(filteredNoteIds, selectionResetKey);
+  const [bulkRequest, setBulkRequest] = useState<BulkMutationRequest | null>(null);
+  const requestBulkMutation = (noteIds: string[], mutation: NonNullable<BulkMutationRequest["mutation"]>) => {
+    setBulkRequest({ id: Date.now(), noteIds, mutation });
+  };
+  const handleActivate = (event: ReactMouseEvent, id: string, order?: string[]) => {
+    if (bulkSelection.handleModifiedClick(event, id, order)) return;
+    bulkSelection.clearSelection();
+    onOpenNote(id);
+  };
   const filterOptions = useMemo(
     () =>
       filterNotes(notes, typeFilter, "", {
@@ -981,7 +1089,9 @@ export function TypeViewWorkspace({
       }),
     [config.filters, notes, typeFilter],
   );
-  const properties = effectiveProperties(typePath, schemas);
+  const properties = effectiveProperties(typePath, schemas).filter(
+    (property) => !property.relationHidden,
+  );
   const groupableProperties = properties.filter((property) =>
     config.mode === "gallery"
       ? !(property.type === "list" && property.listMultiple)
@@ -1002,7 +1112,10 @@ export function TypeViewWorkspace({
   }
 
   return (
-    <div className={cn("flex h-full min-w-0 flex-col overflow-hidden bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}>
+    <div
+      className={cn("flex h-full min-w-0 flex-col overflow-hidden bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}
+      onKeyDown={bulkSelection.handleCollectionKeyDown}
+    >
       <header className="min-w-0 shrink-0 border-b border-border/60">
         <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-3">
           <Breadcrumb className="min-w-40 flex-1">
@@ -1061,6 +1174,18 @@ export function TypeViewWorkspace({
               AI
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-8 shrink-0 gap-1.5 px-2.5 text-xs",
+              bulkSelection.selectMode && "border border-zerus-accent/60 bg-zerus-accent/20 text-zerus-accent ring-1 ring-inset ring-zerus-accent/25 hover:bg-zerus-accent/25 hover:text-zerus-accent",
+            )}
+            aria-pressed={bulkSelection.selectMode}
+            onClick={() => bulkSelection.setSelectMode(!bulkSelection.selectMode)}
+          >
+            <CheckSquare size={15} /> Select
+          </Button>
           <Button size="sm" className="h-8 gap-1.5" onClick={onCreateNote}>
             <Plus size={15} /> New
           </Button>
@@ -1113,8 +1238,21 @@ export function TypeViewWorkspace({
           </span>
         </div>
       </header>
+      {(bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
+        <BulkActionsToolbar
+          notes={filteredNotes}
+          selectedIds={bulkSelection.selectedIds}
+          schemas={schemas}
+          vaultLocation={vaultLocation}
+          onClear={bulkSelection.clearSelection}
+          onSelectAll={bulkSelection.selectAll}
+          onRemoveSelected={bulkSelection.removeSelected}
+          externalRequest={bulkRequest}
+          onExternalRequestHandled={() => setBulkRequest(null)}
+        />
+      )}
       <main className="min-h-0 min-w-0 w-full flex-1 overflow-auto">
-        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} groupByDef={activeGroupProperty} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
+        {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} groupByDef={activeGroupProperty} visibleProperties={config.visibleProperties} selectedIds={bulkSelection.selectedIds} onActivate={handleActivate} />}
         {config.mode === "board" && (
           <BoardView
             notes={filteredNotes}
@@ -1122,7 +1260,9 @@ export function TypeViewWorkspace({
             propertyDef={activeGroupProperty}
             visibleProperties={config.visibleProperties}
             columnOrder={activeGroupBy ? config.boardColumnOrder[boardColumnOrderKey(activeGroupBy)] : undefined}
-            onOpen={onOpenNote}
+            selectedIds={bulkSelection.selectedIds}
+            onActivate={handleActivate}
+            onRequestBulkMutation={requestBulkMutation}
             onColumnOrderChange={(order) => {
               if (!activeGroupBy) return;
               onConfigChange({
@@ -1135,8 +1275,8 @@ export function TypeViewWorkspace({
             onSetProperty={onSetProperty}
           />
         )}
-        {config.mode === "table" && <TableView notes={filteredNotes} properties={properties} onOpen={onOpenNote} onSetProperty={onSetProperty} />}
-        {config.mode === "calendar" && <CalendarView notes={filteredNotes} dateProperty={config.dateProperty} visibleProperties={config.visibleProperties} onOpen={onOpenNote} />}
+        {config.mode === "table" && <TableView notes={filteredNotes} properties={properties} onOpen={onOpenNote} selectedIds={bulkSelection.selectedIds} onActivate={handleActivate} onToggle={(id, range, order) => bulkSelection.toggleOne(id, { range, orderedIds: order })} onSelectAll={bulkSelection.selectAll} onClear={bulkSelection.clearSelection} onSetProperty={onSetProperty} />}
+        {config.mode === "calendar" && <CalendarView notes={filteredNotes} dateProperty={config.dateProperty} visibleProperties={config.visibleProperties} selectedIds={bulkSelection.selectedIds} onActivate={handleActivate} />}
       </main>
     </div>
   );

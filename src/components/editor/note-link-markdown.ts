@@ -5,6 +5,7 @@ import type { RootContent } from "mdast";
 import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
 
 // A local fragment survives Lexical's URL sanitization and never opens an external page.
+const parser = unified().use(remarkParse).use(remarkGfm);
 const PREFIX = "#zerus-note:";
 export function noteReferenceFromHref(href: string): string | null {
   if (!href.startsWith(PREFIX)) return null;
@@ -34,7 +35,7 @@ export function restoreNoteLinks(markdown: string): string {
       }
     } else if ("children" in node) node.children.forEach((child) => visit(child, inTable));
   }
-  unified().use(remarkParse).use(remarkGfm).parse(markdown).children.forEach((child) => visit(child));
+  parser.parse(markdown).children.forEach((child) => visit(child));
   for (const edit of edits.reverse()) markdown = markdown.slice(0, edit.start) + edit.value + markdown.slice(edit.end);
   return markdown;
 }

@@ -44,9 +44,7 @@ export function setZerusState(
   if (state.id !== undefined) {
     next = setContentProperty(next, ZERUS_METADATA_KEYS.id, state.id);
   }
-  if (state.archived === true) {
-    next = setContentProperty(next, ZERUS_METADATA_KEYS.pinned, null);
-  } else if (state.pinned !== undefined) {
+  if (state.pinned !== undefined) {
     next = setContentProperty(
       next,
       ZERUS_METADATA_KEYS.pinned,

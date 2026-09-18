@@ -116,6 +116,7 @@ import {
   deleteNoteForever,
   flushPendingWrites,
   getNotes,
+  getPropertySchemas,
   getNoteConflict,
   initStore,
   moveExternalNoteToVault,
@@ -130,6 +131,7 @@ import {
   synchronizeDesktopFiles,
   switchDesktopVault,
   trashNote,
+  updateTypeProperty,
   updateNoteBody,
 } from "./notes-store";
 import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
@@ -748,6 +750,58 @@ describe("external note store workflow", () => {
       expect(reopenedTarget.id).toBe(target.id);
       const groups = getBacklinksGroupedByType(reopenedTarget, getNotes(), { work: [{ name: "Related", type: "relation" }] });
       expect([...groups.values()].flat().map((note) => note.id)).toEqual([source.id]);
+    } finally {
+      await switchDesktopVault(vault);
+    }
+  });
+
+  it("synchronizes relation additions and removals while keeping the inverse field hidden", async () => {
+    const relationVault = join(root, "paired-relations-vault");
+    await Promise.all([
+      mkdir(join(relationVault, "tasks"), { recursive: true }),
+      mkdir(join(relationVault, "epics"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(relationVault, "tasks", "Task.md"), "# Task\n"),
+      writeFile(join(relationVault, "epics", "Epic.md"), "# Epic\n"),
+    ]);
+    try {
+      await switchDesktopVault(relationVault);
+      addTypeProperty("tasks", {
+        name: "Epic",
+        type: "relation",
+        relationTypeKey: "epics",
+        relationInverseHidden: true,
+      });
+      const task = getNotes().find((note) => noteTitle(note) === "Task")!;
+      const epic = getNotes().find((note) => noteTitle(note) === "Epic")!;
+
+      setNoteProperty(task.id, "Epic", "Epic");
+      expect(getNoteProperties(getNotes().find((note) => note.id === task.id)!.content).Epic).toBeTruthy();
+
+      const hiddenSchemas = getPropertySchemas();
+      expect(hiddenSchemas.epics[0].relationHidden).toBe(true);
+      const inverseName = hiddenSchemas.epics[0].name;
+      expect(
+        getNoteProperties(getNotes().find((note) => note.id === epic.id)!.content)[inverseName],
+      ).toBeTruthy();
+      const backlinks = getBacklinksGroupedByType(
+        getNotes().find((note) => note.id === epic.id)!,
+        getNotes(),
+        hiddenSchemas,
+      );
+      expect([...backlinks.values()].flat().map((note) => note.id)).toEqual([task.id]);
+
+      setNoteProperty(epic.id, inverseName, null);
+      expect(getNoteProperties(getNotes().find((note) => note.id === task.id)!.content).Epic).toBeUndefined();
+
+      setNoteProperty(task.id, "Epic", "Epic");
+      const sourceDefinition = hiddenSchemas.tasks[0];
+      updateTypeProperty("tasks", "Epic", {
+        ...sourceDefinition,
+        relationInverseHidden: false,
+      });
+      expect(getPropertySchemas().epics[0].relationHidden).toBe(false);
     } finally {
       await switchDesktopVault(vault);
     }

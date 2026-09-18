@@ -57,6 +57,10 @@ function VisiblePropertyPills({
   };
   const properties = getNoteProperties(note.content);
   const entries = visibleProperties.flatMap((visibleName) => {
+    const definition = definitions.find(
+      ({ def }) => def.name.toLowerCase() === visibleName.toLowerCase(),
+    )?.def;
+    if (definition?.relationHidden) return [];
     const match = Object.entries(properties).find(
       ([name]) => name.toLowerCase() === visibleName.toLowerCase(),
     );

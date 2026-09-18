@@ -157,6 +157,7 @@ interface EditorPaneProps {
   typeIcons: TypeIcons;
   vaultLocation: string | null;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab: (id: string) => void;
   onOpenTask: (id: string) => void;
   onCopyExternalToVault: (id: string, typePath: string[]) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
@@ -280,6 +281,7 @@ export function EditorPane({
   typeIcons,
   vaultLocation,
   onOpenNote,
+  onOpenNoteInNewTab,
   onOpenTask,
   onCopyExternalToVault,
   onMoveExternalToVault,
@@ -686,6 +688,7 @@ export function EditorPane({
       tasks={tasks}
       schemas={schemas}
       onOpenNote={onOpenNote}
+      onOpenNoteInNewTab={onOpenNoteInNewTab}
       onOpenTask={onOpenTask}
       expanded={expandBacklinks}
       onToggleExpanded={() => setExpandBacklinks((open) => !open)}
