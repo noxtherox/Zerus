@@ -45,9 +45,10 @@ icons. Rebuild the Windows app to embed the updated icon.
 
 ## Microsoft Store MSIX
 
-Tagged desktop releases build an **unsigned x64 MSIX** only when the repository
-Actions variable `MS_STORE_BUILD_ENABLED` is `true` and the Store identity is
-configured. This adds the MSIX alongside the unsigned NSIS EXE. The EXE remains the direct-download installer.
+Production Store releases use the manually dispatched **Windows desktop build**
+workflow with `store_release=true`. It builds an unsigned x64 MSIX from the
+selected release tag using the configured Store identity. The regular tagged
+desktop workflow separately publishes the unsigned NSIS EXE as the direct-download installer.
 The MSIX is an input to Microsoft Store certification: it cannot be installed
 normally from GitHub while unsigned. Microsoft signs it during Store publishing;
 this workflow does not submit or publish the app in Partner Center.
@@ -64,11 +65,8 @@ Reserve Zerus in Microsoft Partner Center, then copy the exact values from
 | `MS_STORE_PUBLISHER` | Package/Identity/Publisher (including `CN=`) |
 | `MS_STORE_PUBLISHER_DISPLAY_NAME` | Package/Properties/PublisherDisplayName |
 
-All three are required for Store packaging. Set `MS_STORE_BUILD_ENABLED=true`
-to opt tagged releases into packaging; it is disabled by default even when the
-identity variables are present. Tagged releases skip the MSIX when
-none are configured and still publish the desktop installers. When Store packaging is enabled, partial identity
-configuration fails the release instead of publishing a package under an invented identity.
+All three are required for production Store packaging. Partial identity
+configuration fails the workflow instead of publishing a package under an invented identity.
 No certificate, signing password, or Store API credential is needed to build.
 
 ### Build and validate
@@ -122,10 +120,10 @@ it does not yet register Windows file associations. The full-trust capability
 is required for Zerus's native filesystem and CLI access and needs a capability
 justification during Store submission. Store approval is not automatic.
 
-Upload the `_store.msix` from the GitHub release to the matching Partner Center
-product, complete the listing and certification requirements, then publish
-there. Store updates are managed by Microsoft Store; the EXE continues to use
-manual installer downloads.
+Download the `_store.msix` workflow artifact, upload it to the matching Partner
+Center product, complete the listing and certification requirements, then
+publish there. Store updates are managed by Microsoft Store; the EXE continues
+to use manual installer downloads.
 
 ### In-app Store update checks
 

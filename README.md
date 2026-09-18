@@ -66,8 +66,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   opened items when cleared. Mobile provides full-screen search. Ask AI opens
   chat with an unsent query and the selected result as editable context.
 - **Fast organization** — search and filter by type, date, and properties;
-  progressively render large All Notes lists; reorder types; pin or archive
-  notes; and use a recoverable vault-local trash.
+  progressively render large All Notes lists; select multiple notes to pin,
+  unpin, archive, unarchive, or update properties in one action; reorder types;
+  and use a recoverable vault-local trash. Recent bulk actions can be undone.
   Note-list titles and snippets show readable text without Markdown formatting
   markers or image sources, while preserving the underlying note content.
 - **Warm note startup** — desktop and mobile keep a device-local copy of loaded
@@ -127,7 +128,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI. Changes made by the CLI are reflected in the open app, including
   pinned and archived state; archived notes show an editor banner and an
-  unarchive action when they are included in the current view.
+  unarchive action when they are included in the current view. CLI note-list,
+  note-get, and search JSON includes parsed YAML frontmatter in `properties`.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
   light and dark themes, type icons, and list, gallery, board, table, or calendar
   type views. Save named view presets to reuse a type's layout, grouping, visible
