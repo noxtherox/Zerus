@@ -66,6 +66,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   opened items when cleared. Mobile provides full-screen search. Ask AI opens
   chat with an unsent query and the selected result as editable context.
 - **Fast organization** — search and filter by type, date, and properties;
+  combine property filters with all/any matching, select multiple accepted
+  values, and compare date properties with presets or exact ranges;
   progressively render large All Notes lists; select multiple notes to pin,
   unpin, archive, unarchive, or update properties in one action; reorder types;
   and use a recoverable vault-local trash. Recent bulk actions can be undone.
@@ -92,12 +94,15 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   the expanded or collapsed sidebar. Existing tabs are reused. Move backward and
   forward through navigation history and restore earlier versions of a note.
 - **Work with files outside the vault** — open standalone Markdown notes without
-  importing them; attach files; associate notes with PDFs and common office
-  documents; preview HTML; and export rendered notes as HTML, PDF, or DOCX.
+  importing them; when copying or moving one into the vault, bring its local
+  Markdown images into the vault assets folder and update their references;
+  attach files; associate notes with PDFs and common office documents; preview
+  HTML; and export rendered notes as HTML, PDF, or DOCX.
 - **Portable cloud file references** — map each shared file location to its local
   folder on every device. File hubs resolve the saved relative path beneath that
   root, including Windows extended paths such as `\\?\G:\My Drive`.
 - **Saved links** — keep web links with editable notes in the Links section.
+  Edit a saved link's URL without losing its title or notes.
   Choose **Render page** for a live, isolated preview above your notes, resize the
   split, or expand the page. The choice is remembered per URL on this device.
   Sites that block embedding or need browser features may require **Open Link**;
