@@ -14,6 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DateInput } from "@/components/ui/date-input";
 import {
   Popover,
   PopoverContent,
@@ -35,13 +36,24 @@ import {
   getFileHubReference,
 } from "@/lib/file-hubs";
 import {
+  EMPTY_NOTE_LIST_FILTERS,
   type NoteDateFilter,
   type NoteListFilters as NoteListFilterState,
+  type NotePropertyDateFilter,
+  type NotePropertyDateOperator,
+  type NotePropertyFilter,
   type NoteSort,
+  propertyFilterValueKeys,
   propertyValueKey,
   propertyValueLabel,
 } from "@/lib/filters";
+import { formatDate, useDateFormat } from "@/lib/date-format";
 import { noteReferenceLabel, type Note, noteTypePath, typeKey } from "@/lib/note-utils";
+import {
+  effectivePropertyDefinitions,
+  type PropertySchemas,
+  type PropertyType,
+} from "@/lib/properties";
 import { cn } from "@/lib/utils";
 import { isReservedZerusProperty } from "@/lib/zerus-metadata";
 
@@ -60,11 +72,9 @@ const SORT_OPTIONS: { value: NoteSort; label: string }[] = [
   { value: "title-desc", label: "Title: Z–A" },
 ];
 
-const NO_PROPERTY_FILTER = "__no_property_filter__";
-const HAS_PROPERTY = "__has_property__";
-
 interface NoteListFiltersProps {
   notes: Note[];
+  schemas: PropertySchemas;
   showTypes: boolean;
   showFileTypes: boolean;
   showArchivedToggle: boolean;
@@ -78,6 +88,7 @@ interface NoteListFiltersProps {
 
 export function NoteListFilters({
   notes,
+  schemas,
   showTypes,
   showFileTypes,
   showArchivedToggle,
@@ -88,6 +99,7 @@ export function NoteListFilters({
   onChange,
   onVisiblePropertiesChange,
 }: NoteListFiltersProps) {
+  const dateFormat = useDateFormat();
   const [open, setOpen] = useState(false);
   const typeOptions = useMemo(() => {
     if (!open) return [];
@@ -105,9 +117,10 @@ export function NoteListFilters({
     if (!open) return [];
     const properties = new Map<
       string,
-      { name: string; values: Map<string, string> }
+      { name: string; values: Map<string, string>; types: Set<PropertyType> }
     >();
     for (const note of notes) {
+      const definitions = effectivePropertyDefinitions(noteTypePath(note), schemas);
       for (const [name, rawValue] of Object.entries(
         getNoteProperties(note.content),
       )) {
@@ -121,7 +134,12 @@ export function NoteListFilters({
         const property = properties.get(normalizedName) ?? {
           name,
           values: new Map<string, string>(),
+          types: new Set<PropertyType>(),
         };
+        const definition = definitions.find(
+          ({ def }) => def.name.toLowerCase() === normalizedName,
+        );
+        if (definition) property.types.add(definition.def.type);
         const values = Array.isArray(rawValue) ? rawValue : [rawValue];
         for (const value of values) {
           const key = propertyValueKey(value);
@@ -138,14 +156,22 @@ export function NoteListFilters({
     }
     return [...properties.values()]
       .map((property) => ({
-        ...property,
+        name: property.name,
+        type:
+          property.types.size === 1
+            ? [...property.types][0]
+            : [...property.values.values()].every((value) =>
+                /^\d{4}-\d{2}-\d{2}$/.test(value),
+              )
+              ? "date" as const
+              : undefined,
         values: [...property.values].map(([value, label]) => ({
           value,
           label,
         })),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [notes, open]);
+  }, [notes, open, schemas]);
 
   const fileTypeOptions = useMemo(() => {
     if (!open) return [];
@@ -161,6 +187,7 @@ export function NoteListFilters({
   }, [notes, open]);
 
   const activeCount =
+    (filters.sort !== EMPTY_NOTE_LIST_FILTERS.sort ? 1 : 0) +
     (filters.date ? 1 : 0) +
     (filters.showArchived ? 1 : 0) +
     filters.typeKeys.length +
@@ -202,18 +229,9 @@ export function NoteListFilters({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() =>
-                  onChange({
-                    sort: filters.sort,
-                    date: null,
-                    showArchived: false,
-                    typeKeys: [],
-                    fileExtensions: [],
-                    properties: [],
-                  })
-                }
+                onClick={() => onChange({ ...EMPTY_NOTE_LIST_FILTERS })}
               >
-                Clear filters
+                Clear all
               </Button>
             )}
           </div>
@@ -359,16 +377,65 @@ export function NoteListFilters({
             <>
               <Separator />
               <section className="space-y-2 p-3">
-                <div className="text-xs font-medium text-muted-foreground">
-                  Properties
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs font-medium text-muted-foreground">
+                    Properties
+                  </div>
+                  <div
+                    className="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
+                    role="group"
+                    aria-label="Match property filters"
+                  >
+                    {(["all", "any"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={cn(
+                          "rounded px-2 py-1 text-[10px] font-medium capitalize text-muted-foreground transition-colors",
+                          filters.propertyMatch === mode &&
+                            "bg-background text-foreground shadow-sm",
+                        )}
+                        aria-pressed={filters.propertyMatch === mode}
+                        title={
+                          mode === "all"
+                            ? "Notes must match every filtered property"
+                            : "Notes may match any filtered property"
+                        }
+                        onClick={() =>
+                          onChange({ ...filters, propertyMatch: mode })
+                        }
+                      >
+                        {mode}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {propertyOptions.map((property) => {
                   const selected = filters.properties.find(
-                    (item) => item.name === property.name,
+                    (item) =>
+                      item.name.toLowerCase() === property.name.toLowerCase(),
                   );
+                  const selectedValueKeys = selected
+                    ? propertyFilterValueKeys(selected)
+                    : [];
                   const isVisible = visibleProperties.some(
                     (name) => name.toLowerCase() === property.name.toLowerCase(),
                   );
+                  const remainingProperties = filters.properties.filter(
+                    (item) =>
+                      item.name.toLowerCase() !== property.name.toLowerCase(),
+                  );
+                  const selectionLabel = !selected
+                    ? "Don’t filter"
+                    : selected.date
+                      ? datePropertyFilterLabel(selected.date, dateFormat)
+                    : selectedValueKeys === null
+                      ? "Has property"
+                      : selectedValueKeys.length === 1
+                        ? property.values.find(
+                            (value) => value.value === selectedValueKeys[0],
+                          )?.label ?? propertyValueLabel(selectedValueKeys[0])
+                        : `${selectedValueKeys.length} selected`;
                   return (
                     <div
                       key={property.name}
@@ -399,48 +466,112 @@ export function NoteListFilters({
                       >
                         {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
                       </button>
-                      <Select
-                        value={
-                          selected?.valueKey ??
-                          (selected ? HAS_PROPERTY : NO_PROPERTY_FILTER)
-                        }
-                        onValueChange={(value) => {
-                          const remaining = filters.properties.filter(
-                            (item) => item.name !== property.name,
-                          );
-                          onChange({
-                            ...filters,
-                            properties:
-                              value === NO_PROPERTY_FILTER
-                                ? remaining
-                                : [
-                                    ...remaining,
-                                    {
-                                      name: property.name,
-                                      valueKey:
-                                        value === HAS_PROPERTY ? null : value,
-                                    },
+                      {property.type === "date" ? (
+                        <DatePropertyFilterControl
+                          propertyName={property.name}
+                          selected={selected}
+                          filters={filters}
+                          remainingProperties={remainingProperties}
+                          label={selectionLabel}
+                          onChange={onChange}
+                        />
+                      ) : (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            className="h-8 min-w-0 justify-between gap-1 px-2 text-xs font-normal"
+                            aria-label={`Filter ${property.name}: ${selectionLabel}`}
+                          >
+                            <span className="truncate">{selectionLabel}</span>
+                            <ChevronDown
+                              size={12}
+                              className="shrink-0 text-muted-foreground"
+                            />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          align="end"
+                          sideOffset={4}
+                          className="w-56 p-1"
+                        >
+                          <label
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                          >
+                            <Checkbox
+                              checked={!selected}
+                              onCheckedChange={() =>
+                                onChange({
+                                  ...filters,
+                                  properties: remainingProperties,
+                                })
+                              }
+                            />
+                            <span>Don’t filter</span>
+                          </label>
+                          <label
+                            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                          >
+                            <Checkbox
+                              checked={selectedValueKeys === null}
+                              onCheckedChange={() =>
+                                onChange({
+                                  ...filters,
+                                  properties: [
+                                    ...remainingProperties,
+                                    { name: property.name, valueKeys: null },
                                   ],
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="h-8 px-2 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_PROPERTY_FILTER}>
-                            Don’t filter
-                          </SelectItem>
-                          <SelectItem value={HAS_PROPERTY}>
-                            Has property
-                          </SelectItem>
-                          {property.values.map((value) => (
-                            <SelectItem key={value.value} value={value.value}>
-                              {value.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                                })
+                              }
+                            />
+                            <span>Has property</span>
+                          </label>
+                          <Separator className="my-1" />
+                          <div className="max-h-56 overflow-y-auto">
+                            {property.values.map((value) => {
+                              const checked = (selectedValueKeys ?? []).includes(
+                                value.value,
+                              );
+                              return (
+                                <label
+                                  key={value.value}
+                                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                                >
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={() => {
+                                      const valueKeys = checked
+                                        ? (selectedValueKeys ?? []).filter(
+                                            (key) => key !== value.value,
+                                          )
+                                        : [
+                                            ...(selectedValueKeys ?? []),
+                                            value.value,
+                                          ];
+                                      onChange({
+                                        ...filters,
+                                        properties:
+                                          valueKeys.length === 0
+                                            ? remainingProperties
+                                            : [
+                                                ...remainingProperties,
+                                                {
+                                                  name: property.name,
+                                                  valueKeys,
+                                                },
+                                              ],
+                                      });
+                                    }}
+                                  />
+                                  <span className="truncate">{value.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                      )}
                     </div>
                   );
                 })}
@@ -462,6 +593,205 @@ export function NoteListFilters({
   );
 }
 
+const PROPERTY_DATE_OPERATOR_OPTIONS: Array<{
+  value: NotePropertyDateOperator;
+  label: string;
+}> = [
+  { value: "on", label: "Is on" },
+  { value: "before", label: "Is before" },
+  { value: "after", label: "Is after" },
+  { value: "on-or-before", label: "Is on or before" },
+  { value: "on-or-after", label: "Is on or after" },
+  { value: "between", label: "Is between" },
+];
+
+function localDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function offsetDate(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function datePropertyFilterLabel(
+  filter: NotePropertyDateFilter,
+  format: ReturnType<typeof useDateFormat>,
+): string {
+  const date = formatDate(filter.date, format);
+  const operator = PROPERTY_DATE_OPERATOR_OPTIONS.find(
+    (option) => option.value === filter.operator,
+  )?.label ?? filter.operator;
+  if (filter.operator === "between" && filter.endDate) {
+    return `${date} – ${formatDate(filter.endDate, format)}`;
+  }
+  return `${operator.replace(/^Is /, "")} ${date}`;
+}
+
+function DatePropertyFilterControl({
+  propertyName,
+  selected,
+  filters,
+  remainingProperties,
+  label,
+  onChange,
+}: {
+  propertyName: string;
+  selected?: NotePropertyFilter;
+  filters: NoteListFilterState;
+  remainingProperties: NotePropertyFilter[];
+  label: string;
+  onChange: (filters: NoteListFilterState) => void;
+}) {
+  const today = new Date();
+  const todayKey = localDateKey(today);
+  const condition = selected?.date;
+  const current: NotePropertyDateFilter = condition ?? {
+    operator: "on",
+    date: todayKey,
+  };
+  const setCondition = (date: NotePropertyDateFilter) =>
+    onChange({
+      ...filters,
+      properties: [
+        ...remainingProperties,
+        { name: propertyName, valueKeys: null, date },
+      ],
+    });
+  const clear = () =>
+    onChange({ ...filters, properties: remainingProperties });
+
+  const presets: Array<{
+    label: string;
+    value: NotePropertyDateFilter;
+  }> = [
+    { label: "Today", value: { operator: "on", date: todayKey } },
+    {
+      label: "Tomorrow",
+      value: { operator: "on", date: localDateKey(offsetDate(today, 1)) },
+    },
+    {
+      label: "Next 7 days",
+      value: {
+        operator: "between",
+        date: todayKey,
+        endDate: localDateKey(offsetDate(today, 6)),
+      },
+    },
+    {
+      label: "This month",
+      value: {
+        operator: "between",
+        date: localDateKey(new Date(today.getFullYear(), today.getMonth(), 1)),
+        endDate: localDateKey(new Date(today.getFullYear(), today.getMonth() + 1, 0)),
+      },
+    },
+    { label: "Past due", value: { operator: "before", date: todayKey } },
+  ];
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          className="h-8 min-w-0 justify-between gap-1 px-2 text-xs font-normal"
+          aria-label={`Filter ${propertyName}: ${label}`}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronDown size={12} className="shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={4} className="w-72 space-y-3 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <span className="truncate text-xs font-semibold">{propertyName}</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={clear}>
+            Clear
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {presets.map((preset) => (
+            <Button
+              key={preset.label}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-8 justify-start px-2 text-[11px] font-normal",
+                JSON.stringify(condition) === JSON.stringify(preset.value) && "border-zerus-accent/60 bg-zerus-accent/10 text-zerus-accent",
+              )}
+              onClick={() => setCondition(preset.value)}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+        <Separator />
+        <div className="space-y-2">
+          <Select
+            value={current.operator}
+            onValueChange={(operator) => {
+              const nextOperator = operator as NotePropertyDateOperator;
+              setCondition({
+                operator: nextOperator,
+                date: current.date,
+                ...(nextOperator === "between"
+                  ? { endDate: current.endDate ?? current.date }
+                  : {}),
+              });
+            }}
+          >
+            <SelectTrigger className="h-8 px-2 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROPERTY_DATE_OPERATOR_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className={cn("grid gap-2", current.operator === "between" && "grid-cols-2")}>
+            <DateInput
+              aria-label={current.operator === "between" ? `${propertyName} from` : propertyName}
+              className="h-8 text-xs"
+              value={current.date}
+              onValueChange={(date) => date ? setCondition({ ...current, date }) : clear()}
+            />
+            {current.operator === "between" && (
+              <DateInput
+                aria-label={`${propertyName} to`}
+                className="h-8 text-xs"
+                value={current.endDate ?? current.date}
+                onValueChange={(endDate) =>
+                  endDate ? setCondition({ ...current, endDate }) : clear()
+                }
+              />
+            )}
+          </div>
+          {!condition && (
+            <button
+              type="button"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() =>
+                onChange({
+                  ...filters,
+                  properties: [
+                    ...remainingProperties,
+                    { name: propertyName, valueKeys: null },
+                  ],
+                })
+              }
+            >
+              Only require this property to have a date
+            </button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface NoteListFilterPillsProps {
   filters: NoteListFilterState;
   propertyOptions?: Array<{
@@ -478,6 +808,7 @@ export function NoteListFilterPills({
   className,
   onChange,
 }: NoteListFilterPillsProps) {
+  const dateFormat = useDateFormat();
   const activeCount =
     (filters.date ? 1 : 0) +
     (filters.showArchived ? 1 : 0) +
@@ -528,19 +859,7 @@ export function NoteListFilterPills({
       {filters.properties.map((property) => (
         <FilterPill
           key={property.name}
-          label={
-            property.valueKey === null
-              ? `Has ${property.name}`
-              : `${property.name}: ${
-                  propertyOptions
-                    .find(
-                      (option) =>
-                        option.name.toLowerCase() === property.name.toLowerCase(),
-                    )
-                    ?.values.find((value) => value.value === property.valueKey)
-                    ?.label ?? propertyValueLabel(property.valueKey)
-                }`
-          }
+          label={propertyFilterLabel(property, propertyOptions, dateFormat)}
           onRemove={() =>
             onChange({
               ...filters,
@@ -553,6 +872,28 @@ export function NoteListFilterPills({
       ))}
     </div>
   );
+}
+
+function propertyFilterLabel(
+  property: NoteListFilterState["properties"][number],
+  propertyOptions: NoteListFilterPillsProps["propertyOptions"],
+  dateFormat: ReturnType<typeof useDateFormat>,
+): string {
+  if (property.date) {
+    return `${property.name}: ${datePropertyFilterLabel(property.date, dateFormat)}`;
+  }
+  const valueKeys = propertyFilterValueKeys(property);
+  if (valueKeys === null) return `Has ${property.name}`;
+  const options = propertyOptions?.find(
+    (option) => option.name.toLowerCase() === property.name.toLowerCase(),
+  );
+  const labels = valueKeys.map(
+    (valueKey) =>
+      options?.values.find((value) => value.value === valueKey)?.label ??
+      propertyValueLabel(valueKey),
+  );
+  if (labels.length <= 2) return `${property.name}: ${labels.join(" or ")}`;
+  return `${property.name}: ${labels[0]} +${labels.length - 1}`;
 }
 
 function FilterPill({

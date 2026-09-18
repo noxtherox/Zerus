@@ -44,6 +44,7 @@ describe("note view configuration", () => {
             showArchived: true,
             typeKeys: ["Other"],
             fileExtensions: ["pdf"],
+            propertyMatch: "any",
             properties: [{ name: "Priority", valueKey: "string:High" }],
           },
         },
@@ -61,7 +62,8 @@ describe("note view configuration", () => {
           showArchived: true,
           typeKeys: [],
           fileExtensions: [],
-          properties: [{ name: "Priority", valueKey: "string:High" }],
+          propertyMatch: "any",
+          properties: [{ name: "Priority", valueKeys: ["string:High"] }],
         },
       },
     });
@@ -81,6 +83,34 @@ describe("note view configuration", () => {
         },
       }).Projects.filters.sort,
     ).toBe("created-desc");
+  });
+
+  it("keeps valid date-property comparisons in saved views", () => {
+    expect(
+      normalizeTypeViewConfigs({
+        Projects: {
+          filters: {
+            properties: [{
+              name: "Due date",
+              valueKeys: null,
+              date: {
+                operator: "between",
+                date: "2026-09-01",
+                endDate: "2026-09-30",
+              },
+            }],
+          },
+        },
+      }).Projects.filters.properties,
+    ).toEqual([{
+      name: "Due date",
+      valueKeys: null,
+      date: {
+        operator: "between",
+        date: "2026-09-01",
+        endDate: "2026-09-30",
+      },
+    }]);
   });
 
   it("reconciles saved Kanban order with current property values", () => {

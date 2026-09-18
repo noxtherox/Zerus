@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, normalize } from "node:path";
+import { basename, dirname, extname, join, normalize } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -83,7 +83,11 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
     rename: (from: string, to: string) => fs.rename(from, to),
     stat: async (path: string) => {
       const info = await fs.stat(path);
-      return { mtime: info.mtime };
+      return {
+        mtime: info.mtime,
+        isFile: info.isFile(),
+        isDirectory: info.isDirectory(),
+      };
     },
     watch: mocks.watch,
     writeFile: (path: string, bytes: Uint8Array) => fs.writeFile(path, bytes),
@@ -127,6 +131,7 @@ import {
   revealNoteInDesktop,
   resolveNoteConflict,
   restoreNote,
+  savePastedImage,
   setNoteType,
   synchronizeDesktopFiles,
   switchDesktopVault,
@@ -237,10 +242,20 @@ describe("external note store workflow", () => {
           });
         }
         if (command === "copy_file_into_vault") {
-          const target = join(args.root, args.relativeDirectory, args.fileName);
-          await mkdir(dirname(target), { recursive: true });
-          await writeFile(target, await readFile(args.source));
-          return [args.relativeDirectory, args.fileName].filter(Boolean).join("/");
+          const directory = join(args.root, args.relativeDirectory);
+          const extension = extname(args.fileName);
+          const stem = basename(args.fileName, extension);
+          await mkdir(directory, { recursive: true });
+          for (let index = 0; ; index += 1) {
+            const fileName = `${stem}${index === 0 ? "" : ` ${index + 1}`}${extension}`;
+            const target = join(directory, fileName);
+            try {
+              await writeFile(target, await readFile(args.source), { flag: "wx" });
+              return [args.relativeDirectory, fileName].filter(Boolean).join("/");
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+            }
+          }
         }
       },
     );
@@ -305,6 +320,29 @@ describe("external note store workflow", () => {
     expect(cached.notes.find((note: { path: string }) =>
       note.path === "inbox/Welcome.md",
     )?.content).toContain("Edited safely while other notes were loading.");
+  });
+
+  it("gives concurrently saved chat images distinct files", async () => {
+    const images = [
+      new Uint8Array([1, 1, 1]),
+      new Uint8Array([2, 2, 2]),
+      new Uint8Array([3, 3, 3]),
+      new Uint8Array([4, 4, 4]),
+    ];
+
+    const paths = await Promise.all(
+      images.map((bytes) => savePastedImage(bytes, "image/jpeg")),
+    );
+
+    expect(new Set(paths).size).toBe(images.length);
+    await Promise.all(
+      paths.map(async (path, index) => {
+        expect(path).not.toBeNull();
+        await expect(readFile(join(vault, path!))).resolves.toEqual(
+          Buffer.from(images[index]),
+        );
+      }),
+    );
   });
 
   it("watches the desktop vault recursively instead of polling it every second", async () => {
@@ -476,6 +514,25 @@ describe("external note store workflow", () => {
       "Unsaved edit.",
     );
 
+    const imageDirectory = join(root, "one", "images");
+    const imagePath = join(imageDirectory, "diagram one.png");
+    await mkdir(imageDirectory, { recursive: true });
+    await writeFile(imagePath, new Uint8Array([9, 8, 7, 6]));
+    updateNoteBody(
+      ids[0],
+      [
+        "# First external",
+        "",
+        "Simultaneous change from disk.",
+        "",
+        "![Diagram](images/diagram%20one.png)",
+        "![Again](images/diagram%20one.png)",
+        "![Remote](https://example.com/remote.png)",
+        "",
+      ].join("\n"),
+    );
+    await flushPendingWrites();
+
     const copied = await copyExternalNoteToVault(ids[0], ["copies"]);
     expect(copied).not.toBeNull();
     expect(copied?.id).not.toBe(ids[0]);
@@ -488,6 +545,15 @@ describe("external note store workflow", () => {
     await expect(
       readFile(join(vault, "copies", "First external.md"), "utf8"),
     ).resolves.toContain("Simultaneous change from disk.");
+    const copiedContent = await readFile(
+      join(vault, "copies", "First external.md"),
+      "utf8",
+    );
+    expect(copiedContent.match(/assets\/diagram%20one\.png/g)).toHaveLength(2);
+    expect(copiedContent).toContain("https://example.com/remote.png");
+    await expect(readFile(join(vault, "assets", "diagram one.png")))
+      .resolves.toEqual(Buffer.from([9, 8, 7, 6]));
+    await expect(nodeStat(imagePath)).resolves.toBeDefined();
 
     await expect(
       moveExternalNoteToVault(ids[0], ["..", "outside"]),
@@ -522,9 +588,18 @@ describe("external note store workflow", () => {
     expect(moved?.externalPath).toBeUndefined();
     expect(moved && noteTypePath(moved)).toEqual(["research"]);
     await expect(nodeStat(firstPath)).rejects.toThrow();
+    await expect(nodeStat(imagePath)).rejects.toThrow();
     await expect(
       readFile(join(vault, "research", "First external 2.md"), "utf8"),
     ).resolves.toContain("Simultaneous change from disk.");
+    const movedContent = await readFile(
+      join(vault, "research", "First external 2.md"),
+      "utf8",
+    );
+    expect(movedContent.match(/assets\/diagram%20one%202\.png/g)).toHaveLength(2);
+    expect(moved?.content).toContain("assets/diagram%20one%202.png");
+    await expect(readFile(join(vault, "assets", "diagram one 2.png")))
+      .resolves.toEqual(Buffer.from([9, 8, 7, 6]));
     await expect(
       readFile(join(vault, "research", "First external.md"), "utf8"),
     ).resolves.toBe("# Unrelated file\n");

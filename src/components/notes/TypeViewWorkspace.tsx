@@ -841,7 +841,14 @@ function TableView({
         <table className="w-full min-w-[720px] border-collapse text-left text-xs">
           <thead className="bg-zerus-surface text-muted-foreground">
             <tr>
-              <th className="w-10 border-b border-r border-border/70 px-3 py-2 font-medium">
+              <th
+                className="w-10 cursor-pointer border-b border-r border-border/70 px-3 py-2 font-medium"
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("input")) return;
+                  if (allSelected) onClear();
+                  else onSelectAll();
+                }}
+              >
                 <input
                   ref={headerCheckbox}
                   type="checkbox"
@@ -869,7 +876,14 @@ function TableView({
                   }
                 }}
               >
-                <td className="w-10 border-b border-r border-border/50 px-3 py-2">
+                <td
+                  className="w-10 cursor-pointer border-b border-r border-border/50 px-3 py-2"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if ((event.target as HTMLElement).closest("input")) return;
+                    onToggle(note.id, event.shiftKey, order);
+                  }}
+                >
                   <input
                     type="checkbox"
                     checked={selectedIds.has(note.id)}
@@ -1148,6 +1162,7 @@ export function TypeViewWorkspace({
           </div>
           <NoteListFilters
             notes={filterOptions}
+            schemas={schemas}
             showTypes={false}
             showFileTypes={false}
             showArchivedToggle
@@ -1233,24 +1248,25 @@ export function TypeViewWorkspace({
               </Select>
             </div>
           )}
-          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Auto-saved
           </span>
+          {(bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
+            <BulkActionsToolbar
+              presentation="inline"
+              notes={filteredNotes}
+              selectedIds={bulkSelection.selectedIds}
+              schemas={schemas}
+              vaultLocation={vaultLocation}
+              onClear={bulkSelection.clearSelection}
+              onSelectAll={bulkSelection.selectAll}
+              onRemoveSelected={bulkSelection.removeSelected}
+              externalRequest={bulkRequest}
+              onExternalRequestHandled={() => setBulkRequest(null)}
+            />
+          )}
         </div>
       </header>
-      {(bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
-        <BulkActionsToolbar
-          notes={filteredNotes}
-          selectedIds={bulkSelection.selectedIds}
-          schemas={schemas}
-          vaultLocation={vaultLocation}
-          onClear={bulkSelection.clearSelection}
-          onSelectAll={bulkSelection.selectAll}
-          onRemoveSelected={bulkSelection.removeSelected}
-          externalRequest={bulkRequest}
-          onExternalRequestHandled={() => setBulkRequest(null)}
-        />
-      )}
       <main className="min-h-0 min-w-0 w-full flex-1 overflow-auto">
         {config.mode === "gallery" && <GalleryView notes={filteredNotes} groupBy={activeGroupBy} groupByDef={activeGroupProperty} visibleProperties={config.visibleProperties} selectedIds={bulkSelection.selectedIds} onActivate={handleActivate} />}
         {config.mode === "board" && (

@@ -345,6 +345,7 @@ export function NoteList({
         </div>
         <NoteListFilters
           notes={filterOptions}
+          schemas={schemas}
           showTypes={filter.kind === "all"}
           showFileTypes={inFiles}
           showArchivedToggle={!inTrash && !inExternal}
@@ -443,11 +444,6 @@ export function NoteList({
                       onOpenNoteInNewTab(note.id),
                     )
                   }
-                  onContextMenu={() => {
-                    if (!bulkSelection.selectedIds.has(note.id)) {
-                      bulkSelection.selectOnly(note.id);
-                    }
-                  }}
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     bulkSelection.selectedIds.has(note.id)

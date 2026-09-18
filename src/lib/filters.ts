@@ -31,11 +31,35 @@ export type NoteSort =
   | "title-asc"
   | "title-desc";
 
+export type NotePropertyDateOperator =
+  | "on"
+  | "before"
+  | "after"
+  | "on-or-before"
+  | "on-or-after"
+  | "between";
+
+export interface NotePropertyDateFilter {
+  operator: NotePropertyDateOperator;
+  date: string;
+  endDate?: string;
+}
+
 export interface NotePropertyFilter {
   name: string;
   /** null means the property only needs to be present. */
-  valueKey: string | null;
+  valueKeys: string[] | null;
+  /** Date properties use comparisons instead of enumerating stored values. */
+  date?: NotePropertyDateFilter;
 }
+
+interface LegacyNotePropertyFilter {
+  name: string;
+  valueKey: string | null;
+  date?: NotePropertyDateFilter;
+}
+
+export type NotePropertyMatch = "all" | "any";
 
 export interface NoteListFilters {
   sort: NoteSort;
@@ -43,15 +67,17 @@ export interface NoteListFilters {
   showArchived: boolean;
   typeKeys: string[];
   fileExtensions: string[];
+  propertyMatch: NotePropertyMatch;
   properties: NotePropertyFilter[];
 }
 
 export const EMPTY_NOTE_LIST_FILTERS: NoteListFilters = {
-  sort: "updated-desc",
+  sort: "created-desc",
   date: null,
   showArchived: false,
   typeKeys: [],
   fileExtensions: [],
+  propertyMatch: "all",
   properties: [],
 };
 
@@ -63,6 +89,18 @@ export function propertyValueKey(
 
 export function propertyValueLabel(valueKey: string): string {
   return valueKey.slice(valueKey.indexOf(":") + 1);
+}
+
+/** Keeps live pre-upgrade filters safe across desktop/web hot refreshes. */
+export function propertyFilterValueKeys(
+  filter: NotePropertyFilter | LegacyNotePropertyFilter,
+): string[] | null {
+  const candidate = filter as NotePropertyFilter & { valueKey?: unknown };
+  if (candidate.valueKeys === null || Array.isArray(candidate.valueKeys)) {
+    return candidate.valueKeys;
+  }
+  if (candidate.valueKey === null) return null;
+  return typeof candidate.valueKey === "string" ? [candidate.valueKey] : [];
 }
 
 function notePropertyValueKeys(value: PropertyValue): string[] {
@@ -79,9 +117,30 @@ function propertyMatches(
     ([name]) => name.toLowerCase() === filter.name.toLowerCase(),
   );
   if (!entry) return false;
-  return filter.valueKey === null
+  if (filter.date) {
+    const candidates = (Array.isArray(entry[1]) ? entry[1] : [entry[1]])
+      .filter((value): value is string =>
+        typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value),
+      );
+    const { operator, date, endDate } = filter.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+    return candidates.some((candidate) => {
+      if (operator === "on") return candidate === date;
+      if (operator === "before") return candidate < date;
+      if (operator === "after") return candidate > date;
+      if (operator === "on-or-before") return candidate <= date;
+      if (operator === "on-or-after") return candidate >= date;
+      if (!endDate || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return false;
+      const [start, end] = date <= endDate ? [date, endDate] : [endDate, date];
+      return candidate >= start && candidate <= end;
+    });
+  }
+  const valueKeys = propertyFilterValueKeys(filter);
+  return valueKeys === null
     ? true
-    : notePropertyValueKeys(entry[1]).includes(filter.valueKey);
+    : valueKeys.some((valueKey) =>
+        notePropertyValueKeys(entry[1]).includes(valueKey),
+      );
 }
 
 function startOfLocalDay(date: Date): Date {
@@ -187,11 +246,14 @@ export function filterNotes(
       }
       if (listFilters.properties.length > 0) {
         const properties = getNoteProperties(note.content);
-        if (
-          !listFilters.properties.every((item) =>
-            propertyMatches(properties, item),
-          )
-        ) {
+        const matches = listFilters.properties.map((item) =>
+          propertyMatches(properties, item),
+        );
+        const propertiesMatch =
+          listFilters.propertyMatch === "any"
+            ? matches.some(Boolean)
+            : matches.every(Boolean);
+        if (!propertiesMatch) {
           return false;
         }
       }

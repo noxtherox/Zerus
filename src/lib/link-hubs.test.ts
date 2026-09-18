@@ -4,6 +4,7 @@ import {
   linkDisplayName,
   linkMarkdown,
   setLinkHubReference,
+  withoutLinkMarkdown,
   withLinkMarkdown,
 } from "./link-hubs";
 import { filterNotes } from "./filters";
@@ -48,6 +49,48 @@ describe("link hubs", () => {
       "# Renamed link\n\n<https://example.com/path>\n\nSome context\n",
     );
     expect(withLinkMarkdown(body, "https://example.com/path")).toBe(body);
+  });
+
+  it("collapses editor-serialized and repeated copies of a saved URL", () => {
+    const url = "https://claude.ai/design/p/0d3f7a78-c165-4509-9597-ec3933dc08d0?via=share&file=Live+View+Prototype.dc.html";
+    const body = [
+      "# Renamed link",
+      "",
+      `[${url}](${url})`,
+      "",
+      `<${url}>`,
+      "",
+      "Some context",
+      "",
+    ].join("\n");
+
+    expect(withLinkMarkdown(body, url)).toBe(
+      `# Renamed link\n\n[${url}](${url})\n\nSome context\n`,
+    );
+  });
+
+  it("preserves a single editor-serialized saved URL byte-for-byte", () => {
+    const url = "https://reddit.com/";
+    const body = `# reddit.com\n\n[https://reddit.com/](https://reddit.com/)\n`;
+
+    expect(withLinkMarkdown(body, url)).toBe(body);
+  });
+
+  it("removes the managed URL from the editable saved-link body", () => {
+    const url = "https://reddit.com/";
+    expect(
+      withoutLinkMarkdown(
+        `# Renamed link\n\n[https://reddit.com/](https://reddit.com/)\n\nNotes\n`,
+        url,
+      ),
+    ).toBe("# Renamed link\n\nNotes\n");
+  });
+
+  it("does not remove the saved URL when it appears within prose", () => {
+    const url = "https://example.com/path";
+    expect(withLinkMarkdown(`# Link\n\nSee [the source](${url}) for details.\n`, url)).toBe(
+      `# Link\n\n<${url}>\n\nSee [the source](${url}) for details.\n`,
+    );
   });
 
   it("keeps saved links out of All Notes and the type tree", () => {

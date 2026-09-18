@@ -104,6 +104,25 @@
 }
 
 @layer components {
+  .editor-pane {
+    container-name: editor-pane;
+    container-type: inline-size;
+  }
+
+  .editor-pane .external-note-toolbar-compact {
+    display: none;
+  }
+
+  @container editor-pane (max-width: 700px) {
+    .editor-pane .external-note-toolbar-wide {
+      display: none;
+    }
+
+    .editor-pane .external-note-toolbar-compact {
+      display: inline-flex;
+    }
+  }
+
   .zerus-logo-dark {
     display: none;
   }

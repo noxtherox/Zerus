@@ -272,17 +272,22 @@ const Index = () => {
         : filter,
     [filter, hideSubtypeNotes],
   );
+  const activeTypeKey = filter.kind === "type" ? typeKey(filter.path) : null;
+  const activeTypeView = activeTypeKey
+    ? typeViewConfigFor(vault.typeViews, activeTypeKey)
+    : null;
+  const effectiveListFilters = activeTypeView?.filters ?? listFilters;
   const filterOptions = useMemo(
     () =>
       filterNotes(notes, effectiveFilter, "", {
         ...EMPTY_NOTE_LIST_FILTERS,
-        showArchived: listFilters.showArchived,
+        showArchived: effectiveListFilters.showArchived,
       }),
-    [notes, effectiveFilter, listFilters.showArchived],
+    [notes, effectiveFilter, effectiveListFilters.showArchived],
   );
   const visibleNotes = useMemo(
-    () => filterNotes(notes, effectiveFilter, search, listFilters),
-    [notes, effectiveFilter, search, listFilters],
+    () => filterNotes(notes, effectiveFilter, search, effectiveListFilters),
+    [notes, effectiveFilter, search, effectiveListFilters],
   );
   const aiKnowledgeScope = useMemo<AiKnowledgeScope>(() => {
     if (effectiveFilter.kind === "type") {
@@ -301,10 +306,6 @@ const Index = () => {
     }
     return { kind: "vault" };
   }, [effectiveFilter]);
-  const activeTypeKey = filter.kind === "type" ? typeKey(filter.path) : null;
-  const activeTypeView = activeTypeKey
-    ? typeViewConfigFor(vault.typeViews, activeTypeKey)
-    : null;
   const activeSavedTypeViews = activeTypeKey
     ? vault.savedTypeViews[activeTypeKey] ?? []
     : [];
@@ -1053,12 +1054,15 @@ const Index = () => {
                       trashedImages={vault.trashedImages}
                       filterOptions={filterOptions}
                       filter={filter}
-                      listFilters={listFilters}
+                      listFilters={effectiveListFilters}
                       selectedNoteId={selectedNoteId}
                       search={search}
                       isRefreshing={isColdRefreshing}
                       onSearchChange={setSearch}
-                      onListFiltersChange={setListFilters}
+                      onListFiltersChange={(filters) => {
+                        if (activeTypeKey) handleTypeViewChange({ filters });
+                        else setListFilters(filters);
+                      }}
                       visibleProperties={activeTypeView?.visibleProperties ?? listVisibleProperties}
                       onVisiblePropertiesChange={(visibleProperties) => {
                         if (activeTypeKey) handleTypeViewChange({ visibleProperties });

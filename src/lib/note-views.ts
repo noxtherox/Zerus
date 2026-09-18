@@ -2,6 +2,9 @@ import {
   EMPTY_NOTE_LIST_FILTERS,
   type NoteDateFilter,
   type NoteListFilters,
+  type NotePropertyDateFilter,
+  type NotePropertyDateOperator,
+  type NotePropertyMatch,
   type NotePropertyFilter,
   type NoteSort,
 } from "@/lib/filters";
@@ -79,11 +82,52 @@ function normalizePropertyFilters(value: unknown): NotePropertyFilter[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
-    const candidate = entry as Partial<NotePropertyFilter>;
+    const candidate = entry as Partial<NotePropertyFilter> & {
+      valueKey?: unknown;
+    };
     if (typeof candidate.name !== "string" || !candidate.name.trim()) return [];
-    if (candidate.valueKey !== null && typeof candidate.valueKey !== "string") return [];
-    return [{ name: candidate.name.trim(), valueKey: candidate.valueKey ?? null }];
+    const date = normalizePropertyDateFilter(candidate.date);
+    const legacyValueKey = candidate.valueKey;
+    const valueKeys = Array.isArray(candidate.valueKeys)
+      ? [...new Set(candidate.valueKeys.filter((item): item is string => typeof item === "string"))]
+      : typeof legacyValueKey === "string"
+        ? [legacyValueKey]
+        : null;
+    if (Array.isArray(valueKeys) && valueKeys.length === 0 && !date) return [];
+    return [{ name: candidate.name.trim(), valueKeys, ...(date ? { date } : {}) }];
   });
+}
+
+const PROPERTY_DATE_OPERATORS: NotePropertyDateOperator[] = [
+  "on",
+  "before",
+  "after",
+  "on-or-before",
+  "on-or-after",
+  "between",
+];
+
+function normalizePropertyDateFilter(value: unknown): NotePropertyDateFilter | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<NotePropertyDateFilter>;
+  if (
+    !PROPERTY_DATE_OPERATORS.includes(candidate.operator as NotePropertyDateOperator) ||
+    typeof candidate.date !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(candidate.date)
+  ) {
+    return undefined;
+  }
+  if (candidate.operator === "between") {
+    if (typeof candidate.endDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(candidate.endDate)) {
+      return undefined;
+    }
+    return { operator: candidate.operator, date: candidate.date, endDate: candidate.endDate };
+  }
+  return { operator: candidate.operator, date: candidate.date };
+}
+
+function isPropertyMatch(value: unknown): value is NotePropertyMatch {
+  return value === "all" || value === "any";
 }
 
 function normalizeBoardColumnOrder(value: unknown): Record<string, string[]> {
@@ -170,6 +214,9 @@ export function normalizeTypeViewConfig(value: unknown): TypeViewConfig {
       showArchived: filters.showArchived === true,
       typeKeys: [],
       fileExtensions: [],
+      propertyMatch: isPropertyMatch(filters.propertyMatch)
+        ? filters.propertyMatch
+        : "all",
       properties: normalizePropertyFilters(filters.properties),
     },
   };

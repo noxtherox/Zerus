@@ -87,7 +87,11 @@ import {
 } from "@/lib/note-utils";
 import { noteBody } from "@/lib/frontmatter";
 import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
-import { getLinkHubReference, withLinkMarkdown } from "@/lib/link-hubs";
+import {
+  getLinkHubReference,
+  withoutLinkMarkdown,
+  withLinkMarkdown,
+} from "@/lib/link-hubs";
 import {
   formatAttachmentMarkdown,
   getNoteAttachments,
@@ -711,7 +715,7 @@ export function EditorPane({
           noteId={note.id}
           initialContent={
             linkHub
-              ? withLinkMarkdown(noteBody(note.content), linkHub.url)
+              ? withoutLinkMarkdown(noteBody(note.content), linkHub.url)
               : noteBody(note.content)
           }
           getLinkableTitles={() =>
@@ -725,7 +729,12 @@ export function EditorPane({
               .map((other) => noteTitle(other))
           }
           isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
-          onChange={(body) => updateNoteBody(note.id, body)}
+          onChange={(body) =>
+            updateNoteBody(
+              note.id,
+              linkHub ? withLinkMarkdown(body, linkHub.url) : body,
+            )
+          }
           onFollowLink={(title) => void handleFollowLink(title)}
           readOnly={isBusy}
           isFullHeight={expandedSection === "markdown"}
@@ -761,7 +770,7 @@ export function EditorPane({
   );
 
   return (
-    <div ref={setFindContainer} className="relative flex h-full flex-col bg-zerus-editor" onKeyDownCapture={(event) => {
+    <div ref={setFindContainer} className="editor-pane relative flex h-full min-w-0 flex-col bg-zerus-editor" onKeyDownCapture={(event) => {
       if (previewType === "pdf" && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         event.stopPropagation();
@@ -773,7 +782,7 @@ export function EditorPane({
     }}>
       <div
         className={cn(
-          "relative z-20 flex items-center gap-2 border-b border-border/60 bg-zerus-editor px-4 py-2",
+          "relative z-20 flex min-w-0 items-center gap-2 overflow-hidden border-b border-border/60 bg-zerus-editor px-4 py-2",
           isRefreshing && "pointer-events-none opacity-70",
         )}
       >
@@ -829,34 +838,69 @@ export function EditorPane({
             >
               {absolutePath}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              title="View note path"
-              onClick={() => setPathOpen(true)}
-            >
-              <MapPin size={14} /> Path
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              title={`Reveal in ${fileManagerName}`}
-              onClick={() => void revealNoteInDesktop(note.id)}
-            >
-              <FolderSearch size={14} /> Reveal
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              title="Close note without deleting the file"
-              onClick={() => setCloseExternalConfirmOpen(true)}
-              disabled={isBusy}
-            >
-              <X size={14} /> Close
-            </Button>
+            <div className="external-note-toolbar-wide flex shrink-0 items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                title="View note path"
+                onClick={() => setPathOpen(true)}
+              >
+                <MapPin size={14} /> Path
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                title={`Reveal in ${fileManagerName}`}
+                onClick={() => void revealNoteInDesktop(note.id)}
+              >
+                <FolderSearch size={14} /> Reveal
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                title="Close note without deleting the file"
+                onClick={() => setCloseExternalConfirmOpen(true)}
+                disabled={isBusy}
+              >
+                <X size={14} /> Close
+              </Button>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="external-note-toolbar-compact h-7 w-7 shrink-0"
+                  title="External note actions"
+                  aria-label="External note actions"
+                >
+                  <Ellipsis size={16} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onSelect={() => setPathOpen(true)}>
+                  <MapPin className="mr-2" size={14} />
+                  View full path
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => void revealNoteInDesktop(note.id)}
+                >
+                  <FolderSearch className="mr-2" size={14} />
+                  Reveal in {fileManagerName}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  disabled={isBusy}
+                  onSelect={() => setCloseExternalConfirmOpen(true)}
+                >
+                  <X className="mr-2" size={14} />
+                  Stop tracking external note
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         ) : linkHub ? (
           <>

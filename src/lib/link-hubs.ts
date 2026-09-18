@@ -5,6 +5,10 @@ import {
 } from "@/lib/frontmatter";
 import { normalizeExternalUrl } from "@/lib/external-links";
 import type { Note } from "@/lib/note-utils";
+import type { Link, Paragraph, Root } from "mdast";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 
 export const LINK_HUB_KEYS = {
   id: "zerus-link-id",
@@ -62,17 +66,74 @@ export function linkMarkdown(url: string): string {
   return `<${url}>`;
 }
 
+const linkBodyParser = unified().use(remarkParse).use(remarkGfm);
+
+function standaloneLinkRanges(body: string, url: string): { start: number; end: number }[] {
+  const root = linkBodyParser.parse(body) as Root;
+  return root.children.flatMap((node) => {
+    if (node.type !== "paragraph") return [];
+    const paragraph = node as Paragraph;
+    if (paragraph.children.length !== 1 || paragraph.children[0].type !== "link") return [];
+    const link = paragraph.children[0] as Link;
+    const start = paragraph.position?.start.offset;
+    const end = paragraph.position?.end.offset;
+    return normalizeExternalUrl(link.url) === url && start !== undefined && end !== undefined
+      ? [{ start, end }]
+      : [];
+  });
+}
+
+function removeLinkRanges(
+  body: string,
+  ranges: { start: number; end: number }[],
+): string {
+  let result = body;
+  for (const range of ranges.reverse()) {
+    let start = range.start;
+    let end = range.end;
+    let followingNewlines = 0;
+    while (followingNewlines < 2 && result[end] === "\n") {
+      end += 1;
+      followingNewlines += 1;
+    }
+    if (followingNewlines === 0) {
+      let precedingNewlines = 0;
+      while (precedingNewlines < 2 && start > 0 && result[start - 1] === "\n") {
+        start -= 1;
+        precedingNewlines += 1;
+      }
+    }
+    result = result.slice(0, start) + result.slice(end);
+  }
+  return result;
+}
+
+/** Hide the managed URL from the editable title and notes surface. */
+export function withoutLinkMarkdown(body: string, url: string): string {
+  const normalizedUrl = normalizeExternalUrl(url) ?? url;
+  return removeLinkRanges(body, standaloneLinkRanges(body, normalizedUrl));
+}
+
 /** Keep the saved URL directly beneath the editable first-line note title. */
 export function withLinkMarkdown(body: string, url: string): string {
-  if (body.includes(url)) return body;
+  const normalizedUrl = normalizeExternalUrl(url) ?? url;
+  const matches = standaloneLinkRanges(body, normalizedUrl);
+  // Preserve a single link byte-for-byte. MDXEditor serializes CommonMark
+  // autolinks as ordinary Markdown links, and rewriting that valid result while
+  // the user types makes React reload the editor and destroys its selection.
+  if (matches.length === 1) return body;
+  if (matches.length > 1) {
+    return removeLinkRanges(body, matches.slice(1));
+  }
+
   const lines = body.split("\n");
   const titleIndex = lines.findIndex((line) => line.trim().length > 0);
-  if (titleIndex < 0) return `${linkMarkdown(url)}\n`;
+  if (titleIndex < 0) return `${linkMarkdown(normalizedUrl)}\n`;
   const title = lines.slice(0, titleIndex + 1).join("\n");
   const remainder = lines
     .slice(titleIndex + 1)
     .join("\n")
     .replace(/^\n+/, "")
     .replace(/\n+$/, "");
-  return `${title}\n\n${linkMarkdown(url)}${remainder ? `\n\n${remainder}` : ""}\n`;
+  return `${title}\n\n${linkMarkdown(normalizedUrl)}${remainder ? `\n\n${remainder}` : ""}\n`;
 }

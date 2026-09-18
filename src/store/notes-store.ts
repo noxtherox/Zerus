@@ -115,6 +115,7 @@ import {
   linkDisplayName,
   removeLinkHubReference,
   setLinkHubReference,
+  withoutLinkMarkdown,
   withLinkMarkdown,
 } from "@/lib/link-hubs";
 import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
@@ -155,6 +156,10 @@ import {
   moveImageWithRollback,
   unloadedNotesReferenceImage,
 } from "@/lib/image-lifecycle";
+import {
+  markdownImageReferences,
+  replaceMarkdownImageReferences,
+} from "@/lib/markdown-image-references";
 
 const VAULT_PATH_KEY = "zerus.vaultPath";
 const EXTERNAL_PATHS_KEY = "zerus.externalPaths";
@@ -655,6 +660,99 @@ async function readExternalNote(path: string): Promise<Note> {
     createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
     updatedAt: (info.mtime ?? new Date()).toISOString(),
   };
+}
+
+interface ImportedExternalImages {
+  content: string;
+  copiedPaths: string[];
+  sourcePaths: string[];
+}
+
+function externalImageAbsolutePath(notePath: string, imagePath: string): string | null {
+  if (!imagePath || imagePath.startsWith("#")) return null;
+  const withoutSuffix = imagePath.replace(/[?#].*$/, "");
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(withoutSuffix);
+  } catch {
+    return null;
+  }
+  if (/^(?:[\\/]|[a-z]:[\\/])/i.test(decoded)) return decoded;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(decoded)) return null;
+  const normalizedNotePath = notePath.replace(/\\/g, "/");
+  const separator = normalizedNotePath.lastIndexOf("/");
+  const directory = separator < 0 ? "" : normalizedNotePath.slice(0, separator);
+  return `${directory}/${decoded}`;
+}
+
+function encodeVaultImagePath(path: string): string {
+  return encodeURI(path).replace(/#/g, "%23").replace(/\?/g, "%3F");
+}
+
+async function importExternalNoteImages(
+  note: Note,
+): Promise<ImportedExternalImages> {
+  if (!note.externalPath || !state.location || !backend || !isTauri()) {
+    return { content: note.content, copiedPaths: [], sourcePaths: [] };
+  }
+  const references = markdownImageReferences(note.content);
+  if (!references.length) {
+    return { content: note.content, copiedPaths: [], sourcePaths: [] };
+  }
+
+  await backend.mkDir(IMAGE_DIR);
+  const importedBySource = new Map<string, string>();
+  const replacements = new Map<number, string>();
+  const copiedPaths: string[] = [];
+  const sourcePaths: string[] = [];
+
+  try {
+    for (const reference of references) {
+      const candidate = externalImageAbsolutePath(note.externalPath, reference.path);
+      if (!candidate) continue;
+      let source: string;
+      try {
+        source = await canonicalizeFsPath(candidate);
+        const info = await stat(source);
+        if (!info.isFile) continue;
+      } catch {
+        continue;
+      }
+
+      const key = normalizeFsPath(source);
+      let target = importedBySource.get(key);
+      if (!target) {
+        const existingVaultPath = pathInsideRoot(state.location, source);
+        if (existingVaultPath) {
+          target = existingVaultPath;
+        } else {
+          target = await invoke<string>("copy_file_into_vault", {
+            source,
+            root: state.location,
+            relativeDirectory: IMAGE_DIR,
+            fileName: fileNameFromPath(source),
+          });
+          copiedPaths.push(target);
+          sourcePaths.push(source);
+        }
+        importedBySource.set(key, target);
+      }
+      replacements.set(reference.start, encodeVaultImagePath(target));
+    }
+  } catch (error) {
+    await Promise.all(copiedPaths.map((path) => backend?.removeFile(path).catch(() => {})));
+    throw error;
+  }
+
+  return {
+    content: replaceMarkdownImageReferences(note.content, replacements, references),
+    copiedPaths,
+    sourcePaths,
+  };
+}
+
+async function rollbackImportedExternalImages(paths: string[]) {
+  await Promise.all(paths.map((path) => backend?.removeFile(path).catch(() => {})));
 }
 
 async function loadExternalNotes(): Promise<Note[]> {
@@ -2858,10 +2956,12 @@ export async function copyExternalNoteToVault(
     const source = state.notes.find((candidate) => candidate.id === id);
     if (!source?.externalPath) return null;
     const existedKeys = existingTypeKeys();
+    let importedImages: ImportedExternalImages | null = null;
     try {
+      importedImages = await importExternalNoteImages(source);
       const copiedId = crypto.randomUUID();
       const createdAt = new Date().toISOString();
-      const content = setZerusState(source.content, { id: copiedId });
+      const content = setZerusState(importedImages.content, { id: copiedId });
       const path = await writeUniquePathOnDisk(
         typeKey(typePath),
         fileStem(source.externalPath),
@@ -2892,6 +2992,9 @@ export async function copyExternalNoteToVault(
       suggestIconsForNewType(typePath, existedKeys);
       return copied;
     } catch (error) {
+      if (importedImages) {
+        await rollbackImportedExternalImages(importedImages.copiedPaths);
+      }
       reportError("copy external note to vault", error);
       return null;
     }
@@ -2917,26 +3020,43 @@ export async function moveExternalNoteToVault(
     if (!note?.externalPath) return false;
     const existedKeys = existingTypeKeys();
     let target: string | null = null;
+    let importedImages: ImportedExternalImages | null = null;
     try {
+      importedImages = await importExternalNoteImages(note);
       target = await writeUniquePathOnDisk(
         typeKey(typePath),
         fileStem(note.externalPath),
-        note.content,
+        importedImages.content,
         id,
       );
       try {
         await removeFsFile(note.externalPath);
       } catch (error) {
         await backend.removeFile(target).catch(() => {});
+        await rollbackImportedExternalImages(importedImages.copiedPaths);
         throw error;
       }
-      updateNote(id, { path: target, externalPath: undefined });
-      diskSnapshots.set(id, note.content);
+      updateNote(id, {
+        path: target,
+        externalPath: undefined,
+        content: importedImages.content,
+      });
+      diskSnapshots.set(id, importedImages.content);
       forgetExternalPath(note.externalPath);
       saveExternalPaths();
       suggestIconsForNewType(typePath, existedKeys);
+      for (const sourcePath of importedImages.sourcePaths) {
+        try {
+          await removeFsFile(sourcePath);
+        } catch (error) {
+          reportError(`remove moved image ${fileNameFromPath(sourcePath)}`, error);
+        }
+      }
       return true;
     } catch (error) {
+      if (!target && importedImages) {
+        await rollbackImportedExternalImages(importedImages.copiedPaths);
+      }
       reportError("move external note to vault", error);
       return false;
     }
@@ -3093,6 +3213,32 @@ export async function createLinkNote(
     reportError("create link", error);
     return null;
   }
+}
+
+/** Replaces a saved link's managed URL while preserving its title and notes. */
+export function updateSavedLinkUrl(id: string, rawUrl: string): boolean {
+  const url = normalizeExternalUrl(rawUrl);
+  const note = state.notes.find((candidate) => candidate.id === id);
+  const reference = note ? getLinkHubReference(note) : null;
+  if (!note || !reference || !url) return false;
+  if (
+    state.notes.some(
+      (candidate) => candidate.id !== id && getLinkHubReference(candidate)?.url === url,
+    )
+  ) {
+    return false;
+  }
+
+  const body = withLinkMarkdown(
+    withoutLinkMarkdown(noteBody(note.content), reference.url),
+    url,
+  );
+  const content = setLinkHubReference(withBody(note.content, body), {
+    ...reference,
+    url,
+  });
+  if (content !== note.content) updateNoteContent(id, content, true);
+  return true;
 }
 
 /** Converts an app-managed saved link into an ordinary typed Markdown note. */
@@ -3991,11 +4137,19 @@ export async function readVaultImage(path: string): Promise<Uint8Array | null> {
  * Saves pasted/dropped image bytes into the vault's assets folder and returns
  * the vault-relative path to reference from markdown, or null on failure.
  */
-export async function savePastedImage(
+export function savePastedImage(
   bytes: Uint8Array,
   mime: string,
 ): Promise<string | null> {
-  if (!backend) return null;
+  return serializeImageMutation(() => performSavePastedImage(bytes, mime));
+}
+
+async function performSavePastedImage(
+  bytes: Uint8Array,
+  mime: string,
+): Promise<string | null> {
+  const targetBackend = backend;
+  if (!targetBackend) return null;
   const ext = EXT_BY_MIME[mime] ?? "png";
   const stamp = new Date()
     .toISOString()
@@ -4005,10 +4159,12 @@ export async function savePastedImage(
   let path = "";
   for (let n = 0; ; n++) {
     path = `${IMAGE_DIR}/pasted-${stamp}${n === 0 ? "" : `-${n}`}.${ext}`;
-    if (!(await backend.exists(path))) break;
+    if (!(await targetBackend.exists(path))) break;
   }
   try {
-    await backend.writeBinary(path, bytes);
+    if (backend !== targetBackend)
+      throw new Error("Vault changed while saving image.");
+    await targetBackend.writeBinary(path, bytes);
   } catch (error) {
     reportError("save image", error);
     return null;

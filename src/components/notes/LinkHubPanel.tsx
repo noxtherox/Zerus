@@ -1,18 +1,31 @@
 import { useState, type ReactNode } from "react";
-import { Copy, ExternalLink, Link2, Maximize, Minimize } from "@/lib/icons";
+import { Copy, ExternalLink, Link2, Maximize, Minimize, Pencil } from "@/lib/icons";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { loadLinkPreview, saveLinkPreview } from "@/lib/link-preview";
 import { Button } from "@/components/ui/button";
 import { getLinkHubReference } from "@/lib/link-hubs";
-import { openExternalUrl } from "@/lib/external-links";
+import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
 import { noteTitle, type Note } from "@/lib/note-utils";
+import { updateSavedLinkUrl } from "@/store/notes-store";
 import { showError, showSuccess } from "@/utils/toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 export function LinkHubPanel({ note, children }: { note: Note; children: ReactNode }) {
   const reference = getLinkHubReference(note);
   const [renderPage, setRenderPage] = useState(() => reference ? loadLinkPreview(reference.id, reference.url) : false);
   const [expanded, setExpanded] = useState(false);
   const [reload, setReload] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [urlDraft, setUrlDraft] = useState(reference?.url ?? "");
+  const [urlError, setUrlError] = useState<string | null>(null);
   if (!reference) return <>{children}</>;
 
   const togglePreview = () => {
@@ -29,6 +42,20 @@ export function LinkHubPanel({ note, children }: { note: Note; children: ReactNo
     } catch {
       showError("Couldn't copy the link");
     }
+  };
+
+  const saveLink = () => {
+    const url = normalizeExternalUrl(urlDraft);
+    if (!url) {
+      setUrlError("Enter a valid http or https URL.");
+      return;
+    }
+    if (!updateSavedLinkUrl(note.id, url)) {
+      setUrlError("That URL is already saved.");
+      return;
+    }
+    setEditing(false);
+    showSuccess("Link updated");
   };
 
   return (
@@ -50,6 +77,18 @@ export function LinkHubPanel({ note, children }: { note: Note; children: ReactNo
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => {
+              setUrlDraft(reference.url);
+              setUrlError(null);
+              setEditing(true);
+            }}
+          >
+            <Pencil size={13} /> Edit Link
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -117,6 +156,43 @@ export function LinkHubPanel({ note, children }: { note: Note; children: ReactNo
         <div className="flex h-full min-h-0 flex-col">{children}</div>
       </ResizablePanel>
     </ResizablePanelGroup>
+    <Dialog open={editing} onOpenChange={setEditing}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit link</DialogTitle>
+          <DialogDescription>
+            Change the web address used by this saved link.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            saveLink();
+          }}
+        >
+          <Input
+            autoFocus
+            inputMode="url"
+            value={urlDraft}
+            onChange={(event) => {
+              setUrlDraft(event.target.value);
+              setUrlError(null);
+            }}
+            aria-invalid={!!urlError}
+          />
+          {urlError && <p className="text-xs text-destructive">{urlError}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!urlDraft.trim()}>
+              Save link
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
     </div>
   );
 }

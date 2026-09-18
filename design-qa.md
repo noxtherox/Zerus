@@ -1,48 +1,48 @@
-# Design QA — compact bulk actions
+# Design QA — inline gallery selection toolbar
 
-- Source visual truth: `/Users/tiagopereira/.codex/attachments/7df0fb99-88e8-4b34-9d33-aaf494b396df/codex-clipboard-ddc59679-983f-4ef4-9958-20061ce3667c.png`
-- Browser implementation capture: `/Users/tiagopereira/Documents/Codex/Zerus-remote/artifacts/bulk-actions-menu-implementation.jpg`
-- Combined comparison: `/Users/tiagopereira/Documents/Codex/Zerus-remote/artifacts/bulk-actions-visual-comparison.png`
-- Viewport: 1280 × 720 CSS px, device scale factor 1
-- Source pixels: 739 × 129 at 1×
-- Implementation pixels: 1280 × 720 at 1×; focused note-list crop is 240 × 345
-- State: dark theme, All Notes regular list, Select mode active, one note selected, Actions menu open
+- Source visual truth: `/Users/tiagopereira/.codex/attachments/7027ae27-57dc-4aec-b6a4-f98e11434add/codex-clipboard-c72f4eb2-6011-45af-a77c-b1ed6b760daf.png`
+- Browser implementation capture: `/Users/tiagopereira/Documents/Codex/Zerus-remote/artifacts/selection-toolbar-inline-implementation.png`
+- Preview URL: `https://mac-mini-m4-nox.ibex-oratrice.ts.net/app`
+- Viewport: 1280 × 720 CSS px at device scale factor 2
+- Source pixels: 1616 × 217; supplied crop includes browser chrome and the relevant app toolbar region
+- Implementation pixels: 2560 × 1440; browser-rendered full viewport
+- State: dark theme, work type, Gallery view, No grouping, Select mode active, three notes selected
 
 ## Full-view comparison evidence
 
-The browser capture verifies the requested layout in the real application shell. At the normal narrow note-list width, the selection toolbar stays on one line with the selected count, Actions trigger, and clear control all visible. The list and search/filter controls remain usable below it.
+The supplied source shows the view toolbar followed by a separate selection row, which pushes the gallery downward. The browser capture shows the intended revised composition: Auto-saved, the selected count, Actions, and clear selection all share the existing Gallery/Group by toolbar. The gallery begins at the same vertical position in selection and non-selection states.
 
 ## Focused comparison evidence
 
-The combined comparison shows the supplied before-state above the focused implementation crop. The former row of seven independent controls is replaced by one compact Actions trigger. Its menu contains Select all, Archive, Unarchive, Pin, Unpin, Properties, and Recent actions. The Select button uses the existing theme accent for its border, fill, text, and ring only while selection mode is active.
+A separate crop was not needed because the toolbar labels, borders, selected cards, and row boundaries are clearly readable in both the source crop and the full-size implementation capture. The implementation preserves the source control order and styling while moving the selection controls into the highlighted toolbar region.
 
 ## Required fidelity surfaces
 
-- Fonts and typography: existing app font, weights, sizes, and compact labels are preserved.
-- Spacing and layout rhythm: toolbar height and horizontal padding remain aligned with the list header; no horizontal overflow or clipped control is visible.
-- Colors and visual tokens: the Select and Actions controls use `zerus-accent` opacity variants and therefore track the active theme.
-- Image quality and asset fidelity: no raster assets were introduced into the UI; existing Tabler icons remain sharp and consistent.
-- Copy and content: all prior bulk-action labels are retained under Actions, with “Recent bulk actions” shortened to “Recent actions” in the menu.
+- Fonts and typography: the existing application font, weights, sizes, line heights, and compact control labels are unchanged.
+- Spacing and layout rhythm: the extra 44px selection row is removed; the existing toolbar height and gallery start position remain stable when selection begins or ends.
+- Colors and visual tokens: existing surface, border, muted text, emerald auto-save, and accent selection tokens are preserved.
+- Image quality and asset fidelity: no new raster or generated assets are used; the existing icon set remains unchanged and sharp.
+- Copy and content: selected count, Actions, Auto-saved, Gallery, Group by, and No grouping remain visible and unchanged.
 
 ## Interaction verification
 
-- Select mode toggles on and displays its accent-highlighted active state.
-- Selecting a note reveals the compact toolbar.
-- Actions opens and exposes every grouped command.
-- Archive opens the existing one-note confirmation dialog; Cancel closes it without mutating data.
-- Browser console errors and warnings: none.
+- Entered Select mode and selected three gallery notes.
+- Confirmed the selected count updates in-place without adding a row.
+- Opened Actions and verified Select all, Archive, Unarchive, Pin, Unpin, Properties, and Recent actions are available.
+- Pressed Escape and confirmed selection clears and the inline controls disappear without shifting the gallery.
+- Browser console errors: none.
 - Frontend `/app`: HTTP 200.
 - Tailscale Serve `/app`: HTTP 200.
 
 ## Findings
 
-No actionable P0, P1, or P2 issues remain.
+No actionable P0, P1, or P2 differences remain for the requested change.
 
 ## Comparison history
 
-- Initial supplied state: individual bulk-action buttons overflow the practical width of the regular notes list, and Select has weak visual separation.
-- Fix: consolidated commands into an Actions dropdown and added active-only theme-accent styling to Select in the regular list and type workspace.
-- Post-fix evidence: combined comparison and browser interaction checks above show the compact toolbar and complete menu at the real narrow width.
+- Source issue: selection status and actions occupy a conditional row below the view toolbar, shifting the gallery vertically.
+- Fix: added an inline presentation for the shared bulk-actions toolbar and mounted it inside the type-view toolbar.
+- Post-fix evidence: the browser capture shows three selected cards while all selection controls remain in the existing toolbar; the gallery does not move.
 
 ## Follow-up polish
 

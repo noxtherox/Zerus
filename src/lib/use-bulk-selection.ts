@@ -6,7 +6,6 @@ export interface BulkSelectionState {
   setSelectMode: (enabled: boolean) => void;
   clearSelection: () => void;
   selectAll: () => void;
-  selectOnly: (id: string) => void;
   removeSelected: (ids: Iterable<string>) => void;
   retainSelected: (ids: Iterable<string>) => void;
   toggleOne: (id: string, options?: { range?: boolean; orderedIds?: string[] }) => void;
@@ -80,12 +79,6 @@ export function useBulkSelection(
     anchorId.current = orderedIds.at(-1) ?? null;
   }, [orderedIds]);
 
-  const selectOnly = useCallback((id: string) => {
-    setSelectedIds(new Set([id]));
-    setSelectModeState(true);
-    anchorId.current = id;
-  }, []);
-
   const removeSelected = useCallback((ids: Iterable<string>) => {
     const removed = new Set(ids);
     setSelectedIds((current) => {
@@ -119,7 +112,6 @@ export function useBulkSelection(
     setSelectMode,
     clearSelection,
     selectAll,
-    selectOnly,
     removeSelected,
     retainSelected,
     toggleOne,

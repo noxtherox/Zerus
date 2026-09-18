@@ -145,7 +145,6 @@ export function DateInput({ value, onValueChange, className, "aria-label": label
               setDraft({ value, format, text: event.target.value });
               setInvalid(false);
             }}
-            onFocus={() => setOpen(true)}
             onKeyDown={(event) => {
               if (event.key === "Enter") event.currentTarget.blur();
               if (event.key === "Escape") {

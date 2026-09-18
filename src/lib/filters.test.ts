@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { filterNotes, propertyValueKey, type NoteListFilters } from "./filters";
+import {
+  EMPTY_NOTE_LIST_FILTERS,
+  filterNotes,
+  propertyFilterValueKeys,
+  propertyValueKey,
+  type NoteListFilters,
+} from "./filters";
 import type { Note } from "./note-utils";
 import { setFileHubReference } from "./file-hubs";
 import { setLinkHubReference } from "./link-hubs";
@@ -15,10 +21,10 @@ function note(id: string, path: string, properties: string, updatedAt: string): 
 }
 
 const notes = [
-  note("one", "work/one.md", "status: active\ntags: [red, urgent]", "2026-07-16T08:00:00.000Z"),
-  note("two", "personal/two.md", "status: active\ntags: [blue]", "2026-07-12T08:00:00.000Z"),
-  note("three", "work/three.md", "status: done", "2026-06-01T08:00:00.000Z"),
-  note("nested", "work/projects/nested.md", "status: active", "2026-07-15T08:00:00.000Z"),
+  note("one", "work/one.md", "status: active\ntags: [red, urgent]\ndue: 2026-07-16", "2026-07-16T08:00:00.000Z"),
+  note("two", "personal/two.md", "status: active\ntags: [blue]\ndue: 2026-07-20", "2026-07-12T08:00:00.000Z"),
+  note("three", "work/three.md", "status: done\ndue: 2026-08-01", "2026-06-01T08:00:00.000Z"),
+  note("nested", "work/projects/nested.md", "status: active\ndue: 2026-07-18", "2026-07-15T08:00:00.000Z"),
 ];
 
 const empty: NoteListFilters = {
@@ -27,10 +33,15 @@ const empty: NoteListFilters = {
   showArchived: false,
   typeKeys: [],
   fileExtensions: [],
+  propertyMatch: "all",
   properties: [],
 };
 
 describe("note list filters", () => {
+  it("sorts new note lists by newest creation date by default", () => {
+    expect(EMPTY_NOTE_LIST_FILTERS.sort).toBe("created-desc");
+  });
+
   it("searches the complete note collection regardless of type-tree batching", () => {
     const manyNotes = Array.from({ length: 35 }, (_, index) =>
       note(
@@ -86,11 +97,84 @@ describe("note list filters", () => {
     const filtered = filterNotes(notes, { kind: "all" }, "", {
       ...empty,
       properties: [
-        { name: "status", valueKey: propertyValueKey("active") },
-        { name: "tags", valueKey: propertyValueKey("red") },
+        { name: "status", valueKeys: [propertyValueKey("active")] },
+        { name: "tags", valueKeys: [propertyValueKey("red")] },
       ],
     });
     expect(filtered.map((item) => item.id)).toEqual(["one"]);
+  });
+
+  it("matches any selected value within one property", () => {
+    const filtered = filterNotes(notes, { kind: "all" }, "", {
+      ...empty,
+      properties: [
+        {
+          name: "status",
+          valueKeys: [propertyValueKey("active"), propertyValueKey("done")],
+        },
+      ],
+    });
+    expect(filtered.map((item) => item.id)).toEqual([
+      "one",
+      "nested",
+      "two",
+      "three",
+    ]);
+  });
+
+  it("keeps legacy single-value filters working during a hot refresh", () => {
+    const legacy = {
+      name: "status",
+      valueKey: propertyValueKey("done"),
+    };
+    expect(propertyFilterValueKeys(legacy)).toEqual([
+      propertyValueKey("done"),
+    ]);
+    const filtered = filterNotes(notes, { kind: "all" }, "", {
+      ...empty,
+      properties: [legacy] as unknown as NoteListFilters["properties"],
+    });
+    expect(filtered.map((item) => item.id)).toEqual(["three"]);
+  });
+
+  it("can match any property filter instead of requiring all", () => {
+    const filtered = filterNotes(notes, { kind: "all" }, "", {
+      ...empty,
+      propertyMatch: "any",
+      properties: [
+        { name: "status", valueKeys: [propertyValueKey("done")] },
+        { name: "tags", valueKeys: [propertyValueKey("red")] },
+      ],
+    });
+    expect(filtered.map((item) => item.id)).toEqual(["one", "three"]);
+  });
+
+  it("filters date properties with comparisons and inclusive ranges", () => {
+    expect(
+      filterNotes(notes, { kind: "all" }, "", {
+        ...empty,
+        properties: [{
+          name: "due",
+          valueKeys: null,
+          date: { operator: "before", date: "2026-07-19" },
+        }],
+      }).map((item) => item.id),
+    ).toEqual(["one", "nested"]);
+
+    expect(
+      filterNotes(notes, { kind: "all" }, "", {
+        ...empty,
+        properties: [{
+          name: "due",
+          valueKeys: null,
+          date: {
+            operator: "between",
+            date: "2026-07-18",
+            endDate: "2026-07-20",
+          },
+        }],
+      }).map((item) => item.id),
+    ).toEqual(["nested", "two"]);
   });
 
   it("filters by updated date from the local start of day", () => {

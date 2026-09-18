@@ -78,6 +78,7 @@ interface BulkActionsToolbarProps {
   externalRequest?: BulkMutationRequest | null;
   onExternalRequestHandled?: () => void;
   className?: string;
+  presentation?: "standalone" | "inline";
 }
 
 interface PendingAction {
@@ -295,6 +296,7 @@ export function BulkActionsToolbar({
   externalRequest,
   onExternalRequestHandled,
   className,
+  presentation = "standalone",
 }: BulkActionsToolbarProps) {
   const selectedNotes = useMemo(
     () => notes.filter((note) => selectedIds.has(note.id)),
@@ -369,8 +371,18 @@ export function BulkActionsToolbar({
 
   return (
     <>
-      <div className={cn("sticky top-0 z-20 flex min-h-11 items-center gap-1.5 border-b border-zerus-accent/20 bg-zerus-surface/95 px-3 py-1.5 shadow-sm backdrop-blur", className)}>
-        <strong className="min-w-0 flex-1 truncate text-xs">{selectedIds.size} selected</strong>
+      <div
+        className={cn(
+          "flex items-center gap-1.5",
+          presentation === "standalone"
+            ? "sticky top-0 z-20 min-h-11 border-b border-zerus-accent/20 bg-zerus-surface/95 px-3 py-1.5 shadow-sm backdrop-blur"
+            : "min-w-0 shrink-0",
+          className,
+        )}
+      >
+        <strong className={cn("min-w-0 truncate text-xs", presentation === "standalone" && "flex-1")}>
+          {selectedIds.size} selected
+        </strong>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
