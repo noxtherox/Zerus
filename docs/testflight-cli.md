@@ -15,15 +15,22 @@ pnpm ios:new-build
 
 That command advances the last completed build to the next number, or retries
 an already-prepared build number if its archive did not finish. It then creates
-the signed archive and exports the IPA. Use
+the signed archive, verifies the embedded app's build number, scene lifecycle,
+and signature, and exports the IPA without uploading it. Use
 `pnpm ios:new-build -- --dry-run` to inspect the next action without changing
 or building anything.
 
-The command selects the newest `.xcarchive` in `src-tauri/gen/apple/build`,
+`pnpm testflight` selects the newest `.xcarchive` in `src-tauri/gen/apple/build`,
 exports a signed IPA to `artifacts/testflight/<version>-<build>`, validates it,
 then uploads it to App Store Connect. Failed uploads can be retried without
 rebuilding; the exported IPA is reused. Before exporting, it refuses archives
 whose metadata, embedded app, or configured release version/build disagree.
+
+The iOS Rust build uses `scripts/ios-toolchain/swift` to select SwiftPM's
+`native` build engine. The current `swift-rs` dependency relies on its iOS SDK
+flag handling and artifact paths; Xcode 27's default `swiftbuild` engine is not
+compatible with those invocations. This setting applies only to the iOS build
+phase and does not change the system toolchain.
 
 ## One-time App Store Connect setup
 

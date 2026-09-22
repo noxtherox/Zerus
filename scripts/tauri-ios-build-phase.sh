@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export PATH="$script_dir/ios-toolchain:$PATH"
+
 if [ "${CONFIGURATION:-debug}" = "release" ] || [ "${CONFIGURATION:-debug}" = "Release" ]; then
   script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
   project_dir="$(dirname "$script_dir")"

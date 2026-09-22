@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+# swift-rs 1.0.x expects SwiftPM's native build engine, including its artifact
+# paths and cross-compilation flags. Xcode 27 defaults to swiftbuild, which
+# selects the host SDK for those invocations. Scope this compatibility shim to
+# the iOS Rust build; xcrun resolves Swift from the selected Xcode toolchain.
+if [ "${1:-}" = "build" ]; then
+  shift
+  exec /usr/bin/xcrun swift build --build-system native "$@"
+fi
+
+exec /usr/bin/xcrun swift "$@"

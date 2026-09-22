@@ -231,6 +231,9 @@ Windows-specific prerequisites and commands are in
 [`docs/WINDOWS.md`](docs/WINDOWS.md). To create a new signed iOS archive and
 export its IPA, use `pnpm ios:new-build`; see
 [`docs/testflight-cli.md`](docs/testflight-cli.md) before uploading it.
+The iOS build phase selects SwiftPM's native engine for compatibility with the
+current Rust-to-Swift bridge on Xcode 27, and checks the archived app's scene
+lifecycle and signature before export.
 
 Official tagged releases import the Developer ID Application certificate in
 GitHub Actions, authenticate to Apple's notary service with a Team App Store
