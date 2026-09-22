@@ -3,6 +3,7 @@ import {
   blocksMobileNoteSwipe,
   horizontalSwipeDirection,
   noteHeaderCollapseProgress,
+  startsAtSwipeEdge,
   shouldDismissBottomSheet,
 } from "./mobile-gestures";
 
@@ -33,6 +34,15 @@ describe("horizontalSwipeDirection", () => {
   it("ignores short movements and vertical scrolling", () => {
     expect(horizontalSwipeDirection({ x: 20, y: 100 }, { x: 70, y: 101 })).toBeNull();
     expect(horizontalSwipeDirection({ x: 20, y: 100 }, { x: 90, y: 180 })).toBeNull();
+  });
+});
+
+describe("startsAtSwipeEdge", () => {
+  it("reserves the middle of the screen for table scrolling", () => {
+    expect(startsAtSwipeEdge(12, 390)).toBe(true);
+    expect(startsAtSwipeEdge(180, 390)).toBe(false);
+    expect(startsAtSwipeEdge(380, 390, "left")).toBe(true);
+    expect(startsAtSwipeEdge(180, 390, "left")).toBe(false);
   });
 });
 

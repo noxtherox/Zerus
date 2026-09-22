@@ -1353,7 +1353,7 @@ async function loadVault(nextBackend: VaultBackend) {
     const cachedFilePaths = new Set(cachedFiles.map((file) => file.path));
     const initialMobilePaths = canPage
       ? [...new Set([
-          ...mobileNoteEntries.slice(0, MOBILE_NOTE_PAGE_SIZE).map((entry) => entry.path),
+          ...mobileNoteEntries.slice(0, 12).map((entry) => entry.path),
           ...mobileNoteEntries.filter((entry) => driveDrafts[entry.path]).map((entry) => entry.path),
         ])]
       : [];
@@ -1525,6 +1525,13 @@ async function loadVault(nextBackend: VaultBackend) {
   } catch (error) {
     if (!isCurrentLoad()) return;
     mobileDiagnostic("store.vault.load.failed", { error });
+    if (nextBackend.kind === "mobile" && state.status === "ready" && state.isRefreshing) {
+      // Cached notes remain usable if a cloud provider stalls during refresh.
+      // The regular mobile sync will retry when the provider becomes available.
+      setState({ isRefreshing: false });
+      reportError("refresh vault", error);
+      return;
+    }
     setState({
       status: "error",
       loadingNoteIds: new Set(),

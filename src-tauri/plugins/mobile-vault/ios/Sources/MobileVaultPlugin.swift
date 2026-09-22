@@ -131,7 +131,6 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
         invoke.reject("Could not open that file: missing path")
         return
       }
-      let url = try accessibleURL(forPath: path)
       DispatchQueue.main.async {
         guard let viewController = self.manager.viewController else {
           invoke.reject("The iOS document browser is unavailable")
@@ -149,6 +148,18 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
         if let cachedURL = self.authorizedFileCopy(forPath: path) {
           self.presentPreparedFile(
             cachedURL,
+            from: viewController,
+            invoke: invoke
+          )
+          return
+        }
+        let url: URL
+        do {
+          url = try self.accessibleURL(forPath: path)
+        } catch {
+          self.offerFileAuthorization(
+            forPath: path,
+            error: error,
             from: viewController,
             invoke: invoke
           )

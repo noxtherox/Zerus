@@ -1,6 +1,7 @@
 export type HorizontalSwipeDirection = "left" | "right" | null;
 
 const NOTE_HEADER_COLLAPSE_DISTANCE = 72;
+const EDGE_SWIPE_WIDTH = 28;
 
 interface SwipePoint {
   x: number;
@@ -17,6 +18,12 @@ const MOBILE_NOTE_SWIPE_BLOCKED_SELECTOR =
  */
 export function blocksMobileNoteSwipe(target: Element): boolean {
   return Boolean(target.closest(MOBILE_NOTE_SWIPE_BLOCKED_SELECTOR));
+}
+
+export function startsAtSwipeEdge(x: number, viewportWidth: number, direction: "left" | "right" = "right"): boolean {
+  return direction === "right"
+    ? x <= EDGE_SWIPE_WIDTH
+    : x >= viewportWidth - EDGE_SWIPE_WIDTH;
 }
 
 /**

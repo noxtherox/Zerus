@@ -81,14 +81,17 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   the background scan finishes, preventing false conflicts on the next edit.
   Opening a mobile note loads its full body before enabling the editor; cached
   list snippets are never treated as complete note content. Older startup indexes
-  keep the note list available while bodies reload. Mobile startup offers retry
-  and vault selection if storage stops responding, and Google Drive can open a
+  keep the note list available while bodies reload. If a cloud scan times out,
+  the cached list stays open and Zerus retries when storage becomes available;
+  without a usable cache, mobile offers retry and vault selection. Google Drive can open a
   known note without waiting for unrelated folders to finish scanning. Recently
   opened full notes are saved immediately in a bounded fallback cache, and slower
   local-cache reads can fill in the list without another cloud download. Drive
   note lookups request exact filenames and reuse known parent folders.
 - **Projects and planning** — keep tasks and categories beside notes, link tasks
   to their supporting material, and switch between multiple registered vaults.
+  Mobile reloads tasks after the vault opens and refreshes them while active and
+  when returning to the app.
 - **Navigation and recovery** — work across note, type, and global-view tabs;
   middle-click types or global navigation items to open them in a tab from either
   the expanded or collapsed sidebar. Existing tabs are reused. Move backward and
@@ -143,7 +146,10 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 ## Platforms
 
 The mobile workspace has bottom navigation for Notes, Tasks, global Search, and
-AI, with quick note creation. The library includes saved Links, Files, external
+AI, with a highlighted New button in the center. Note navigation swipes start
+at the screen edges so tables can scroll horizontally. Sort and filter opens a
+mobile sheet, and a Done control dismisses the keyboard while editing. The
+library includes saved Links, Files, external
 notes, types, and Recently Deleted. Mobile uses the desktop sort/date/property
 filters and bulk pin, archive, and property actions, including action previews
 and undo history. Saved web addresses can be added, opened, and edited alongside
@@ -376,3 +382,6 @@ Linked files in that location can be checked, previewed, and opened through the
 Drive API using the existing device sign-in. Shared drives, shortcuts, and uploads
 above 25 MB are not supported. Actual Google sign-in and file operations must be
 verified on an iPhone with the configured OAuth client before shipping.
+For files mapped through Apple's Files picker, iOS may require selecting an
+individual file again when access to its folder expires. Zerus offers that
+selection when opening the file and saves an authorized local preview copy.

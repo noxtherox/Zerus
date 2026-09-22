@@ -156,7 +156,9 @@ abstract class MobileFilesystemVault implements VaultBackend {
   async listNoteEntries(): Promise<VaultFileEntry[]> {
     const paths = await this.findMarkdownPaths();
     const entries: VaultFileEntry[] = [];
-    const concurrency = 12;
+    // File Provider extensions can stall when asked to materialize many cloud
+    // entries at once. Keep the scan moving without saturating the provider.
+    const concurrency = 4;
     let nextIndex = 0;
     const worker = async () => {
       while (nextIndex < paths.length) {
@@ -182,8 +184,12 @@ abstract class MobileFilesystemVault implements VaultBackend {
   }
 
   async loadFiles(paths: string[]): Promise<VaultFile[]> {
-    const files = await Promise.all(
-      paths.map(async (path, index) => {
+    const files: VaultFile[] = new Array(paths.length);
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < paths.length) {
+        const index = nextIndex++;
+        const path = paths[index];
         assertSafeVaultPath(path);
         mobileDiagnostic("vault.note.read.started", { fileIndex: index + 1 });
         const [content, info] = await Promise.all([
@@ -191,14 +197,15 @@ abstract class MobileFilesystemVault implements VaultBackend {
           stat(this.target(path), this.options()),
         ]);
         mobileDiagnostic("vault.note.read.resolved", { fileIndex: index + 1 });
-        return {
+        files[index] = {
           path,
           content,
           createdAt: (info.birthtime ?? info.mtime ?? new Date()).toISOString(),
           updatedAt: (info.mtime ?? new Date()).toISOString(),
         };
-      }),
-    );
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, paths.length) }, () => worker()));
     mobileDiagnostic("vault.files.load.resolved", { files: files.length });
     return files;
   }
