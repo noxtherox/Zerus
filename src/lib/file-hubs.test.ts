@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   getFileHubReference,
+  googleDriveLocationRoot,
+  parseGoogleDriveLocation,
   isMarkdownFilePath,
   mostSpecificLocation,
   normalizeRelativeFilePath,
@@ -89,6 +91,17 @@ describe("portable file locations", () => {
     expect(onWindows.absolutePath).toBe(
       "C:/Users/me/Company/Clients/Acme/Proposal.docx",
     );
+  });
+
+  it("round-trips a Google Drive folder mapping and relative file path", () => {
+    const root = googleDriveLocationRoot({ accountId: "acct/one", folderId: "folder_1", name: "Shared Files" });
+    const resolved = resolveFileHubReference(locationReference, null, locations, { company: root }, {});
+    expect(parseGoogleDriveLocation(resolved.absolutePath!)).toEqual({
+      accountId: "acct/one",
+      folderId: "folder_1",
+      name: "Shared Files",
+      path: "Clients/Acme/Proposal.docx",
+    });
   });
 
   it("uses a one-hub override before a missing location mapping", () => {

@@ -3,10 +3,74 @@ import { useCellValues, usePublisher } from "@mdxeditor/gurx";
 import {
   activeEditor$,
   addComposerChild$,
-  getNodeRectangle,
   linkDialogState$,
   realmPlugin,
 } from "@mdxeditor/editor";
+import type { LexicalEditor } from "lexical";
+
+type LinkRectangle = { top: number; left: number; width: number; height: number };
+
+const CONTAINING_BLOCK_PROPERTIES = [
+  "transform",
+  "perspective",
+  "filter",
+  "backdrop-filter",
+  "contain",
+  "container-type",
+];
+const CONTAINING_BLOCK_VALUES = ["layout", "paint", "strict", "content"];
+
+function fixedContainingBlock(element: HTMLElement | null): HTMLElement | null {
+  for (let current = element?.parentElement ?? null; current; current = current.parentElement) {
+    const style = window.getComputedStyle(current);
+    const willChange = style.willChange.split(",").map((value) => value.trim());
+    if (
+      style.transform !== "none" ||
+      style.perspective !== "none" ||
+      style.filter !== "none" ||
+      style.backdropFilter !== "none" ||
+      CONTAINING_BLOCK_VALUES.includes(style.contain) ||
+      style.containerType !== "normal" ||
+      style.contentVisibility === "auto" ||
+      willChange.some((property) => CONTAINING_BLOCK_PROPERTIES.includes(property))
+    ) return current;
+  }
+  return null;
+}
+
+function roundedRectangle(rectangle: DOMRect | LinkRectangle): LinkRectangle {
+  return {
+    top: Math.round(rectangle.top),
+    left: Math.round(rectangle.left),
+    width: Math.round(rectangle.width),
+    height: Math.round(rectangle.height),
+  };
+}
+
+/** Return the node rectangle in viewport coordinates for a body-level portal. */
+export function getViewportNodeRectangle(
+  editor: LexicalEditor,
+  nodeKey: string,
+): LinkRectangle | null {
+  const element = editor.getElementByKey(nodeKey);
+  return element ? roundedRectangle(element.getBoundingClientRect()) : null;
+}
+
+/** Convert MDXEditor's containing-block-relative selection rectangle. */
+export function getViewportSelectionRectangle(
+  editor: LexicalEditor | null,
+  rectangle: LinkRectangle,
+): LinkRectangle {
+  const container = fixedContainingBlock(editor?.getRootElement() ?? null);
+  if (!container) return rectangle;
+  const containerRectangle = container.getBoundingClientRect();
+  return {
+    top: Math.round(rectangle.top + containerRectangle.top),
+    left: Math.round(rectangle.left + containerRectangle.left),
+    width: Math.round(rectangle.width),
+    height: Math.round(rectangle.height),
+  };
+}
 
 function LinkDialogPosition() {
   const [editor, state] = useCellValues(activeEditor$, linkDialogState$);
@@ -95,10 +159,9 @@ function LinkDialogPosition() {
   useLayoutEffect(() => {
     if (!editor || state.type === "inactive" || !state.linkNodeKey) return;
 
-    // MDXEditor's collapsed selection rectangle has zero width at the start
-    // of the text. Anchor existing-link dialogs to the whole link instead.
-    // Use its helper to preserve offsets inside fixed containing blocks.
-    const rectangle = getNodeRectangle(editor, state.linkNodeKey);
+    // MDXEditor's rectangle is relative to the nearest fixed containing block.
+    // Our dialog is portaled to the body, so use the link's viewport rectangle.
+    const rectangle = getViewportNodeRectangle(editor, state.linkNodeKey);
     if (!rectangle) return;
     const previous = state.rectangle;
     if (

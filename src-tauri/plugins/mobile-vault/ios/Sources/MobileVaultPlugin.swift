@@ -100,7 +100,38 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   @objc public func openFile(_ invoke: Invoke) {
     do {
       let request = try invoke.parseArgs(OpenFileRequest.self)
-      let url = try accessibleURL(forPath: request.path)
+      if let encoded = request.data, let name = request.name {
+        guard let data = Data(base64Encoded: encoded), data.count <= 25 * 1024 * 1024 else {
+          invoke.reject("Could not open that file: invalid or oversized preview data")
+          return
+        }
+        let safeName = URL(fileURLWithPath: name).lastPathComponent
+        guard !safeName.isEmpty, safeName != ".", safeName != ".." else {
+          invoke.reject("Could not open that file: invalid filename")
+          return
+        }
+        let directory = FileManager.default.temporaryDirectory
+          .appendingPathComponent("ZerusPreview", isDirectory: true)
+          .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent(safeName)
+        try data.write(to: destination, options: .atomic)
+        if let oldDirectory = previewDirectoryURL { try? FileManager.default.removeItem(at: oldDirectory) }
+        previewDirectoryURL = directory
+        DispatchQueue.main.async {
+          guard let viewController = self.manager.viewController else {
+            invoke.reject("The iOS document browser is unavailable")
+            return
+          }
+          self.presentPreparedFile(destination, from: viewController, invoke: invoke)
+        }
+        return
+      }
+      guard let path = request.path else {
+        invoke.reject("Could not open that file: missing path")
+        return
+      }
+      let url = try accessibleURL(forPath: path)
       DispatchQueue.main.async {
         guard let viewController = self.manager.viewController else {
           invoke.reject("The iOS document browser is unavailable")
@@ -108,14 +139,14 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
         }
         if request.mode == "refresh" {
           self.offerFileAuthorization(
-            forPath: request.path,
+            forPath: path,
             error: nil,
             from: viewController,
             invoke: invoke
           )
           return
         }
-        if let cachedURL = self.authorizedFileCopy(forPath: request.path) {
+        if let cachedURL = self.authorizedFileCopy(forPath: path) {
           self.presentPreparedFile(
             cachedURL,
             from: viewController,
@@ -130,7 +161,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
             switch result {
             case .failure(let error):
               self.offerFileAuthorization(
-                forPath: request.path,
+                forPath: path,
                 error: error,
                 from: viewController,
                 invoke: invoke
@@ -841,7 +872,9 @@ private enum PickerKind {
 }
 
 private struct OpenFileRequest: Decodable {
-  let path: String
+  let path: String?
+  let name: String?
+  let data: String?
   let mode: String?
 }
 

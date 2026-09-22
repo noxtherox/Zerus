@@ -1,4 +1,4 @@
-import { GlobalSearch, GlobalSearchButton } from "@/components/search/GlobalSearch";
+import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
@@ -7,7 +7,7 @@ import type { DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
 import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
 import { parseNoteReference } from "@/lib/wikilinks";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -15,6 +15,7 @@ import {
   ArrowDown,
   ArrowUp,
   Check,
+  CheckSquare,
   ChevronRight,
   Cloud,
   Copy,
@@ -107,8 +108,8 @@ import {
   type TypeNode,
 } from "@/lib/note-utils";
 import { noteCreationType } from "@/lib/note-creation";
-import { getFileHubReference } from "@/lib/file-hubs";
-import { filterNotes, type NoteFilter } from "@/lib/filters";
+import { fileLocationMappingLabel, getFileHubReference, parseGoogleDriveLocation } from "@/lib/file-hubs";
+import { EMPTY_NOTE_LIST_FILTERS, filterNotes, type NoteListFilters as NoteListFilterState, type NoteFilter } from "@/lib/filters";
 import {
   getBacklinksGroupedByType,
   getOutgoingRelationTitles,
@@ -133,6 +134,7 @@ import {
 } from "@/lib/mobile-navigation";
 import {
   createFileNote,
+  createLinkNote,
   clearVaultVersionHistory,
   createNote,
   createMobileVaultAtLocation,
@@ -158,9 +160,10 @@ import {
   attachFileToNote,
   chooseDocumentFile,
   locateFileHub,
-  addFileLocation,
+  createFileLocation,
   fileLocationUsages,
   getFileLocationMappings,
+  mapGoogleDriveFileLocation,
   mapFileLocation,
   removeFileLocation,
   renameFileLocation,
@@ -181,6 +184,14 @@ import {
   getImageUrl,
 } from "@/store/notes-store";
 
+import { NoteListFilters } from "@/components/notes/NoteListFilters";
+import { BulkActionsToolbar } from "@/components/notes/BulkActionsToolbar";
+import { useBulkSelection } from "@/lib/use-bulk-selection";
+import { useMobileDialogFocus } from "./use-mobile-dialog-focus";
+import { AddLinkDialog } from "@/components/notes/AddLinkDialog";
+import { getLinkHubReference } from "@/lib/link-hubs";
+import { MobileSavedLink } from "./MobileSavedLink";
+
 interface MobileNote {
   id: string;
   title: string;
@@ -188,7 +199,8 @@ interface MobileNote {
   imagePath: string | null;
   body: string;
   type: string;
-  kind: "note" | "external" | "file";
+  kind: "note" | "external" | "file" | "link";
+  archived: boolean;
   icon: string | null;
   fileName?: string;
   updated: string;
@@ -219,17 +231,19 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
   const typePath = noteTypePath(note);
   const typeKey = typePath.join("/");
   const configuredIcon = typeIcons[typeKey] ?? typeIcons[typePath[0] ?? ""];
-  const type = isExternalNote(note)
+  const link = getLinkHubReference(note);
+  const type = link ? "Saved links" : isExternalNote(note)
     ? "External Note"
     : typePath.join(" / ") || "Inbox";
   return {
     id: note.id,
+    archived: isArchived(note),
     title: noteListTitle(note),
     preview: file?.name ?? (noteSnippet(note) || "Empty note"),
     imagePath: firstNoteImagePath(note),
     body: editorBody(note),
     type,
-    kind: file ? "file" : isExternalNote(note) ? "external" : "note",
+    kind: link ? "link" : file ? "file" : isExternalNote(note) ? "external" : "note",
     icon: configuredIcon ?? null,
     fileName: file?.name,
     updated: formatUpdated(note.updatedAt),
@@ -239,7 +253,7 @@ function presentNote(note: Note, typeIcons: Record<string, string> = {}): Mobile
 
 function StatusBar() {
   return (
-    <div className="flex h-11 shrink-0 items-end justify-between px-6 pb-2 text-[12px] font-semibold text-[#20201e] dark:text-[#f5f3ef]">
+    <div className="flex h-11 shrink-0 items-end justify-between px-6 pb-2 text-[12px] font-semibold text-[#20201e] dark:text-zerus-text">
       <span>9:41</span>
       <div className="flex items-center gap-1.5" aria-label="Phone status">
         <span className="flex items-end gap-[2px]" aria-hidden="true">
@@ -260,6 +274,8 @@ function StatusBar() {
 interface NoteCardProps {
   note: MobileNote;
   onOpen: (note: MobileNote) => void;
+  selecting?: boolean;
+  selected?: boolean;
 }
 
 function NoteCardImage({ path }: { path: string }) {
@@ -291,11 +307,13 @@ function NoteCardImage({ path }: { path: string }) {
   );
 }
 
-function NoteCard({ note, onOpen }: NoteCardProps) {
+function NoteCard({ note, onOpen, selecting, selected }: NoteCardProps) {
   const icon = note.icon ? (
     <TypeIcon icon={note.icon} size={18} />
   ) : note.kind === "external" ? (
     <ExternalLink className="h-[18px] w-[18px]" />
+  ) : note.kind === "link" ? (
+    <Link2 className="h-[18px] w-[18px]" />
   ) : note.kind === "file" ? (
     <File className="h-[18px] w-[18px]" />
   ) : (
@@ -305,18 +323,19 @@ function NoteCard({ note, onOpen }: NoteCardProps) {
     <button
       type="button"
       onClick={() => onOpen(note)}
-      className="group w-full border-b border-zerus-text/[0.065] px-1 py-4 text-left transition last:border-b-0 active:bg-zerus-text/[0.035]"
+      aria-pressed={selecting ? selected : undefined}
+      className="mobile-note-card group w-full border-b border-zerus-text/[0.065] px-1 py-3.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-zerus-accent last:border-b-0 active:bg-zerus-text/[0.035]"
     >
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-zerus-text/[0.07] text-zerus-accent" aria-hidden="true">{icon}</span>
+        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-zerus-text/[0.05] text-zerus-accent" aria-hidden="true">{selecting ? <span className={cn("flex h-6 w-6 items-center justify-center rounded-md border", selected ? "border-zerus-accent bg-zerus-accent text-white" : "border-zerus-text/30")}>{selected && <Check className="h-4 w-4" />}</span> : icon}</span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="truncate text-[16px] font-semibold tracking-[-0.015em] text-[#f2efea]">{note.title}</h3>
-            {note.pinned && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#d84b40]" title="Pinned" />}
+            <h3 className="truncate text-[16px] font-semibold tracking-[-0.015em] text-zerus-text">{note.title}</h3>
+            {note.pinned && <Pin className="h-3.5 w-3.5 shrink-0 text-zerus-accent" aria-label="Pinned" />}
           </div>
-          <p className="mt-1 line-clamp-2 text-[13px] leading-[1.4] text-[#9b9893]">{note.preview}</p>
-          <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-[#74716d]">
-            <span className="flex items-center gap-1 text-zerus-accent"><Folder className="h-3 w-3" />{note.type}</span><span>·</span><span>{note.updated}</span>
+          <p className="mt-1 line-clamp-1 text-[13px] leading-[1.4] text-zerus-text/65">{note.preview}</p>
+          <div className="mt-2 flex items-center gap-2 text-[11px] font-medium text-zerus-text/55">
+            <span className="flex items-center gap-1 text-zerus-accent"><Folder className="h-3 w-3" />{note.type}</span><span>·</span><span>{note.updated}</span>{note.archived && <span className="text-zerus-text/65">Archived</span>}
           </div>
         </div>
         {note.imagePath && <NoteCardImage path={note.imagePath} />}
@@ -325,45 +344,26 @@ function NoteCard({ note, onOpen }: NoteCardProps) {
   );
 }
 
-interface BottomSearchProps {
-  query: string;
-  onQueryChange: (query: string) => void;
-  onCreate?: () => void;
+function MobileNavigation({ tasksActive, onNotes, onTasks, onChat, onCreate, createLabel = "New note" }: {
+  tasksActive: boolean;
+  onNotes: () => void;
+  onTasks: () => void;
   onChat: () => void;
+  onCreate?: () => void;
   createLabel?: string;
-}
-
-function BottomSearch({ query, onQueryChange, onCreate, onChat, createLabel = "Create a new note" }: BottomSearchProps) {
-  return (
-    <div className="mobile-bottom-search pointer-events-none absolute inset-x-0 bottom-0 z-30 flex items-center gap-2.5 bg-gradient-to-t from-zerus-editor via-zerus-editor/95 to-transparent px-5 pb-7 pt-8">
-      <GlobalSearchButton compact className="pointer-events-auto h-[52px] shrink-0 rounded-full bg-zerus-surface" />
-      <label className="pointer-events-auto relative min-w-0 flex-1">
-        <span className="sr-only">Search notes</span>
-        <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#f2f2f7]" strokeWidth={2.1} />
-        <Input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="Search"
-          className="h-[52px] rounded-[26px] border border-zerus-text/[0.10] bg-zerus-surface/95 pl-12 pr-10 text-[17px] text-zerus-text shadow-[0_8px_28px_rgba(0,0,0,0.24)] backdrop-blur-xl placeholder:text-zerus-text/50 focus-visible:ring-1 focus-visible:ring-zerus-accent/70"
-        />
-        {query && (
-          <button type="button" onClick={() => onQueryChange("")} className="absolute right-3.5 top-1/2 -translate-y-1/2 rounded-full bg-white/15 p-1 text-[#c8c8ce]" aria-label="Clear search">
-            <X className="h-3 w-3" />
-          </button>
-        )}
-      </label>
-      <button type="button" onClick={onChat} className="pointer-events-auto flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-zerus-surface text-zerus-accent shadow-[0_8px_24px_rgba(0,0,0,0.22)] transition active:scale-95" aria-label="Open voice chat">
-        <Sparkles className="h-6 w-6" />
-      </button>
-      {onCreate && <button type="button" onClick={onCreate} className="pointer-events-auto flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-full bg-zerus-accent text-white shadow-[0_8px_24px_rgba(0,0,0,0.22)] transition active:scale-95" aria-label={createLabel}>
-        <Plus className="h-7 w-7" strokeWidth={2} />
-      </button>}
-    </div>
-  );
+}) {
+  const item = "flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-medium text-zerus-text/65 transition-colors active:bg-zerus-text/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zerus-accent";
+  return <nav aria-label="Main navigation" className="mobile-bottom-search absolute inset-x-0 bottom-0 z-30 flex gap-1 border-t border-zerus-text/10 bg-zerus-editor/95 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2 backdrop-blur-xl">
+    <button type="button" className={cn(item, !tasksActive && "bg-zerus-accent/10 text-zerus-accent")} aria-current={!tasksActive ? "page" : undefined} onClick={onNotes}><FileText className="h-5 w-5" />Notes</button>
+    <button type="button" className={cn(item, tasksActive && "bg-zerus-accent/10 text-zerus-accent")} aria-current={tasksActive ? "page" : undefined} onClick={onTasks}><CheckSquare className="h-5 w-5" />Tasks</button>
+    <button type="button" className={item} onClick={() => window.dispatchEvent(new Event("zerus:global-search"))}><Search className="h-5 w-5" />Search</button>
+    <button type="button" className={item} onClick={onChat}><Sparkles className="h-5 w-5" />Ask AI</button>
+    {onCreate && <button type="button" className={cn(item, "text-zerus-accent")} aria-label={createLabel} onClick={onCreate}><Plus className="h-5 w-5" />New</button>}
+  </nav>;
 }
 
 interface LibraryDrawerProps {
-  counts: { all: number; external: number; files: number; trash: number };
+  counts: { all: number; external: number; files: number; links: number; tasks: number; trash: number };
   typeTree: TypeNode[];
   typeIcons: Record<string, string>;
   onClose: () => void;
@@ -455,6 +455,8 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
     });
   };
 
+  useMobileDialogFocus(drawerRef, closeWithAnimation);
+
   const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
     if (!touch || isClosing) return;
@@ -542,6 +544,8 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
       <div onScroll={(event) => updateHeaderProgress(event.currentTarget.scrollTop)} className="mobile-library-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] touch-pan-y" style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}>
         <div className="rounded-[18px] bg-zerus-surface p-1">
           {scopeRow("All Notes", counts.all, <FileText className="h-[18px] w-[18px]" />, { kind: "all" })}
+          {scopeRow("Tasks", counts.tasks, <CheckSquare className="h-[18px] w-[18px]" />, { kind: "tasks" })}
+          {scopeRow("Links", counts.links, <Link2 className="h-[18px] w-[18px]" />, { kind: "links" })}
           {scopeRow("External Notes", counts.external, <ExternalLink className="h-[18px] w-[18px]" />, { kind: "external" })}
           {scopeRow("Files", counts.files, <File className="h-[18px] w-[18px]" />, { kind: "files" })}
         </div>
@@ -580,6 +584,8 @@ interface TypeActionSheetProps {
 }
 
 function TypeActionSheet({ target, onClose, onMoveUp, onMoveDown, onChangeIcon, onAddSubtype, onRename, onDelete }: TypeActionSheetProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useMobileDialogFocus(dialogRef, onClose);
   const action = (
     label: string,
     icon: ReactNode,
@@ -587,16 +593,16 @@ function TypeActionSheet({ target, onClose, onMoveUp, onMoveDown, onChangeIcon, 
     disabled = false,
     destructive = false,
   ) => (
-    <button type="button" disabled={disabled} onClick={() => { onClose(); run(); }} className={cn("flex min-h-[54px] w-full items-center gap-3 border-b border-white/[0.08] px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05] disabled:opacity-35", destructive && "text-[#ff6961]")}>
+    <button type="button" disabled={disabled} onClick={() => { onClose(); run(); }} className={cn("flex min-h-[54px] w-full items-center gap-3 border-b border-zerus-text/10 px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05] disabled:opacity-35", destructive && "text-[#ff6961]")}>
       <span className="flex h-8 w-8 items-center justify-center">{icon}</span><span>{label}</span>
     </button>
   );
   return (
-    <div className="absolute inset-0 z-[70] flex items-end bg-black/55" role="dialog" aria-modal="true" aria-label={`Actions for ${target.node.name}`} onClick={onClose}>
-      <section className="w-full rounded-t-[26px] bg-[#242426] px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+    <div ref={dialogRef} className="absolute inset-0 z-[70] flex items-end bg-black/55" role="dialog" aria-modal="true" aria-label={`Actions for ${target.node.name}`} onClick={onClose}>
+      <section className="max-h-full w-full overflow-y-auto overscroll-contain rounded-t-[26px] bg-zerus-editor px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
-        <h3 className="px-2 pb-3 pt-4 text-center text-[15px] font-semibold text-[#a6a6ab]">{target.node.name}</h3>
-        <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+        <h3 className="px-2 pb-3 pt-4 text-center text-[15px] font-semibold text-zerus-text/65">{target.node.name}</h3>
+        <div className="overflow-hidden rounded-[16px] bg-zerus-surface">
           {action("Move up", <ArrowUp className="h-5 w-5" />, onMoveUp, !target.canMoveUp)}
           {action("Move down", <ArrowDown className="h-5 w-5" />, onMoveDown, !target.canMoveDown)}
           {action("Change icon", <Smile className="h-5 w-5" />, onChangeIcon)}
@@ -604,7 +610,7 @@ function TypeActionSheet({ target, onClose, onMoveUp, onMoveDown, onChangeIcon, 
           {action("Rename type", <Pencil className="h-5 w-5" />, onRename)}
           {action("Delete type", <Trash2 className="h-5 w-5" />, onDelete, false, true)}
         </div>
-        <button type="button" onClick={onClose} className="mt-3 h-[52px] w-full rounded-[16px] bg-[#2c2c2e] text-[16px] font-semibold active:bg-[#363638]">Cancel</button>
+        <button type="button" onClick={onClose} className="mt-3 h-[52px] w-full rounded-[16px] bg-zerus-surface text-[16px] font-semibold active:bg-[#363638]">Cancel</button>
       </section>
     </div>
   );
@@ -662,6 +668,8 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
     closeTimer.current = window.setTimeout(finishClose, 320);
   };
 
+  useMobileDialogFocus(sheetRef, onClose);
+
   const handleDragStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || isClosing) return;
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -711,7 +719,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
       disabled={disabled}
       onClick={() => { onClose(); run(); }}
       className={cn(
-        "flex min-h-[56px] w-full items-center gap-3 border-b border-white/[0.08] px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05]",
+        "flex min-h-[56px] w-full items-center gap-3 border-b border-zerus-text/10 px-4 text-left text-[16px] last:border-b-0 active:bg-white/[0.05]",
         destructive && "text-[#ff6961]",
         disabled && "opacity-40",
       )}
@@ -734,7 +742,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
     >
       <section
         ref={sheetRef}
-        className="max-h-full min-h-0 w-full touch-pan-y overflow-y-auto overscroll-contain rounded-t-[26px] bg-[#242426] px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 shadow-2xl [-webkit-overflow-scrolling:touch]"
+        className="max-h-full min-h-0 w-full touch-pan-y overflow-y-auto overscroll-contain rounded-t-[26px] bg-zerus-editor px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3 shadow-2xl [-webkit-overflow-scrolling:touch]"
         style={{
           transform: `translate3d(0, ${dragOffset}px, 0)`,
           transition: isDragging ? "none" : "transform 280ms cubic-bezier(0.32, 0.72, 0, 1)",
@@ -753,9 +761,9 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           onPointerCancel={handleDragCancel}
         >
           <div className="mx-auto h-1 w-10 rounded-full bg-white/20" />
-          <h3 className="truncate px-2 pt-4 text-center text-[15px] font-semibold text-[#a6a6ab]">{noteTitle(note)}</h3>
+          <h3 className="truncate px-2 pt-4 text-center text-[15px] font-semibold text-zerus-text/65">{noteTitle(note)}</h3>
         </div>
-        <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+        <div className="overflow-hidden rounded-[16px] bg-zerus-surface">
           {action("Properties", <Link2 className="h-5 w-5" />, onShowProperties)}
           {action("Chat about this note", <Sparkles className="h-5 w-5" />, onChat)}
           {action("Find in note", <Search className="h-5 w-5" />, onFind)}
@@ -769,7 +777,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
         {file && !trashed && (
           <>
             <p className="px-2 pb-2 pt-4 text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7f7f85]">File actions</p>
-            <div className="overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+            <div className="overflow-hidden rounded-[16px] bg-zerus-surface">
               {action(`Preview ${file.name}`, <ExternalLink className="h-5 w-5" />, onOpenFile)}
               {action("Refresh file access", <RefreshCw className="h-5 w-5" />, onRefreshFile)}
               {fileExists === false && action("Locate file", <MapPin className="h-5 w-5" />, onLocateFile)}
@@ -781,7 +789,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
           </>
         )}
         {!external && (
-          <div className="mt-3 overflow-hidden rounded-[16px] bg-[#2c2c2e]">
+          <div className="mt-3 overflow-hidden rounded-[16px] bg-zerus-surface">
             {!trashed && action(archived ? "Unarchive" : "Archive", archived ? <ArchiveRestore className="h-5 w-5" /> : <Archive className="h-5 w-5" />, () => toggleNoteArchived(note.id))}
             {!trashed && action(note.pinned ? "Unpin" : "Pin", <Pin className={cn("h-5 w-5", note.pinned && "fill-current")} />, () => toggleNotePinned(note.id))}
             {trashed
@@ -789,7 +797,7 @@ function NoteActionSheet({ note, fileExists, onClose, onShowProperties, onOpenFi
               : action("Move to trash", <Trash2 className="h-5 w-5" />, onMoveToTrash, true)}
           </div>
         )}
-        <button type="button" onClick={onClose} className="mt-3 h-[52px] w-full rounded-[16px] bg-[#2c2c2e] text-[16px] font-semibold active:bg-[#363638]">Cancel</button>
+        <button type="button" onClick={onClose} className="mt-3 h-[52px] w-full rounded-[16px] bg-zerus-surface text-[16px] font-semibold active:bg-[#363638]">Cancel</button>
       </section>
     </div>
   );
@@ -801,6 +809,7 @@ interface NoteViewProps {
   schemas: PropertySchemas;
   typeTree: TypeNode[];
   onBack: () => void;
+  backLabel?: string;
   onBodyChange: (body: string) => void;
   onRename: (title: string, body: string) => void;
   onOpenNote: (id: string) => void;
@@ -814,6 +823,7 @@ function NoteView({
   schemas,
   typeTree,
   onBack,
+  backLabel = "Back to notes",
   onBodyChange,
   onRename,
   onOpenNote,
@@ -830,6 +840,8 @@ function NoteView({
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleRegionHeight, setTitleRegionHeight] = useState(0);
   const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const propertiesRef = useRef<HTMLDivElement>(null);
+  useMobileDialogFocus(propertiesRef, () => setPropertiesOpen(false), propertiesOpen);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -1088,7 +1100,8 @@ function NoteView({
       onTouchCancel={() => { touchStart.current = null; setIsDragging(false); setDragX(0); }}
     >
       <div
-        className="relative z-10 flex min-h-0 flex-1 flex-col bg-[#1c1d1e] shadow-[-10px_0_28px_rgba(0,0,0,0.28)]"
+        inert={propertiesOpen || actionsOpen}
+        className="relative z-10 flex min-h-0 flex-1 flex-col bg-zerus-editor shadow-[-10px_0_28px_rgba(0,0,0,0.28)]"
         style={{ transform: `translate3d(${propertiesOpen ? 0 : Math.max(0, dragX)}px, 0, 0)`, transition }}
         onTransitionEnd={(event) => {
           if (event.target === event.currentTarget && event.propertyName === "transform") finishSettle();
@@ -1097,17 +1110,17 @@ function NoteView({
       <header
         className="relative z-20 grid h-[60px] shrink-0 grid-cols-[44px_1fr_44px] items-center border-b px-4 pb-3 pt-1 backdrop-blur-xl"
         style={{
-          backgroundColor: "rgb(28 29 30 / var(--mobile-note-header-bg-opacity))",
-          borderBottomColor: "rgb(255 255 255 / var(--mobile-note-header-border-opacity))",
+          backgroundColor: "rgb(var(--zerus-editor-bg) / var(--mobile-note-header-bg-opacity))",
+          borderBottomColor: "rgb(var(--zerus-text) / var(--mobile-note-header-border-opacity))",
         }}
       >
         <Button
           variant="ghost"
           size="icon"
-          className="h-11 w-11 touch-manipulation rounded-full text-[#f5f3ef] hover:bg-white/[0.12]"
+          className="h-11 w-11 touch-manipulation rounded-full text-zerus-text hover:bg-white/[0.12]"
           style={{ backgroundColor: "rgb(255 255 255 / var(--mobile-note-button-bg-opacity))" }}
           onClick={() => settle(pageWidth(), onBack)}
-          aria-label="Back to notes"
+          aria-label={backLabel}
         >
           <ArrowLeft className="h-5 w-5" />
         </Button>
@@ -1132,7 +1145,7 @@ function NoteView({
             <span className="order-1 max-w-full truncate text-[10px] font-medium leading-none text-zerus-accent">
               {presentedNote.type}
             </span>
-            <span className="order-2 max-w-full truncate text-[14px] font-medium leading-tight tracking-[-0.015em] text-[#f5f3ef]">
+            <span className="order-2 max-w-full truncate text-[14px] font-medium leading-tight tracking-[-0.015em] text-zerus-text">
               {presentedNote.title}
             </span>
           </span>
@@ -1140,7 +1153,7 @@ function NoteView({
         <Button
           variant="ghost"
           size="icon"
-          className="h-11 w-11 touch-manipulation rounded-full text-[#f5f3ef] hover:bg-white/[0.12]"
+          className="h-11 w-11 touch-manipulation rounded-full text-zerus-text hover:bg-white/[0.12]"
           style={{ backgroundColor: "rgb(255 255 255 / var(--mobile-note-button-bg-opacity))" }}
           onClick={() => setActionsOpen(true)}
           aria-label="Note actions"
@@ -1156,7 +1169,7 @@ function NoteView({
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#df5149]/15 text-[#ef6b62]">
             <Trash2 className="h-4 w-4" />
           </span>
-          <span className="min-w-0 flex-1 text-sm font-medium text-[#c9c5bf]">
+          <span className="min-w-0 flex-1 text-sm font-medium text-zerus-text/80">
             This note is in Recently Deleted.
           </span>
           <Button
@@ -1177,7 +1190,7 @@ function NoteView({
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#df5149]/15 text-[#ef6b62]">
             <Archive className="h-4 w-4" />
           </span>
-          <span className="min-w-0 flex-1 text-sm font-medium text-[#c9c5bf]">
+          <span className="min-w-0 flex-1 text-sm font-medium text-zerus-text/80">
             This note is archived.
           </span>
           <Button
@@ -1222,17 +1235,18 @@ function NoteView({
                     setEditingTitle(false);
                   }
                 }}
-                className="h-auto border-0 bg-transparent px-0 text-[27px] font-bold leading-[1.06] tracking-[-0.045em] text-[#f5f3ef] shadow-none focus-visible:ring-0"
+                className="h-auto border-0 bg-transparent px-0 text-[27px] font-bold leading-[1.06] tracking-[-0.045em] text-zerus-text shadow-none focus-visible:ring-0"
                 aria-label="Note title"
               />
             ) : (
               <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
-                <h1 className="text-[27px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-[#f5f3ef]">{presentedNote.title}</h1>
+                <h1 className="text-[27px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-zerus-text">{presentedNote.title}</h1>
               </button>
             )}
+          {getLinkHubReference(note) && <MobileSavedLink noteId={note.id} url={getLinkHubReference(note)!.url} />}
           {file && <button type="button" onClick={() => onOpenFile(note.id, "preview")} className="mt-5 flex w-full min-w-0 select-none items-center gap-3 rounded-[14px] bg-[#292a2b] px-4 py-3.5 text-left active:bg-[#333436]">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#df5149] text-white"><File className="h-5 w-5" /></span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-[#8e8e93]">Preview file</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{file.name}</span><span className="mt-0.5 block text-xs text-zerus-text/65">Preview file</span></span>
             <ExternalLink className="h-4 w-4 shrink-0 text-[#77777d]" />
           </button>}
           </div>
@@ -1261,7 +1275,8 @@ function NoteView({
       </div>
       {propertiesVisible && (
         <div
-          className="mobile-properties-panel absolute inset-0 z-40 flex flex-col bg-[#1c1d1e]"
+          ref={propertiesRef}
+          className="mobile-properties-panel absolute inset-0 z-40 flex flex-col bg-zerus-editor"
           role="dialog"
           aria-modal="true"
           aria-label="Note properties"
@@ -1277,8 +1292,9 @@ function NoteView({
             if (event.target === event.currentTarget && event.propertyName === "transform") finishSettle();
           }}
         >
-          <header className="flex h-12 shrink-0 items-center justify-end border-b border-white/[0.07] px-3">
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full bg-white/[0.08] text-[#f5f3ef] hover:bg-white/[0.12]" onClick={() => settle(pageWidth(), () => setPropertiesOpen(false))} aria-label="Close properties"><X className="h-5 w-5" /></Button>
+          <header className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-zerus-text/10 px-4">
+            <div className="min-w-0"><h2 className="text-base font-semibold">Note details</h2><p className="truncate text-xs text-zerus-text/60">{presentedNote.title}</p></div>
+            <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 rounded-full bg-zerus-text/[0.08] text-zerus-text hover:bg-zerus-text/[0.12]" onClick={() => settle(pageWidth(), () => setPropertiesOpen(false))} aria-label="Close properties"><X className="h-5 w-5" /></Button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <PropertiesSection
@@ -1292,13 +1308,13 @@ function NoteView({
             />
             <section className="border-t border-white/[0.07] px-4 py-4">
               <div className="mb-3 flex items-center gap-2">
-                <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-[#9b9893]">
+                <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-zerus-text/65">
                   Relations & backlinks
                   {backlinkTotal + relationTotal
                     ? ` · ${backlinkTotal + relationTotal}`
                     : ""}
                 </h2>
-                <label className="flex items-center gap-2 text-xs text-[#9b9893]">
+                <label className="flex items-center gap-2 text-xs text-zerus-text/65">
                   <input
                     type="checkbox"
                     checked={showArchivedBacklinks}
@@ -1695,6 +1711,8 @@ function MobileSettings({
   const [locationDraft, setLocationDraft] = useState("");
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
   const [locationMessage, setLocationMessage] = useState<string | null>(null);
+  const [driveLocationId, setDriveLocationId] = useState<string | null>(null);
+  const [providerLocationId, setProviderLocationId] = useState<string | null>(null);
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false);
   const [page, setPage] = useState<MobileSettingsPage>("root");
   const defaultTypeOptions = [...new Set([
@@ -1702,7 +1720,7 @@ function MobileSettings({
     ...flattenTypeKeys(typeTree),
     typeKey(defaultNoteType),
   ])];
-  const mapLocation = async (id: string) => {
+  const mapFilesLocation = async (id: string) => {
     setBusyLocation(id);
     setLocationMessage(null);
     try {
@@ -1715,24 +1733,73 @@ function MobileSettings({
     }
   };
 
-  const addLocation = async () => {
-    const name = locationDraft.trim();
-    if (!name) return;
-    setBusyLocation("new");
+  const beginLocationMapping = (id: string, mapped?: string) => {
     setLocationMessage(null);
-    try {
-      const added = await addFileLocation(name);
-      if (added) setLocationDraft("");
-      else setLocationMessage("No folder was selected.");
-    } catch (error) {
-      setLocationMessage(error instanceof Error ? error.message : String(error));
-    } finally {
-      setBusyLocation(null);
+    if (!mapped) {
+      setProviderLocationId(id);
+    } else if (parseGoogleDriveLocation(mapped)) {
+      setDriveLocationId(id);
+    } else {
+      void mapFilesLocation(id);
     }
   };
 
+  const addLocation = async () => {
+    const name = locationDraft.trim();
+    if (!name) return;
+    setLocationMessage(null);
+    const id = createFileLocation(name);
+    if (!id) return;
+    setLocationDraft("");
+    setProviderLocationId(id);
+  };
+
+  if (driveLocationId) {
+    return <GoogleDrivePicker
+      purpose="file-location"
+      onClose={() => setDriveLocationId(null)}
+      onChoose={async (selection) => mapGoogleDriveFileLocation(driveLocationId, selection)}
+    />;
+  }
+
   return (
     <div className="absolute inset-0 z-50 flex min-h-0 items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Mobile settings">
+      <Dialog open={providerLocationId !== null} onOpenChange={(open) => { if (!open) setProviderLocationId(null); }}>
+        <DialogContent className="max-w-[calc(100%-2rem)] rounded-[18px] border-zerus-text/[0.08] bg-zerus-surface text-zerus-text">
+          <DialogHeader>
+            <DialogTitle>Choose storage provider</DialogTitle>
+            <DialogDescription>How is this file location available on this iPhone?</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto min-h-14 w-full justify-start gap-3 px-4 py-3 text-left"
+              onClick={() => {
+                const id = providerLocationId;
+                setProviderLocationId(null);
+                if (id) void mapFilesLocation(id);
+              }}
+            >
+              <FolderOpen className="h-5 w-5 shrink-0" />
+              <span><span className="block font-semibold">Files or iCloud Drive</span><span className="block text-xs font-normal text-zerus-text/55">Choose a folder with the iOS Files picker</span></span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-auto min-h-14 w-full justify-start gap-3 px-4 py-3 text-left"
+              onClick={() => {
+                const id = providerLocationId;
+                setProviderLocationId(null);
+                if (id) setDriveLocationId(id);
+              }}
+            >
+              <Cloud className="h-5 w-5 shrink-0" />
+              <span><span className="block font-semibold">Google Drive</span><span className="block text-xs font-normal text-zerus-text/55">Use the connected Google account</span></span>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <section className="flex h-[92%] max-h-[92dvh] min-h-0 w-full flex-col overflow-hidden rounded-t-[28px] border-t border-zerus-text/[0.06] bg-zerus-editor text-zerus-text shadow-2xl">
         <header className="grid shrink-0 grid-cols-[minmax(72px,auto)_1fr_minmax(72px,auto)] items-center border-b border-zerus-text/[0.06] bg-zerus-editor px-4 pb-3 pt-4">
           <div className="flex justify-start">
@@ -1854,7 +1921,7 @@ function MobileSettings({
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-zerus-text/45">File locations</p>
           <div className="rounded-[16px] bg-zerus-surface p-3">
           <p className="px-1 pb-3 text-xs leading-4 text-zerus-text/55">
-            Map each synced location to its folder on this device. Use a provider that supports folder access, such as iCloud Drive. Google Drive vaults connect separately; Drive file-location mappings are not supported.
+            Map each synced location to its folder on this device. Choose Files/iCloud Drive or connect it through Google Drive.
           </p>
           <div className="space-y-2">
             {fileLocations.map((fileLocation) => {
@@ -1875,7 +1942,7 @@ function MobileSettings({
                       type="button"
                       variant="ghost"
                       disabled={busyLocation !== null}
-                      onClick={() => void mapLocation(fileLocation.id)}
+                      onClick={() => beginLocationMapping(fileLocation.id, mapped)}
                       className="h-9 shrink-0 rounded-[10px] bg-zerus-text/[0.08] px-3 text-xs font-semibold text-zerus-accent hover:bg-zerus-text/[0.12] hover:text-zerus-accent"
                     >
                       {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <MapPin className="mr-1 h-3.5 w-3.5" />}
@@ -1894,7 +1961,7 @@ function MobileSettings({
                     </Button>
                   </div>
                   <p className="mt-1 truncate pl-7 text-[11px] text-zerus-text/45">
-                    {mapped ?? "Not configured on this device"}
+                    {mapped ? fileLocationMappingLabel(mapped) : "Not configured on this device"}
                     {usages.length > 0 && ` · ${usages.length} file${usages.length === 1 ? "" : "s"}`}
                   </p>
                 </div>
@@ -1914,7 +1981,7 @@ function MobileSettings({
               onClick={() => void addLocation()}
               className="h-10 shrink-0 rounded-[11px] bg-zerus-accent px-3 text-xs font-semibold text-white"
             >
-              {busyLocation === "new" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderOpen className="mr-1 h-4 w-4" />}
+              <FolderOpen className="mr-1 h-4 w-4" />
               Add
             </Button>
           </div>
@@ -1982,9 +2049,9 @@ function VaultSetup({
     icon: ReactNode,
     action: () => Promise<boolean>,
   ) => (
-    <button type="button" disabled={busyAction !== null || !nativeAvailable} onClick={() => void run(label, action)} className="flex w-full items-center gap-3 border-b border-white/[0.08] px-4 py-4 text-left last:border-0 disabled:opacity-50">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#343536] text-[#f5f3ef]">{icon}</span>
-      <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{label}</span><span className="mt-0.5 block text-xs leading-4 text-[#8e8e93]">{description}</span></span>
+    <button type="button" disabled={busyAction !== null || !nativeAvailable} onClick={() => void run(label, action)} className="flex w-full items-center gap-3 border-b border-zerus-text/10 px-4 py-4 text-left last:border-0 disabled:opacity-50">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-[#343536] text-zerus-text">{icon}</span>
+      <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{label}</span><span className="mt-0.5 block text-xs leading-4 text-zerus-text/65">{description}</span></span>
       {busyAction === label ? <Loader2 className="h-5 w-5 animate-spin text-[#ef6b62]" /> : <ChevronRight className="h-5 w-5 text-[#66666b]" />}
     </button>
   );
@@ -1996,7 +2063,7 @@ function VaultSetup({
   }} />;
 
   return (
-    <main className="absolute inset-0 z-50 flex flex-col overflow-y-auto bg-[#1c1d1e] px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
+    <main className="absolute inset-0 z-50 flex flex-col overflow-y-auto bg-zerus-editor px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
       {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={busyAction !== null} className="ml-auto h-10 w-10 rounded-full bg-white/[0.08]" aria-label="Close vault setup"><X className="h-5 w-5" /></Button>}
       <div className={cn("mx-auto flex w-full max-w-sm flex-1 flex-col justify-center", onClose ? "pb-4" : "pb-10")}>
         <span className="flex h-14 w-14 items-center justify-center rounded-[17px] bg-[#df5149] text-white shadow-[0_10px_30px_rgba(223,81,73,0.24)]"><Folder className="h-7 w-7" /></span>
@@ -2038,6 +2105,9 @@ export function MobileZerus() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchChatRequest | null>(null);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [addLinkOpen, setAddLinkOpen] = useState(false);
+  const [listFilters, setListFilters] = useState<NoteListFilterState>({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" });
   const [searchTaskId, setSearchTaskId] = useState<string | null>(null);
   const tasks = useTasks();
   const taskLists = useTaskLists();
@@ -2046,12 +2116,13 @@ export function MobileZerus() {
   useEffect(() => { if (selectedNoteId) recordSearchVisit(vault.location, `note:${selectedNoteId}`); }, [selectedNoteId, vault.location]);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatScope, setChatScope] = useState<ChatScope>({ kind: "vault" });
-  const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat">("notes");
+  const [noteOrigin, setNoteOrigin] = useState<"notes" | "chat" | "tasks">("notes");
   const [notesPreparationError, setNotesPreparationError] = useState<string | null>(null);
   const [emptyTrashConfirmOpen, setEmptyTrashConfirmOpen] = useState(false);
   const [deleteImageTargetId, setDeleteImageTargetId] = useState<string | null>(null);
   const [vaultSetupOpen, setVaultSetupOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [scope, setScope] = useState<NoteFilter>({ kind: "all" });
   const [typeOrder, setTypeOrder] = useState<string[]>(() => loadNoteTypeOrder(null));
   const [defaultNoteType, setDefaultNoteTypeState] = useState<string[]>(() => loadDefaultNoteType(null));
@@ -2107,7 +2178,9 @@ export function MobileZerus() {
 
   useEffect(() => {
     const restoreNavigation = (entry: MobileNavigationEntry | null) => {
-      if (!entry || entry.view === "notes") {
+      if (!entry || entry.view === "notes" || entry.view === "tasks") {
+        setTasksOpen(entry?.view === "tasks");
+        setSearchTaskId(entry?.view === "tasks" ? entry.taskId ?? null : null);
         setSelectedNoteId(null);
         setChatOpen(false);
         setChatHistoryOpen(false);
@@ -2115,10 +2188,12 @@ export function MobileZerus() {
       }
       if (entry.view === "chat" || entry.view === "chat-history") {
         setSelectedNoteId(null);
+        setTasksOpen(false);
         setChatOpen(true);
         setChatHistoryOpen(entry.view === "chat-history");
         return;
       }
+      setTasksOpen(entry.origin === "tasks");
       setNoteOrigin(entry.origin);
       setSelectedNoteId(entry.noteId);
       setChatOpen(entry.origin === "chat");
@@ -2171,23 +2246,44 @@ export function MobileZerus() {
         : scope.kind === "trash"
           ? "Recently Deleted"
           : scope.path.join(" / ");
+  const scopeNotes = useMemo(
+    () => filterNotes(vault.notes, scope, "", { ...EMPTY_NOTE_LIST_FILTERS, showArchived: true }),
+    [vault.notes, scope],
+  );
   const filteredNotes = useMemo(() => {
-    return filterNotes(vault.notes, scope, query).map((note) =>
+    return filterNotes(vault.notes, scope, deferredQuery, listFilters).map((note) =>
       presentNote(note, vault.typeIcons),
     );
-  }, [query, scope, vault.notes, vault.typeIcons]);
+  }, [deferredQuery, listFilters, scope, vault.notes, vault.typeIcons]);
+  const filteredNoteIds = useMemo(() => new Set(filteredNotes.map(note => note.id)), [filteredNotes]);
+  const bulkSelection = useBulkSelection([...filteredNoteIds], JSON.stringify([scope, deferredQuery, listFilters]));
+  const openCard = (note: MobileNote) => {
+    if (bulkSelection.selectMode) bulkSelection.toggleOne(note.id);
+    else openNote(note.id);
+  };
   const libraryCounts = useMemo(() => ({
     all: vault.isNotePaginationEnabled ? vault.totalNoteCount : filterNotes(vault.notes, { kind: "all" }, "").length,
+    tasks: tasks.filter(task => !task.completed).length,
+    links: filterNotes(vault.notes, { kind: "links" }, "").length,
     external: filterNotes(vault.notes, { kind: "external" }, "").length,
     files: filterNotes(vault.notes, { kind: "files" }, "").length,
     trash: filterNotes(vault.notes, { kind: "trash" }, "").length + vault.trashedImages.length,
-  }), [vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount, vault.trashedImages.length]);
+  }), [tasks, vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount, vault.trashedImages.length]);
 
   const pushNavigation = (entry: MobileNavigationEntry) => {
     window.history.pushState(withMobileNavigationEntry(window.history.state, entry), "");
   };
 
-  const openNote = (noteId: string, origin: "notes" | "chat" = "notes") => {
+  const openTasks = (taskId: string | null = null) => {
+    setSearchTaskId(taskId);
+    setTasksOpen(true);
+    setSelectedNoteId(null);
+    setChatOpen(false);
+    setLibraryOpen(false);
+    pushNavigation(taskId ? { view: "tasks", taskId } : { view: "tasks" });
+  };
+
+  const openNote = (noteId: string, origin: "notes" | "chat" | "tasks" = "notes") => {
     setNoteOrigin(origin);
     setSelectedNoteId(noteId);
     pushNavigation({ view: "note", noteId, origin });
@@ -2249,6 +2345,9 @@ export function MobileZerus() {
   const recentNotes = filteredNotes.filter((note) => !note.pinned);
 
   const resetNavigation = () => {
+    setTasksOpen(false);
+    setSearchTaskId(null);
+    setListFilters({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" });
     setSelectedNoteId(null);
     setQuery("");
     setScope({ kind: "all" });
@@ -2256,6 +2355,9 @@ export function MobileZerus() {
   };
 
   const selectScope = (nextScope: NoteFilter) => {
+    if (nextScope.kind === "tasks") { openTasks(); return; }
+    setTasksOpen(false);
+    setListFilters({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" });
     setScope(nextScope);
     setSelectedNoteId(null);
     setQuery("");
@@ -2374,6 +2476,7 @@ export function MobileZerus() {
   };
 
   const createForScope = async () => {
+    if (scope.kind === "links") { setAddLinkOpen(true); return; }
     if (scope.kind === "external") {
       const ids = await openExternalNotes();
       if (ids[0]) openNote(ids[0]);
@@ -2397,8 +2500,8 @@ export function MobileZerus() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zerus-sidebar p-0 sm:p-8">
-      <section className={cn("mobile-zerus-themed relative flex h-[100dvh] w-full max-w-[393px] flex-col overflow-hidden bg-zerus-editor text-zerus-text sm:h-[852px] sm:rounded-[42px] sm:border-[7px] sm:border-zerus-sidebar sm:shadow-[0_28px_70px_rgba(0,0,0,0.35)]", isNativeApp && "mobile-native-shell")} aria-label="Zerus mobile app">
+    <div className={cn("flex min-h-screen items-center justify-center bg-zerus-sidebar p-0", !isNativeApp && "md:p-8")}>
+      <section className={cn("mobile-zerus-themed relative flex h-[100dvh] w-full max-w-none flex-col overflow-hidden bg-zerus-editor text-zerus-text md:max-w-[393px] md:h-[852px] md:rounded-[42px] md:border-[7px] md:border-zerus-sidebar md:shadow-[0_28px_70px_rgba(0,0,0,0.35)]", isNativeApp && "mobile-native-shell")} style={{ "--mobile-content-top": isNativeApp ? "var(--mobile-safe-area-top, env(safe-area-inset-top))" : "44px" } as CSSProperties} aria-label="Zerus mobile app">
         {!isNativeApp && <StatusBar />}
         {vault.status === "pick-vault" || (vault.status === "error" && vaultSetupOpen) ? (
           <VaultSetup
@@ -2413,14 +2516,14 @@ export function MobileZerus() {
             {vault.status === "error" ? (
               <>
                 <h1 className="text-xl font-semibold">Couldn’t open your notes</h1>
-                <p className="mt-2 text-sm text-[#8e8e93]">{vault.error ?? "The mobile vault is unavailable."}</p>
+                <p className="mt-2 text-sm text-zerus-text/65">{vault.error ?? "The mobile vault is unavailable."}</p>
                 <Button className="mt-5" onClick={() => void reloadVault()}>Retry opening vault</Button>
                 <Button variant="ghost" className="mt-2" onClick={() => setVaultSetupOpen(true)}>Choose another vault</Button>
               </>
             ) : (
               <>
                 <Loader2 className="h-6 w-6 animate-spin text-[#df5149]" aria-hidden="true" />
-                <p className="mt-3 text-sm text-[#8e8e93]">Opening your notes…</p>
+                <p className="mt-3 text-sm text-zerus-text/65">Opening your notes…</p>
               </>
             )}
           </main>
@@ -2428,6 +2531,7 @@ export function MobileZerus() {
           <div className="relative min-h-0 flex-1 overflow-hidden">
             <div
               className="h-full overflow-y-auto pb-28"
+              inert={!!selectedNote || tasksOpen || chatOpen || libraryOpen || settingsOpen || composerOpen}
               onTouchStart={handleNotesTouchStart}
               onTouchMove={handleNotesTouchMove}
               onTouchEnd={handleNotesTouchEnd}
@@ -2435,29 +2539,41 @@ export function MobileZerus() {
             >
             <header className="sticky top-0 z-20 grid grid-cols-[44px_1fr_auto] items-center border-b border-zerus-text/[0.07] bg-zerus-editor/90 px-4 pb-3 pt-1 backdrop-blur-xl">
               <Button variant="ghost" size="icon" onClick={() => setLibraryOpen(true)} className="h-11 w-11 rounded-full bg-zerus-surface text-zerus-text hover:bg-zerus-text/10" aria-label="Open Zerus navigation"><Menu className="h-[21px] w-[21px]" /></Button>
-              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-zerus-text/55">{scope.kind === "trash" ? libraryCounts.trash : filteredNotes.length} {scope.kind === "trash" ? (libraryCounts.trash === 1 ? "Item" : "Items") : scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
+              <div className="min-w-0 text-center"><h1 className="truncate text-[19px] font-semibold tracking-[-0.02em]">{scopeTitle}</h1><p className="mt-0.5 text-[14px] text-zerus-text/55">{scope.kind === "trash" ? libraryCounts.trash : filteredNotes.length} {scope.kind === "trash" ? (libraryCounts.trash === 1 ? "Item" : "Items") : scope.kind === "links" ? (filteredNotes.length === 1 ? "Link" : "Links") : scope.kind === "files" ? (filteredNotes.length === 1 ? "File" : "Files") : (filteredNotes.length === 1 ? "Note" : "Notes")}</p></div>
               {scope.kind === "trash" && libraryCounts.trash > 0 ? (
                 <Button variant="ghost" onClick={() => setEmptyTrashConfirmOpen(true)} className="h-11 rounded-full px-3 text-[14px] font-semibold text-[#ff6961] hover:bg-[#363638] hover:text-[#ff6961]">Empty</Button>
               ) : (
                 <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} className="h-11 w-11 rounded-full bg-zerus-surface text-zerus-text hover:bg-zerus-text/10" aria-label="Settings"><Settings className="h-[20px] w-[20px]" /></Button>
               )}
             </header>
-            <main className="px-4 pb-8 pt-6">
+            <main className="px-4 pb-8 pt-4">
+              <div className="mb-4 space-y-3">
+                <label className="relative block">
+                  <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-zerus-text/50" />
+                  <Input value={query} onChange={event => setQuery(event.target.value)} aria-label="Filter this collection" placeholder={`Search ${scopeTitle.toLowerCase()}…`} className="h-11 rounded-xl border-0 bg-zerus-text/[0.06] pl-10 pr-11 text-base" />
+                  {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center"><X className="h-4 w-4" /></button>}
+                </label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <NoteListFilters notes={scopeNotes} schemas={vault.schemas} showTypes={scope.kind === "all"} showFileTypes={scope.kind === "files"} showArchivedToggle={scope.kind !== "trash"} filters={listFilters} defaultSort="updated-desc" contentClassName="mobile-list-filters" triggerClassName="h-11 rounded-xl" onChange={next => { setListFilters(next); if (vault.hasMoreNotes) void prepareAllNotes(); }} />
+                  {scope.kind !== "trash" && scope.kind !== "links" && scope.kind !== "external" && <Button variant="ghost" className="ml-auto h-11 rounded-xl" aria-pressed={bulkSelection.selectMode} onClick={() => bulkSelection.selectMode ? bulkSelection.clearSelection() : bulkSelection.setSelectMode(true)}>{bulkSelection.selectMode ? "Done" : "Select"}</Button>}
+                </div>
+                {bulkSelection.selectMode && <BulkActionsToolbar className="mobile-bulk-toolbar" notes={vault.notes.filter(note => filteredNoteIds.has(note.id))} schemas={vault.schemas} vaultLocation={vault.location} selectedIds={bulkSelection.selectedIds} onClear={bulkSelection.clearSelection} onSelectAll={bulkSelection.selectAll} onRemoveSelected={bulkSelection.removeSelected} />}
+              </div>
               {query ? (
-                <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div> : <div className="rounded-[18px] bg-[#222324] px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-[#65625f]" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-[#8e8a85]">Try a different search.</p></div>}</section>
+                <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div> : <div className="rounded-[18px] bg-zerus-surface px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-zerus-text/50" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-zerus-text/65">Try a different search or clear your filters.</p><Button variant="ghost" className="mt-3 min-h-11" onClick={() => { setQuery(""); setListFilters({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" }); }}>Clear search and filters</Button></div>}</section>
               ) : (
                 <div className="space-y-7">
                   {scope.kind === "trash" && vault.trashedImages.length > 0 && (
                     <section>
-                      <h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Deleted Images</h2>
-                      <div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">
+                      <h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Deleted Images</h2>
+                      <div className="overflow-hidden rounded-xl bg-zerus-surface px-3">
                         {vault.trashedImages.map((image) => (
                           <div key={image.id} className="flex items-center gap-3 border-b border-white/[0.065] px-1 py-3 last:border-b-0">
                             <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => void openImageInDefaultApp(image.trashPath)}>
                               <NoteCardImage path={image.trashPath} />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[15px] font-semibold">{image.name}</span>
-                                <span className="mt-0.5 block text-xs text-[#8e8e93]">Image · Recently deleted</span>
+                                <span className="mt-0.5 block text-xs text-zerus-text/65">Image · Recently deleted</span>
                               </span>
                             </button>
                             <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full bg-white/[0.07] text-[#ef6b62]" aria-label={`Restore ${image.name}`} onClick={() => void restoreTrashedImage(image.id)}><Undo2 className="h-5 w-5" /></Button>
@@ -2467,12 +2583,12 @@ export function MobileZerus() {
                       </div>
                     </section>
                   )}
-                  {pinnedNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">Pinned</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
-                  {recentNotes.length > 0 && <section><h2 className="mb-3 px-1 text-[24px] font-bold tracking-[-0.035em]">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : "Previous 30 Days"}</h2><div className="overflow-hidden rounded-[18px] bg-[#222324] px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={(openedNote) => openNote(openedNote.id)} />)}</div></section>}
-                  {filteredNotes.length === 0 && (scope.kind !== "trash" || vault.trashedImages.length === 0) && <section className="rounded-[18px] bg-[#222324] px-5 py-12 text-center">
-                    {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-[#65625f]" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-[#65625f]" /> : <FileText className="mx-auto h-7 w-7 text-[#65625f]" />}
-                    <p className="mt-3 text-[16px] font-semibold">{scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
-                    <p className="mt-1 text-sm text-[#8e8a85]">{scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "This section is empty."}</p>
+                  {pinnedNotes.length > 0 && <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Pinned</h2><div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div></section>}
+                  {recentNotes.length > 0 && <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : scope.kind === "links" ? "Saved links" : listFilters.sort.startsWith("title") ? "By title" : listFilters.sort.startsWith("created") ? "By date created" : "Recently updated"}</h2><div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div></section>}
+                  {filteredNotes.length === 0 && (scope.kind !== "trash" || vault.trashedImages.length === 0) && <section className="rounded-[18px] bg-zerus-surface px-5 py-12 text-center">
+                    {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-zerus-text/50" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-zerus-text/50" /> : <FileText className="mx-auto h-7 w-7 text-zerus-text/50" />}
+                    <p className="mt-3 text-[16px] font-semibold">{scope.kind === "links" ? "No saved links" : scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
+                    <p className="mt-1 text-sm text-zerus-text/65">{scope.kind === "links" ? "Keep useful web pages and your notes together." : scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "Create a note or adjust your filters to see more."}</p>{scope.kind !== "trash" && <Button className="mt-4 min-h-11" onClick={() => void createForScope()}>{scope.kind === "links" ? "Add a link" : scope.kind === "files" ? "Add a file" : scope.kind === "external" ? "Open a note" : "Create a note"}</Button>}
                   </section>}
                   {vault.hasMoreNotes && <Button type="button" variant="ghost" disabled={vault.isLoadingMoreNotes} onClick={() => void loadMoreNotes()} className="mx-auto flex rounded-full bg-white/[0.06] px-5 text-sm text-[#aaa6a0] hover:bg-white/[0.1]">{vault.isLoadingMoreNotes ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Load more notes</Button>}
                 </div>
@@ -2494,6 +2610,7 @@ export function MobileZerus() {
                   allNotes={vault.notes}
                   schemas={vault.schemas}
                   typeTree={typeTree}
+                  backLabel={noteOrigin === "tasks" ? "Back to tasks" : noteOrigin === "chat" ? "Back to chat" : "Back to notes"}
                   onBack={() => window.history.back()}
                   onBodyChange={(body) =>
                     updateNoteBody(selectedNote.id, `# ${selectedNote.title}\n\n${body}`)
@@ -2509,13 +2626,8 @@ export function MobileZerus() {
             )}
           </div>
         )}
-        {vault.status === "ready" && !chatOpen && <BottomSearch query={query} onQueryChange={setQuery} onChat={() => openChat(
-          scope.kind === "type"
-            ? { kind: "type", path: scope.path }
-            : scope.kind === "external" || scope.kind === "files" || scope.kind === "links"
-              ? { kind: scope.kind }
-              : { kind: "vault" },
-        )} onCreate={scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        {vault.status === "ready" && !chatOpen && !selectedNote && !settingsOpen && !composerOpen && !libraryOpen && <MobileNavigation tasksActive={tasksOpen} onNotes={() => { if (tasksOpen) { setTasksOpen(false); setSearchTaskId(null); pushNavigation({ view: "notes" }); } }} onTasks={() => { if (!tasksOpen) openTasks(); }} onChat={() => openChat(scope.kind === "type" ? { kind: "type", path: scope.path } : { kind: "vault" })} onCreate={tasksOpen || scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "links" ? "Add a saved link" : scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
+        <AddLinkDialog open={addLinkOpen} onOpenChange={setAddLinkOpen} onAdd={async url => { const note = await createLinkNote(url); if (note) openNote(note.id); }} />
         {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet
@@ -2601,12 +2713,11 @@ export function MobileZerus() {
         </AlertDialog>
         <GlobalSearch mobile onOpenItem={item => {
           if (item.note) openNote(item.id, "notes");
-          else if (item.task) { setSelectedNoteId(null); setChatOpen(false); setSearchTaskId(item.id); }
+          else if (item.task) openTasks(item.id);
           else if (item.chat) { openChat(); setSearchRequest({ id: crypto.randomUUID(), conversation: item.chat }); }
         }} onAskAI={request => { setSearchTaskId(null); openChat(request.noteIds?.length ? { kind: "selection", noteIds: request.noteIds } : { kind: "vault" }); setSearchRequest(request); }} />
-        {searchTaskId && <div className="absolute inset-0 z-40 flex flex-col bg-zerus-editor pt-[env(safe-area-inset-top)]">
-          <button className="self-start p-4 text-sm" onClick={() => setSearchTaskId(null)}>← Back</button>
-          <div className="min-h-0 flex-1"><TasksWorkspace tasks={tasks} lists={taskLists} generalListName={generalTaskListName} notes={vault.notes} typeIcons={vault.typeIcons} selectedTaskId={searchTaskId} onSelectedTaskChange={setSearchTaskId} onCreateList={createTaskList} onRenameList={renameTaskList} onDeleteList={deleteTaskList} onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} onOpenNote={id => { setSearchTaskId(null); openNote(id, "notes"); }} /></div>
+        {tasksOpen && !chatOpen && <div inert={!!selectedNote} aria-hidden={!!selectedNote} className="absolute inset-x-0 top-[var(--mobile-content-top)] bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-20 flex flex-col bg-zerus-editor">
+          <div className="min-h-0 flex-1"><TasksWorkspace tasks={tasks} lists={taskLists} generalListName={generalTaskListName} notes={vault.notes} typeIcons={vault.typeIcons} selectedTaskId={searchTaskId} onSelectedTaskChange={id => { setSearchTaskId(id); window.history.replaceState(withMobileNavigationEntry(window.history.state, id ? { view: "tasks", taskId: id } : { view: "tasks" }), ""); }} onCreateList={createTaskList} onRenameList={renameTaskList} onDeleteList={deleteTaskList} onCreateTask={createTask} onUpdateTask={updateTask} onDeleteTask={deleteTask} onOpenNote={id => openNote(id, "tasks")} /></div>
         </div>}
         <PersistentAIChat
           searchRequest={searchRequest}

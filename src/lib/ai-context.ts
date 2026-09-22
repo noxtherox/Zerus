@@ -5,7 +5,7 @@ import { noteBody } from "@/lib/frontmatter";
 import { buildZerusSystemPrompt } from "@/lib/ai-agent-policy";
 import {
   isExternalNote,
-  isSavedLinkNote,
+  isManagedSavedLinkNote,
   isTrashed,
   normalizeFsPath,
   noteAbsolutePath,
@@ -68,7 +68,7 @@ export function notesInAiScope(notes: Note[], scope: AiKnowledgeScope): Note[] {
       if (scope.kind === "external") return isExternalNote(candidate);
       if (scope.kind === "files") return !isExternalNote(candidate) && getFileHubReference(candidate) !== null;
       if (scope.kind === "links") return !isExternalNote(candidate) && getLinkHubReference(candidate) !== null;
-      if (isExternalNote(candidate) || isSavedLinkNote(candidate)) return false;
+      if (isExternalNote(candidate) || isManagedSavedLinkNote(candidate)) return false;
       if (scope.kind === "vault") return true;
       const owner = typeKey(scope.path);
       const candidateType = typeKey(noteTypePath(candidate));

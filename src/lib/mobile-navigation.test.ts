@@ -22,4 +22,13 @@ describe("mobile navigation history state", () => {
     expect(readMobileNavigationEntry({ zerusMobileNavigation: { view: "note", noteId: "", origin: "chat" } })).toBeNull();
     expect(readMobileNavigationEntry({ zerusMobileNavigation: { view: "note", noteId: "note", origin: "somewhere" } })).toBeNull();
   });
+
+  it("returns from a linked note to the tasks workspace", () => {
+    expect(readMobileNavigationEntry(withMobileNavigationEntry({}, { view: "tasks" }))).toEqual({ view: "tasks" });
+    const linkedNote = { view: "note", noteId: "project", origin: "tasks" } as const;
+    expect(readMobileNavigationEntry(withMobileNavigationEntry({}, linkedNote))).toEqual(linkedNote);
+    const task = { view: "tasks", taskId: "task-1" } as const;
+    expect(readMobileNavigationEntry(withMobileNavigationEntry({}, task))).toEqual(task);
+    expect(readMobileNavigationEntry({ zerusMobileNavigation: { view: "tasks", taskId: 42 } })).toBeNull();
+  });
 });

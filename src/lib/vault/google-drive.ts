@@ -31,6 +31,13 @@ function safePath(path: string, allowRoot = false): string {
   return path;
 }
 
+export class DriveDuplicateError extends Error {
+  constructor(readonly path: string, readonly parentId: string, readonly items: DriveFile[]) {
+    super(`Google Drive contains multiple items named “${path}”. Review and rename the copies before opening the vault.`);
+    this.name = "DriveDuplicateError";
+  }
+}
+
 /** Online Drive vault. Tokens and HTTP requests remain in the native iOS layer. */
 export class GoogleDriveVault implements VaultBackend {
   readonly kind = "mobile" as const;
@@ -127,7 +134,9 @@ export class GoogleDriveVault implements VaultBackend {
               throw new Error(`Rename “${entry.name}” in Google Drive before opening this vault.`);
             }
             const path = safePath(folder.parent ? `${folder.parent}/${entry.name}` : entry.name);
-            if (next.has(path)) throw new Error(`Google Drive contains multiple items named “${path}”. Rename the duplicates before opening the vault.`);
+            if (next.get(path)?.id === entry.id) continue;
+            if (next.has(path)) throw new DriveDuplicateError(path, folder.id,
+              [...new Map(pages[index].filter((file) => file.name === entry.name).map((file) => [file.id, file])).values()]);
             next.set(path, entry);
             // Shortcuts are deliberately not traversed outside the selected vault.
             if (entry.mimeType === DRIVE_FOLDER) folders.push({ id: entry.id, parent: path, depth: folder.depth + 1 });
@@ -152,7 +161,7 @@ export class GoogleDriveVault implements VaultBackend {
       const known = this.files.get(relative);
       const matches = (known ? [known] : await listDriveChildren(this.transport, parent, parts[index]))
         .filter((candidate) => candidate.name === parts[index]);
-      if (matches.length > 1) throw new Error(`Google Drive contains multiple items named “${path}”. Rename the duplicates before opening the vault.`);
+      if (matches.length > 1) throw new DriveDuplicateError(relative, parent, matches);
       item = matches[0];
       if (!item) return undefined;
       if (index < parts.length - 1 && item.mimeType !== DRIVE_FOLDER) return undefined;
@@ -216,6 +225,52 @@ export class GoogleDriveVault implements VaultBackend {
     return [...this.files].filter(([path, file]) => file.mimeType === DRIVE_FOLDER && path.split("/").length <= MAX_TYPE_DEPTH && !path.split("/").some((part) => part.startsWith("."))).map(([path]) => path).sort();
   }
   async exists(path: string): Promise<boolean> { return Boolean(await this.lookup(path)); }
+
+  /** Address a reviewed copy by ID: its path is deliberately ambiguous. */
+  private async reviewedCopy(conflict: DriveDuplicateError, id: string) {
+    const observed = conflict.items.find((item) => item.id === id);
+    if (!observed) throw new Error("This copy is not part of the duplicate review.");
+    const current = lockedFile(await driveFetch(this.transport, {
+      path: `/drive/v2/files/${driveId(id)}`, query: { fields: LOCK_FIELDS },
+    }));
+    await this.assertInsideVault(current.file);
+    if (!observed.version || current.file.version !== observed.version ||
+        current.file.name !== observed.name || current.file.parents?.length !== 1 ||
+        current.file.parents[0] !== conflict.parentId) {
+      throw new Error("This copy changed since the review opened. Refresh the review before continuing.");
+    }
+    return current;
+  }
+
+  async previewDuplicate(conflict: DriveDuplicateError, id: string): Promise<string> {
+    const { file } = await this.reviewedCopy(conflict, id);
+    if (file.mimeType.startsWith("application/vnd.google-apps.") ||
+        !(file.mimeType.startsWith("text/") || /\.(md|txt|json|csv)$/i.test(file.name))) {
+      throw new Error("A text preview is not available for this item.");
+    }
+    const response = await driveFetch(this.transport, { path: `/drive/v3/files/${driveId(id)}`, query: { alt: "media" } });
+    await this.reviewedCopy(conflict, id);
+    const text = new TextDecoder().decode(decodeDriveBytes(response.body));
+    return text.length > 12000 ? `${text.slice(0, 12000)}\n\n[Preview truncated]` : text;
+  }
+
+  renameDuplicate(conflict: DriveDuplicateError, id: string, name: string): Promise<void> {
+    return this.mutate(async () => {
+      if (name !== name.trim() || name.includes("/")) throw new Error("Enter a filename without slashes or surrounding spaces.");
+      safePath(name);
+      const current = await this.reviewedCopy(conflict, id);
+      if (name === current.file.name) throw new Error("Choose a different name for this copy.");
+      const siblings = await listDriveChildren(this.transport, conflict.parentId);
+      if (siblings.some((file) => file.name === name)) throw new Error("That name already exists in this folder. Choose another name.");
+      if (!current.etag) throw new Error("Google Drive did not provide a version lock. The file was left unchanged.");
+      await driveFetch(this.transport, {
+        path: `/drive/v2/files/${driveId(id)}`, method: "PATCH", ifMatch: current.etag,
+        contentType: "application/json", body: driveJSON({ title: name }), query: { fields: LOCK_FIELDS },
+      });
+      this.files.clear();
+      this.loaded = false;
+    });
+  }
 
   private mutate<T>(action: () => Promise<T>): Promise<T> {
     const task = this.mutations.then(action);

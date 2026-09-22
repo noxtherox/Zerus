@@ -93,10 +93,10 @@ describe("link hubs", () => {
     );
   });
 
-  it("keeps saved links out of All Notes and the type tree", () => {
+  it("keeps unfiled saved links out of All Notes and the type tree", () => {
     const link: Note = {
       id: "link-1",
-      path: "inbox/example.md",
+      path: ".zerus/links/link-1.md",
       content: setLinkHubReference("# example.com\n", {
         id: "link-1",
         url: "https://example.com",
@@ -108,5 +108,23 @@ describe("link hubs", () => {
     expect(filterNotes([link], { kind: "all" }, "")).toEqual([]);
     expect(filterNotes([link], { kind: "links" }, "")).toEqual([link]);
     expect(buildTypeTree([link])).toEqual([]);
+  });
+
+  it("keeps a filed link in Links as well as its vault type", () => {
+    const link: Note = {
+      id: "link-1",
+      path: "work/example.md",
+      content: setLinkHubReference("# example.com\n", {
+        id: "link-1",
+        url: "https://example.com",
+      }),
+      pinned: false,
+      updatedAt: "2026-08-13T12:00:00.000Z",
+    };
+
+    expect(filterNotes([link], { kind: "all" }, "")).toEqual([link]);
+    expect(filterNotes([link], { kind: "links" }, "")).toEqual([link]);
+    expect(filterNotes([link], { kind: "type", path: ["work"] }, "")).toEqual([link]);
+    expect(buildTypeTree([link])).toMatchObject([{ path: ["work"], count: 1 }]);
   });
 });

@@ -1,5 +1,5 @@
 /** Batch secondary UI updates, never the draft itself or persistence. */
-export function createEditNotifications(notify: () => void, delay = 100, maxWait = 250) {
+export function createEditNotifications(notify: () => void, delay = 100, maxWait = 1000) {
   let trailing: ReturnType<typeof setTimeout> | undefined;
   let deadline: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {

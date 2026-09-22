@@ -26,7 +26,7 @@ it("does not starve surrounding UI during continuous typing", () => {
   vi.useFakeTimers();
   const notify = vi.fn();
   const updates = createEditNotifications(notify);
-  for (let index = 0; index < 5; index++) {
+  for (let index = 0; index < 21; index++) {
     updates.schedule();
     vi.advanceTimersByTime(50);
   }

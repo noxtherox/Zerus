@@ -37,6 +37,11 @@ export function driveJSON(value: unknown): string {
 export class DriveError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
 }
+export function isDriveSignInExpired(error: unknown): boolean {
+  return error instanceof DriveError
+    ? error.status === 401
+    : /Google Drive sign-in expired/i.test(String(error));
+}
 export async function driveFetch(transport: DriveTransport, request: DriveRequest): Promise<DriveResponse> {
   const response = await transport(request);
   if (response.status < 200 || response.status >= 300) {
@@ -59,9 +64,10 @@ export const DRIVE_FOLDER = "application/vnd.google-apps.folder";
 export interface DriveFile {
   id: string; name: string; mimeType: string; parents?: string[];
   modifiedTime?: string; createdTime?: string; version?: string; trashed?: boolean;
+  size?: string;
   capabilities?: { canEdit?: boolean; canAddChildren?: boolean };
 }
-export const DRIVE_FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,version,trashed,capabilities(canEdit,canAddChildren)";
+export const DRIVE_FIELDS = "id,name,mimeType,parents,modifiedTime,createdTime,version,size,trashed,capabilities(canEdit,canAddChildren)";
 export function driveId(id: string): string {
   if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error("Invalid Google Drive file ID.");
   return id;
@@ -80,6 +86,20 @@ export async function listDriveChildren(transport: DriveTransport, parent: strin
     pageToken = page.nextPageToken;
   } while (pageToken);
   return files;
+}
+
+export async function findDriveFile(transport: DriveTransport, folderId: string, path: string): Promise<DriveFile | null> {
+  const parts = path.split("/");
+  if (!path || parts.some((part) => !part || part === "." || part === "..")) return null;
+  let parent = driveId(folderId);
+  let found: DriveFile | null = null;
+  for (const part of parts) {
+    const matches = (await listDriveChildren(transport, parent, part)).filter((file) => file.name === part);
+    if (matches.length !== 1) return null;
+    found = matches[0];
+    parent = found.id;
+  }
+  return found;
 }
 
 export interface DriveVaultSelection extends DriveAccount { folderId: string; name: string }

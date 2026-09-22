@@ -81,6 +81,8 @@ interface NoteListFiltersProps {
   filters: NoteListFilterState;
   visibleProperties?: string[];
   triggerClassName?: string;
+  contentClassName?: string;
+  defaultSort?: NoteSort;
   showActivePills?: boolean;
   onChange: (filters: NoteListFilterState) => void;
   onVisiblePropertiesChange?: (properties: string[]) => void;
@@ -95,6 +97,8 @@ export function NoteListFilters({
   filters,
   visibleProperties = [],
   triggerClassName,
+  contentClassName,
+  defaultSort = EMPTY_NOTE_LIST_FILTERS.sort,
   showActivePills = true,
   onChange,
   onVisiblePropertiesChange,
@@ -187,7 +191,7 @@ export function NoteListFilters({
   }, [notes, open]);
 
   const activeCount =
-    (filters.sort !== EMPTY_NOTE_LIST_FILTERS.sort ? 1 : 0) +
+    (filters.sort !== defaultSort ? 1 : 0) +
     (filters.date ? 1 : 0) +
     (filters.showArchived ? 1 : 0) +
     filters.typeKeys.length +
@@ -220,7 +224,7 @@ export function NoteListFilters({
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className="max-h-[70vh] w-80 overflow-y-auto p-0"
+          className={cn("max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-0", contentClassName)}
         >
           <div className="flex items-center justify-between px-3 py-2.5">
             <span className="text-sm font-semibold">Sort &amp; filter</span>
@@ -229,7 +233,7 @@ export function NoteListFilters({
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-xs"
-                onClick={() => onChange({ ...EMPTY_NOTE_LIST_FILTERS })}
+                onClick={() => onChange({ ...EMPTY_NOTE_LIST_FILTERS, sort: defaultSort })}
               >
                 Clear all
               </Button>
@@ -439,12 +443,12 @@ export function NoteListFilters({
                   return (
                     <div
                       key={property.name}
-                      className="grid grid-cols-[minmax(0,1fr)_28px_minmax(0,1.35fr)] items-center gap-1.5"
+                      className={cn("grid items-center gap-1.5", onVisiblePropertiesChange ? "grid-cols-[minmax(0,1fr)_28px_minmax(0,1.35fr)]" : "grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]")}
                     >
                       <span className="truncate text-xs" title={property.name}>
                         {property.name}
                       </span>
-                      <button
+                      {onVisiblePropertiesChange && <button
                         type="button"
                         className={cn(
                           "flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -465,7 +469,7 @@ export function NoteListFilters({
                         }}
                       >
                         {isVisible ? <Eye size={15} /> : <EyeOff size={15} />}
-                      </button>
+                      </button>}
                       {property.type === "date" ? (
                         <DatePropertyFilterControl
                           propertyName={property.name}

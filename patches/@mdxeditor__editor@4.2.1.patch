@@ -1,0 +1,62 @@
+diff --git a/dist/plugins/core/index.js b/dist/plugins/core/index.js
+index 980d4cedf5bc4a7dda2b2ffba3c3cd94ca0ecfed..42907fb8858d2c0357ae796799c94d5daa25e0e7 100644
+--- a/dist/plugins/core/index.js
++++ b/dist/plugins/core/index.js
+@@ -258,12 +258,23 @@ const createRootEditorSubscription$ = Appender(rootEditorSubscriptions$, (r, sig
+     },
+     // Export handler
+     (rootEditor) => {
+-      return rootEditor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState }) => {
+-        const err = r.getValue(markdownProcessingError$);
+-        if (err !== null) {
++      let pendingEditorState = null;
++      let exportFrame = 0;
++      let exportFallback;
++      const exportPendingMarkdown = () => {
++        if (!pendingEditorState) {
+           return;
+         }
+-        if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
++        const editorState = pendingEditorState;
++        pendingEditorState = null;
++        if (exportFrame) {
++          cancelAnimationFrame(exportFrame);
++          exportFrame = 0;
++        }
++        clearTimeout(exportFallback);
++        exportFallback = void 0;
++        const err = r.getValue(markdownProcessingError$);
++        if (err !== null) {
+           return;
+         }
+         let theNewMarkdownValue;
+@@ -288,7 +299,29 @@ const createRootEditorSubscription$ = Appender(rootEditorSubscriptions$, (r, sig
+         });
+         r.pub(markdown$, theNewMarkdownValue.trim());
+         r.pub(initialMarkdownNormalize$, false);
++      };
++      const unregister = rootEditor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState }) => {
++        if (dirtyElements.size === 0 && dirtyLeaves.size === 0) {
++          return;
++        }
++        pendingEditorState = editorState;
++        if (exportFrame || exportFallback !== void 0) {
++          return;
++        }
++        // Keep Markdown export off the keypress task. Scheduling the work from
++        // the next animation frame lets the browser paint the Lexical edit
++        // first; the timeout keeps autosave moving in hidden/background tabs.
++        exportFrame = requestAnimationFrame(() => {
++          exportFrame = 0;
++          clearTimeout(exportFallback);
++          exportFallback = setTimeout(exportPendingMarkdown, 0);
++        });
++        exportFallback = setTimeout(exportPendingMarkdown, 50);
+       });
++      return () => {
++        unregister();
++        exportPendingMarkdown();
++      };
+     },
+     (rootEditor) => {
+       return rootEditor.registerCommand(

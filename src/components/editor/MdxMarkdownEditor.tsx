@@ -81,7 +81,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { getImageUrl, savePastedImage } from "@/store/notes-store";
 import { isImageAttachmentPath, type NoteAttachment } from "@/lib/note-attachments";
-import { fileManagerName } from "@/lib/desktop-platform";
+import { desktopPlatform, fileManagerName } from "@/lib/desktop-platform";
 import {
   consumeLocalMarkdownEcho,
   recordLocalMarkdownEcho,
@@ -640,7 +640,7 @@ export function MarkdownEditor({
             readOnly={readOnly}
             autoFocus={autoFocus}
             placeholder={placeholderText}
-            className="zerus-mdx-editor"
+            className={`zerus-mdx-editor${desktopPlatform === "windows" ? " zerus-mdx-editor-windows" : ""}`}
             contentEditableClassName={`zerus-mdx-content${firstLineIsTitle ? " zerus-mdx-title-first-line" : ""}`}
             toMarkdownOptions={{ bullet: "-" }}
             onChange={(markdown, initialMarkdownNormalize) => {

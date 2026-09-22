@@ -80,6 +80,7 @@ import {
   getAllTypePaths,
   isArchived,
   isExternalNote,
+  isManagedSavedLinkNote,
   isTrashed,
   noteAbsolutePath,
   noteTitle,
@@ -902,14 +903,14 @@ export function EditorPane({
               </DropdownMenuContent>
             </DropdownMenu>
           </>
-        ) : linkHub ? (
+        ) : linkHub && isManagedSavedLinkNote(note) ? (
           <>
             <TypePicker
               value={[]}
               existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
               typeIcons={typeIcons}
               label="Move to vault…"
-              title="Convert this saved link into a vault note and assign its type"
+              title="Move this saved link into a type"
               onChange={(typePath) =>
                 onMoveSavedLinkToVault(note.id, typePath)
               }

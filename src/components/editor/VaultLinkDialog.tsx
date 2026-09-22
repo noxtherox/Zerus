@@ -1,7 +1,7 @@
 import { useContext, useEffect, useId, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { useCellValues, usePublisher, useRealm } from "@mdxeditor/gurx";
-import { activeEditor$, editorRootElementRef$, linkDialogState$, updateLink$, cancelLinkEdit$, switchFromPreviewToLinkEdit$, removeLink$, readOnly$, getNodeRectangle } from "@mdxeditor/editor";
+import { activeEditor$, linkDialogState$, updateLink$, cancelLinkEdit$, switchFromPreviewToLinkEdit$, removeLink$, readOnly$ } from "@mdxeditor/editor";
 import { $getNearestNodeFromDOMNode, $getSelection } from "lexical";
 import { FileText, ExternalLink, Pencil, Link2Off, Copy } from "@/lib/icons";
 import { useVaultSelector, prioritizeNoteLoad } from "@/store/notes-store";
@@ -9,6 +9,7 @@ import { findNoteByTitle, noteTitle, noteReference, type Note } from "@/lib/note
 import { parseNoteReference } from "@/lib/wikilinks";
 import { normalizeExternalUrl, openExternalUrl } from "@/lib/external-links";
 import { noteReferenceFromHref } from "./note-link-markdown";
+import { getViewportNodeRectangle, getViewportSelectionRectangle } from "./link-dialog-position";
 import { linkedNoteExcerpt, loadLinkOption, saveLinkOption, searchLinkNotes, type LinkOption } from "./vault-link-options";
 
 import { NoteLinkContext } from "./note-link-context";
@@ -68,7 +69,7 @@ function LinkForm({ url, text, title, withAnchorText, notes, selectionText, onSa
 
 export function VaultLinkDialog() {
   const realm = useRealm();
-  const [editor, rootRef, state, readOnly] = useCellValues(activeEditor$, editorRootElementRef$, linkDialogState$, readOnly$);
+  const [editor, state, readOnly] = useCellValues(activeEditor$, linkDialogState$, readOnly$);
   const publish = usePublisher(linkDialogState$);
   const update = usePublisher(updateLink$);
   const cancel = usePublisher(cancelLinkEdit$);
@@ -94,7 +95,7 @@ export function VaultLinkDialog() {
       editor.getEditorState().read(() => {
         const node = $getNearestNodeFromDOMNode(anchor);
         if (!node) return;
-        const rectangle = getNodeRectangle(editor, node.getKey());
+        const rectangle = getViewportNodeRectangle(editor, node.getKey());
         if (rectangle) publish({ type: "preview", url, href: url, title: "", linkNodeKey: node.getKey(), rectangle });
       }, { editor });
     };
@@ -114,10 +115,14 @@ export function VaultLinkDialog() {
 
   if (state.type === "inactive") return null;
   const close = () => realm.getValue(linkDialogState$).type === "edit" ? cancel() : publish({ type: "inactive" });
-  const rect = state.rectangle;
+  const rect = state.linkNodeKey && editor
+    ? getViewportNodeRectangle(editor, state.linkNodeKey) ?? state.rectangle
+    : getViewportSelectionRectangle(editor, state.rectangle);
   return <Popover.Root open onOpenChange={(open) => { if (!open) close(); }}>
     <Popover.Anchor style={{ position: "fixed", pointerEvents: "none", top: rect.top, left: rect.left, width: rect.width, height: rect.height }} />
-    <Popover.Portal container={rootRef?.current}>
+    {/* The anchor rectangle is viewport-relative, so the floating layer must
+        live in the document portal rather than the offset editor subtree. */}
+    <Popover.Portal>
       <Popover.Content className={`zerus-link-popover ${state.type === "preview" ? "zerus-link-preview" : ""}`} align="center" side="bottom" sideOffset={6} collisionPadding={12} onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={(event) => event.preventDefault()}>
         {state.type === "edit" ? <LinkForm key={`${state.linkNodeKey}-${state.initialUrl}`} {...state} notes={notes} selectionText={editor?.getEditorState().read(() => $getSelection()?.getTextContent() ?? "") ?? ""} onSave={update} onCancel={close} /> : <>
           <div className="zerus-link-preview-row"><FileText size={16} aria-label={reference !== null ? "Linked note" : "Link"} /><strong>{reference !== null ? note ? noteTitle(note) : parseNoteReference(reference).label : state.url}</strong>

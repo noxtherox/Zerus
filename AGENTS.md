@@ -66,6 +66,43 @@
 - **New iOS build and push it** means run `pnpm ios:new-build`, then
   `pnpm testflight`.
 
+## iOS toolchain and launch preflight
+
+- Before every `pnpm ios:new-build`, direct Xcode archive, or TestFlight upload
+  of a newly built binary, run `pnpm platform:verify` and verify the selected
+  developer directory and Xcode version with `xcode-select -p` and
+  `xcodebuild -version`.
+- Before advancing `bundle.iOS.bundleVersion`, require Apple device tooling to
+  initialize successfully. Check `xcrun devicectl list devices --timeout 5`
+  and an Xcode build-settings or generic-device command using the selected
+  Xcode. Treat any of the following as a hard blocker: a failure to load
+  `DVTCoreDeviceCore`, a missing CoreDevice symbol, an out-of-date
+  CoreSimulator framework, or an inability to load simulator/device support.
+  These errors mean Xcode and the macOS CoreDevice/CoreSimulator components do
+  not match. Stop before changing version files, archiving, exporting, or
+  uploading, and report that macOS/Xcode must be updated or repaired.
+- Apps built with the iOS 27 SDK must adopt the scene lifecycle. Keep
+  `UIApplicationSceneManifest`, `UIApplicationSupportsMultipleScenes = true`,
+  the `UIWindowSceneSessionRoleApplication` configuration, and
+  `UISceneDelegateClassName = TaoSceneDelegate` in both the canonical iOS plist
+  and generated Xcode project. `pnpm platform:verify` must fail if any part is
+  missing.
+- While Tauri 2.11 resolves tao `0.35.x`, retain the pinned upstream tao scene
+  ownership fix in `src-tauri/Cargo.toml` and `Cargo.lock`. Do not remove the
+  pin until the resolved Tauri runtime accepts tao `>= 0.36.0`; a scene
+  manifest without that fix can replace the iOS 27 launch trap with an
+  `EXC_BAD_ACCESS` during scene connection.
+- After creating an archive, inspect the archived app's actual `Info.plist`,
+  not only source configuration. Confirm its bundle version matches the
+  canonical configuration and its scene manifest names `TaoSceneDelegate`.
+  Verify the archive signature before export.
+- Before uploading a build produced with a newly selected Xcode or iOS SDK,
+  install the exact exported release binary on a physical iPhone running that
+  OS generation and confirm that it remains open past launch. Check that the
+  device produced no new Zerus crash or Jetsam report. If a compatible device
+  is unavailable, report physical launch verification as pending and do not
+  claim the iOS release is complete.
+
 Never pass Tauri's `--build-number` option for an absolute App Store build
 number; Tauri treats it as a suffix. The canonical record is
 `bundle.iOS.bundleVersion` in `src-tauri/tauri.conf.json`.

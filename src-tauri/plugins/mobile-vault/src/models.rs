@@ -32,7 +32,9 @@ pub struct PickedFilesResponse {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenFileRequest {
-    pub path: String,
+    pub path: Option<String>,
+    pub name: Option<String>,
+    pub data: Option<String>,
     pub mode: Option<String>,
 }
 

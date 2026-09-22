@@ -47,13 +47,18 @@ export function isExternalNote(note: Note): boolean {
   return !!note.externalPath;
 }
 
-/** A saved web link is app-managed until it is explicitly moved into a type. */
+/** A note that retains Zerus link metadata, whether managed or filed in a type. */
 export function isSavedLinkNote(note: Note): boolean {
   const properties = getNoteProperties(note.content);
   return (
     typeof properties["zerus-link-id"] === "string" &&
     typeof properties["zerus-link-url"] === "string"
   );
+}
+
+/** An app-managed saved link that has not yet been filed into the vault hierarchy. */
+export function isManagedSavedLinkNote(note: Note): boolean {
+  return isSavedLinkNote(note) && note.path.startsWith(".zerus/links/");
 }
 
 /** Comparison form preserving filename casing and removing extended DOS/UNC prefixes. */
@@ -160,7 +165,7 @@ export function typeKey(typePath: string[]): string {
 /** Non-trashed notes of the given type, including its sub-types. */
 export function notesOfTypeKey(notes: Note[], ownerKey: string): Note[] {
   return notes.filter((note) => {
-    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+    if (isExternalNote(note) || isManagedSavedLinkNote(note) || isTrashed(note))
       return false;
     const key = typeKey(noteTypePath(note));
     return key === ownerKey || key.startsWith(`${ownerKey}/`);
@@ -172,17 +177,22 @@ export function fileStem(path: string): string {
   return name.replace(/\.md$/i, "");
 }
 
+const noteTitleCache = new WeakMap<Note, { content: string; path: string; title: string }>();
+
 /** Title = first non-empty body line (frontmatter excluded), else the filename. */
 export function noteTitle(note: Note): string {
+  const cached = noteTitleCache.get(note);
+  if (cached?.content === note.content && cached.path === note.path) return cached.title;
   const firstLine = noteBody(note.content)
     .split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
-  if (!firstLine) return fileStem(note.path) || "Untitled";
-  return (
+  const title = !firstLine ? fileStem(note.path) || "Untitled" : (
     decodeMarkdownEscapes(firstLine.replace(/^#{1,6}\s+/, "")).trim() ||
     "Untitled"
   );
+  noteTitleCache.set(note, { content: note.content, path: note.path, title });
+  return title;
 }
 
 const previewParser = unified().use(remarkParse).use(remarkGfm);
@@ -206,16 +216,38 @@ function markdownPreview(source: string): string {
   return text(tree).replace(/\s+/g, " ").trim();
 }
 
+interface NoteListPreview {
+  content: string;
+  path: string;
+  title: string;
+  snippet: string;
+}
+
+const noteListPreviewCache = new WeakMap<Note, NoteListPreview>();
+
+function noteListPreview(note: Note): NoteListPreview {
+  const cached = noteListPreviewCache.get(note);
+  if (cached?.content === note.content && cached.path === note.path) return cached;
+  const lines = noteBody(note.content).split("\n");
+  const firstIdx = lines.findIndex((line) => line.trim().length > 0);
+  const firstLine = firstIdx < 0 ? "" : lines[firstIdx].trim();
+  const preview = {
+    content: note.content,
+    path: note.path,
+    title: firstLine ? markdownPreview(firstLine) || "Untitled" : fileStem(note.path) || "Untitled",
+    snippet: firstIdx < 0 ? "" : markdownPreview(lines.slice(firstIdx + 1).join("\n")).slice(0, 120),
+  };
+  noteListPreviewCache.set(note, preview);
+  return preview;
+}
+
 /** Display-only title; keep noteTitle unchanged for editing and link resolution. */
 export function noteListTitle(note: Note): string {
-  const firstLine = noteBody(note.content).split("\n").find((line) => line.trim());
-  return firstLine ? markdownPreview(firstLine.trim()) || "Untitled" : fileStem(note.path) || "Untitled";
+  return noteListPreview(note).title;
 }
 
 export function noteSnippet(note: Note): string {
-  const lines = noteBody(note.content).split("\n");
-  const firstIdx = lines.findIndex((line) => line.trim().length > 0);
-  return markdownPreview(lines.slice(firstIdx + 1).join("\n")).slice(0, 120);
+  return noteListPreview(note).snippet;
 }
 
 /** First image embedded in the note body, used by note-card previews. */
@@ -238,7 +270,7 @@ export function createNoteResolver(notes: Note[]): (reference: string) => Note |
   const byId = new Map<string, Note>();
   const byTitle = new Map<string, Note | undefined>();
   for (const note of notes) {
-    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note)) continue;
+    if (isExternalNote(note) || isManagedSavedLinkNote(note) || isTrashed(note)) continue;
     if (!byId.has(note.id)) byId.set(note.id, note);
     const title = noteTitle(note).toLowerCase();
     byTitle.set(title, byTitle.has(title) ? undefined : note);
@@ -255,7 +287,7 @@ export function findNoteByTitle(
 ): Note | undefined {
   const { target, id } = parseNoteReference(title);
   const candidates = notes.filter((note) =>
-    !isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note));
+    !isExternalNote(note) && !isManagedSavedLinkNote(note) && !isTrashed(note));
   if (id !== null) return candidates.find((note) => note.id === id);
   // Legacy title links resolve only when unambiguous. Never guess during migration.
   const matches = candidates.filter((note) => noteTitle(note).toLowerCase() === target.toLowerCase());
@@ -310,7 +342,7 @@ export function buildTypeTree(
     addPath(typePath.slice(0, MAX_TYPE_DEPTH), 0);
   }
   for (const note of notes) {
-    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note))
+    if (isExternalNote(note) || isManagedSavedLinkNote(note) || isTrashed(note))
       continue;
     addPath(noteTypePath(note), 1);
   }
@@ -409,7 +441,7 @@ export function getAllTypePaths(
   };
   for (const typePath of extraTypePaths) add(typePath);
   for (const note of notes) {
-    if (!isExternalNote(note) && !isSavedLinkNote(note) && !isTrashed(note))
+    if (!isExternalNote(note) && !isManagedSavedLinkNote(note) && !isTrashed(note))
       add(noteTypePath(note));
   }
   return [...seen.values()].sort((a, b) =>

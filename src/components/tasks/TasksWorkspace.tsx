@@ -721,8 +721,8 @@ export function TasksWorkspace({
               </button>
             ))}
           </div>
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
-            <div className="relative min-w-0 flex-1 sm:w-48 sm:flex-none">
+          <div className={cn("flex min-w-0 items-center gap-2", isNarrow ? "w-full" : "flex-1 justify-end")}>
+            <div className={cn("relative min-w-0 flex-1", !isNarrow && "sm:w-48 sm:flex-none")}>
               <Search
                 aria-hidden="true"
                 className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground"

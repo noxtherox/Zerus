@@ -70,16 +70,26 @@ or zero-cost assessment is assumed.
   `etag` in JSON; browsing, downloads, and creation use v3.
   A missing version lock or a conflict stops the update. If Drive changed since
   the note was loaded, review both versions in the mobile conflict dialog.
-- Google Drive allows duplicate names. Zerus rejects ambiguous paths. New file
+- Google Drive allows duplicate names. Opening a vault from the Drive picker
+  checks for ambiguous paths and offers a duplicate review with dates and text
+  previews. Rename individual copies to preserve both and keep the original name
+  on the copy existing links should open. Renames apply to Drive on all devices,
+  check the reviewed version, and rescan before opening. Folders and shortcuts
+  can also be renamed, but have no text preview. New file
   creation checks current siblings and uses pre-generated IDs, but Drive has no
   atomic unique-name guarantee: simultaneous same-name creations by separate
-  clients can still produce duplicates that must be renamed in Drive.
+  clients can still produce duplicates. If reopening a saved vault fails with
+  duplicates, choose another vault, then select the same folder in the Google
+  Drive picker to review them.
 - The picker browses **My Drive**. Shared drives and shortcuts are not supported;
   shortcuts are never followed outside the vault. Use actual Markdown files,
   not Google Docs documents.
 - File uploads are limited to 25 MB per native request (multipart overhead counts).
-  Binary assets use the same vault backend. External filesystem path mappings and
-  opening a remote file in another native app are not provided by this integration.
+  Binary assets use the same vault backend. Any synced file location can select
+  **Google Drive** in the iOS provider chooser and use the authenticated Drive
+  browser; the device-local
+  mapping stores account and folder identifiers, never OAuth tokens. Linked files
+  are downloaded on demand for status, PDF/HTML preview, and iOS Quick Look.
 - Removal uses Google Drive trash rather than permanently deleting remote items.
 
 ## Validation before shipping

@@ -63,6 +63,11 @@
   backdrop-filter: blur(16px);
 }
 
+/* WebView2 repaints filtered layers more aggressively while content changes. */
+.zerus-mdx-editor-windows .zerus-mdx-toolbar {
+  backdrop-filter: none;
+}
+
 .zerus-mdx-toolbar-action {
   display: inline-flex;
   width: 30px;

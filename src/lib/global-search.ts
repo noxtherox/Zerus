@@ -1,9 +1,9 @@
 import { WIKILINK_REGEX, parseNoteReference } from "./wikilinks";
 import { getNoteProperties, noteBody } from "./frontmatter";
 import { getFileHubReference } from "./file-hubs";
+import { getLinkHubReference } from "./link-hubs";
 import {
   isExternalNote,
-  isSavedLinkNote,
   isTrashed,
   noteTitle,
   noteTypePath,
@@ -90,7 +90,7 @@ export function buildSearchItems(
           ? "external"
           : getFileHubReference(note)
             ? "files"
-            : isSavedLinkNote(note)
+            : getLinkHubReference(note)
               ? "links"
               : "notes";
         return {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GoogleDriveVault } from "./google-drive";
-import { DRIVE_FOLDER, decodeDriveBytes, driveJSON, encodeDriveBytes, listDriveChildren, type DriveFile, type DriveRequest, type DriveResponse, type DriveTransport } from "@/lib/google-drive";
+import { DriveDuplicateError, GoogleDriveVault } from "./google-drive";
+import { DRIVE_FOLDER, DriveError, decodeDriveBytes, driveJSON, encodeDriveBytes, isDriveSignInExpired, listDriveChildren, type DriveFile, type DriveRequest, type DriveResponse, type DriveTransport } from "@/lib/google-drive";
 
 function fixture() {
   const files = new Map<string, DriveFile>([
@@ -52,6 +52,11 @@ function fixture() {
 
 describe("Google Drive vault", () => {
   afterEach(() => vi.unstubAllGlobals());
+  it("recognizes expired credentials that require interactive reconnection", () => {
+    expect(isDriveSignInExpired(new DriveError(401, "Google Drive sign-in expired. Reconnect your account."))).toBe(true);
+    expect(isDriveSignInExpired("Google Drive sign-in expired. Disconnect and reconnect your account.")).toBe(true);
+    expect(isDriveSignInExpired(new DriveError(429, "Google Drive is busy."))).toBe(false);
+  });
   it("looks up exact names and reuses known folders when opening another note", async () => {
     const { vault, files, content, calls } = fixture();
     files.set("second", { id: "second", name: "Second.md", parents: ["folder"], mimeType: "text/markdown", version: "1" });
@@ -132,6 +137,55 @@ describe("Google Drive vault", () => {
     const { vault, files } = fixture();
     files.set("duplicate", { ...files.get("note")!, id: "duplicate" });
     await expect(vault.loadAll()).rejects.toThrow("multiple items");
+  });
+  it("reviews all copies by ID and preserves their contents while resolving names", async () => {
+    const { vault, files, content, calls } = fixture();
+    for (const id of ["duplicate", "third"]) {
+      files.set(id, { ...files.get("note")!, id });
+      content.set(id, new TextEncoder().encode(`Body of ${id}`));
+    }
+    const conflict = await vault.listNoteEntries().catch((error) => error) as DriveDuplicateError;
+    expect(conflict).toBeInstanceOf(DriveDuplicateError);
+    expect(conflict.items.map((item) => item.id)).toEqual(["note", "duplicate", "third"]);
+    expect(await vault.previewDuplicate(conflict, "duplicate")).toBe("Body of duplicate");
+    await vault.renameDuplicate(conflict, "duplicate", "Hello (other).md");
+    expect(calls.find((call) => call.method === "PATCH")).toMatchObject({ path: "/drive/v2/files/duplicate", ifMatch: '"1"' });
+    const remaining = await vault.listNoteEntries().catch((error) => error) as DriveDuplicateError;
+    expect(remaining.items.map((item) => item.id)).toEqual(["note", "third"]);
+    await vault.renameDuplicate(remaining, "third", "Hello (third).md");
+    expect((await vault.loadAll()).map((item) => item.content).sort()).toEqual(["# Hello\nOriginal", "Body of duplicate", "Body of third"].sort());
+  });
+  it("rejects stale, moved, unreviewed, invalid and colliding duplicate renames", async () => {
+    const { vault, files, calls } = fixture();
+    files.set("duplicate", { ...files.get("note")!, id: "duplicate" });
+    const conflict = await vault.listNoteEntries().catch((error) => error) as DriveDuplicateError;
+    await expect(vault.renameDuplicate(conflict, "other", "Other.md")).rejects.toThrow("not part");
+    await expect(vault.renameDuplicate(conflict, "duplicate", "../Other.md")).rejects.toThrow("filename");
+    files.set("occupied", { ...files.get("note")!, id: "occupied", name: "Other.md" });
+    await expect(vault.renameDuplicate(conflict, "duplicate", "Other.md")).rejects.toThrow("already exists");
+    files.get("duplicate")!.version = "2";
+    await expect(vault.renameDuplicate(conflict, "duplicate", "New.md")).rejects.toThrow("changed");
+    files.get("duplicate")!.version = "1";
+    files.get("duplicate")!.parents = ["vault"];
+    await expect(vault.renameDuplicate(conflict, "duplicate", "New.md")).rejects.toThrow("changed");
+    expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+  });
+  it("honors the version lock when a reviewed copy changes just before renaming", async () => {
+    const { vault, files, rejectWrite } = fixture();
+    files.set("duplicate", { ...files.get("note")!, id: "duplicate" });
+    const conflict = await vault.listNoteEntries().catch((error) => error) as DriveDuplicateError;
+    rejectWrite();
+    await expect(vault.renameDuplicate(conflict, "duplicate", "Other.md")).rejects.toThrow("not uploaded");
+    expect(files.get("duplicate")!.name).toBe("Hello.md");
+  });
+  it("can resolve duplicate folders without losing their descendants", async () => {
+    const { vault, files } = fixture();
+    files.set("secondFolder", { ...files.get("folder")!, id: "secondFolder" });
+    const conflict = await vault.listNoteEntries().catch((error) => error) as DriveDuplicateError;
+    expect(conflict.path).toBe("Notes");
+    await vault.renameDuplicate(conflict, "secondFolder", "Other Notes");
+    expect(await vault.listDirs()).toEqual(["Notes", "Other Notes"]);
+    expect(await vault.readText("Notes/Hello.md")).toContain("Original");
   });
   it("creates parents and uploads new files in a single multipart creation", async () => {
     const { vault, calls } = fixture();

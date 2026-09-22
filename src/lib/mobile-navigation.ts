@@ -1,8 +1,9 @@
 export type MobileNavigationEntry =
   | { view: "notes" }
+  | { view: "tasks"; taskId?: string }
   | { view: "chat" }
   | { view: "chat-history" }
-  | { view: "note"; noteId: string; origin: "notes" | "chat" };
+  | { view: "note"; noteId: string; origin: "notes" | "chat" | "tasks" };
 
 const MOBILE_NAVIGATION_KEY = "zerusMobileNavigation";
 
@@ -18,11 +19,15 @@ export function readMobileNavigationEntry(state: unknown): MobileNavigationEntry
   if (entry.view === "notes" || entry.view === "chat" || entry.view === "chat-history") {
     return { view: entry.view };
   }
+  if (entry.view === "tasks") {
+    if (entry.taskId !== undefined && (typeof entry.taskId !== "string" || !entry.taskId)) return null;
+    return entry.taskId ? { view: "tasks", taskId: entry.taskId as string } : { view: "tasks" };
+  }
   if (
     entry.view === "note" &&
     typeof entry.noteId === "string" &&
     entry.noteId.length > 0 &&
-    (entry.origin === "notes" || entry.origin === "chat")
+    (entry.origin === "notes" || entry.origin === "chat" || entry.origin === "tasks")
   ) {
     return { view: "note", noteId: entry.noteId, origin: entry.origin };
   }

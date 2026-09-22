@@ -89,3 +89,13 @@ export async function openMobileFile(
 ): Promise<void> {
   await invoke("plugin:mobile-vault|open_file", { request: { path, mode } });
 }
+
+export async function openMobileFileData(name: string, bytes: Uint8Array): Promise<void> {
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 8192) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  }
+  await invoke("plugin:mobile-vault|open_file", {
+    request: { name, data: btoa(binary), mode: "preview" },
+  });
+}

@@ -48,6 +48,41 @@ export interface ResolvedFileHub {
   missingMapping: boolean;
 }
 
+export interface GoogleDriveLocation {
+  accountId: string;
+  folderId: string;
+  name: string;
+  path: string;
+}
+
+const GOOGLE_DRIVE_LOCATION_PREFIX = "google-drive://location/";
+
+/** Device-local pointer to a Drive folder. OAuth credentials remain native. */
+export function googleDriveLocationRoot(selection: Omit<GoogleDriveLocation, "path">): string {
+  return `${GOOGLE_DRIVE_LOCATION_PREFIX}${[selection.accountId, selection.folderId, selection.name]
+    .map(encodeURIComponent).join("/")}`;
+}
+
+export function parseGoogleDriveLocation(value: string): GoogleDriveLocation | null {
+  if (!value.startsWith(GOOGLE_DRIVE_LOCATION_PREFIX)) return null;
+  const parts = value.slice(GOOGLE_DRIVE_LOCATION_PREFIX.length).split("/");
+  if (parts.length < 3) return null;
+  try {
+    const [accountId, folderId, name, ...path] = parts.map(decodeURIComponent);
+    if (!accountId || !folderId || !name) return null;
+    const relative = path.length ? normalizeRelativeFilePath(path.join("/")) : "";
+    if (path.length && !relative) return null;
+    return { accountId, folderId, name, path: relative || "" };
+  } catch {
+    return null;
+  }
+}
+
+export function fileLocationMappingLabel(value: string): string {
+  const drive = parseGoogleDriveLocation(value);
+  return drive ? `Google Drive · ${drive.name}` : value;
+}
+
 function scalarString(value: PropertyValue | undefined): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();

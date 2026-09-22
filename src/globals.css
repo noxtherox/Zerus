@@ -163,10 +163,41 @@
 
   .mobile-native-shell {
     padding-top: var(--mobile-safe-area-top, env(safe-area-inset-top));
+    height: 100dvh;
+    max-width: none;
+    border: 0;
+    border-radius: 0;
   }
 
   .mobile-native-shell .mobile-bottom-search {
     padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+
+  .mobile-note-card[aria-pressed="true"] {
+    background: rgb(var(--zerus-accent) / 0.09);
+  }
+
+  .mobile-bulk-toolbar button,
+  .mobile-properties-panel button:not([role="checkbox"]):not([role="switch"]),
+  .mobile-properties-panel input:not([type="checkbox"]),
+  .mobile-list-filters button:not([role="switch"]):not([role="checkbox"]),
+  .mobile-list-filters label {
+    min-height: 44px;
+  }
+
+  .mobile-list-filters input,
+  .mobile-zerus-themed input,
+  .mobile-zerus-themed textarea {
+    font-size: max(16px, 1em);
+  }
+
+  .mobile-zerus-themed button {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-zerus-themed [role="group"][aria-label="Task views"] button {
+    min-height: 44px;
   }
 
   @keyframes mobile-library-enter {
@@ -327,6 +358,7 @@
     .mobile-properties-backdrop,
     .mobile-properties-panel {
       animation: none;
+      transition: none !important;
     }
   }
 }

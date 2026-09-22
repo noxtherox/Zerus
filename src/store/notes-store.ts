@@ -27,7 +27,7 @@ import {
   fileStem,
   getAllTypePaths,
   isExternalNote,
-  isSavedLinkNote,
+  isManagedSavedLinkNote,
   isRemoteUrl,
   isTrashed,
   logicalPath,
@@ -80,12 +80,22 @@ import type { VaultBackend, VaultFile, VaultFileEntry } from "@/lib/vault/backen
 import { BrowserVault } from "@/lib/vault/browser";
 import { DesktopVault } from "@/lib/vault/desktop";
 import { GoogleDriveVault } from "@/lib/vault/google-drive";
-import { savedDriveVault, saveDriveVault, type DriveVaultSelection } from "@/lib/google-drive";
+import {
+  decodeDriveBytes,
+  driveFetch,
+  driveTransport,
+  findDriveFile,
+  savedDriveVault,
+  saveDriveVault,
+  type DriveFile,
+  type DriveVaultSelection,
+} from "@/lib/google-drive";
 import { compactStartupNotes, hasLargeStartupCache, readLargeStartupCache, writeLargeStartupCache } from "@/lib/startup-cache";
 import { MobileFolderVault, MobileVault } from "@/lib/vault/mobile";
 import {
   clearMobileVaultFolder,
   openMobileFile,
+  openMobileFileData,
   pickMobileExternalNotes,
   pickMobileFiles,
   pickMobileFileLocationFolder,
@@ -97,11 +107,13 @@ import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import { loadDefaultNoteType } from "@/lib/note-preferences";
 import {
   fileNameFromPath,
+  googleDriveLocationRoot,
   getFileHubReference,
   isMarkdownFilePath,
   mostSpecificLocation,
   parseFileLocations,
   pathInsideRoot,
+  parseGoogleDriveLocation,
   removeFileHubReference,
   resolveFileHubReference,
   serializeFileLocations,
@@ -113,7 +125,6 @@ import {
 import {
   getLinkHubReference,
   linkDisplayName,
-  removeLinkHubReference,
   setLinkHubReference,
   withoutLinkMarkdown,
   withLinkMarkdown,
@@ -174,7 +185,7 @@ const MOBILE_NOTE_PAGE_SIZE = 30;
 const MOBILE_SYNC_INTERVAL_MS = 60_000;
 
 function isManagedSavedLink(note: Note): boolean {
-  return isSavedLinkNote(note) && note.path.startsWith(`${SAVED_LINKS_DIR}/`);
+  return isManagedSavedLinkNote(note);
 }
 
 export interface VaultState {
@@ -2404,7 +2415,7 @@ async function diskStillMatchesSnapshot(note: Note): Promise<boolean> {
 function stabilizeVaultLinks(catalogue = state.notes) {
   const resolve = createNoteResolver(catalogue);
   for (const note of state.notes) {
-    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note) ||
+    if (isExternalNote(note) || isManagedSavedLink(note) || isTrashed(note) ||
         state.loadingNoteIds.has(note.id) || state.conflicts[note.id]) continue;
     const content = state.hasMoreNotes ? note.content : stabilizeNoteLinks(note, catalogue, state.schemas, resolve);
     const identified = readZerusMetadata(content).id ? content : setZerusState(content, { id: note.id });
@@ -2415,7 +2426,7 @@ function stabilizeVaultLinks(catalogue = state.notes) {
 export function updateNoteContent(id: string, content: string, editing = false) {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || closingAfterFlush || state.busyNoteIds.has(id) || state.loadingNoteIds.has(id)) return;
-  if (!isExternalNote(note) && !isSavedLinkNote(note)) {
+  if (!isExternalNote(note) && !isManagedSavedLink(note)) {
     if (noteTitle(note) !== noteTitle({ ...note, content })) stabilizeVaultLinks();
     if (!state.hasMoreNotes) content = stabilizeNoteLinks({ ...note, content }, state.notes, state.schemas);
     content = setZerusState(content, { id: note.id });
@@ -2497,7 +2508,7 @@ async function persistNote(
       updateNote(id, { content });
     }
     const historySource = pendingHistorySource.get(id) ?? localHistorySource();
-    if (isSavedLinkNote(note)) {
+    if (isManagedSavedLink(note)) {
       await backend.write(note.path, note.content);
       if (backend instanceof GoogleDriveVault) backend.clearDraft(note.path, note.content);
       diskSnapshots.set(id, note.content);
@@ -3126,6 +3137,24 @@ export async function getFileHubStatus(id: string): Promise<FileHubStatus | null
   if (!resolved.absolutePath) {
     return { resolved, exists: false, size: null, modifiedAt: null };
   }
+  const driveLocation = parseGoogleDriveLocation(resolved.absolutePath);
+  if (driveLocation) {
+    try {
+      const file = await findDriveFile(
+        driveTransport(driveLocation.accountId),
+        driveLocation.folderId,
+        driveLocation.path,
+      );
+      return {
+        resolved,
+        exists: Boolean(file),
+        size: file?.size ? Number(file.size) : null,
+        modifiedAt: file?.modifiedTime ?? null,
+      };
+    } catch {
+      return { resolved, exists: false, size: null, modifiedAt: null };
+    }
+  }
   try {
     const info = await stat(resolved.absolutePath);
     return {
@@ -3202,7 +3231,7 @@ export async function createLinkNote(
   try {
     await backend.writeNew(path, content);
     const paths = state.notes
-      .filter(isSavedLinkNote)
+      .filter(isManagedSavedLink)
       .map((candidate) => candidate.path);
     await saveSavedLinkPaths([...paths, path]);
     diskSnapshots.set(id, content);
@@ -3241,7 +3270,7 @@ export function updateSavedLinkUrl(id: string, rawUrl: string): boolean {
   return true;
 }
 
-/** Converts an app-managed saved link into an ordinary typed Markdown note. */
+/** Files an app-managed saved link into a type while preserving its link identity. */
 export async function moveSavedLinkToVault(
   id: string,
   typePath: string[],
@@ -3250,19 +3279,19 @@ export async function moveSavedLinkToVault(
     return false;
   }
   const initial = state.notes.find((note) => note.id === id);
-  if (!initial || !isSavedLinkNote(initial)) return false;
+  if (!initial || !isManagedSavedLink(initial)) return false;
   setNoteBusy(id, true);
   try {
     if (!(await flushUntilIdle(id))) return false;
     const note = state.notes.find((candidate) => candidate.id === id);
-    if (!note || !isSavedLinkNote(note)) return false;
+    if (!note || !isManagedSavedLink(note)) return false;
     const existedKeys = existingTypeKeys();
-    const content = removeLinkHubReference(note.content);
+    const content = note.content;
     const target = uniquePath(typeKey(typePath), sanitizeFileStem(noteTitle(note)), id);
     await backend.write(target, content);
     const managedSavedLink = note.path.startsWith(`${SAVED_LINKS_DIR}/`);
     const previousSavedLinkPaths = state.notes
-      .filter(isSavedLinkNote)
+      .filter(isManagedSavedLink)
       .map((candidate) => candidate.path);
     const nextSavedLinkPaths = previousSavedLinkPaths.filter(
       (path) => path !== note.path,
@@ -3487,6 +3516,12 @@ export async function openFileHub(
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) return;
   try {
+    const driveLocation = parseGoogleDriveLocation(path);
+    if (driveLocation) {
+      const bytes = await readGoogleDriveLocationFile(driveLocation);
+      await openMobileFileData(note ? getFileHubReference(note)?.name ?? "Document" : "Document", bytes);
+      return;
+    }
     if (isIOSRuntime()) await openMobileFile(path, mode);
     else await openPath(path);
   } catch (error) {
@@ -3512,6 +3547,10 @@ export async function readFileHubBytes(
   const note = state.notes.find((candidate) => candidate.id === id);
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) throw new Error("The file location is not configured on this device.");
+  const driveLocation = parseGoogleDriveLocation(path);
+  if (driveLocation) {
+    return readGoogleDriveLocationFile(driveLocation, maximumBytes);
+  }
   if (maximumBytes !== undefined) {
     const info = await stat(path);
     if (info.size > maximumBytes) {
@@ -3523,6 +3562,33 @@ export async function readFileHubBytes(
   return readFile(path);
 }
 
+async function readGoogleDriveLocationFile(
+  location: NonNullable<ReturnType<typeof parseGoogleDriveLocation>>,
+  maximumBytes?: number,
+): Promise<Uint8Array> {
+  const transport = driveTransport(location.accountId);
+  const file: DriveFile | null = await findDriveFile(transport, location.folderId, location.path);
+  if (!file) throw new Error("This Google Drive file is unavailable or its path is ambiguous.");
+  if (file.mimeType.startsWith("application/vnd.google-apps.")) {
+    throw new Error("Google Docs files cannot be previewed as ordinary files.");
+  }
+  const size = file.size ? Number(file.size) : null;
+  if (maximumBytes !== undefined && size !== null && size > maximumBytes) {
+    throw new Error(
+      `This HTML file is too large to preview safely (${Math.ceil(size / 1024 / 1024)} MB). The limit is ${Math.floor(maximumBytes / 1024 / 1024)} MB.`,
+    );
+  }
+  const response = await driveFetch(transport, {
+    path: `/drive/v3/files/${file.id}`,
+    query: { alt: "media" },
+  });
+  const bytes = decodeDriveBytes(response.body);
+  if (maximumBytes !== undefined && bytes.length > maximumBytes) {
+    throw new Error("This HTML file is too large to preview safely.");
+  }
+  return bytes;
+}
+
 function saveFileLocations(locations: FileLocationDefinition[]) {
   setState({ fileLocations: locations });
   if (!backend) return;
@@ -3531,16 +3597,23 @@ function saveFileLocations(locations: FileLocationDefinition[]) {
     .catch((error) => reportError("save file locations", error));
 }
 
+export function createFileLocation(name: string): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const location = { id: crypto.randomUUID(), name: trimmed };
+  saveFileLocations([...state.fileLocations, location]);
+  return location.id;
+}
+
 export async function addFileLocation(name: string): Promise<boolean> {
   if (!isTauri()) return false;
   const root = isIOSRuntime()
     ? (await pickMobileFileLocationFolder())?.path ?? null
     : await openDialog({ directory: true, title: `Choose the ${name} folder` });
   if (typeof root !== "string" || !root) return false;
-  const location = { id: crypto.randomUUID(), name: name.trim() };
-  if (!location.name) return false;
-  saveFileLocations([...state.fileLocations, location]);
-  setFileLocationMapping(location.id, await canonicalizeFsPath(root));
+  const id = createFileLocation(name);
+  if (!id) return false;
+  setFileLocationMapping(id, await canonicalizeFsPath(root));
   return true;
 }
 
@@ -3562,6 +3635,12 @@ export async function mapFileLocation(id: string): Promise<boolean> {
     : await openDialog({ directory: true, title: `Locate ${location.name}` });
   if (typeof root !== "string" || !root) return false;
   setFileLocationMapping(id, await canonicalizeFsPath(root));
+  return true;
+}
+
+export function mapGoogleDriveFileLocation(id: string, selection: DriveVaultSelection): boolean {
+  if (!isIOSRuntime() || !state.fileLocations.some((candidate) => candidate.id === id)) return false;
+  setFileLocationMapping(id, googleDriveLocationRoot(selection));
   return true;
 }
 
@@ -5028,7 +5107,7 @@ export function noteBulkBlockReason(id: string): string | null {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note) return "Note is no longer available";
   if (isExternalNote(note)) return "External notes cannot be changed in bulk";
-  if (isSavedLinkNote(note)) return "Saved links cannot be changed in bulk";
+  if (isManagedSavedLink(note)) return "Saved links cannot be changed in bulk";
   if (isTrashed(note)) return "Trashed notes cannot be changed in bulk";
   if (state.loadingNoteIds.has(id)) return "Note is still loading";
   if (state.busyNoteIds.has(id)) return "Note is busy";

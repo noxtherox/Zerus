@@ -16,6 +16,9 @@
   "pnpm": {
     "overrides": {
       "js-yaml": "4.3.2"
+    },
+    "patchedDependencies": {
+      "@mdxeditor/editor@4.2.1": "patches/@mdxeditor__editor@4.2.1.patch"
     }
   },
   "type": "module",

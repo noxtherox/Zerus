@@ -79,7 +79,7 @@ function archiveVersion(archive) {
   );
 }
 
-function verifySignedArchive(archive) {
+function verifySignedArchive(archive, expectedBuild) {
   const team = run(
     "/usr/libexec/PlistBuddy",
     ["-c", "Print :ApplicationProperties:Team", join(archive, "Info.plist")],
@@ -94,7 +94,22 @@ function verifySignedArchive(archive) {
   if (!appName) {
     fail("archive does not contain an application bundle");
   }
-  run("/usr/bin/codesign", ["--verify", "--deep", "--strict", join(applicationsDir, appName)]);
+  const appPath = join(applicationsDir, appName);
+  const info = JSON.parse(run("/usr/bin/plutil", [
+    "-convert", "json", "-o", "-", join(appPath, "Info.plist"),
+  ], true));
+  if (String(info.CFBundleVersion) !== String(expectedBuild)) {
+    fail(`archived app has build ${info.CFBundleVersion}, expected ${expectedBuild}`);
+  }
+  const scene = info.UIApplicationSceneManifest;
+  const configurations = scene?.UISceneConfigurations?.UIWindowSceneSessionRoleApplication;
+  if (scene?.UIApplicationSupportsMultipleScenes !== true ||
+      !Array.isArray(configurations) ||
+      !configurations.some((entry) => entry.UISceneDelegateClassName === "TaoSceneDelegate")) {
+    fail("archived app is missing the required TaoSceneDelegate scene lifecycle");
+  }
+  run("/usr/bin/codesign", ["--verify", "--deep", "--strict", appPath]);
+  console.log(`Verified archived app build ${expectedBuild}, scene lifecycle, and signature.`);
 }
 
 function copyToXcodeOrganizer(archive, version, build) {
@@ -211,7 +226,7 @@ if (completedBuild !== targetBuild) {
     `build completed, but newest archive is ${completedBuild ?? "missing"} instead of ${targetBuild}`,
   );
 }
-verifySignedArchive(completedArchive);
+verifySignedArchive(completedArchive, targetBuild);
 
 copyToXcodeOrganizer(completedArchive, archiveVersion(completedArchive), targetBuild);
 

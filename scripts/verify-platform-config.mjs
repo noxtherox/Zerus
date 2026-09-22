@@ -52,6 +52,22 @@ const iOSEntitlements = readFileSync(
   resolve(root, "src-tauri/gen/apple/app_iOS/app_iOS.entitlements"),
   "utf8",
 );
+const iOSInfoPlist = readFileSync(
+  resolve(root, "src-tauri/Info.ios.plist"),
+  "utf8",
+);
+const generatedIOSInfoPlist = readFileSync(
+  resolve(root, "src-tauri/gen/apple/app_iOS/Info.plist"),
+  "utf8",
+);
+const generatedIOSProject = readFileSync(
+  resolve(root, "src-tauri/gen/apple/project.yml"),
+  "utf8",
+);
+const cargoManifest = readFileSync(
+  resolve(root, "src-tauri/Cargo.toml"),
+  "utf8",
+);
 
 for (const forbidden of [
   "keychain-access-groups",
@@ -64,6 +80,37 @@ for (const forbidden of [
 }
 if (!iOSEntitlements.includes("<key>keychain-access-groups</key>")) {
   fail("the iOS entitlement file must retain its keychain access group");
+}
+
+for (const [name, content] of [
+  ["the source iOS Info.plist", iOSInfoPlist],
+  ["the generated iOS Info.plist", generatedIOSInfoPlist],
+]) {
+  if (
+    !content.includes("<key>UIApplicationSceneManifest</key>") ||
+    !content.includes("<key>UIWindowSceneSessionRoleApplication</key>") ||
+    !content.includes(
+      "<key>UIApplicationSupportsMultipleScenes</key>\n\t\t<true/>",
+    ) ||
+    !content.includes("<string>TaoSceneDelegate</string>")
+  ) {
+    fail(`${name} must declare the tao scene lifecycle required by iOS 27`);
+  }
+}
+if (
+  !generatedIOSProject.includes("UIApplicationSceneManifest:") ||
+  !generatedIOSProject.includes("UIApplicationSupportsMultipleScenes: true") ||
+  !generatedIOSProject.includes("UIWindowSceneSessionRoleApplication:") ||
+  !generatedIOSProject.includes("UISceneDelegateClassName: TaoSceneDelegate")
+) {
+  fail("the generated Xcode project must retain the tao scene lifecycle");
+}
+if (
+  !cargoManifest.includes(
+    'rev = "c84a010d546c7fdf716bb6be97cc2038bdc62070"',
+  )
+) {
+  fail("tao must retain the iOS scene ownership fix until Tauri accepts tao 0.36");
 }
 
 console.log("Platform configuration boundaries verified.");

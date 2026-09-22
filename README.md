@@ -142,6 +142,17 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 
 ## Platforms
 
+The mobile workspace has bottom navigation for Notes, Tasks, global Search, and
+AI, with quick note creation. The library includes saved Links, Files, external
+notes, types, and Recently Deleted. Mobile uses the desktop sort/date/property
+filters and bulk pin, archive, and property actions, including action previews
+and undo history. Saved web addresses can be added, opened, and edited alongside
+their notes. Returning from a task's linked note restores that task's details.
+The browser `/app` route uses this workspace below 768px; `/mobile` always opens
+the mobile interface. Desktop board, table, gallery, calendar, and saved-view
+layouts remain desktop features. See the [mobile review](docs/mobile-audit/README.md)
+for the verified flows and remaining native-device checks.
+
 | Platform | Status | Vault storage |
 | --- | --- | --- |
 | macOS Apple Silicon | Desktop release with signed automatic updates | Local filesystem |
@@ -345,11 +356,20 @@ Drive's unsupported folder selection in Apple's Files picker. It opens an existi
 My Drive folder and reads/writes its Markdown notes and assets. An iOS Google OAuth
 client must be configured before sign-in works; see [Google Drive setup](docs/google-drive-ios.md).
 
+If the folder contains duplicate names, the Drive picker shows each copy's dates
+and offers text previews and individual renaming. This preserves both copies and
+checks for remaining conflicts before opening the vault. Renames apply to Google
+Drive on all devices; keep the original name on the copy existing links should open.
+
 This initial integration requires connectivity for loading and saving. It keeps
 local recovery copies of note edits, warms previously loaded note bodies for a
 faster launch, checks for conflicting remote changes, and refreshes periodically
 while Zerus is active and whenever it returns to the foreground. It is not an
 offline or iOS system-background sync service.
-Shared drives, shortcuts, external Drive file-location mappings, and uploads above
-25 MB are not supported. Actual Google sign-in and file operations must be verified
-on an iPhone with the configured OAuth client before shipping.
+On iOS, mapping a synced file location asks whether it uses Files/iCloud Drive or
+Google Drive. The Google Drive option opens the same authenticated folder browser
+instead of Apple's unsupported Files-provider folder mapping.
+Linked files in that location can be checked, previewed, and opened through the
+Drive API using the existing device sign-in. Shared drives, shortcuts, and uploads
+above 25 MB are not supported. Actual Google sign-in and file operations must be
+verified on an iPhone with the configured OAuth client before shipping.

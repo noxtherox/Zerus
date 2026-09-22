@@ -7,7 +7,7 @@ import {
 } from "@/lib/properties";
 import {
   isExternalNote,
-  isSavedLinkNote,
+  isManagedSavedLinkNote,
   isTrashed,
   noteTitle,
   noteTypePath,
@@ -105,7 +105,7 @@ export function recoverLegacyMovedRelations(
 
   let next = schemas;
   for (const note of notes) {
-    if (isExternalNote(note) || isSavedLinkNote(note) || isTrashed(note)) continue;
+    if (isExternalNote(note) || isManagedSavedLinkNote(note) || isTrashed(note)) continue;
     const typePath = noteTypePath(note);
     const covered = new Set(
       effectiveProperties(typePath, next).map((definition) =>
