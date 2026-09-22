@@ -99,12 +99,15 @@ it.each(["stalled", "slow"])("opens full notes with a %s large startup cache", a
   expect(saved.version).toBe(2);
   await prioritizeNoteLoad("story");
   expect(loadFiles).toHaveBeenCalledTimes(1);
-  // A stalled scan must lead to recovery, and its late completion must not
-  // replace that state with stale results after the timeout.
+  // A stalled scan keeps the last usable cache, and its late completion must
+  // not replace the content that was loaded on demand.
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(useVault().status).toBe("error");
-  expect(useVault().error).toContain("taking too long");
+  expect(useVault().status).toBe("ready");
+  expect(useVault().isRefreshing).toBe(false);
+  expect(useVault().loadingNoteIds.has("story")).toBe(false);
+  expect(getNotes()[0].content).toBe(content);
   entries.resolve([{ path, updatedAt }]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(useVault().status).toBe("error");
+  expect(useVault().status).toBe("ready");
+  expect(getNotes()[0].content).toBe(content);
 });

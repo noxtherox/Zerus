@@ -1,7 +1,7 @@
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
-import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
+import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, refreshTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
 import { EditorSettings } from "@/components/notes/EditorSettings";
 import type { DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
@@ -125,6 +125,7 @@ import {
   blocksMobileNoteSwipe,
   horizontalSwipeDirection,
   noteHeaderCollapseProgress,
+  startsAtSwipeEdge,
   shouldDismissBottomSheet,
 } from "@/lib/mobile-gestures";
 import {
@@ -356,9 +357,9 @@ function MobileNavigation({ tasksActive, onNotes, onTasks, onChat, onCreate, cre
   return <nav aria-label="Main navigation" className="mobile-bottom-search absolute inset-x-0 bottom-0 z-30 flex gap-1 border-t border-zerus-text/10 bg-zerus-editor/95 px-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] pt-2 backdrop-blur-xl">
     <button type="button" className={cn(item, !tasksActive && "bg-zerus-accent/10 text-zerus-accent")} aria-current={!tasksActive ? "page" : undefined} onClick={onNotes}><FileText className="h-5 w-5" />Notes</button>
     <button type="button" className={cn(item, tasksActive && "bg-zerus-accent/10 text-zerus-accent")} aria-current={tasksActive ? "page" : undefined} onClick={onTasks}><CheckSquare className="h-5 w-5" />Tasks</button>
+    {onCreate && <button type="button" className={cn(item, "rounded-2xl bg-zerus-accent text-white shadow-[0_4px_16px_rgba(223,81,73,0.28)] active:bg-zerus-accent/85")} aria-label={createLabel} onClick={onCreate}><Plus className="h-6 w-6" />New</button>}
     <button type="button" className={item} onClick={() => window.dispatchEvent(new Event("zerus:global-search"))}><Search className="h-5 w-5" />Search</button>
     <button type="button" className={item} onClick={onChat}><Sparkles className="h-5 w-5" />Ask AI</button>
-    {onCreate && <button type="button" className={cn(item, "text-zerus-accent")} aria-label={createLabel} onClick={onCreate}><Plus className="h-5 w-5" />New</button>}
   </nav>;
 }
 
@@ -859,7 +860,7 @@ function NoteView({
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isSettling, setIsSettling] = useState(false);
-  const touchStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
+  const touchStart = useRef<{ x: number; y: number; edge: "left" | "right"; axis: "horizontal" | "vertical" | null } | null>(null);
   const settleTimer = useRef<number | null>(null);
   const pendingSettle = useRef<(() => void) | null>(null);
   const notePageRef = useRef<HTMLDivElement | null>(null);
@@ -991,6 +992,13 @@ function NoteView({
 
   const handleTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     if (isSettling) return;
+    const touch = event.touches[0];
+    const edge = touch && startsAtSwipeEdge(touch.clientX, window.innerWidth) ? "left"
+      : touch && startsAtSwipeEdge(touch.clientX, window.innerWidth, "left") ? "right" : null;
+    if (!touch || !edge) {
+      touchStart.current = null;
+      return;
+    }
     if (
       event.target instanceof Element &&
       blocksMobileNoteSwipe(event.target)
@@ -998,9 +1006,7 @@ function NoteView({
       touchStart.current = null;
       return;
     }
-    const touch = event.touches[0];
-    if (!touch) return;
-    touchStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
+    touchStart.current = { x: touch.clientX, y: touch.clientY, edge, axis: null };
   };
 
   const handleTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
@@ -1028,11 +1034,11 @@ function NoteView({
       return;
     }
     const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY });
-    if (direction === "right" && propertiesOpen) {
+    if (direction === "right" && start.edge === "left" && propertiesOpen) {
       settle(pageWidth(), () => setPropertiesOpen(false));
-    } else if (direction === "right") {
+    } else if (direction === "right" && start.edge === "left") {
       settle(pageWidth(), onBack);
-    } else if (direction === "left" && !propertiesOpen) {
+    } else if (direction === "left" && start.edge === "right" && !propertiesOpen) {
       setPropertiesOpen(true);
       setIsDragging(false);
       setIsSettling(true);
@@ -1092,7 +1098,7 @@ function NoteView({
         "--mobile-note-header-bg-opacity": "0",
         "--mobile-note-header-border-opacity": "0",
         "--mobile-note-button-bg-opacity": "0.08",
-        touchAction: "pan-y",
+        touchAction: "auto",
       } as CSSProperties}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
@@ -2106,13 +2112,42 @@ export function MobileZerus() {
   const [chatOpen, setChatOpen] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchChatRequest | null>(null);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [keyboardDismissBottom, setKeyboardDismissBottom] = useState<number | null>(null);
+  useEffect(() => {
+    const update = () => {
+      const active = document.activeElement;
+      const editable = active instanceof Element && Boolean(active.closest("input:not([type=checkbox]), textarea, [contenteditable=true], [role=textbox]"));
+      if (!editable) { setKeyboardDismissBottom(null); return; }
+      const viewport = window.visualViewport;
+      setKeyboardDismissBottom(Math.max(12, window.innerHeight - (viewport?.height ?? window.innerHeight) - (viewport?.offsetTop ?? 0) + 12));
+    };
+    const afterBlur = () => window.setTimeout(update, 0);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", afterBlur);
+    window.visualViewport?.addEventListener("resize", update);
+    window.visualViewport?.addEventListener("scroll", update);
+    return () => {
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", afterBlur);
+      window.visualViewport?.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("scroll", update);
+    };
+  }, []);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [listFilters, setListFilters] = useState<NoteListFilterState>({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" });
   const [searchTaskId, setSearchTaskId] = useState<string | null>(null);
   const tasks = useTasks();
   const taskLists = useTaskLists();
   const generalTaskListName = useGeneralTaskListName();
-  useEffect(() => { void loadTasks(vault.location); }, [vault.location]);
+  useEffect(() => { if (vault.status === "ready") void loadTasks(vault.location); }, [vault.location, vault.status]);
+  useEffect(() => {
+    if (vault.status !== "ready") return;
+    const refresh = () => { if (document.visibilityState === "visible") void refreshTasks(); };
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 60_000);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); window.clearInterval(timer); };
+  }, [vault.location, vault.status]);
   useEffect(() => { if (selectedNoteId) recordSearchVisit(vault.location, `note:${selectedNoteId}`); }, [selectedNoteId, vault.location]);
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
   const [chatScope, setChatScope] = useState<ChatScope>({ kind: "vault" });
@@ -2309,7 +2344,7 @@ export function MobileZerus() {
 
   const handleNotesTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
-    if (!touch || libraryOpen) return;
+    if (!touch || libraryOpen || !startsAtSwipeEdge(touch.clientX, window.innerWidth)) return;
     notesSwipeStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
   };
 
@@ -2554,7 +2589,7 @@ export function MobileZerus() {
                   {query && <button type="button" onClick={() => setQuery("")} aria-label="Clear search" className="absolute right-0 top-0 flex h-11 w-11 items-center justify-center"><X className="h-4 w-4" /></button>}
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
-                  <NoteListFilters notes={scopeNotes} schemas={vault.schemas} showTypes={scope.kind === "all"} showFileTypes={scope.kind === "files"} showArchivedToggle={scope.kind !== "trash"} filters={listFilters} defaultSort="updated-desc" contentClassName="mobile-list-filters" triggerClassName="h-11 rounded-xl" onChange={next => { setListFilters(next); if (vault.hasMoreNotes) void prepareAllNotes(); }} />
+                  <NoteListFilters mobile notes={scopeNotes} schemas={vault.schemas} showTypes={scope.kind === "all"} showFileTypes={scope.kind === "files"} showArchivedToggle={scope.kind !== "trash"} filters={listFilters} defaultSort="updated-desc" contentClassName="mobile-list-filters" triggerClassName="h-11 rounded-xl" onChange={next => { setListFilters(next); if (vault.hasMoreNotes) void prepareAllNotes(); }} />
                   {scope.kind !== "trash" && scope.kind !== "links" && scope.kind !== "external" && <Button variant="ghost" className="ml-auto h-11 rounded-xl" aria-pressed={bulkSelection.selectMode} onClick={() => bulkSelection.selectMode ? bulkSelection.clearSelection() : bulkSelection.setSelectMode(true)}>{bulkSelection.selectMode ? "Done" : "Select"}</Button>}
                 </div>
                 {bulkSelection.selectMode && <BulkActionsToolbar className="mobile-bulk-toolbar" notes={vault.notes.filter(note => filteredNoteIds.has(note.id))} schemas={vault.schemas} vaultLocation={vault.location} selectedIds={bulkSelection.selectedIds} onClear={bulkSelection.clearSelection} onSelectAll={bulkSelection.selectAll} onRemoveSelected={bulkSelection.removeSelected} />}
@@ -2750,6 +2785,7 @@ export function MobileZerus() {
             isNativeApp={isNativeApp}
           />
         )}
+        {keyboardDismissBottom !== null && <button type="button" onPointerDown={event => event.preventDefault()} onClick={() => { (document.activeElement as HTMLElement | null)?.blur(); setKeyboardDismissBottom(null); }} style={{ bottom: keyboardDismissBottom }} className="fixed right-4 z-[100] min-h-11 rounded-full bg-zerus-accent px-5 text-sm font-semibold text-white shadow-lg" aria-label="Dismiss keyboard">Done</button>}
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
       </section>
       <div className="pointer-events-none fixed bottom-5 right-6 hidden items-center gap-2 rounded-full bg-[#232323]/90 px-3 py-2 text-xs font-medium text-[#aaa6a0] shadow-sm backdrop-blur sm:flex"><FileText className="h-3.5 w-3.5" />Interactive iOS prototype</div>

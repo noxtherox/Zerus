@@ -41,22 +41,26 @@ export function useTaskCategoryOptions(): string[] {
 
 export async function loadTasks(vaultLocation: string | null): Promise<void> {
   const generation = ++loadGeneration;
+  const changedVault = location !== vaultLocation;
   location = vaultLocation;
   const backend = getVaultBackend();
   if (!backend || !vaultLocation) { tasks = []; lists = []; generalListName = "General"; categoryOptions = []; emit(); return; }
+  if (changedVault) {
+    tasks = []; lists = []; generalListName = "General"; categoryOptions = []; emit();
+  }
   try {
     const loaded = normalizeTaskData(JSON.parse(await backend.readText(TASKS_PATH)));
-    if (generation !== loadGeneration || location !== vaultLocation) return;
+    if (generation !== loadGeneration || location !== vaultLocation || backend !== getVaultBackend()) return;
     tasks = loaded.tasks;
     lists = loaded.lists;
     generalListName = loaded.generalListName ?? "General";
     categoryOptions = loaded.categoryOptions;
-  } catch {
-    if (generation !== loadGeneration || location !== vaultLocation) return;
-    tasks = [];
-    lists = [];
-    generalListName = "General";
-    categoryOptions = [];
+  } catch (error) {
+    if (generation !== loadGeneration || location !== vaultLocation || backend !== getVaultBackend()) return;
+    // Cloud providers can temporarily fail a read while materializing a file.
+    // Preserve the last good snapshot; only a genuinely absent task file is empty.
+    if (!/not found|no such file|does not exist|os error 2/i.test(String(error))) return;
+    tasks = []; lists = []; generalListName = "General"; categoryOptions = [];
   }
   emit();
 }

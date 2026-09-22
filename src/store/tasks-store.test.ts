@@ -17,6 +17,18 @@ describe("tasks store", () => {
     backend.write.mockReset().mockResolvedValue(undefined);
   });
 
+  it("keeps loaded tasks through a transient cloud read failure", async () => {
+    backend.readText.mockResolvedValueOnce(JSON.stringify({ tasks: [{ id: "synced", title: "Synced task" }] }));
+    await loadTasks("/cloud-vault");
+    backend.readText.mockRejectedValueOnce(new Error("File Provider is temporarily unavailable"));
+    await loadTasks("/cloud-vault");
+    updateTask("synced", { title: "Still synced" });
+    await vi.waitFor(() => expect(backend.write).toHaveBeenCalled());
+    expect(JSON.parse(backend.write.mock.lastCall![1]).tasks).toEqual([
+      expect.objectContaining({ id: "synced", title: "Still synced" }),
+    ]);
+  });
+
   it("persists empty lists, task membership and moves through reloads", async () => {
     backend.readText.mockResolvedValue(JSON.stringify({ tasks: [], categoryOptions: [] }));
     await loadTasks("/test-vault");

@@ -493,7 +493,7 @@
 .zerus-mdx-content th, .zerus-table-grid th { background: rgb(var(--zerus-text) / .055); font-weight: 650; }
 .zerus-mdx-content td[data-zerus-active-cell], .zerus-mdx-content th[data-zerus-active-cell] { outline: 2px solid rgb(var(--zerus-accent) / .7); outline-offset: -2px; }
 .zerus-table-cell-selected { background: rgb(var(--zerus-accent) / .13); }
-.zerus-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; margin-block: 1rem; border-radius: 8px; }
+.zerus-table-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; margin-block: 1rem; border-radius: 8px; }
 .zerus-table-scroll > table { margin: 0; }
 /* Contextual controls live outside the editable DOM, on the active cell edges. */
 .zerus-table-cell-tools { position: fixed; z-index: 80; pointer-events: none; }

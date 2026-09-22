@@ -84,6 +84,7 @@ interface NoteListFiltersProps {
   contentClassName?: string;
   defaultSort?: NoteSort;
   showActivePills?: boolean;
+  mobile?: boolean;
   onChange: (filters: NoteListFilterState) => void;
   onVisiblePropertiesChange?: (properties: string[]) => void;
 }
@@ -100,6 +101,7 @@ export function NoteListFilters({
   contentClassName,
   defaultSort = EMPTY_NOTE_LIST_FILTERS.sort,
   showActivePills = true,
+  mobile = false,
   onChange,
   onVisiblePropertiesChange,
 }: NoteListFiltersProps) {
@@ -200,7 +202,7 @@ export function NoteListFilters({
 
   return (
     <>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover open={open} onOpenChange={setOpen} modal={mobile}>
         <PopoverTrigger asChild>
           <Button
             variant={activeCount ? "secondary" : "outline"}
@@ -224,7 +226,7 @@ export function NoteListFilters({
         </PopoverTrigger>
         <PopoverContent
           align="end"
-          className={cn("max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-0", contentClassName)}
+          className={cn("max-h-[70vh] w-[min(20rem,calc(100vw-2rem))] overflow-y-auto p-0", mobile && "mobile-filter-sheet", contentClassName)}
         >
           <div className="flex items-center justify-between px-3 py-2.5">
             <span className="text-sm font-semibold">Sort &amp; filter</span>
@@ -244,7 +246,9 @@ export function NoteListFilters({
             <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
               <ArrowUpDown size={13} /> Sort by
             </div>
-            <Select
+            {mobile ? <div className="grid grid-cols-2 gap-2" role="group" aria-label="Sort by">
+              {SORT_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={filters.sort === option.value} onClick={() => onChange({ ...filters, sort: option.value })} className={cn("rounded-xl border px-3 py-2 text-left text-sm", filters.sort === option.value ? "border-zerus-accent bg-zerus-accent/15 text-zerus-accent" : "border-border bg-background")}>{option.label}</button>)}
+            </div> : <Select
               value={filters.sort}
               onValueChange={(sort) =>
                 onChange({ ...filters, sort: sort as NoteSort })
@@ -260,7 +264,7 @@ export function NoteListFilters({
                   </SelectItem>
                 ))}
               </SelectContent>
-            </Select>
+            </Select>}
           </section>
           <Separator />
           {showArchivedToggle && (
@@ -582,6 +586,7 @@ export function NoteListFilters({
               </section>
             </>
           )}
+          {mobile && <div className="sticky bottom-0 border-t bg-popover p-3"><Button className="h-11 w-full" onClick={() => setOpen(false)}>Show notes</Button></div>}
         </PopoverContent>
       </Popover>
 

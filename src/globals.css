@@ -196,6 +196,26 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  [data-radix-popper-content-wrapper]:has(> .mobile-filter-sheet) {
+    position: fixed !important;
+    top: auto !important;
+    bottom: 0 !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: min(100vw, 393px) !important;
+  }
+
+  .mobile-filter-sheet {
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-height: min(82dvh, 760px) !important;
+    padding-bottom: env(safe-area-inset-bottom);
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -20px 50px rgb(0 0 0 / .35);
+  }
+
   .mobile-zerus-themed [role="group"][aria-label="Task views"] button {
     min-height: 44px;
   }
