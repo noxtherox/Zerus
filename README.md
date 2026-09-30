@@ -126,14 +126,17 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   budget, with no fixed document-count limit. Scanned PDFs require external OCR;
   unsupported binary documents must first be exported as text or searchable PDF.
   Desktop and mobile share a notes agent with **Ask**, **Review**, and **Edit**
-  modes. It can search and page through notes, read long notes in ranges, patch
-  passages, create notes, update properties and paired relations, inspect links,
-  and organize notes. Review shows exact diffs before saving; changes have
+  modes; Review is the default. Choose whether edits are limited to the current
+  note or the selected context. Trash and changes spanning multiple notes require
+  approval even in Edit mode. It can search and page through notes, read long
+  notes in ranges, patch passages, create notes, update properties and paired
+  relations, inspect links, and organize notes. Review shows exact diffs before saving; changes have
   verified receipts, conflict-aware undo, and a durable run journal. Track plans,
   answer questions, queue messages, steer ongoing work, or resume an interrupted
   run. Configure budgets, vault instructions, editable memory, reusable workflows,
-  and optional independent analysis. Chat tools stay inside the selected note
-  context; CLI compatibility reads use the same boundary.
+  and optional independent analysis, which is off by default and can incur extra
+  provider costs. Chat tools stay inside the selected note context; CLI
+  compatibility reads use the same boundary.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI. Changes made by the CLI are reflected in the open app, including

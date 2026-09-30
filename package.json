@@ -15,7 +15,10 @@
   },
   "pnpm": {
     "overrides": {
-      "js-yaml": "4.3.2"
+      "js-yaml": "4.3.2",
+      "undici@7.29.0": "7.29.1",
+      "brace-expansion@1.1.18": "1.1.21",
+      "brace-expansion@5.0.9": "5.0.12"
     },
     "patchedDependencies": {
       "@mdxeditor/editor@4.2.1": "patches/@mdxeditor__editor@4.2.1.patch"
@@ -143,7 +146,7 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.67.0",
     "vite": "^8.2.1",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "yaml": "^2.9.0"
   }
 }
