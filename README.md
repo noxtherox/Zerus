@@ -40,7 +40,7 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   Typing reuses parsed links from unchanged notes and avoids reparsing the
   editor’s own Markdown on each render, reducing work during text entry.
   Images offer expand, edit, and undoable removal actions. A heading outline
-  lets you jump through longer notes and can stay pinned open.
+  in the desktop properties panel lets you jump through longer notes.
   Title edits also reuse unchanged link-stabilization results and skip title
   lookups for labelled ID links, while preserving older title-based links.
 - **Connected notes** — use `@` or `[[` to find notes while writing, or choose
