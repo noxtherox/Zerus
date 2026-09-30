@@ -4584,6 +4584,45 @@ export function updateNoteBody(id: string, body: string) {
   if (next !== note.content) updateNoteContent(id, next, true);
 }
 
+/** Agent writes are exact, scoped changes. Do not stabilize unrelated notes on rename. */
+export async function writeAgentNoteContent(id: string, expectedContent: string, content: string): Promise<boolean> {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!note || note.content !== expectedContent || noteBulkBlockReason(id)) return false;
+  if (readZerusMetadata(content).id !== id) return false;
+  queueNoteContent(id, content, true);
+  return flushNoteWrites(id);
+}
+
+/** Move only the reviewed note to its exact reviewed destination. */
+export async function moveAgentNote(id: string, expectedContent: string, path: string, flags: { pinned?: boolean; archived?: boolean }): Promise<void> {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!backend || !note || note.content !== expectedContent || noteBulkBlockReason(id)) throw new Error("Note changed or cannot be moved.");
+  if (!await flushNoteWrites(id)) throw new Error("Pending note edits could not be saved.");
+  if (path !== note.path) {
+    if (await backend.exists(path)) throw new Error("Destination already exists.");
+    await moveNoteWithManagedDocument(note, path);
+  }
+  const moved = state.notes.find((candidate) => candidate.id === id)!;
+  queueNoteContent(id, setZerusState(moved.content, flags));
+  updateNote(id, { ...(flags.pinned === undefined ? {} : { pinned: flags.pinned }), ...(flags.archived === undefined ? {} : { archived: flags.archived }) });
+  if (!await flushNoteWrites(id)) throw new Error("Note organization could not be saved.");
+}
+
+/** Journal undo restores an exact snapshot, or moves a new note to recoverable Trash. */
+export async function restoreAgentNote(id: string, expectedContent: string, snapshot: { path: string; content: string; pinned?: boolean; archived?: boolean } | null): Promise<void> {
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!backend || !note || note.content !== expectedContent || isExternalNote(note) || state.conflicts[id] || state.busyNoteIds.has(id)) throw new Error("Undo target changed or is unavailable.");
+  if (!await flushNoteWrites(id)) throw new Error("Pending note edits could not be saved.");
+  if (!snapshot) { await trashNote(id); return; }
+  if (snapshot.path !== note.path) {
+    if (await backend.exists(snapshot.path)) throw new Error("Original path is occupied.");
+    await moveNoteWithManagedDocument(note, snapshot.path);
+  }
+  queueNoteContent(id, snapshot.content);
+  updateNote(id, { pinned: Boolean(snapshot.pinned), archived: Boolean(snapshot.archived) });
+  if (!await flushNoteWrites(id)) throw new Error("Undo could not be saved.");
+}
+
 // ---- per-type saved views ---------------------------------------------------
 
 function saveTypeViews(typeViews: TypeViewConfigs) {
@@ -4904,6 +4943,7 @@ export async function renameType(
 export async function createNote(
   typePath: string[] = DEFAULT_TYPE,
   content = "",
+  identity?: string,
 ): Promise<Note | null> {
   if (!backend) return null;
   const dir = typeKey(typePath.length ? typePath : DEFAULT_TYPE);
@@ -4911,7 +4951,8 @@ export async function createNote(
     content ? noteTitle({ content, path: "" } as Note) : "Untitled",
   );
   const path = uniquePath(dir, stem);
-  const id = crypto.randomUUID();
+  const id = identity ?? crypto.randomUUID();
+  if (state.notes.some((note) => note.id === id)) return null;
   const persistedContent = setZerusState(content, { id });
   const createdAt = new Date().toISOString();
   const note: Note = {
@@ -4923,9 +4964,9 @@ export async function createNote(
     createdAt,
     updatedAt: createdAt,
   };
-  if (!state.hasMoreNotes) note.content = stabilizeNoteLinks(note, [...state.notes, note], state.schemas);
+  if (!state.hasMoreNotes && !identity) note.content = stabilizeNoteLinks(note, [...state.notes, note], state.schemas);
   try {
-    await backend.write(path, note.content);
+    await backend.writeNew(path, note.content);
     diskSnapshots.set(note.id, note.content);
     if (state.isNotePaginationEnabled) {
       mobileNoteEntries.push({

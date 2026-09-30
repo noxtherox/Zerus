@@ -198,10 +198,8 @@ export function noteTitle(note: Note): string {
 const previewParser = unified().use(remarkParse).use(remarkGfm);
 
 /** Readable text only: keep labels and code, omit formatting and image sources. */
-function markdownPreview(source: string): string {
-  const tree = previewParser.parse(
-    source.replace(WIKILINK_REGEX, (_, reference: string) => parseNoteReference(reference).label),
-  ) as Root;
+function markdownPreview(source: string, maxLength?: number): string {
+  const markdown = source.replace(WIKILINK_REGEX, (_, reference: string) => parseNoteReference(reference).label);
   function text(node: Root | RootContent): string {
     if (node.type === "image" || node.type === "imageReference" ||
         node.type === "definition" || node.type === "html") return "";
@@ -213,14 +211,33 @@ function markdownPreview(source: string): string {
     }
     return "";
   }
-  return text(tree).replace(/\s+/g, " ").trim();
+  // Reference definitions can occur after the excerpt. Keep their full-document
+  // resolution; otherwise parse progressively until complete blocks fill it.
+  let limit = maxLength === undefined || /^ {0,3}\[[^\n]+\]:/m.test(markdown)
+    ? markdown.length
+    : Math.min(2048, markdown.length);
+  for (;;) {
+    const tree = previewParser.parse(markdown.slice(0, limit)) as Root;
+    if (limit < markdown.length) {
+      // The last block may be cut inside a link, code fence, or emphasis span.
+      // Wait for its end before using it in the visible preview.
+      tree.children.pop();
+    }
+    const preview = text(tree).replace(/\s+/g, " ").trim();
+    if (maxLength === undefined) return preview;
+    if (preview.length >= maxLength || limit === markdown.length) {
+      return preview.slice(0, maxLength);
+    }
+    limit = Math.min(limit * 2, markdown.length);
+  }
 }
 
 interface NoteListPreview {
   content: string;
   path: string;
   title: string;
-  snippet: string;
+  snippetSource: string;
+  snippet?: string;
 }
 
 const noteListPreviewCache = new WeakMap<Note, NoteListPreview>();
@@ -235,7 +252,7 @@ function noteListPreview(note: Note): NoteListPreview {
     content: note.content,
     path: note.path,
     title: firstLine ? markdownPreview(firstLine) || "Untitled" : fileStem(note.path) || "Untitled",
-    snippet: firstIdx < 0 ? "" : markdownPreview(lines.slice(firstIdx + 1).join("\n")).slice(0, 120),
+    snippetSource: firstIdx < 0 ? "" : lines.slice(firstIdx + 1).join("\n"),
   };
   noteListPreviewCache.set(note, preview);
   return preview;
@@ -247,7 +264,9 @@ export function noteListTitle(note: Note): string {
 }
 
 export function noteSnippet(note: Note): string {
-  return noteListPreview(note).snippet;
+  const preview = noteListPreview(note);
+  preview.snippet ??= markdownPreview(preview.snippetSource, 120);
+  return preview.snippet;
 }
 
 /** First image embedded in the note body, used by note-card previews. */

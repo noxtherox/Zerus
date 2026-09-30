@@ -23,10 +23,14 @@ struct CloudAIGenerateRequest: Decodable {
   let prompt: String
   let images: [CloudAIImageRequest]?
   let streamId: String
+  let agentRequestJSON: String?
 }
+
+struct CloudAIStopRequest: Decodable { let streamId: String? }
 
 struct CloudAIGenerateResponse: Encodable {
   let answer: String
+  let agentResponseJSON: String?
 }
 
 struct CloudAIModelResponse: Encodable {
@@ -108,9 +112,9 @@ final class CloudAIManager {
     return CloudAIModelsResponse(models: models)
   }
 
-  func generate(_ request: CloudAIGenerateRequest, onDelta: @escaping (String) -> Void) async throws -> String {
+  func generate(_ request: CloudAIGenerateRequest, onDelta: @escaping (String) -> Void) async throws -> CloudAIGenerateResponse {
     let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !prompt.isEmpty else { throw CloudAIError.emptyPrompt }
+    guard !prompt.isEmpty || request.agentRequestJSON != nil else { throw CloudAIError.emptyPrompt }
     let endpoint = storedEndpoint()
     guard let apiKey = try readAPIKey(endpoint: endpoint), !apiKey.isEmpty else {
       throw CloudAIError.missingAPIKey
@@ -122,21 +126,52 @@ final class CloudAIManager {
       let dataURL = "data:\(image.mimeType);base64,\(Data(image.bytes).base64EncodedString())"
       content.append(["type": "image_url", "image_url": ["url": dataURL]])
     }
-    let body: [String: Any] = [
+    var body: [String: Any] = [
       "model": storedModel(),
       "messages": [["role": "user", "content": content]],
       "stream": true,
     ]
-    let text = try await performStreamingRequest(
-      body: body,
-      apiKey: apiKey,
-      baseEndpoint: endpoint,
-      onDelta: onDelta
-    )
-    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      throw CloudAIError.emptyResponse
+    if let raw = request.agentRequestJSON, let data = raw.data(using: .utf8), let agent = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      guard let system = agent["systemPrompt"] as? String, !system.isEmpty,
+            let incoming = agent["messages"] as? [[String: Any]], !incoming.isEmpty, incoming.count <= 256 else { throw CloudAIError.invalidResponse }
+      var messages: [[String: Any]] = [["role": "system", "content": system]]
+      for message in incoming {
+        let role = message["role"] as? String ?? ""
+        guard ["user", "assistant", "tool"].contains(role) else { throw CloudAIError.invalidResponse }
+        var item: [String: Any] = ["role":role,"content":message["content"] as? String ?? ""]
+        if let images = message["images"] as? [[String: String]], !images.isEmpty {
+          guard role == "user", images.count <= 4 else { throw CloudAIError.invalidResponse }
+          var parts: [[String: Any]] = [["type":"text","text":message["content"] as? String ?? ""]]
+          for image in images {
+            guard let media = image["mediaType"], ["image/png","image/jpeg","image/gif","image/webp"].contains(media), let data = image["data"], data.count <= 4_200_000 else { throw CloudAIError.invalidResponse }
+            parts.append(["type":"image_url","image_url":["url":"data:\(media);base64,\(data)"]])
+          }
+          item["content"] = parts
+        }
+        if let calls = message["toolCalls"] as? [[String: String]], !calls.isEmpty {
+          item["tool_calls"] = calls.map { ["id": $0["id"] ?? "", "type":"function", "function":["name":$0["name"] ?? "", "arguments":$0["arguments"] ?? "{}"]] as [String: Any] }
+        }
+        if let id = message["toolCallId"] as? String { item["tool_call_id"] = id }
+        messages.append(item)
+      }
+      body["messages"] = messages
+      if let tools = agent["tools"] as? [[String: Any]], !tools.isEmpty {
+        guard tools.count <= 50 else { throw CloudAIError.invalidResponse }
+        body["tools"] = tools.map { ["type":"function","function":["name":$0["name"] ?? "", "description":$0["description"] ?? "", "parameters":$0["inputSchema"] ?? [:]]] as [String:Any] }
+        body["tool_choice"] = "auto"
+      }
+      let maxTokens = agent["maxOutputTokens"] as? Int ?? 8192
+      guard (1...32768).contains(maxTokens) else { throw CloudAIError.invalidResponse }
+      body["max_tokens"] = maxTokens
+      body["stream_options"] = ["include_usage":true]
+      if let temperature = agent["temperature"] as? Double { body["temperature"] = temperature }
+      if let effort = agent["effort"] as? String, endpoint.contains("openrouter.ai"), ["low","medium","high"].contains(effort) { body["reasoning"] = ["effort":effort] }
     }
-    return text
+    let response = try await performStreamingRequest(body: body, apiKey: apiKey, baseEndpoint: endpoint, onDelta: onDelta)
+    let text = response["content"] as? String ?? ""
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (response["toolCalls"] as? [[String: Any]])?.isEmpty == false else { throw CloudAIError.emptyResponse }
+    let json = try JSONSerialization.data(withJSONObject: response)
+    return CloudAIGenerateResponse(answer: text, agentResponseJSON: request.agentRequestJSON == nil ? nil : String(data: json, encoding: .utf8))
   }
 
   private func performStreamingRequest(
@@ -144,7 +179,7 @@ final class CloudAIManager {
     apiKey: String,
     baseEndpoint: String,
     onDelta: @escaping (String) -> Void
-  ) async throws -> String {
+  ) async throws -> [String: Any] {
     let base = try normalizedEndpoint(baseEndpoint)
     guard let endpoint = URL(string: "\(base)/chat/completions") else {
       throw CloudAIError.invalidEndpoint
@@ -164,21 +199,39 @@ final class CloudAIManager {
       )
     }
     var answer = ""
+    var reasoning = ""
+    var calls: [Int: [String: String]] = [:]
+    var usage: [String: Int] = [:]
+    var finishReason = "stop"
     for try await line in bytes.lines {
       try Task.checkCancellation()
       guard line.hasPrefix("data:") else { continue }
       let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
       if payload == "[DONE]" { break }
-      guard let data = payload.data(using: .utf8),
-            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let choices = json["choices"] as? [[String: Any]],
-            let delta = choices.first?["delta"] as? [String: Any],
-            let text = delta["content"] as? String,
-            !text.isEmpty else { continue }
-      answer += text
-      onDelta(text)
+      guard let data = payload.data(using: .utf8), let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+      if let error = json["error"] as? [String: Any] { throw CloudAIError.requestFailed(status: 200, message: error["message"] as? String ?? "Stream failed") }
+      if let tokens = json["usage"] as? [String: Any] {
+        usage["inputTokens"] = tokens["prompt_tokens"] as? Int
+        usage["outputTokens"] = tokens["completion_tokens"] as? Int
+      }
+      guard let choices = json["choices"] as? [[String: Any]], let choice = choices.first else { continue }
+      if let reason = choice["finish_reason"] as? String { finishReason = reason }
+      guard let delta = choice["delta"] as? [String: Any] else { continue }
+      if let text = delta["content"] as? String, !text.isEmpty { answer += text; onDelta(text) }
+      reasoning += delta["reasoning_content"] as? String ?? delta["reasoning"] as? String ?? ""
+      for part in delta["tool_calls"] as? [[String: Any]] ?? [] {
+        let index = part["index"] as? Int ?? 0
+        var call = calls[index] ?? ["id":"","name":"","arguments":""]
+        if let id = part["id"] as? String { call["id"] = id }
+        if let function = part["function"] as? [String: String] {
+          call["name", default: ""] += function["name"] ?? ""
+          call["arguments", default: ""] += function["arguments"] ?? ""
+        }
+        guard call["arguments", default: ""].count <= 200_000 else { throw CloudAIError.invalidResponse }
+        calls[index] = call
+      }
     }
-    return answer
+    return ["content":answer,"reasoning":reasoning,"toolCalls":calls.keys.sorted().map { calls[$0]! },"usage":usage,"finishReason":finishReason]
   }
 
   private func performRequest(

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { NoteOutline } from "@/components/editor/NoteOutline";
 import {
   Archive,
   ArrowLeft,
@@ -30,6 +31,7 @@ import { handleMiddleMouseDown } from "@/lib/middle-click";
 
 interface BacklinksPanelProps {
   note: Note;
+  editorContainer: HTMLDivElement | null;
   allNotes: Note[];
   tasks: Task[];
   schemas: PropertySchemas;
@@ -44,6 +46,7 @@ interface BacklinksPanelProps {
 
 export function BacklinksPanel({
   note,
+  editorContainer,
   allNotes,
   tasks,
   schemas,
@@ -145,6 +148,7 @@ export function BacklinksPanel({
           />
         )}
       </div>
+      <NoteOutline key={note.id} container={editorContainer} onNavigate={() => { if (expanded) onToggleExpanded(); }} />
       {!isTrashed(note) && (
         <AttachmentsSection note={note} expanded={expanded} />
       )}

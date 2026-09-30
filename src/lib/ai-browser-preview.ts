@@ -33,3 +33,57 @@ export async function previewChatAnswer(
   signal.throwIfAborted();
   return text;
 }
+
+/** Exercise the real journal and tools in a clearly labelled offline preview. */
+export async function previewNotesAgent(
+  runtime: import("./ai-harness").NotesAgentRuntime,
+  question: string,
+  context: AiContext,
+  signal: AbortSignal,
+  onText: (text: string) => void,
+): Promise<string> {
+  const { directAiNoteAction } = await import("./ai-actions");
+  const action = directAiNoteAction(question);
+  let text: string;
+  if (action && context.noteId) {
+    await runtime.execute({
+      name: "note_get",
+      arguments: { selector: context.noteId },
+    });
+    const call =
+      action.type === "append"
+        ? {
+            name: "note_append" as const,
+            arguments: { selector: context.noteId, text: action.text },
+          }
+        : {
+            name: "note_set_body" as const,
+            arguments: { selector: context.noteId, body: action.body },
+          };
+    const result = await runtime.execute(call);
+    text = result.ok
+      ? runtime.run.receipts.length
+        ? "**Local preview:** the requested change was saved and verified. Review or undo it below."
+        : "**Local preview:** the requested change is ready for review below. Approve it to save."
+      : `**Local preview:** ${(result.result as { error: string }).error}`;
+  } else {
+    await runtime.execute({ name: "note_list", arguments: { limit: 5 } });
+    if (context.noteId)
+      await runtime.execute({
+        name: "note_get",
+        arguments: { selector: context.noteId },
+      });
+    text = await previewChatAnswer(context, signal, onText);
+  }
+  runtime.run.status = runtime.run.proposals.some(
+    (item) => item.status === "pending",
+  )
+    ? "waiting"
+    : "complete";
+  await runtime.event(
+    "finished",
+    "Offline preview finished. No provider contacted.",
+  );
+  onText(text);
+  return text;
+}

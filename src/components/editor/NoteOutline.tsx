@@ -1,5 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { Pin, X } from "@/lib/icons";
+import { useEffect, useState } from "react";
 
 interface Heading {
   element: HTMLElement;
@@ -8,13 +7,9 @@ interface Heading {
 }
 
 /** Read rendered headings so formatting, duplicate titles and editor recovery stay in sync. */
-export function NoteOutline({ container }: { container: HTMLDivElement | null }) {
+export function NoteOutline({ container, onNavigate }: { container: HTMLDivElement | null; onNavigate: () => void }) {
   const [headings, setHeadings] = useState<Heading[]>([]);
   const [active, setActive] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const panelId = useId();
 
   useEffect(() => {
     if (!container) return;
@@ -100,66 +95,31 @@ export function NoteOutline({ container }: { container: HTMLDivElement | null })
   }, [container]);
 
   if (!headings.length) return null;
-  const expanded = open || pinned;
   const baseLevel = Math.min(...headings.map((heading) => heading.level));
-  const close = () => {
-    setOpen(false);
-    setPinned(false);
-    triggerRef.current?.focus();
-  };
   return (
-    <div
-      className="zerus-note-outline"
-      onPointerEnter={(event) => { if (event.pointerType === "mouse") setOpen(true); }}
-      onPointerLeave={() => setOpen(false)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") { event.stopPropagation(); close(); }
-      }}
-    >
-      <button
-        ref={triggerRef}
-        type="button"
-        className="zerus-outline-rail"
-        aria-label="Note outline"
-        aria-expanded={expanded}
-        aria-controls={panelId}
-        onClick={() => setOpen(true)}
-      >
+    <nav aria-label="Note headings" className="zerus-outline-panel shrink-0 border-t border-border/60">
+      <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outline</h2>
+      <div className="zerus-outline-list">
         {headings.map((heading, index) => (
-          <span key={index} className={index === active ? "is-active" : ""}
-            style={{ width: Math.max(6, 20 - (heading.level - baseLevel) * 3) }} />
+          <button key={index} type="button" title={heading.text}
+            aria-current={index === active ? "location" : undefined}
+            style={{ paddingLeft: 12 + (heading.level - baseLevel) * 12 }}
+            onClick={() => {
+              onNavigate();
+              // Let an expanded properties panel reveal the editor before measuring.
+              requestAnimationFrame(() => {
+                const scroller = container?.querySelector(".mdxeditor-root-contenteditable");
+                if (!scroller || !heading.element.isConnected) return;
+                scroller.scrollTo({
+                  top: scroller.scrollTop + heading.element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 24,
+                  behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+                });
+                setActive(index);
+              });
+            }}
+          >{heading.text}</button>
         ))}
-      </button>
-      {expanded && (
-        <nav id={panelId} aria-label="Note headings" className="zerus-outline-panel">
-          <div className="zerus-outline-header">
-            <span>Outline</span>
-            <button type="button" aria-label="Keep outline open" aria-pressed={pinned}
-              onClick={() => setPinned(!pinned)}><Pin size={14} /></button>
-            <button type="button" aria-label="Close outline" onClick={close}><X size={14} /></button>
-          </div>
-          <div className="zerus-outline-list">
-            {headings.map((heading, index) => (
-              <button key={index} type="button" title={heading.text}
-                aria-current={index === active ? "location" : undefined}
-                style={{ paddingLeft: 12 + (heading.level - baseLevel) * 12 }}
-                onClick={() => {
-                  const scroller = container?.querySelector(".mdxeditor-root-contenteditable");
-                  if (!scroller) return;
-                  scroller.scrollTo({
-                    top: scroller.scrollTop + heading.element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 24,
-                    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-                  });
-                  setActive(index);
-                }}
-              >{heading.text}</button>
-            ))}
-          </div>
-        </nav>
-      )}
-    </div>
+      </div>
+    </nav>
   );
 }

@@ -26,6 +26,7 @@ export interface AiNoteChange {
 }
 
 export interface StoredAiMessage {
+  runId?: string;
   documents?: ChatDocument[];
   id?: string;
   turnId?: string;

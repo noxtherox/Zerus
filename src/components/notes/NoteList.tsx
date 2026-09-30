@@ -67,6 +67,8 @@ import {
   restoreTrashedImage,
   openImageInDefaultApp,
   revealNoteInDesktop,
+  toggleNoteArchived,
+  toggleNotePinned,
   trashNote,
   type TrashedImage,
 } from "@/store/notes-store";
@@ -557,11 +559,11 @@ export function NoteList({
                       </>
                     ) : (
                       <>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: !archived } })}>
+                        <ContextMenuItem onSelect={() => toggleNoteArchived(note.id)}>
                           {archived ? <ArchiveRestore size={14} className="mr-2" /> : <Archive size={14} className="mr-2" />}
                           {archived ? "Unarchive" : "Archive"}
                         </ContextMenuItem>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: !note.pinned } })}>
+                        <ContextMenuItem onSelect={() => toggleNotePinned(note.id)}>
                           <Pin size={14} className="mr-2" /> {note.pinned ? "Unpin" : "Pin"}
                         </ContextMenuItem>
                       </>

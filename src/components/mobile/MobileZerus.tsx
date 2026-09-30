@@ -3,7 +3,7 @@ import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, refreshTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
 import { EditorSettings } from "@/components/notes/EditorSettings";
-import type { DriveVaultSelection } from "@/lib/google-drive";
+import { driveCommand, isDriveSignInExpired, type DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
 import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
 import { parseNoteReference } from "@/lib/wikilinks";
@@ -1712,7 +1712,27 @@ function MobileSettings({
   onClose,
   onChangeVault,
 }: MobileSettingsProps) {
-  const { fileLocations, historyError, historySettings } = useVault();
+  const { fileLocations, historyError, historySettings, error: vaultError } = useVault();
+  const [driveAction, setDriveAction] = useState<"refresh" | "reconnect" | null>(null);
+  const driveActionInFlight = useRef(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+  const refreshDriveVault = async (reconnect = false) => {
+    if (driveActionInFlight.current) return;
+    driveActionInFlight.current = true;
+    setDriveAction(reconnect ? "reconnect" : "refresh");
+    setDriveError(null);
+    try {
+      // Renew consent before flushing: expired credentials may be blocking edits.
+      // Native reconnect verifies the original account and retains it on cancellation.
+      if (reconnect) await driveCommand({ operation: "reconnect" });
+      await reloadVault();
+    } catch (error) {
+      setDriveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      driveActionInFlight.current = false;
+      setDriveAction(null);
+    }
+  };
   const locationMappings = getFileLocationMappings();
   const [locationDraft, setLocationDraft] = useState("");
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
@@ -1918,8 +1938,13 @@ function MobileSettings({
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-zerus-accent text-white"><Folder className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-zerus-text/55">Your Markdown vault</span></span>
           </div>
-          {location?.startsWith("Google Drive ·") && <Button type="button" variant="ghost" onClick={() => void reloadVault()} className="mt-3 w-full">Save and refresh Google Drive</Button>}
-          <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-zerus-text/[0.07] text-sm font-semibold text-zerus-accent hover:bg-zerus-text/[0.1] hover:text-zerus-accent">Change vault</Button>
+          {location?.startsWith("Google Drive ·") && <>
+            <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={() => void refreshDriveVault()} className="mt-3 w-full">{driveAction === "refresh" ? "Saving and refreshing…" : "Save and refresh Google Drive"}</Button>
+            <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={() => void refreshDriveVault(true)} className="mt-2 w-full text-zerus-accent">{driveAction === "reconnect" ? "Reconnecting…" : "Reconnect Google account"}</Button>
+            {isDriveSignInExpired(vaultError) && <p role="alert" className="mt-2 text-sm text-zerus-text/65">Your Google sign-in expired. Reconnect the same account to save pending edits and refresh this vault.</p>}
+            {driveError && <p role="alert" className="mt-2 text-sm text-destructive">{driveError}</p>}
+          </>}
+          <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-zerus-text/[0.07] text-sm font-semibold text-zerus-accent hover:bg-zerus-text/[0.1] hover:text-zerus-accent">Change vault</Button>
         </div>
         </>}
 

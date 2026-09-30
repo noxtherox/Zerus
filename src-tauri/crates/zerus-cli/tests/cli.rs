@@ -13,7 +13,7 @@ fn fixture() -> TempDir {
     .unwrap();
     fs::write(
         directory.path().join("work/Archived.md"),
-        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c39\nzerus-archived: true\n---\n# Old Plan\n",
+        "---\nzerus-id: 019f7923-8fae-7733-8357-48b16a134c39\nzerus-archived: true\n---\n# Old Plan\n",
     )
     .unwrap();
     directory
@@ -62,7 +62,7 @@ fn gets_a_note_by_id_prefix_with_body_only_json() {
             "--json",
             "note",
             "get",
-            "019f7922-8fae-7733-8357-48b16a134c38",
+            "019f7922",
             "--body",
         ])
         .output()

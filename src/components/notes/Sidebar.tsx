@@ -509,25 +509,26 @@ export function Sidebar({
     () => buildTypeTree(notes, extraTypes, typeOrder),
     [notes, extraTypes, typeOrder],
   );
-  const activeCount = notes.filter(
-    (note) =>
-      !isExternalNote(note) && !isManagedSavedLinkNote(note) && !isTrashed(note),
-  ).length;
-  const externalCount = notes.filter(isExternalNote).length;
-  const fileCount = notes.filter(
-    (note) =>
-      !isExternalNote(note) &&
-      !isTrashed(note) &&
-      getFileHubReference(note) !== null,
-  ).length;
-  const linkCount = notes.filter(
-    (note) =>
-      !isExternalNote(note) &&
-      !isTrashed(note) &&
-      getLinkHubReference(note) !== null,
-  ).length;
-  const trashCount =
-    notes.filter((note) => isTrashed(note)).length + trashedImageCount;
+  const { activeCount, externalCount, fileCount, linkCount, trashedNoteCount } = useMemo(() => {
+    let activeCount = 0;
+    let externalCount = 0;
+    let fileCount = 0;
+    let linkCount = 0;
+    let trashedNoteCount = 0;
+    for (const note of notes) {
+      if (isExternalNote(note)) {
+        externalCount++;
+      } else if (isTrashed(note)) {
+        trashedNoteCount++;
+      } else {
+        if (!isManagedSavedLinkNote(note)) activeCount++;
+        if (getFileHubReference(note) !== null) fileCount++;
+        if (getLinkHubReference(note) !== null) linkCount++;
+      }
+    }
+    return { activeCount, externalCount, fileCount, linkCount, trashedNoteCount };
+  }, [notes]);
+  const trashCount = trashedNoteCount + trashedImageCount;
   const typeSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 6 },

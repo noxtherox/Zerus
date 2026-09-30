@@ -178,7 +178,7 @@ final class GoogleDriveManager {
     let (data, response) = try await http.data(for: request)
     guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw DriveFailure(message: "Google returned an invalid sign-in response.") }
     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-      if json["error"] as? String == "invalid_grant" { throw DriveFailure(message: "Google Drive sign-in expired. Disconnect and reconnect your account.") }
+      if json["error"] as? String == "invalid_grant" { throw DriveFailure(message: "Google Drive sign-in expired. Use Reconnect Google account in Settings → Vault.") }
       throw DriveFailure(message: "Google sign-in failed. Check the iOS OAuth client and test-user configuration.")
     }
     return json

@@ -688,6 +688,7 @@ export function EditorPane({
   };
   const backlinksPanel = !external && !linkHub && showBacklinks ? (
     <BacklinksPanel
+      editorContainer={findContainer}
       note={note}
       allNotes={allNotes}
       tasks={tasks}

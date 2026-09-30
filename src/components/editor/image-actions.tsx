@@ -28,7 +28,7 @@ function ImageActions({ nodeKey, imageSource, initialImagePath, title, alt, widt
   const deleted = useRef(false);
 
   return <div className="zerus-image-actions" contentEditable={false} onClick={event => event.stopPropagation()}>
-    <button ref={expandButton} type="button" title="Expand image" aria-label="Expand image" onClick={() => setExpanded(true)}><Maximize2 size={16} /><span>Expand</span></button>
+    <button ref={expandButton} type="button" title="Expand image" aria-label="Expand image" onClick={() => setExpanded(true)}><Maximize2 size={16} /></button>
     <button type="button" title="Edit image" aria-label="Edit image" onClick={() => editImage({ nodeKey, initialValues: {
       src: initialImagePath ?? imageSource, title, altText: alt,
       width: typeof width === "number" ? width : undefined,

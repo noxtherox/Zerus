@@ -68,11 +68,21 @@ pub struct CloudAiGenerateRequest {
     pub stream_id: String,
     #[serde(default)]
     pub images: Vec<CloudAiImageRequest>,
+    #[serde(default, rename = "agentRequestJSON")]
+    pub agent_request_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct CloudAiGenerateResponse {
     pub answer: String,
+    #[serde(default, rename = "agentResponseJSON")]
+    pub agent_response_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAiStopRequest {
+    pub stream_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -121,4 +131,26 @@ pub struct SpeechRecognitionProgressResponse {
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct DeviceNameResponse {
     pub name: String,
+}
+
+#[cfg(test)]
+mod agent_transport_tests {
+    use super::*;
+    #[test]
+    fn agent_payloads_and_targeted_cancellation_survive_the_native_bridge() {
+        let request: CloudAiGenerateRequest = serde_json::from_value(serde_json::json!({"prompt":"","streamId":"step-1","images":[],"agentRequestJSON":"{\"tools\":[{\"name\":\"note_get\"}]}"})).unwrap();
+        let native = serde_json::to_value(request).unwrap();
+        assert_eq!(
+            native["agentRequestJSON"],
+            "{\"tools\":[{\"name\":\"note_get\"}]}"
+        );
+        let response: CloudAiGenerateResponse = serde_json::from_value(serde_json::json!({"answer":"","agentResponseJSON":"{\"toolCalls\":[{\"id\":\"call-1\"}]}"})).unwrap();
+        assert_eq!(
+            serde_json::to_value(response).unwrap()["agentResponseJSON"],
+            "{\"toolCalls\":[{\"id\":\"call-1\"}]}"
+        );
+        let stop: CloudAiStopRequest =
+            serde_json::from_value(serde_json::json!({"streamId":"step-1"})).unwrap();
+        assert_eq!(serde_json::to_value(stop).unwrap()["streamId"], "step-1");
+    }
 }

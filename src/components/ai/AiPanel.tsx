@@ -1,3 +1,14 @@
+import {
+  NotesAgentControls,
+  NotesAgentRunView,
+  NotesAgentPending,
+} from "./NotesAgentControls";
+import { useNotesAgent } from "./useNotesAgent";
+import { notesAgentPort } from "@/lib/ai-harness-store";
+import { notesAgentPrompt } from "@/lib/ai-harness-prompt";
+import { enableNotesWorkers } from "@/lib/ai-harness-workers";
+import { typeKey } from "@/lib/note-utils";
+import { loadAllNotes } from "@/store/notes-store";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
@@ -6,7 +17,14 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { nativeFileDropPoint } from "@/lib/native-file-drop";
 import { readFile, stat } from "@tauri-apps/plugin-fs";
-import { selectDocumentContext, prepareChatDocument, validateDocumentBatch, MAX_CHAT_FILE_BYTES, MAX_CHAT_TOTAL_BYTES, type ChatDocument } from "@/lib/chat-documents";
+import {
+  selectDocumentContext,
+  prepareChatDocument,
+  validateDocumentBatch,
+  MAX_CHAT_FILE_BYTES,
+  MAX_CHAT_TOTAL_BYTES,
+  type ChatDocument,
+} from "@/lib/chat-documents";
 import {
   Check,
   Code2,
@@ -48,7 +66,6 @@ import { ChatAnswerActions } from "./ChatAnswerActions";
 import { ChatContextPicker } from "./ChatContextPicker";
 import { ChatHistory } from "./ChatHistory";
 import {
-  budgetChatHistory,
   modelChatHistoryContent,
   visibleChatStream,
   chatActivityLabel,
@@ -60,18 +77,9 @@ import {
   type AiContext,
   type AiKnowledgeScope,
 } from "@/lib/ai-context";
-import {
-  applyAiNoteAction,
-  directAiNoteAction,
-  parseAiResponse,
-} from "@/lib/ai-actions";
-import { runAiTool, type AiToolCall } from "@/lib/ai-tools";
-import { previewChatAnswer } from "@/lib/ai-browser-preview";
+import type { AiToolCall } from "@/lib/ai-tools";
+import { previewNotesAgent } from "@/lib/ai-browser-preview";
 import { runZerusAgent } from "@/lib/ai-sdk-agent";
-import {
-  approvedCliArgsForConsent,
-  authorizesAiNoteMutation,
-} from "@/lib/ai-agent-policy";
 import { noteBody } from "@/lib/frontmatter";
 import {
   getImageUrl,
@@ -79,7 +87,6 @@ import {
   getVaultBackend,
   readVaultImage,
   savePastedImage,
-  updateNoteBody,
 } from "@/store/notes-store";
 import {
   readSharedAiSettings,
@@ -109,6 +116,10 @@ import { chatDeviceLabel, getChatDevice } from "@/lib/mobile-device";
 
 const BROWSER_PREVIEW = !isTauri();
 const DEFAULT_WIDTH = 440;
+function storedWidth(): number {
+  const value = Number(localStorage.getItem("zerus.ai.width"));
+  return Number.isFinite(value) && value >= 340 ? value : DEFAULT_WIDTH;
+}
 const MIN_WIDTH = 340;
 const WIDTH_STORAGE_KEY = "zerus.ai.width";
 
@@ -125,14 +136,6 @@ interface CodexAiStatus {
   accountLabel: string | null;
   planType: string | null;
   models: CloudAiModel[];
-}
-
-interface ZerusCliResult {
-  ok: boolean;
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-  truncated: boolean;
 }
 
 interface AiPanelProps {
@@ -267,17 +270,6 @@ function attachmentMarkdown(attachment: StoredAiImageAttachment): string {
   return `![${alt}](${attachment.path})`;
 }
 
-function asksToAppendAttachedImage(value: string): boolean {
-  return /\b(?:append|add|put|insert|attach)\b[\s\S]*\b(?:image|photo|picture|screenshot|it|this)\b/i.test(
-    value,
-  );
-}
-
-function storedWidth(): number {
-  const value = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
-  return Number.isFinite(value) && value >= MIN_WIDTH ? value : DEFAULT_WIDTH;
-}
-
 export function AiPanel({
   searchRequest,
   onSearchRequestHandled,
@@ -298,6 +290,10 @@ export function AiPanel({
   const pendingAttachmentsRef = useRef<PreparedChatImage[]>([]);
   const requestIdRef = useRef(0);
   const sendInFlightRef = useRef(false);
+  const queuedSendRef = useRef<{
+    send: (text: string) => void;
+    take: () => string | undefined;
+  } | null>(null);
   const activeStreamIdRef = useRef<string | null>(null);
   const contextRef = useRef<AiContext | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -315,7 +311,6 @@ export function AiPanel({
     streamTextRef.current = text;
     updateStreamingText(text);
   };
-  const [historyOmitted, setHistoryOmitted] = useState(0);
   const [showJump, setShowJump] = useState(false);
   const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -350,23 +345,26 @@ export function AiPanel({
           : (sharedConversation?.scope ?? scope),
     [selectedNoteIds, sharedConversation?.scope, scope],
   );
+  const agentUI = useNotesAgent(getVaultBackend(), chatId);
+  const scopeKeyRef = useRef("");
+  scopeKeyRef.current = JSON.stringify(effectiveScope);
+  const agentPortFor = (run: import("@/lib/ai-harness-state").AgentRun) => {
+    const backend = getVaultBackend();
+    if (!backend || !chatDevice || !ownsSharedConversation)
+      throw new Error("Chat is read-only or the vault is unavailable.");
+    return notesAgentPort(
+      backend,
+      chatId,
+      chatDevice.id,
+      () => run.chatId === chatId && run.scopeKey === scopeKeyRef.current,
+      scopeKeyRef.current,
+    );
+  };
   const deferredDraft = useDeferredValue(draft);
   const context = useMemo(
     () =>
       buildAiContext(note, notes, effectiveScope, vaultLocation, deferredDraft),
     [note, notes, effectiveScope, vaultLocation, deferredDraft],
-  );
-  const scopedNotes = useMemo(
-    () => notesInAiScope(notes, effectiveScope),
-    [notes, effectiveScope],
-  );
-  const scopedNoteIds = useMemo(
-    () => new Set(scopedNotes.map((candidate) => candidate.id)),
-    [scopedNotes],
-  );
-  const outsideNotes = useMemo(
-    () => notes.filter((candidate) => !scopedNoteIds.has(candidate.id)),
-    [notes, scopedNoteIds],
   );
   contextRef.current = context;
   const sharedScope = effectiveScope as ChatScope;
@@ -396,7 +394,12 @@ export function AiPanel({
     let active = true;
     void readSharedAiSettings(backend).then((shared) => {
       const local = readAiProviderConfig();
-      if (!active || !shared || !shouldApplySharedAiSettings(local, shared.active)) return;
+      if (
+        !active ||
+        !shared ||
+        !shouldApplySharedAiSettings(local, shared.active)
+      )
+        return;
       saveAiProviderConfig(shared.active);
       setProviderConfig(shared.active);
     });
@@ -640,33 +643,60 @@ export function AiPanel({
         const selected = loaded.find((chat) => chat.id === chatId);
         if (selected) {
           setSharedConversation(selected);
-          if (selected.owner.id !== chatDevice.id) setMessages(desktopChatMessages(selected));
+          if (selected.owner.id !== chatDevice.id)
+            setMessages(desktopChatMessages(selected));
         }
-      } catch { /* Leave the visible transcript intact if a sync read fails. */ }
+      } catch {
+        /* Leave the visible transcript intact if a sync read fails. */
+      }
     };
     window.addEventListener("focus", refresh);
     const timer = window.setInterval(() => void refresh(), 5000);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
   }, [open, sending, chatId, chatDevice]);
 
   const selectImages = async (files: readonly File[]) => {
-    if (!files.length || selectingFiles.current || sending || !ownsSharedConversation) return;
+    if (
+      !files.length ||
+      selectingFiles.current ||
+      sending ||
+      !ownsSharedConversation
+    )
+      return;
     selectingFiles.current = true;
     setPreparingImages(true);
     const selectionId = requestIdRef.current;
     try {
       const documents = [...pendingDocuments];
       validateDocumentBatch(documents, files);
-      for (const file of files.filter((file) => !file.type.startsWith("image/") && !/\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name))) {
+      for (const file of files.filter(
+        (file) =>
+          !file.type.startsWith("image/") &&
+          !/\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name),
+      )) {
         const document = await prepareChatDocument(file);
         documents.push(document);
         validateDocumentBatch(documents, []);
       }
       if (selectionId !== requestIdRef.current) return;
       setPendingDocuments(documents);
-      await selectImageFiles(files.filter((file) => file.type.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name)));
-    } catch (error) { showError(String(error)); }
-    finally { selectingFiles.current = false; setPreparingImages(false); }
+      await selectImageFiles(
+        files.filter(
+          (file) =>
+            file.type.startsWith("image/") ||
+            /\.(png|jpe?g|gif|webp|heic|avif|bmp)$/i.test(file.name),
+        ),
+      );
+    } catch (error) {
+      showError(String(error));
+    } finally {
+      selectingFiles.current = false;
+      setPreparingImages(false);
+    }
   };
 
   const selectFilesRef = useRef(selectImages);
@@ -675,33 +705,55 @@ export function AiPanel({
     if (!isTauri() || !open) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void getCurrentWindow().onDragDropEvent(async ({ payload }) => {
-      if (payload.type === "leave") { setFileDragOver(false); return; }
-      const scale = await getCurrentWindow().scaleFactor();
-      if (disposed) return;
-      const { x, y } = nativeFileDropPoint(payload.position, scale);
-      const target = document.elementFromPoint(x, y);
-      const overChat = Boolean(target && panelRef.current?.contains(target));
-      setFileDragOver(payload.type !== "drop" && overChat);
-      if (payload.type !== "drop" || !overChat) return;
-      try {
-        const files: File[] = [];
-        let totalBytes = 0;
-        for (const path of payload.paths) {
-          const size = (await stat(path)).size;
-          if (size > MAX_CHAT_FILE_BYTES) throw new Error("Files must be under 50 MB.");
-          totalBytes += size;
-          if (totalBytes > MAX_CHAT_TOTAL_BYTES) throw new Error("Uploads exceed the 100 MB processing budget.");
-          const bytes = await readFile(path);
-          const name = path.split(/[\\/]/).pop() || "file";
-          const extension = name.split(".").pop()?.toLowerCase() ?? "";
-          const imageType = /^(png|jpe?g|gif|webp|heic|avif|bmp)$/.test(extension) ? `image/${extension === "jpg" ? "jpeg" : extension}` : "";
-          files.push(new File([bytes], name, { type: imageType }));
+    void getCurrentWindow()
+      .onDragDropEvent(async ({ payload }) => {
+        if (payload.type === "leave") {
+          setFileDragOver(false);
+          return;
         }
-        if (!disposed) await selectFilesRef.current(files);
-      } catch (error) { showError(String(error)); }
-    }).then((stop) => { if (disposed) stop(); else unlisten = stop; }).catch((error) => { if (!disposed) showError(`File drop setup failed: ${String(error)}`); });
-    return () => { disposed = true; unlisten?.(); };
+        const scale = await getCurrentWindow().scaleFactor();
+        if (disposed) return;
+        const { x, y } = nativeFileDropPoint(payload.position, scale);
+        const target = document.elementFromPoint(x, y);
+        const overChat = Boolean(target && panelRef.current?.contains(target));
+        setFileDragOver(payload.type !== "drop" && overChat);
+        if (payload.type !== "drop" || !overChat) return;
+        try {
+          const files: File[] = [];
+          let totalBytes = 0;
+          for (const path of payload.paths) {
+            const size = (await stat(path)).size;
+            if (size > MAX_CHAT_FILE_BYTES)
+              throw new Error("Files must be under 50 MB.");
+            totalBytes += size;
+            if (totalBytes > MAX_CHAT_TOTAL_BYTES)
+              throw new Error("Uploads exceed the 100 MB processing budget.");
+            const bytes = await readFile(path);
+            const name = path.split(/[\\/]/).pop() || "file";
+            const extension = name.split(".").pop()?.toLowerCase() ?? "";
+            const imageType = /^(png|jpe?g|gif|webp|heic|avif|bmp)$/.test(
+              extension,
+            )
+              ? `image/${extension === "jpg" ? "jpeg" : extension}`
+              : "";
+            files.push(new File([bytes], name, { type: imageType }));
+          }
+          if (!disposed) await selectFilesRef.current(files);
+        } catch (error) {
+          showError(String(error));
+        }
+      })
+      .then((stop) => {
+        if (disposed) stop();
+        else unlisten = stop;
+      })
+      .catch((error) => {
+        if (!disposed) showError(`File drop setup failed: ${String(error)}`);
+      });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [open]);
 
   const selectImageFiles = async (files: readonly File[]) => {
@@ -738,10 +790,16 @@ export function AiPanel({
     }
   };
 
-  const sendMessage = async (retryIndex?: number, regenerate = false) => {
+  const sendMessage = async (
+    retryIndex?: number,
+    regenerate = false,
+    queuedContent?: string,
+  ) => {
     const retryMessage = retryIndex === undefined ? null : messages[retryIndex];
-    const selectedAttachments = retryMessage ? [] : pendingAttachments;
+    const selectedAttachments =
+      retryMessage || queuedContent ? [] : pendingAttachments;
     const content =
+      queuedContent ??
       retryMessage?.content ??
       (draft.trim() ||
         (selectedAttachments.length || pendingDocuments.length
@@ -754,7 +812,8 @@ export function AiPanel({
       vaultLocation,
       content,
     );
-    const providerReady = BROWSER_PREVIEW || Boolean(cloudReady && providerConfig.model);
+    const providerReady =
+      BROWSER_PREVIEW || Boolean(cloudReady && providerConfig.model);
     if (
       !currentContext ||
       !historyReady ||
@@ -834,17 +893,7 @@ export function AiPanel({
     const controller = new AbortController();
     abortRef.current = controller;
     const changes: AiNoteChange[] = [];
-    const applyChange = (id: string, after: string) => {
-      const latest = getNotes().find((candidate) => candidate.id === id);
-      if (!latest) throw new Error("Note is no longer available.");
-      changes.push({
-        noteId: id,
-        title: noteTitle(latest),
-        before: noteBody(latest.content),
-        after,
-      });
-      updateNoteBody(id, after);
-    };
+    let completedToolCalls: StoredAiToolCall[] = [];
     const finishAnswer = async (answer: ChatMessage) => {
       const next = [
         ...history,
@@ -876,83 +925,42 @@ export function AiPanel({
     setStreamingToolCalls([]);
 
     try {
-      if (
-        !regenerate &&
-        storedAttachments.length > 0 &&
-        asksToAppendAttachedImage(content) &&
-        currentContext.noteId
-      ) {
-        const latestNote = getNotes().find(
-          (candidate) => candidate.id === currentContext.noteId,
-        );
-        if (
-          latestNote &&
-          contextRef.current?.noteId === currentContext.noteId
-        ) {
-          const markdown = storedAttachments
-            .map(attachmentMarkdown)
-            .join("\n\n");
-          applyChange(
-            latestNote.id,
-            applyAiNoteAction(noteBody(latestNote.content), {
-              type: "append",
-              text: markdown,
-            }),
-          );
-          await finishAnswer({
-            role: "assistant",
-            content:
-              storedAttachments.length === 1
-                ? "Added the image to the end of the note."
-                : "Added the images to the end of the note.",
-            editApplied: true,
-          });
-          setSending(false);
-          sendInFlightRef.current = false;
-          showSuccess("Note updated");
-          return;
-        }
-      }
-
-      const directAction =
-        !regenerate && storedAttachments.length === 0
-          ? (userMessage.documents?.length ? null : directAiNoteAction(content))
-          : null;
-      if (directAction && currentContext.noteId) {
-        const latestNote = getNotes().find(
-          (candidate) => candidate.id === currentContext.noteId,
-        );
-        if (
-          latestNote &&
-          contextRef.current?.noteId === currentContext.noteId
-        ) {
-          applyChange(
-            latestNote.id,
-            applyAiNoteAction(noteBody(latestNote.content), directAction),
-          );
-          await finishAnswer({
-            role: "assistant",
-            content: "Added the text to the end of the note.",
-            editApplied: true,
-          });
-          setSending(false);
-          sendInFlightRef.current = false;
-          showSuccess("Note updated");
-          return;
-        }
-      }
-
-      const budgeted = budgetChatHistory(history.map((message) => ({ ...message, documents: undefined })));
+      const requestHistory = history.map((message) => ({
+        ...message,
+        documents: undefined,
+      }));
       const documents = history.flatMap((message) => message.documents ?? []);
-      const selectedModel = cloudModels.find((model) => model.id === providerConfig.model) ?? { id: providerConfig.model };
-      const contextModel = providerConfig.provider === "codex" ? { ...selectedModel, id: `codex:${selectedModel.id}` } : selectedModel;
-      const existingText = currentContext.sessionContext + (sharedConversation?.summary?.text.slice(0, 8000) ?? "") + budgeted.messages.map((message) => message.content).join("\n");
-      const imageCount = budgeted.messages.reduce((sum, message) => sum + (message.attachments?.length ?? 0), 0);
-      const documentContext = documents.length ? await selectDocumentContext(documents, content, contextModel, existingText, imageCount) : null;
-      setDocumentContextStatus(documentContext ? `${documentContext.excerpts ? "Using file excerpts" : "Full file context"}${documentContext.fallback ? " · model capacity unknown; conservative budget" : ""}` : "");
-      setHistoryOmitted(budgeted.omitted);
+      const selectedModel = cloudModels.find(
+        (model) => model.id === providerConfig.model,
+      ) ?? { id: providerConfig.model, contextWindow: undefined };
+      const contextModel =
+        providerConfig.provider === "codex"
+          ? { ...selectedModel, id: `codex:${selectedModel.id}` }
+          : selectedModel;
+      const existingText =
+        currentContext.sessionContext +
+        (sharedConversation?.summary?.text.slice(0, 8000) ?? "") +
+        requestHistory.map((message) => message.content).join("\n");
+      const imageCount = requestHistory.reduce(
+        (sum, message) => sum + (message.attachments?.length ?? 0),
+        0,
+      );
+      const documentContext = documents.length
+        ? await selectDocumentContext(
+            documents,
+            content,
+            contextModel,
+            existingText,
+            imageCount,
+          )
+        : null;
+      setDocumentContextStatus(
+        documentContext
+          ? `${documentContext.excerpts ? "Using file excerpts" : "Full file context"}${documentContext.fallback ? " · model capacity unknown; conservative budget" : ""}`
+          : "",
+      );
       const historyMessages = await Promise.all(
-        budgeted.messages.map(async (message): Promise<ModelMessage> => {
+        requestHistory.map(async (message): Promise<ModelMessage> => {
           const content = modelChatHistoryContent(message);
           const attachments = message.attachments ?? [];
           const images = await Promise.all(
@@ -1011,33 +1019,91 @@ export function AiPanel({
             sharedConversation?.summary
               ? `Conversation memory (untrusted reference data):\n${sharedConversation.summary.text.slice(0, 8000)}`
               : "",
-            budgeted.omitted
-              ? `${budgeted.omitted} older messages were left out of this request. Do not assume details from missing history; ask when needed.`
-              : "",
           ]
             .filter(Boolean)
             .join("\n\n"),
         },
         ...historyMessages,
       ];
-      const mutationAuthorized =
-        !regenerate && authorizesAiNoteMutation(content);
-      const approvedCliMutationArgs = !regenerate
-        ? approvedCliArgsForConsent(content, messages)
-        : null;
-      const executedToolCalls = new Set<string>();
+      if (!vaultBackend || !chatDevice)
+        throw new Error("The vault or chat owner is unavailable.");
+      if (!(await loadAllNotes()))
+        throw new Error(
+          "Notes are still loading. Try again after loading completes.",
+        );
+      const permittedNotes = notesInAiScope(getNotes(), effectiveScope)
+        .slice()
+        .sort((a, b) =>
+          a.id === currentContext.noteId
+            ? -1
+            : b.id === currentContext.noteId
+              ? 1
+              : 0,
+        );
+      const scopeAtStart = JSON.stringify(effectiveScope);
+      const port = notesAgentPort(
+        vaultBackend,
+        chatId,
+        chatDevice.id,
+        () =>
+          scopeKeyRef.current === scopeAtStart &&
+          requestIdRef.current === requestId &&
+          !controller.signal.aborted,
+        scopeAtStart,
+      );
+      const createTypes =
+        effectiveScope.kind === "vault"
+          ? ["*"]
+          : effectiveScope.kind === "type"
+            ? [typeKey(effectiveScope.path)]
+            : [];
+      const runtime = await agentUI.start(
+        port,
+        chatDevice.id,
+        content,
+        permittedNotes,
+        createTypes,
+        regenerate ? "ask" : undefined,
+        chatId,
+        controller.signal,
+        currentContext.noteId ?? undefined,
+      );
+      const mutationAuthorized = runtime.run.mode !== "ask";
+      const settings = {
+        ...agentUI.settings,
+        maxInputTokens: Math.min(
+          agentUI.settings.maxInputTokens,
+          selectedModel.contextWindow ?? 32768,
+        ),
+      };
+      enableNotesWorkers(
+        port,
+        providerConfig,
+        settings,
+        chatId,
+        chatDevice.id,
+        runtime,
+        undefined,
+        controller.signal,
+      );
       let editApplied = false;
-      let completedToolCalls: StoredAiToolCall[] = [];
+
       const streamId = crypto.randomUUID();
       activeStreamIdRef.current = streamId;
       setStreamingReasoning("");
       if (BROWSER_PREVIEW) {
-        const text = await previewChatAnswer(
+        const text = await previewNotesAgent(
+          runtime,
+          content,
           currentContext,
           controller.signal,
           setStreamingText,
         );
-        await finishAnswer({ role: "assistant", content: text });
+        await finishAnswer({
+          role: "assistant",
+          content: text,
+          runId: runtime.run.id,
+        });
         return;
       }
       const agentResult = await runZerusAgent({
@@ -1050,155 +1116,53 @@ export function AiPanel({
             setStreamingReasoning("");
           }
         },
-        systemPrompt:
-          currentContext.systemPrompt +
-          (regenerate
-            ? "\nThis is a regeneration. Provide a fresh answer or revised draft, without applying any note changes."
-            : ""),
-        messages: modelMessages,
+        systemPrompt: notesAgentPrompt(
+          runtime.run,
+          agentUI.guidance,
+          agentUI.workflow,
+        ),
+        settings,
+        textFallback: agentUI.settings.textFallback,
+        runtime,
+        takeSteering: agentUI.takeSteering,
+        messages: runtime.run.messages.length
+          ? [
+              ...(runtime.run.messages as ModelMessage[]),
+              { role: "user", content },
+            ]
+          : modelMessages,
         mutationAuthorized,
-        approvedCliMutationArgs: approvedCliMutationArgs ?? undefined,
         executeTool: async (call) => {
-          if (requestIdRef.current !== requestId) {
-            return {
-              ok: false,
-              result: { error: "The request was cancelled." },
-            };
-          }
-          const signature = JSON.stringify(call);
-          let toolResult: ReturnType<typeof runAiTool>;
-          if (executedToolCalls.has(signature)) {
-            toolResult = {
-              ok: false,
-              result: { error: "This tool call already ran." },
-            };
-          } else if (call.name === "zerus_cli") {
-            try {
-              const result = await invoke<ZerusCliResult>("cli_run", {
-                args: call.arguments.args,
-                vault: vaultLocation,
-              });
-              toolResult = { ok: result.ok, result };
-            } catch (error) {
-              toolResult = {
-                ok: false,
-                result: { error: String(error) },
-              };
-            }
-          } else {
-            toolResult = runAiTool(
-              call,
-              notesInAiScope(getNotes(), effectiveScope),
-              currentContext.noteId,
-              {
-                outsideNotes,
-                scopeLabel: currentContext.scopeLabel,
-                promptForExpansion: effectiveScope.kind === "type",
-              },
-            );
-          }
-          executedToolCalls.add(signature);
+          const result = await runtime.execute(call);
           if (
-            toolResult.ok &&
+            result.ok &&
             (call.name === "note_get" || call.name === "search")
           ) {
-            const result = toolResult.result as { matches?: unknown[] };
-            const entries = Array.isArray(result)
-              ? result
-              : (result?.matches ?? [result]);
-            for (const value of entries) {
-              if (!value || typeof value !== "object" || !("id" in value))
-                continue;
+            const data = result.result as { matches?: unknown[] };
+            for (const value of data.matches ?? [data]) {
               const item = value as {
-                id: string;
-                title?: string;
+                id?: string;
                 body?: string;
                 excerpt?: string;
+                revision?: string;
               };
-              const source = getNotes().find(
-                (candidate) => candidate.id === item.id,
-              );
+              const source = getNotes().find((note) => note.id === item.id);
               if (!source) continue;
               const snapshot = {
                 noteId: source.id,
                 title: noteTitle(source),
                 type: source.path,
                 excerpt: item.body ?? item.excerpt ?? "",
-                revision: chatContentRevision(source.content),
+                revision: item.revision ?? chatContentRevision(source.content),
               };
               const index = currentContext.sources.findIndex(
-                (candidate) => candidate.noteId === source.id,
+                (item) => item.noteId === source.id,
               );
               if (index >= 0) currentContext.sources[index] = snapshot;
               else currentContext.sources.push(snapshot);
             }
           }
-
-          if (toolResult.mutation) {
-            const latestChat = vaultBackend
-              ? (await loadChatConversations(vaultBackend)).find(
-                  (chat) => chat.id === chatId,
-                )
-              : null;
-            if (
-              controller.signal.aborted ||
-              !latestChat ||
-              latestChat.owner.id !== chatDevice?.id ||
-              latestChat.archivedAt ||
-              latestChat.deletedAt
-            ) {
-              return {
-                ok: false,
-                result: {
-                  error:
-                    "This conversation is no longer writable on this device.",
-                },
-              };
-            }
-            const latestNote = getNotes().find(
-              (candidate) => candidate.id === toolResult.mutation?.noteId,
-            );
-            const action = toolResult.mutation.action;
-            if (
-              !latestNote ||
-              contextRef.current?.noteId !== currentContext.noteId
-            ) {
-              toolResult = {
-                ok: false,
-                result: {
-                  error: "The selected note changed before the tool ran.",
-                },
-              };
-            } else {
-              const latestBody = noteBody(latestNote.content);
-              if (
-                action.type === "replace_body" &&
-                latestBody !== currentContext.noteBody
-              ) {
-                toolResult = {
-                  ok: false,
-                  result: {
-                    error:
-                      "The note changed while the AI was thinking; replacement refused.",
-                  },
-                };
-              } else {
-                applyChange(
-                  latestNote.id,
-                  applyAiNoteAction(latestBody, action),
-                );
-                editApplied = true;
-                toolResult = {
-                  ok: true,
-                  result: {
-                    message: "The current note was updated successfully.",
-                  },
-                };
-                showSuccess("Note updated by AI");
-              }
-            }
-          }
-          return toolResult;
+          return result;
         },
         onToolStart: ({ call }) => {
           if (controller.signal.aborted) return;
@@ -1230,46 +1194,19 @@ export function AiPanel({
         );
       }
 
-      // Accept the action format used by development builds before tools were introduced.
-      const parsed = parseAiResponse(agentResult.text);
-      const finalContent = parsed.content;
-      if (parsed.actionError) {
-        showError(`The AI note edit was not applied: ${parsed.actionError}`);
-      } else if (parsed.action && !mutationAuthorized) {
-        showError(
-          "The AI note edit was refused because the current request did not explicitly authorize a change.",
-        );
-      } else if (parsed.action) {
-        const latestNote = getNotes().find(
-          (candidate) => candidate.id === currentContext.noteId,
-        );
-        if (
-          !latestNote ||
-          contextRef.current?.noteId !== currentContext.noteId
-        ) {
-          showError(
-            "The AI edit was not applied because the selected note changed.",
-          );
-        } else {
-          const latestBody = noteBody(latestNote.content);
-          if (
-            parsed.action.type === "replace_body" &&
-            latestBody !== currentContext.noteBody
-          ) {
-            showError(
-              "The AI edit was not applied because the note changed while it was thinking.",
-            );
-          } else {
-            applyChange(
-              latestNote.id,
-              applyAiNoteAction(latestBody, parsed.action),
-            );
-            editApplied = true;
-            showSuccess("Note updated by AI");
-          }
-        }
-      }
-
+      const finalContent = agentResult.text;
+      editApplied = runtime.run.receipts.length > 0;
+      for (const receipt of runtime.run.receipts)
+        for (const after of receipt.after)
+          changes.push({
+            noteId: after.id,
+            title: after.title,
+            before: noteBody(
+              receipt.before.find((note) => note.id === after.id)?.content ??
+                "",
+            ),
+            after: noteBody(after.content),
+          });
       await finishAnswer({
         role: "assistant",
         content:
@@ -1280,11 +1217,16 @@ export function AiPanel({
         reasoning: agentResult.reasoning,
         editApplied,
         toolCalls: completedToolCalls,
+        runId: runtime.run.id,
       });
     } catch (error) {
       if (requestIdRef.current !== requestId) return;
       const message = String(error);
-      if (changes.length || streamTextRef.current.trim()) {
+      if (
+        changes.length ||
+        streamTextRef.current.trim() ||
+        agentUI.active.current?.run
+      ) {
         try {
           await finishAnswer({
             role: "assistant",
@@ -1297,6 +1239,8 @@ export function AiPanel({
               .filter(Boolean)
               .join("\n\n"),
             interrupted: true,
+            runId: agentUI.active.current?.run.id,
+            toolCalls: completedToolCalls,
             editApplied: changes.length > 0,
           });
         } catch {
@@ -1332,7 +1276,6 @@ export function AiPanel({
     setHistoryOpen(false);
     setInlineError("");
     setStreamingText("");
-    setHistoryOmitted(0);
     setShowJump(false);
     setMessages([]);
     setPendingDocuments([]);
@@ -1350,12 +1293,17 @@ export function AiPanel({
 
   useEffect(() => {
     if (!open || !searchRequest || !historyReady || sending) return;
-    if (searchRequest.conversation) selectConversation(searchRequest.conversation);
+    if (searchRequest.conversation)
+      selectConversation(searchRequest.conversation);
     else {
       newSession();
       setDraft(searchRequest.query ?? "");
-      setSelectedNoteIds(searchRequest.noteIds?.length ? searchRequest.noteIds : null);
-      setPendingDocuments(searchRequest.document ? [searchRequest.document] : []);
+      setSelectedNoteIds(
+        searchRequest.noteIds?.length ? searchRequest.noteIds : null,
+      );
+      setPendingDocuments(
+        searchRequest.document ? [searchRequest.document] : [],
+      );
     }
     onSearchRequestHandled?.();
     // A request is consumed once, after asynchronous history restoration finishes.
@@ -1511,6 +1459,16 @@ export function AiPanel({
       (model, index, models) =>
         models.findIndex(({ id }) => id === model.id) === index,
     );
+  queuedSendRef.current = {
+    send: (text) => void sendMessage(undefined, false, text),
+    take: agentUI.takeQueued,
+  };
+  useEffect(() => {
+    if (!sending && agentUI.queued.length && ownsSharedConversation) {
+      const text = queuedSendRef.current?.take();
+      if (text) queuedSendRef.current?.send(text);
+    }
+  }, [sending, agentUI.queued, ownsSharedConversation]);
   const currentModelName =
     activeCloudModels.find(({ id }) => id === providerConfig.model)?.name ??
     providerConfig.model;
@@ -1520,9 +1478,26 @@ export function AiPanel({
       <div
         ref={panelRef}
         data-ai-chat="true"
-        onDragOver={(event) => { if (!event.dataTransfer.types.includes("Files")) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; setFileDragOver(true); }}
-        onDragLeave={(event) => { if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setFileDragOver(false); }}
-        onDrop={(event) => { event.preventDefault(); event.stopPropagation(); setFileDragOver(false); void selectImages(Array.from(event.dataTransfer.files)); }}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "copy";
+          setFileDragOver(true);
+        }}
+        onDragLeave={(event) => {
+          if (
+            !(event.relatedTarget instanceof Node) ||
+            !event.currentTarget.contains(event.relatedTarget)
+          )
+            setFileDragOver(false);
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setFileDragOver(false);
+          void selectImages(Array.from(event.dataTransfer.files));
+        }}
         className={cn(
           "relative h-full shrink-0 border-l border-border/70 bg-zerus-editor",
           !open && "hidden",
@@ -1532,7 +1507,14 @@ export function AiPanel({
           maxWidth: "calc(100% - 240px)",
         }}
       >
-        {fileDragOver && <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-zerus-accent bg-zerus-editor/95"><div className="flex items-center gap-2 text-sm font-medium"><Paperclip size={18} />Drop files into chat</div></div>}
+        {fileDragOver && (
+          <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-zerus-accent bg-zerus-editor/95">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <Paperclip size={18} />
+              Drop files into chat
+            </div>
+          </div>
+        )}
         <div
           className="absolute inset-y-0 -left-2 z-20 w-4 cursor-col-resize touch-none"
           onPointerDown={handleResizeStart}
@@ -1647,7 +1629,12 @@ export function AiPanel({
             note={note}
             notes={notes}
             scope={effectiveScope}
-            selected={selectedNoteIds ?? (effectiveScope.kind === "selection" ? effectiveScope.noteIds : null)}
+            selected={
+              selectedNoteIds ??
+              (effectiveScope.kind === "selection"
+                ? effectiveScope.noteIds
+                : null)
+            }
             onChange={(ids) =>
               setSelectedNoteIds(
                 ids ??
@@ -1777,7 +1764,15 @@ export function AiPanel({
                       : "border border-border/70 bg-muted/35",
                   )}
                 >
-                  {message.documents?.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs"><Paperclip size={14} className="shrink-0" /><span className="break-all">{document.name}</span></div>)}
+                  {message.documents?.map((document, index) => (
+                    <div
+                      key={index}
+                      className="mb-2 flex min-w-0 items-center gap-2 text-xs"
+                    >
+                      <Paperclip size={14} className="shrink-0" />
+                      <span className="break-all">{document.name}</span>
+                    </div>
+                  ))}
                   {message.attachments && message.attachments.length > 0 && (
                     <div
                       className={cn(
@@ -1839,7 +1834,7 @@ export function AiPanel({
                     <ChatAnswerActions
                       text={message.content}
                       note={note}
-                      changes={message.changes}
+                      changes={message.runId ? [] : message.changes}
                       disabled={sending || !ownsSharedConversation}
                       onRegenerate={() => {
                         const userIndex = messages
@@ -1908,6 +1903,19 @@ export function AiPanel({
                 )}
               </>
             )}
+            <NotesAgentRunView
+              agent={agentUI}
+              busy={sending}
+              port={agentPortFor}
+              onResume={(run, answer) => {
+                agentUI.requestResume(run);
+                void sendMessage(
+                  undefined,
+                  false,
+                  answer ?? "Continue the saved run.",
+                );
+              }}
+            />
             <div ref={bottomRef} />
           </div>
 
@@ -1931,13 +1939,41 @@ export function AiPanel({
               {inlineError}
             </div>
           )}
-          {documentContextStatus && <p role="status" className="px-3 py-1 text-[11px] text-muted-foreground">{documentContextStatus}</p>}
-          {historyOmitted > 0 && (
-            <p className="px-3 py-1 text-[11px] text-muted-foreground">
-              Using recent conversation context. Full history remains saved.
+          {documentContextStatus && (
+            <p
+              role="status"
+              className="px-3 py-1 text-[11px] text-muted-foreground"
+            >
+              {documentContextStatus}
             </p>
           )}
+          <NotesAgentControls agent={agentUI} busy={sending} />
           <div className="shrink-0 border-t border-border/60 p-3">
+            <NotesAgentPending agent={agentUI} />
+            {sending && draft.trim() && (
+              <div className="mb-2 flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    agentUI.steer(draft);
+                    setDraft("");
+                  }}
+                >
+                  Steer this run
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    agentUI.queue(draft);
+                    setDraft("");
+                  }}
+                >
+                  Queue next message
+                </Button>
+              </div>
+            )}
             <input
               ref={imageInputRef}
               type="file"
@@ -1947,7 +1983,28 @@ export function AiPanel({
                 void selectImages(Array.from(event.target.files ?? []))
               }
             />
-            {pendingDocuments.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs"><Paperclip size={14} className="shrink-0" /><span className="min-w-0 flex-1 break-all">{document.name}</span><button type="button" aria-label={`Remove ${document.name}`} onClick={() => setPendingDocuments((current) => current.filter((_, position) => position !== index))}><X size={14} /></button></div>)}
+            {pendingDocuments.map((document, index) => (
+              <div
+                key={index}
+                className="mb-2 flex min-w-0 items-center gap-2 text-xs"
+              >
+                <Paperclip size={14} className="shrink-0" />
+                <span className="min-w-0 flex-1 break-all">
+                  {document.name}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${document.name}`}
+                  onClick={() =>
+                    setPendingDocuments((current) =>
+                      current.filter((_, position) => position !== index),
+                    )
+                  }
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
             {pendingAttachments.length > 0 && (
               <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
                 {pendingAttachments.map((attachment, index) => (
@@ -2002,14 +2059,15 @@ export function AiPanel({
                   !event.nativeEvent.isComposing
                 ) {
                   event.preventDefault();
-                  void sendMessage();
+                  if (sending) {
+                    agentUI.queue(draft);
+                    setDraft("");
+                  } else void sendMessage();
                 }
               }}
               placeholder={`Ask about ${context?.scopeLabel ?? "this context"}…`}
               className="min-h-20 resize-none"
-              disabled={
-                !context || sending || !aiReady || !ownsSharedConversation
-              }
+              disabled={!context || !aiReady || !ownsSharedConversation}
             />
             <div className="mt-2 flex items-center justify-between">
               <Button
@@ -2055,7 +2113,9 @@ export function AiPanel({
                     !aiReady ||
                     !ownsSharedConversation ||
                     preparingImages ||
-                    (!draft.trim() && pendingAttachments.length === 0 && pendingDocuments.length === 0)
+                    (!draft.trim() &&
+                      pendingAttachments.length === 0 &&
+                      pendingDocuments.length === 0)
                   }
                 >
                   <Send size={14} />

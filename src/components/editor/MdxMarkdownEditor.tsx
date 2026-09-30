@@ -103,7 +103,6 @@ import {
 } from "./element-table-controls";
 import { EditorRecoveryBoundary } from "./editor-recovery";
 import { elementTablePlugin } from "./element-table-plugin";
-import { NoteOutline } from "./NoteOutline";
 import { IndentControls } from "./IndentControls";
 
 type AttachmentAction = "open" | "reveal" | "copy" | "external";
@@ -652,7 +651,6 @@ export function MarkdownEditor({
             onError={({ error }) => recoveryRef.current?.recover(error)}
           />
         </EditorRecoveryBoundary>
-        <NoteOutline key={`outline-${noteId}`} container={searchContainer} />
         <DropdownMenu
           open={!!menuAttachment}
           onOpenChange={(open) => {

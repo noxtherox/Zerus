@@ -125,13 +125,15 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   excerpts otherwise. Uploads have a 50 MB per-file and 100 MB total processing
   budget, with no fixed document-count limit. Scanned PDFs require external OCR;
   unsupported binary documents must first be exported as text or searchable PDF.
-  On desktop, AI chat can use the complete bundled `zerus` CLI against the
-  active vault; mutating commands require an explicit current request.
-  Destructive and CLI approval-gated actions are previewed with a concise
-  impact summary, then only the exact previewed action can run after the user
-  explicitly consents in a later message. Follow-up questions retain the prior
-  CLI activity and errors as untrusted history so Zerus can explain what
-  happened without treating tool output as instructions.
+  Desktop and mobile share a notes agent with **Ask**, **Review**, and **Edit**
+  modes. It can search and page through notes, read long notes in ranges, patch
+  passages, create notes, update properties and paired relations, inspect links,
+  and organize notes. Review shows exact diffs before saving; changes have
+  verified receipts, conflict-aware undo, and a durable run journal. Track plans,
+  answer questions, queue messages, steer ongoing work, or resume an interrupted
+  run. Configure budgets, vault instructions, editable memory, reusable workflows,
+  and optional independent analysis. Chat tools stay inside the selected note
+  context; CLI compatibility reads use the same boundary.
 - **Desktop workflow tools** — reveal notes in the system file manager, open
   links in the browser, use focus mode, or automate a vault through the bundled
   `zerus` CLI. Changes made by the CLI are reflected in the open app, including

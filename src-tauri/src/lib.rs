@@ -607,6 +607,18 @@ struct AiMessage {
     content: String,
     #[serde(default)]
     images: Vec<AiImage>,
+    #[serde(default)]
+    tool_calls: Vec<AiNativeToolCall>,
+    #[serde(default)]
+    tool_call_id: Option<String>,
+}
+
+#[derive(Deserialize, Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+struct AiNativeToolCall {
+    id: String,
+    name: String,
+    arguments: String,
 }
 
 #[derive(Deserialize)]
@@ -618,6 +630,10 @@ struct AiChatRequest {
     max_output_tokens: Option<u32>,
     #[serde(default)]
     temperature: Option<f64>,
+    #[serde(default)]
+    tools: Vec<serde_json::Value>,
+    #[serde(default)]
+    effort: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -625,6 +641,9 @@ struct AiChatRequest {
 struct AiChatResponse {
     content: String,
     reasoning: Option<String>,
+    tool_calls: Vec<AiNativeToolCall>,
+    usage: Option<serde_json::Value>,
+    finish_reason: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -1077,7 +1096,7 @@ fn codex_ai_chat_impl(
             "threadId": thread_id,
             "input": input,
             "model": model,
-            "effort": "medium",
+            "effort": request.effort.as_deref().unwrap_or("medium"),
             "summary": "concise",
         }),
     )?;
@@ -1144,6 +1163,9 @@ fn codex_ai_chat_impl(
                     return Err("Codex returned an empty response".to_string());
                 }
                 return Ok(AiChatResponse {
+                    tool_calls: Vec::new(),
+                    usage: None,
+                    finish_reason: None,
                     content,
                     reasoning: (!reasoning.trim().is_empty()).then_some(reasoning),
                 });
@@ -1207,7 +1229,7 @@ fn cloud_ai_request_body(
     if request.system_prompt.trim().is_empty() {
         return Err("The AI context is empty".to_string());
     }
-    if request.messages.is_empty() || request.messages.len() > 64 {
+    if request.messages.is_empty() || request.messages.len() > 256 {
         return Err("The AI conversation has an invalid number of messages".to_string());
     }
     let max_output_tokens = request
@@ -1230,7 +1252,7 @@ fn cloud_ai_request_body(
         }));
     }
     for message in request.messages {
-        if !matches!(message.role.as_str(), "user" | "assistant") {
+        if !matches!(message.role.as_str(), "user" | "assistant" | "tool") {
             return Err("The AI conversation contains an invalid role".to_string());
         }
         if message.content.len() > 50 * 1024 * 1024 {
@@ -1296,10 +1318,35 @@ fn cloud_ai_request_body(
             }));
             serde_json::Value::Array(parts)
         };
-        messages.push(serde_json::json!({
-            "role": message.role,
-            "content": content,
-        }));
+        if provider == CloudAiProvider::Anthropic {
+            if message.role == "tool" {
+                let id = message
+                    .tool_call_id
+                    .ok_or("Tool result requires a call ID")?;
+                messages.push(serde_json::json!({"role":"user","content":[{"type":"tool_result","tool_use_id":id,"content":content}]}));
+            } else {
+                let mut parts = match content {
+                    serde_json::Value::Array(parts) => parts,
+                    serde_json::Value::String(text) if !text.is_empty() => {
+                        vec![serde_json::json!({"type":"text","text":text})]
+                    }
+                    _ => Vec::new(),
+                };
+                for call in message.tool_calls {
+                    parts.push(serde_json::json!({"type":"tool_use","id":call.id,"name":call.name,"input":serde_json::from_str::<serde_json::Value>(&call.arguments).map_err(|_| "Invalid tool input")?}));
+                }
+                messages.push(serde_json::json!({"role":message.role,"content":parts}));
+            }
+        } else {
+            let mut item = serde_json::json!({"role":message.role,"content":content});
+            if !message.tool_calls.is_empty() {
+                item["tool_calls"] = serde_json::json!(message.tool_calls.iter().map(|call| serde_json::json!({"id":call.id,"type":"function","function":{"name":call.name,"arguments":call.arguments}})).collect::<Vec<_>>());
+            }
+            if let Some(id) = message.tool_call_id {
+                item["tool_call_id"] = serde_json::json!(id);
+            }
+            messages.push(item);
+        }
     }
 
     let mut body = if provider == CloudAiProvider::Anthropic {
@@ -1325,6 +1372,30 @@ fn cloud_ai_request_body(
             "stream": true,
         })
     };
+    if request.tools.len() > 50 {
+        return Err("Too many AI tools".to_string());
+    }
+    if !request.tools.is_empty() {
+        let tools = request.tools.iter().map(|tool| {
+            if provider == CloudAiProvider::Anthropic { serde_json::json!({"name":tool["name"],"description":tool["description"],"input_schema":tool["inputSchema"]}) }
+            else { serde_json::json!({"type":"function","function":{"name":tool["name"],"description":tool["description"],"parameters":tool["inputSchema"]}}) }
+        }).collect::<Vec<_>>();
+        body["tools"] = serde_json::json!(tools);
+        if provider != CloudAiProvider::Anthropic {
+            body["tool_choice"] = serde_json::json!("auto");
+            body["stream_options"] = serde_json::json!({"include_usage":true});
+        }
+    }
+    if let Some(effort) = request.effort {
+        if !matches!(effort.as_str(), "low" | "medium" | "high") {
+            return Err("Invalid reasoning effort".to_string());
+        }
+        if provider == CloudAiProvider::OpenAi
+            && (model.starts_with("gpt-5") || model.starts_with("o3") || model.starts_with("o4"))
+        {
+            body["reasoning_effort"] = serde_json::json!(effort);
+        }
+    }
     if let Some(temperature) = temperature {
         body.as_object_mut()
             .expect("AI request bodies are JSON objects")
@@ -1903,6 +1974,11 @@ async fn collect_chat_stream(
     let mut pending = Vec::<u8>::new();
     let mut content = String::new();
     let mut reasoning = String::new();
+    let mut calls: std::collections::BTreeMap<u64, AiNativeToolCall> =
+        std::collections::BTreeMap::new();
+    let mut input_tokens: Option<u64> = None;
+    let mut output_tokens: Option<u64> = None;
+    let mut finish_reason: Option<String> = None;
 
     while let Some(chunk) = response
         .chunk()
@@ -1928,6 +2004,106 @@ async fn collect_chat_stream(
                     "The {source} stream failed: {}",
                     cloud_ai_error(&payload, "Unknown provider error")
                 ));
+            }
+            if provider == CloudAiProvider::Anthropic {
+                if let Some(value) = payload
+                    .pointer("/message/usage/input_tokens")
+                    .and_then(|v| v.as_u64())
+                {
+                    input_tokens = Some(value);
+                }
+                if let Some(value) = payload
+                    .pointer("/usage/output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .or_else(|| {
+                        payload
+                            .pointer("/message/usage/output_tokens")
+                            .and_then(|v| v.as_u64())
+                    })
+                {
+                    output_tokens = Some(value);
+                }
+                if let Some(value) = payload
+                    .pointer("/delta/stop_reason")
+                    .and_then(|v| v.as_str())
+                {
+                    finish_reason = Some(value.to_string());
+                }
+                let index = payload.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                if payload
+                    .pointer("/content_block/type")
+                    .and_then(|v| v.as_str())
+                    == Some("tool_use")
+                {
+                    calls.insert(
+                        index,
+                        AiNativeToolCall {
+                            id: payload
+                                .pointer("/content_block/id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            name: payload
+                                .pointer("/content_block/name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or_default()
+                                .to_string(),
+                            arguments: String::new(),
+                        },
+                    );
+                }
+                if let Some(delta) = payload
+                    .pointer("/delta/partial_json")
+                    .and_then(|v| v.as_str())
+                {
+                    if let Some(call) = calls.get_mut(&index) {
+                        call.arguments.push_str(delta);
+                    }
+                }
+            } else {
+                if let Some(value) = payload
+                    .pointer("/usage/prompt_tokens")
+                    .and_then(|v| v.as_u64())
+                {
+                    input_tokens = Some(value);
+                }
+                if let Some(value) = payload
+                    .pointer("/usage/completion_tokens")
+                    .and_then(|v| v.as_u64())
+                {
+                    output_tokens = Some(value);
+                }
+                if let Some(value) = payload
+                    .pointer("/choices/0/finish_reason")
+                    .and_then(|v| v.as_str())
+                {
+                    finish_reason = Some(value.to_string());
+                }
+                if let Some(deltas) = payload
+                    .pointer("/choices/0/delta/tool_calls")
+                    .and_then(|v| v.as_array())
+                {
+                    for delta in deltas {
+                        let index = delta["index"].as_u64().unwrap_or(0);
+                        let call = calls.entry(index).or_default();
+                        if let Some(id) = delta["id"].as_str() {
+                            call.id = id.to_string();
+                        }
+                        if let Some(name) = delta.pointer("/function/name").and_then(|v| v.as_str())
+                        {
+                            call.name.push_str(name);
+                        }
+                        if let Some(args) = delta
+                            .pointer("/function/arguments")
+                            .and_then(|v| v.as_str())
+                        {
+                            call.arguments.push_str(args);
+                        }
+                    }
+                }
+            }
+            if calls.values().any(|call| call.arguments.len() > 200_000) {
+                return Err("AI tool input too large".to_string());
             }
             let (content_delta, reasoning_delta) = if provider == CloudAiProvider::Anthropic {
                 anthropic_stream_delta(&payload)
@@ -1958,10 +2134,25 @@ async fn collect_chat_stream(
         }
     }
 
-    if content.trim().is_empty() {
+    if content.trim().is_empty() && calls.is_empty() {
         return Err(format!("The {source} response contained no text"));
     }
     Ok(AiChatResponse {
+        tool_calls: calls
+            .into_values()
+            .map(|mut call| {
+                if call.arguments.is_empty() {
+                    call.arguments = "{}".to_string();
+                }
+                call
+            })
+            .collect(),
+        usage: if input_tokens.is_some() || output_tokens.is_some() {
+            Some(serde_json::json!({"inputTokens":input_tokens,"outputTokens":output_tokens}))
+        } else {
+            None
+        },
+        finish_reason,
         content,
         reasoning: (!reasoning.is_empty()).then_some(reasoning),
     })
@@ -2497,14 +2688,20 @@ mod tests {
     #[test]
     fn codex_prompt_preserves_conversation_roles() {
         let request = AiChatRequest {
+            tools: Vec::new(),
+            effort: None,
             system_prompt: "system".to_string(),
             messages: vec![
                 AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "first".to_string(),
                     images: Vec::new(),
                 },
                 AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "assistant".to_string(),
                     content: "second".to_string(),
                     images: Vec::new(),
@@ -2525,8 +2722,12 @@ mod tests {
     #[test]
     fn codex_image_input_uses_temporary_local_images() {
         let request = AiChatRequest {
+            tools: Vec::new(),
+            effort: None,
             system_prompt: "system".to_string(),
             messages: vec![AiMessage {
+                tool_calls: Vec::new(),
+                tool_call_id: None,
                 role: "user".to_string(),
                 content: "describe".to_string(),
                 images: vec![AiImage {
@@ -2565,8 +2766,12 @@ mod tests {
     fn cloud_ai_request_uses_the_selected_model() {
         let body = cloud_ai_request_body(
             AiChatRequest {
+                tools: Vec::new(),
+                effort: None,
                 system_prompt: "Current note context".to_string(),
                 messages: vec![AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
@@ -2609,8 +2814,12 @@ mod tests {
     fn anthropic_request_and_stream_use_the_messages_contract() {
         let body = cloud_ai_request_body(
             AiChatRequest {
+                tools: Vec::new(),
+                effort: None,
                 system_prompt: "Current note context".to_string(),
                 messages: vec![AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
@@ -2651,8 +2860,12 @@ mod tests {
     fn openai_request_uses_current_chat_completion_parameters() {
         let body = cloud_ai_request_body(
             AiChatRequest {
+                tools: Vec::new(),
+                effort: None,
                 system_prompt: "Current note context".to_string(),
                 messages: vec![AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "Summarize this note".to_string(),
                     images: Vec::new(),
@@ -2674,8 +2887,12 @@ mod tests {
     fn openai_compatible_requests_encode_attached_images_as_data_urls() {
         let body = cloud_ai_request_body(
             AiChatRequest {
+                tools: Vec::new(),
+                effort: None,
                 system_prompt: "Current note context".to_string(),
                 messages: vec![AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "Describe this image".to_string(),
                     images: vec![AiImage {
@@ -2703,8 +2920,12 @@ mod tests {
     fn anthropic_requests_put_attached_images_before_text() {
         let body = cloud_ai_request_body(
             AiChatRequest {
+                tools: Vec::new(),
+                effort: None,
                 system_prompt: "Current note context".to_string(),
                 messages: vec![AiMessage {
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     role: "user".to_string(),
                     content: "Describe this image".to_string(),
                     images: vec![AiImage {
@@ -2789,6 +3010,38 @@ mod tests {
         );
         assert!(normalized_cloud_ai_base_url("http://openrouter.ai/api/v1").is_err());
         assert!(normalized_cloud_ai_base_url("http://127.0.0.1:11434/v1").is_ok());
+    }
+
+    #[test]
+    fn native_tools_preserve_call_identity_and_provider_specific_results() {
+        let request = || {
+            serde_json::from_value::<AiChatRequest>(serde_json::json!({
+          "systemPrompt":"Notes only", "maxOutputTokens":8192,
+          "tools":[{"name":"note_get","description":"Read a note","inputSchema":{"type":"object","properties":{"selector":{"type":"string"}}}}],
+          "messages":[{"role":"user","content":"Read Meeting"},{"role":"assistant","content":"","toolCalls":[{"id":"call-1","name":"note_get","arguments":"{\"selector\":\"Meeting\"}"}]},{"role":"tool","toolCallId":"call-1","content":"{\"revision\":\"v1\"}"}]
+        })).unwrap()
+        };
+        let openai =
+            cloud_ai_request_body(request(), "test-model", CloudAiProvider::OpenRouter).unwrap();
+        assert_eq!(openai["messages"][2]["tool_calls"][0]["id"], "call-1");
+        assert_eq!(openai["messages"][3]["role"], "tool");
+        assert_eq!(openai["messages"][3]["tool_call_id"], "call-1");
+        assert_eq!(
+            openai["tools"][0]["function"]["parameters"]["type"],
+            "object"
+        );
+        let anthropic =
+            cloud_ai_request_body(request(), "test-model", CloudAiProvider::Anthropic).unwrap();
+        assert_eq!(anthropic["messages"][1]["content"][0]["type"], "tool_use");
+        assert_eq!(
+            anthropic["messages"][1]["content"][0]["input"]["selector"],
+            "Meeting"
+        );
+        assert_eq!(
+            anthropic["messages"][2]["content"][0]["tool_use_id"],
+            "call-1"
+        );
+        assert_eq!(anthropic["tools"][0]["input_schema"]["type"], "object");
     }
 
     #[test]

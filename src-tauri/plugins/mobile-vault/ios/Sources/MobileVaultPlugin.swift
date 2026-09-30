@@ -21,7 +21,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   private var previewDirectoryURL: URL?
   private var webviewOffsetObservation: NSKeyValueObservation?
   private lazy var cloudAI = CloudAIManager()
-  private var cloudAITask: Task<Void, Never>?
+  private var cloudAITasks: [String: Task<Void, Never>] = [:]
   private var googleDriveStorage: AnyObject?
   private var openRouterSession: ASWebAuthenticationSession?
   private lazy var speechRecognizer = OnDeviceSpeechRecognizer()
@@ -497,28 +497,29 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   }
 
   @objc public func generateCloudAI(_ invoke: Invoke) {
-    cloudAITask?.cancel()
-    cloudAITask = Task {
-      do {
-        let request = try invoke.parseArgs(CloudAIGenerateRequest.self)
-        let answer = try await cloudAI.generate(request) { delta in
-          try? self.trigger(
-            "cloud-ai-delta",
-            data: ["streamId": request.streamId, "delta": delta]
-          )
-        }
-        invoke.resolve(CloudAIGenerateResponse(answer: answer))
-      } catch {
-        invoke.reject(error is CancellationError ? "AI response stopped" : error.localizedDescription)
+    Task { @MainActor in
+    do {
+      let request = try invoke.parseArgs(CloudAIGenerateRequest.self)
+      cloudAITasks[request.streamId]?.cancel()
+      cloudAITasks[request.streamId] = Task { @MainActor in
+        defer { self.cloudAITasks.removeValue(forKey: request.streamId) }
+        do {
+          let response = try await cloudAI.generate(request) { delta in
+            try? self.trigger("cloud-ai-delta", data: ["streamId": request.streamId, "delta": delta])
+          }
+          invoke.resolve(response)
+        } catch { invoke.reject(error is CancellationError ? "AI response stopped" : error.localizedDescription) }
       }
-      self.cloudAITask = nil
+    } catch { invoke.reject(error.localizedDescription) }
     }
   }
 
   @objc public func stopCloudAI(_ invoke: Invoke) {
-    cloudAITask?.cancel()
-    cloudAITask = nil
+    Task { @MainActor in
+    if let request = try? invoke.parseArgs(CloudAIStopRequest.self), let id = request.streamId { cloudAITasks[id]?.cancel() }
+    else { for task in cloudAITasks.values { task.cancel() } }
     invoke.resolve()
+    }
   }
 
   @objc public func startSpeechRecognition(_ invoke: Invoke) {

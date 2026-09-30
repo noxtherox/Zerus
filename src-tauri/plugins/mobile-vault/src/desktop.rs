@@ -15,7 +15,9 @@ pub struct MobileVault<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> MobileVault<R> {
     pub fn google_drive(&self, _request: serde_json::Value) -> crate::Result<serde_json::Value> {
-        Err(crate::Error::Unavailable("Google Drive connection is available in the iOS app".into()))
+        Err(crate::Error::Unavailable(
+            "Google Drive connection is available in the iOS app".into(),
+        ))
     }
 
     pub fn pick_vault_folder(&self) -> crate::Result<VaultLocationResponse> {
@@ -64,7 +66,9 @@ impl<R: Runtime> MobileVault<R> {
     }
 
     pub fn cloud_ai_models(&self) -> crate::Result<CloudAiModelsResponse> {
-        Err(crate::Error::Unavailable("Mobile model discovery is only available in the iOS app".into()))
+        Err(crate::Error::Unavailable(
+            "Mobile model discovery is only available in the iOS app".into(),
+        ))
     }
 
     pub fn generate_cloud_ai(
@@ -76,7 +80,7 @@ impl<R: Runtime> MobileVault<R> {
         ))
     }
 
-    pub fn stop_cloud_ai(&self) -> crate::Result<()> {
+    pub fn stop_cloud_ai(&self, _request: CloudAiStopRequest) -> crate::Result<()> {
         Ok(())
     }
 

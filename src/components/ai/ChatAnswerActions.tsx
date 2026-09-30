@@ -1,6 +1,12 @@
+import { noteUnifiedDiff } from "@/lib/ai-diff";
 import { useState } from "react";
-import { createNote, getNotes, updateNoteBody } from "@/store/notes-store";
-import { noteBody } from "@/lib/frontmatter";
+import {
+  createNote,
+  getNotes,
+  writeAgentNoteContent,
+  getVaultBackend,
+} from "@/store/notes-store";
+import { noteBody, withBody } from "@/lib/frontmatter";
 import { noteTitle, noteTypePath, type Note } from "@/lib/note-utils";
 import type { AiNoteChange } from "@/lib/ai-conversations";
 import { planAiUndo } from "@/lib/ai-chat-experience";
@@ -73,7 +79,7 @@ export function ChatAnswerActions({
             className={button}
             disabled={busy || disabled || localChanges.length > 0}
             onClick={() =>
-              void action(() => {
+              void action(async () => {
                 const latest = getNotes().find(
                   (candidate) => candidate.id === note.id,
                 );
@@ -81,7 +87,21 @@ export function ChatAnswerActions({
                   throw new Error("This note is no longer available.");
                 const before = noteBody(latest.content);
                 const after = `${before.trimEnd()}\n\n${text}`;
-                updateNoteBody(latest.id, after);
+                if (
+                  !(await writeAgentNoteContent(
+                    latest.id,
+                    latest.content,
+                    withBody(latest.content, after),
+                  ))
+                )
+                  throw new Error("The append could not be saved.");
+                const saved = getNotes().find((note) => note.id === latest.id);
+                if (
+                  !saved ||
+                  (await getVaultBackend()?.readText(saved.path)) !==
+                    saved.content
+                )
+                  throw new Error("The append could not be verified.");
                 setLocalChanges([
                   {
                     noteId: latest.id,
@@ -112,15 +132,25 @@ export function ChatAnswerActions({
             className={button}
             disabled={busy || disabled || undone}
             onClick={() =>
-              void action(() => {
+              void action(async () => {
                 const originals = planAiUndo(
                   allChanges,
                   new Map(
                     getNotes().map((note) => [note.id, noteBody(note.content)]),
                   ),
                 );
-                for (const [id, before] of originals)
-                  updateNoteBody(id, before);
+                for (const [id, before] of originals) {
+                  const current = getNotes().find((note) => note.id === id);
+                  if (
+                    !current ||
+                    !(await writeAgentNoteContent(
+                      id,
+                      current.content,
+                      withBody(current.content, before),
+                    ))
+                  )
+                    throw new Error("Undo could not be saved.");
+                }
                 setUndone(true);
                 showSuccess("Changes undone");
               })
@@ -136,13 +166,8 @@ export function ChatAnswerActions({
           {allChanges.map((change, index) => (
             <div key={index} className="mt-3 space-y-2">
               <p className="font-medium">{change.title}</p>
-              <p>Before</p>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-red-500/10 p-2">
-                {change.before || "Empty note"}
-              </pre>
-              <p>After</p>
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-emerald-500/10 p-2">
-                {change.after}
+              <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">
+                {noteUnifiedDiff(change.before, change.after, change.title)}
               </pre>
             </div>
           ))}

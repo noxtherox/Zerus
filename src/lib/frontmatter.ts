@@ -20,15 +20,17 @@ export function splitFrontmatter(content: string): {
   raw: string | null;
   body: string;
 } {
-  if (!/^---\r?\n/.test(content)) return { raw: null, body: content };
-  const lines = content.split("\n");
-  for (let i = 1; i < lines.length; i++) {
-    if (/^(---|\.\.\.)\s*$/.test(lines[i].replace(/\r$/, ""))) {
-      return {
-        raw: lines.slice(1, i).join("\n"),
-        body: lines.slice(i + 1).join("\n"),
-      };
-    }
+  const opening = /^---\r?\n/.exec(content);
+  if (!opening) return { raw: null, body: content };
+  // Only scan the header; property reads must not split/copy the entire body.
+  const closing = /\n(?:---|\.\.\.)[^\S\n]*(?:\n|$)/g;
+  closing.lastIndex = opening[0].length - 1;
+  const match = closing.exec(content);
+  if (match) {
+    return {
+      raw: content.slice(opening[0].length, Math.max(opening[0].length, match.index)),
+      body: content.slice(match.index + match[0].length),
+    };
   }
   // unterminated --- fence: treat everything as body
   return { raw: null, body: content };

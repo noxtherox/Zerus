@@ -5,6 +5,7 @@ import { configDefaults } from "vitest/config";
 import downloadHandler from "./api/download.ts";
 
 export default defineConfig(() => ({
+  base: process.env.ZERUS_PREVIEW_BASE ?? "/",
   server: {
     host: "::",
     port: 8080,
@@ -12,6 +13,20 @@ export default defineConfig(() => ({
   },
   plugins: [
     react(),
+    {
+      name: "preview-app-route",
+      configureServer(server) {
+        const base = process.env.ZERUS_PREVIEW_BASE;
+        if (!base || base === "/" || !base.endsWith("/")) return;
+        const route = base.slice(0, -1);
+        server.middlewares.use((request, _response, next) => {
+          if (request.url === route || request.url?.startsWith(`${route}?`)) {
+            request.url = base + request.url.slice(route.length);
+          }
+          next();
+        });
+      },
+    },
     {
       name: "download-api-preview",
       configureServer(server) {

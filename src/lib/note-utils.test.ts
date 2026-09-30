@@ -97,4 +97,23 @@ describe("plain text note list", () => {
     expect(noteListTitle(note("# [[zerus:123|Project Atlas]]"))).toBe("Project Atlas");
     expect(noteListTitle(note(""))).toBe("example");
   });
+
+  it.each([
+    { name: "emphasis", body: `**${"Readable ".repeat(400).trim()}**`, expected: "Readable ".repeat(14).slice(0, 120) },
+    { name: "link", body: `[${"Readable ".repeat(400)}](https://example.com)`, expected: "Readable ".repeat(14).slice(0, 120) },
+    { name: "code fence", body: `\`\`\`txt\n${"Readable ".repeat(400)}\n\`\`\``, expected: "Readable ".repeat(14).slice(0, 120) },
+    { name: "leading images", body: `${"![Hidden](assets/image.png)\n\n".repeat(200)}Visible body`, expected: "Visible body" },
+    { name: "later reference definition", body: `[Readable label][guide]\n\n${"More text.\n\n".repeat(400)}[guide]: https://example.com`, expected: `Readable label ${"More text. ".repeat(10)}`.slice(0, 120) },
+  ])("keeps $name intact in long note excerpts", ({ body, expected }) => {
+    expect(noteSnippet(note(`# Title\n\n${body}`))).toBe(expected);
+  });
+
+  it("refreshes a cached title and excerpt after editing the same note", () => {
+    const item = note("# Before\n\nOld excerpt");
+    expect(noteListTitle(item)).toBe("Before");
+    expect(noteSnippet(item)).toBe("Old excerpt");
+    item.content = "# After\n\n**New** excerpt";
+    expect(noteListTitle(item)).toBe("After");
+    expect(noteSnippet(item)).toBe("New excerpt");
+  });
 });

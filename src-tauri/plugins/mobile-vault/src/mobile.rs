@@ -26,7 +26,9 @@ pub struct MobileVault<R: Runtime>(PluginHandle<R>);
 
 impl<R: Runtime> MobileVault<R> {
     pub fn google_drive(&self, request: serde_json::Value) -> crate::Result<serde_json::Value> {
-        self.0.run_mobile_plugin("googleDrive", request).map_err(Into::into)
+        self.0
+            .run_mobile_plugin("googleDrive", request)
+            .map_err(Into::into)
     }
 
     pub fn pick_vault_folder(&self) -> crate::Result<VaultLocationResponse> {
@@ -107,9 +109,9 @@ impl<R: Runtime> MobileVault<R> {
             .map_err(Into::into)
     }
 
-    pub fn stop_cloud_ai(&self) -> crate::Result<()> {
+    pub fn stop_cloud_ai(&self, request: CloudAiStopRequest) -> crate::Result<()> {
         self.0
-            .run_mobile_plugin("stopCloudAI", EmptyRequest::default())
+            .run_mobile_plugin("stopCloudAI", request)
             .map_err(Into::into)
     }
 

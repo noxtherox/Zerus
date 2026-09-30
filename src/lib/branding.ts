@@ -1,8 +1,8 @@
 export type LogoStyle = "graphite" | "white";
 
 const LOGO_SOURCES: Record<LogoStyle, string> = {
-  graphite: "/zerus-logo.svg",
-  white: "/zerus-logo-white.svg",
+  graphite: `${import.meta.env.BASE_URL}zerus-logo.svg`,
+  white: `${import.meta.env.BASE_URL}zerus-logo-white.svg`,
 };
 
 export function getLogoSrc(style: LogoStyle): string {

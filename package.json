@@ -34,6 +34,8 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "test": "vitest run",
+    "ai:eval": "vitest run src/lib/ai-harness.test.ts src/lib/ai-sdk-agent.test.ts",
+    "ai:eval:live": "vitest run src/lib/ai-harness-live.test.ts",
     "typecheck": "tsc --project tsconfig.app.json --noEmit && tsc --project tsconfig.node.json --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",

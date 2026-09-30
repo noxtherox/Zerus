@@ -50,6 +50,7 @@ export interface NewChatImageAttachment {
 }
 
 export interface PersistedChatMessage {
+  runId?: string;
   documents?: ChatDocument[];
   id: string;
   turnId: string;
@@ -118,6 +119,10 @@ export interface ChatConversation {
 }
 
 export interface NewAssistantMessage {
+  runId?: string;
+  toolCalls?: StoredAiToolCall[];
+  interrupted?: boolean;
+  reasoning?: string | null;
   turnId: string;
   text: string;
   sources: ChatSourceSnapshot[];
@@ -469,6 +474,7 @@ export async function appendAssistantMessage(
     id: uuid(), turnId: assistant.turnId, role: "assistant", text: assistant.text,
     createdAt: event.at, deviceId: device.id, ownerGeneration: conversation.ownerGeneration,
     sources: assistant.sources, contextKind: assistant.contextKind, changes: assistant.changes,
+    runId: assistant.runId, toolCalls: assistant.toolCalls, interrupted: assistant.interrupted, reasoning: assistant.reasoning,
   };
   await writeEvent(backend, { ...event, kind: "message", message });
 }
@@ -539,6 +545,7 @@ export async function purgeExpiredChats(
       }, null, 2));
     }
     await backend.removeDir(`${CHAT_ROOT}/${conversation.id}`);
+    if (await backend.exists(`.zerus/ai/runs/${conversation.id}`)) await backend.removeDir(`.zerus/ai/runs/${conversation.id}`);
     purged = true;
   }
   return purged;
@@ -598,7 +605,7 @@ export async function saveDesktopChat(
       id: source.id, turnId: source.turnId, role: source.role, text: source.content,
       createdAt: at, deviceId: device.id, ownerGeneration: existing?.ownerGeneration ?? 1,
       attachments: source.attachments, documents: source.documents, sources: source.sources, changes: source.changes,
-      reasoning: source.reasoning, toolCalls: source.toolCalls, interrupted: source.interrupted,
+      reasoning: source.reasoning, toolCalls: source.toolCalls, interrupted: source.interrupted, runId: source.runId,
     };
     await writeEvent(backend, { version: 1, id: uuid(), conversationId: id, at,
       deviceId: device.id, ownerGeneration: message.ownerGeneration, kind: "message", message });
@@ -611,7 +618,7 @@ export function desktopChatMessages(conversation: ChatConversation): StoredAiMes
   return conversation.messages.map((message) => ({
     id: message.id, turnId: message.turnId, role: message.role, content: message.text,
     attachments: message.attachments, documents: message.documents, sources: message.sources, changes: message.changes,
-    reasoning: message.reasoning, toolCalls: message.toolCalls, interrupted: message.interrupted,
+    reasoning: message.reasoning, toolCalls: message.toolCalls, interrupted: message.interrupted, runId: message.runId,
     editApplied: Boolean(message.changes?.length),
   }));
 }

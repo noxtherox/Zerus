@@ -10,14 +10,8 @@ import {
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import type { AiNoteAction } from "@/lib/ai-actions";
-
-export type AiToolCall =
-  | { name: "note_get"; arguments: { selector?: string } }
-  | { name: "note_list"; arguments: { limit?: number } }
-  | { name: "search"; arguments: { query: string; limit?: number } }
-  | { name: "note_append"; arguments: { text: string } }
-  | { name: "note_set_body"; arguments: { body: string } }
-  | { name: "zerus_cli"; arguments: { args: string[] } };
+import { validateAiToolCall, type AiToolCall } from "./ai-tool-schemas";
+export type { AiToolCall } from "./ai-tool-schemas";
 
 export interface ParsedAiToolResponse {
   content: string;
@@ -172,97 +166,10 @@ export function parseAiToolResponse(
       typeof payload.arguments === "object"
         ? payload.arguments
         : {};
-    if (name === "note_get") {
-      const selectorValue = "selector" in args ? args.selector : undefined;
-      if (selectorValue !== undefined && typeof selectorValue !== "string") {
-        throw new Error("note_get selector must be text.");
-      }
-      const selector = typeof selectorValue === "string" ? selectorValue : undefined;
-      return {
-        content,
-        toolCall: { name, arguments: { selector } },
-        toolError: null,
-      };
-    }
-    if (name === "note_list") {
-      return {
-        content,
-        toolCall: {
-          name,
-          arguments: {
-            limit: boundedLimit("limit" in args ? args.limit : undefined, 20),
-          },
-        },
-        toolError: null,
-      };
-    }
-    if (name === "search") {
-      const query = "query" in args ? args.query : null;
-      if (typeof query !== "string" || !query.trim()) {
-        throw new Error("search requires a query.");
-      }
-      return {
-        content,
-        toolCall: {
-          name,
-          arguments: {
-            query: query.trim(),
-            limit: boundedLimit("limit" in args ? args.limit : undefined, 10),
-          },
-        },
-        toolError: null,
-      };
-    }
-    if (name === "note_append") {
-      const text = "text" in args ? args.text : null;
-      if (typeof text !== "string" || !text.trim()) {
-        throw new Error("note_append requires text.");
-      }
-      if (text.length > MAX_TOOL_TEXT_LENGTH) {
-        throw new Error("The appended text is too large.");
-      }
-      return {
-        content,
-        toolCall: { name, arguments: { text } },
-        toolError: null,
-      };
-    }
-    if (name === "note_set_body") {
-      const body = "body" in args ? args.body : null;
-      if (typeof body !== "string" || !body.trim()) {
-        throw new Error("note_set_body requires a non-empty body.");
-      }
-      if (body.length > MAX_TOOL_TEXT_LENGTH) {
-        throw new Error("The replacement body is too large.");
-      }
-      return {
-        content,
-        toolCall: { name, arguments: { body } },
-        toolError: null,
-      };
-    }
-    if (name === "zerus_cli") {
-      const cliArgs = "args" in args ? args.args : null;
-      if (
-        !Array.isArray(cliArgs) ||
-        cliArgs.length === 0 ||
-        cliArgs.length > 128 ||
-        cliArgs.some((argument) =>
-          typeof argument !== "string" ||
-          !argument.length ||
-          argument.length > 100_000 ||
-          argument.includes("\0")
-        )
-      ) {
-        throw new Error("zerus_cli requires 1 to 128 valid command arguments.");
-      }
-      return {
-        content,
-        toolCall: { name, arguments: { args: cliArgs } },
-        toolError: null,
-      };
-    }
-    throw new Error(`Unknown Zerus tool: ${String(name)}`);
+    const input = { ...args } as Record<string, unknown>;
+    if (name === "note_list" || name === "search") input.limit = boundedLimit(input.limit, name === "search" ? 10 : 20);
+    if (name === "search" && typeof input.query === "string") input.query = input.query.trim();
+    return { content, toolCall: validateAiToolCall(name, input), toolError: null };
   } catch (error) {
     return {
       content,
@@ -436,6 +343,9 @@ export function runAiTool(
   }
 
   const current = available.find((note) => note.id === currentNoteId);
+  if (call.name !== "note_append" && call.name !== "note_set_body") {
+    return { ok: false, result: { error: "This tool requires the shared notes runtime." } };
+  }
   if (!current) {
     return { ok: false, result: { error: "No note is currently selected." } };
   }

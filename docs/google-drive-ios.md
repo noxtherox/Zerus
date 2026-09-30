@@ -52,7 +52,10 @@ its file operations to the chosen folder, although authorization itself is not
 limited to that folder. This is a restricted scope: review Google's production
 verification requirements before distributing the integration publicly. Google
 test-mode refresh tokens commonly expire after seven days; use **Reconnect Google
-account** in the folder browser when needed. No production-verification exemption
+account** in **Settings → Vault** or the folder browser when needed. Reconnecting
+from Settings keeps the current vault and retries saving pending edits before
+refreshing. Cancelled sign-in or a different account leaves the connection intact.
+No production-verification exemption
 or zero-cost assessment is assumed.
 
 ## Current behavior and limits

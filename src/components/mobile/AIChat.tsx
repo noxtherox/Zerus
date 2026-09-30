@@ -1,11 +1,32 @@
+import type { ModelMessage } from "@ai-sdk/provider-utils";
+import {
+  NotesAgentControls,
+  NotesAgentRunView,
+  NotesAgentPending,
+} from "@/components/ai/NotesAgentControls";
+import { useNotesAgent } from "@/components/ai/useNotesAgent";
+import { notesAgentPort } from "@/lib/ai-harness-store";
+import { notesAgentPrompt } from "@/lib/ai-harness-prompt";
+import { runZerusAgent } from "@/lib/ai-sdk-agent";
+import { enableNotesWorkers } from "@/lib/ai-harness-workers";
+import { agentBase64 } from "@/lib/ai-native-model";
+import { generateMobileAgent } from "@/lib/mobile-cloud-ai";
+import { typeKey } from "@/lib/note-utils";
+import { loadAllNotes } from "@/store/notes-store";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { AiMarkdown } from "@/components/ai/AiMarkdown";
 import { ChatAnswerActions } from "@/components/ai/ChatAnswerActions";
 import { ChatContextPicker } from "@/components/ai/ChatContextPicker";
 import { visibleChatStream } from "@/lib/ai-chat-experience";
-import type { AiNoteChange } from "@/lib/ai-conversations";
-import { noteTitle } from "@/lib/note-utils";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent as ReactTouchEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import {
   Archive,
   ArrowLeft,
@@ -38,7 +59,6 @@ import {
   purgeExpiredChats,
   resetChatSummary,
   renameChat,
-  saveChatSummary,
   setChatLifecycle,
   setChatScope,
   transferChatOwnership,
@@ -48,14 +68,12 @@ import {
   type ChatImageAttachment,
   type ChatSourceSnapshot,
   type ChatScope,
-  type PersistedChatMessage,
 } from "@/lib/mobile-chat-history";
 import { chatDeviceLabel, getChatDevice } from "@/lib/mobile-device";
 import {
   cloudEndpointLabel,
   connectOpenRouter,
   configureCloudAI,
-  generateCloudAI,
   getCloudAIStatus,
   getCloudAIModels,
   stopCloudAI,
@@ -63,18 +81,18 @@ import {
 } from "@/lib/mobile-cloud-ai";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import {
-  executeMobileAIActions,
-  parseMobileAIActions,
-  questionRequestsNoteMutation,
-} from "@/lib/mobile-ai-actions";
-import { buildNotesPrompt, cleanNotesAnswer } from "@/lib/mobile-ai-response";
-import { prepareChatImage, questionReferencesImage, type PreparedChatImage } from "@/lib/mobile-chat-image";
-import { selectDocumentContext, prepareChatDocument, validateDocumentBatch, type ChatDocument } from "@/lib/chat-documents";
-import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
+  prepareChatImage,
+  questionReferencesImage,
+  type PreparedChatImage,
+} from "@/lib/mobile-chat-image";
 import {
-  retrieveNotes,
-  type NoteRetrievalResult,
-} from "@/lib/mobile-note-retrieval";
+  selectDocumentContext,
+  prepareChatDocument,
+  validateDocumentBatch,
+  type ChatDocument,
+} from "@/lib/chat-documents";
+import { horizontalSwipeDirection } from "@/lib/mobile-gestures";
+
 import {
   cancelOnDeviceSpeechRecognition,
   getOnDeviceSpeechRecognitionProgress,
@@ -84,49 +102,32 @@ import {
 import { type Note } from "@/lib/note-utils";
 import { notesInAiScope, type AiKnowledgeScope } from "@/lib/ai-context";
 import type { VaultBackend } from "@/lib/vault/backend";
-import { createNote, getNotes, getVaultBackend, trashNote, updateNoteBody } from "@/store/notes-store";
+import {
+  getNotes,
+  getVaultBackend,
+  trashNote,
+  updateNoteBody,
+} from "@/store/notes-store";
 import { noteBody } from "@/lib/frontmatter";
-import { readSharedAiSettings, writeSharedAiSettings } from "@/lib/shared-ai-settings";
-import { DEFAULT_AI_PROVIDER_CONFIGS, type AiProviderConfig } from "@/lib/ai-provider-config";
+import {
+  readSharedAiSettings,
+  writeSharedAiSettings,
+} from "@/lib/shared-ai-settings";
+import {
+  DEFAULT_AI_PROVIDER_CONFIGS,
+  type AiProviderConfig,
+} from "@/lib/ai-provider-config";
 
-type HistoryFilter =
-  | "all"
-  | "device"
-  | "other"
-  | "archived"
-  | "deleted";
+type HistoryFilter = "all" | "device" | "other" | "archived" | "deleted";
 
 type MobileCloudProvider = "openrouter" | "compatible";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
-  if (error && typeof error === "object" && "message" in error) return String(error.message);
+  if (error && typeof error === "object" && "message" in error)
+    return String(error.message);
   return "The AI provider could not complete that request.";
-}
-
-function conversationSummaryPrompt(conversation: ChatConversation, messages: PersistedChatMessage[]): string {
-  const transcript = messages
-    .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text}`)
-    .join("\n\n");
-  return [
-    "Update a concise factual memory for an ongoing conversation. Preserve decisions, user preferences, named entities, unresolved questions, and important context. Do not add facts. Return only the updated memory.",
-    conversation.summary ? `Previous memory:\n${conversation.summary.text}` : "",
-    `Turns to incorporate:\n${transcript}`,
-  ].filter(Boolean).join("\n\n");
-}
-
-function sourceSnapshots(retrieval: NoteRetrievalResult, notes: Note[]): ChatSourceSnapshot[] {
-  return retrieval.notes.map((source) => {
-    const current = notes.find((note) => note.id === source.id);
-    return {
-      noteId: source.id,
-      title: source.title,
-      type: source.type,
-      excerpt: source.excerpt,
-      revision: chatContentRevision(current?.content ?? source.excerpt),
-    };
-  });
 }
 
 function filterConversations(
@@ -137,16 +138,23 @@ function filterConversations(
 ): ChatConversation[] {
   const term = query.trim().toLowerCase();
   return conversations.filter((conversation) => {
-    const matchesFilter = filter === "deleted" ? Boolean(conversation.deletedAt)
-      : filter === "archived" ? Boolean(conversation.archivedAt) && !conversation.deletedAt
-      : conversation.archivedAt || conversation.deletedAt ? false
-      : filter === "device" ? conversation.owner.id === device.id
-      : filter === "other" ? conversation.owner.id !== device.id
-      : true;
+    const matchesFilter =
+      filter === "deleted"
+        ? Boolean(conversation.deletedAt)
+        : filter === "archived"
+          ? Boolean(conversation.archivedAt) && !conversation.deletedAt
+          : conversation.archivedAt || conversation.deletedAt
+            ? false
+            : filter === "device"
+              ? conversation.owner.id === device.id
+              : filter === "other"
+                ? conversation.owner.id !== device.id
+                : true;
     if (!matchesFilter) return false;
     if (!term) return true;
     return `${conversation.title} ${conversation.messages.map((message) => message.text).join(" ")}`
-      .toLowerCase().includes(term);
+      .toLowerCase()
+      .includes(term);
   });
 }
 
@@ -167,13 +175,18 @@ function HistoryConversationRow({
   const longPressTriggered = useRef(false);
 
   const cancelLongPress = () => {
-    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+    if (longPressTimer.current !== null)
+      window.clearTimeout(longPressTimer.current);
     longPressTimer.current = null;
   };
 
-  useEffect(() => () => {
-    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (longPressTimer.current !== null)
+        window.clearTimeout(longPressTimer.current);
+    },
+    [],
+  );
 
   const beginLongPress = () => {
     cancelLongPress();
@@ -202,14 +215,27 @@ function HistoryConversationRow({
         onPointerUp={cancelLongPress}
         onPointerCancel={cancelLongPress}
         onPointerLeave={cancelLongPress}
-        onContextMenu={(event) => { event.preventDefault(); cancelLongPress(); onActions(); }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          cancelLongPress();
+          onActions();
+        }}
         className="flex min-w-0 flex-1 items-center gap-3 px-4 py-4 text-left"
       >
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[15px] font-semibold">{conversation.title}</p>
-          <p className="mt-1 truncate text-xs text-muted-foreground">{chatDeviceLabel(conversation.owner, deviceNames)} · {conversation.messages.length} messages</p>
+          <p className="truncate text-[15px] font-semibold">
+            {conversation.title}
+          </p>
+          <p className="mt-1 truncate text-xs text-muted-foreground">
+            {chatDeviceLabel(conversation.owner, deviceNames)} ·{" "}
+            {conversation.messages.length} messages
+          </p>
         </div>
-        {conversation.owner.id !== device.id && <span className="rounded-full bg-muted px-2 py-1 text-[10px] text-muted-foreground">Read-only</span>}
+        {conversation.owner.id !== device.id && (
+          <span className="rounded-full bg-muted px-2 py-1 text-[10px] text-muted-foreground">
+            Read-only
+          </span>
+        )}
       </button>
       <button
         type="button"
@@ -223,7 +249,11 @@ function HistoryConversationRow({
   );
 }
 
-function PersistedChatImage({ attachment }: { attachment: ChatImageAttachment }) {
+function PersistedChatImage({
+  attachment,
+}: {
+  attachment: ChatImageAttachment;
+}) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -231,21 +261,27 @@ function PersistedChatImage({ attachment }: { attachment: ChatImageAttachment })
     let objectUrl: string | null = null;
     const backend = getVaultBackend();
     if (!backend) return;
-    void backend.readBinary(attachment.path).then((bytes) => {
-      if (!active) return;
-      const ownedBytes = new Uint8Array(bytes);
-      objectUrl = URL.createObjectURL(new Blob([ownedBytes], { type: attachment.mimeType }));
-      setUrl(objectUrl);
-    }).catch(() => {
-      if (active) setUrl(null);
-    });
+    void backend
+      .readBinary(attachment.path)
+      .then((bytes) => {
+        if (!active) return;
+        const ownedBytes = new Uint8Array(bytes);
+        objectUrl = URL.createObjectURL(
+          new Blob([ownedBytes], { type: attachment.mimeType }),
+        );
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setUrl(null);
+      });
     return () => {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [attachment.mimeType, attachment.path]);
 
-  if (!url) return <div className="h-28 w-40 animate-pulse rounded-lg bg-muted" />;
+  if (!url)
+    return <div className="h-28 w-40 animate-pulse rounded-lg bg-muted" />;
   return (
     <img
       src={url}
@@ -286,15 +322,24 @@ export function PersistentAIChat({
   onOpenNote: (noteId: string) => void;
   scope: ChatScope;
 }) {
-  const nativeCloudAIAvailable = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-  const fullViewportHeight = useRef(typeof window === "undefined" ? 0 : (window.visualViewport?.height ?? window.innerHeight));
+  const nativeCloudAIAvailable =
+    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const fullViewportHeight = useRef(
+    typeof window === "undefined"
+      ? 0
+      : (window.visualViewport?.height ?? window.innerHeight),
+  );
   const returningFromNote = useRef(false);
   const historySelectionGeneration = useRef(0);
   const previousScopeKey = useRef(JSON.stringify(scope));
   const previousOwner = useRef<string | null>(null);
   const speechDraftPrefix = useRef("");
   const speechProgressFailed = useRef(false);
-  const swipeStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
+  const swipeStart = useRef<{
+    x: number;
+    y: number;
+    axis: "horizontal" | "vertical" | null;
+  } | null>(null);
   const swipeTimer = useRef<number | null>(null);
   const imageInput = useRef<HTMLInputElement | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
@@ -309,17 +354,26 @@ export function PersistentAIChat({
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [memoryOpen, setMemoryOpen] = useState(false);
-  const [snapshotOpen, setSnapshotOpen] = useState<ChatSourceSnapshot | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState<ChatSourceSnapshot | null>(
+    null,
+  );
   const [historyFilter, setHistoryFilter] = useState<HistoryFilter>("all");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyActionsId, setHistoryActionsId] = useState<string | null>(null);
   const [cloudStatus, setCloudStatus] = useState<CloudAIStatus | null>(null);
-  const [mobileProvider, setMobileProvider] = useState<MobileCloudProvider>("openrouter");
-  const [providerProfiles, setProviderProfiles] = useState<Partial<Record<MobileCloudProvider, AiProviderConfig>>>({});
-  const [cloudEndpoint, setCloudEndpoint] = useState("https://openrouter.ai/api/v1");
+  const [mobileProvider, setMobileProvider] =
+    useState<MobileCloudProvider>("openrouter");
+  const [providerProfiles, setProviderProfiles] = useState<
+    Partial<Record<MobileCloudProvider, AiProviderConfig>>
+  >({});
+  const [cloudEndpoint, setCloudEndpoint] = useState(
+    "https://openrouter.ai/api/v1",
+  );
   const [cloudModel, setCloudModel] = useState("openai/gpt-5-mini");
   const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
-  const [discoveredModels, setDiscoveredModels] = useState<Array<{ id: string; name: string }>>([]);
+  const [discoveredModels, setDiscoveredModels] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
   const [modelSearch, setModelSearch] = useState("");
   const [cloudAPIKey, setCloudAPIKey] = useState("");
   const [editingAPIKey, setEditingAPIKey] = useState(false);
@@ -327,14 +381,23 @@ export function PersistentAIChat({
   const [pendingImages, setPendingImages] = useState<PreparedChatImage[]>([]);
   const [preparingImage, setPreparingImage] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [contextOverride, setContextOverride] = useState<AiKnowledgeScope | null>(null);
+  const [contextOverride, setContextOverride] =
+    useState<AiKnowledgeScope | null>(null);
   const [streamingText, setStreamingText] = useState("");
-  const [memoryBusy, setMemoryBusy] = useState(false);
+  const memoryBusy = false;
+  const queuedSendRef = useRef<{
+    send: (text: string) => void;
+    take: () => string | undefined;
+  } | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [undoChanges, setUndoChanges] = useState<Array<{ id: string; content: string | null; after: string | null }>>([]);
-  const [speechState, setSpeechState] = useState<"idle" | "starting" | "listening" | "stopping">("idle");
+  const [undoChanges, setUndoChanges] = useState<
+    Array<{ id: string; content: string | null; after: string | null }>
+  >([]);
+  const [speechState, setSpeechState] = useState<
+    "idle" | "starting" | "listening" | "stopping"
+  >("idle");
   const [speechEngine, setSpeechEngine] = useState<string | null>(null);
   const [speechBuild, setSpeechBuild] = useState<string | null>(null);
   const [viewport, setViewport] = useState({
@@ -356,26 +419,57 @@ export function PersistentAIChat({
     setBlankChat(true);
     setOptionsOpen(false);
     setDraft("");
-    for (const image of pendingImagesRef.current) URL.revokeObjectURL(image.previewUrl);
+    for (const image of pendingImagesRef.current)
+      URL.revokeObjectURL(image.previewUrl);
     pendingImagesRef.current = [];
     setPendingImages([]);
     setPendingDocuments([]);
   }, [scope]);
 
   const replacePendingImages = (images: PreparedChatImage[]) => {
-    for (const image of pendingImagesRef.current) URL.revokeObjectURL(image.previewUrl);
+    for (const image of pendingImagesRef.current)
+      URL.revokeObjectURL(image.previewUrl);
     pendingImagesRef.current = images;
     setPendingImages(images);
   };
 
-  useEffect(() => { setContextOverride(null); }, [conversationId]);
+  useEffect(() => {
+    setContextOverride(null);
+  }, [conversationId]);
 
-  const current = conversations.find((conversation) => conversation.id === conversationId) ?? null;
-  const activeChatScope = current?.scope ?? scope;
-  const contextNoteId = activeChatScope.kind === "note" ? activeChatScope.noteId : activeChatScope.kind === "selection" && activeChatScope.noteIds.length === 1 ? activeChatScope.noteIds[0] : null;
+  const agentUI = useNotesAgent(getVaultBackend(), conversationId);
+  const agentAbort = useRef<AbortController | null>(null);
+  const current =
+    conversations.find((conversation) => conversation.id === conversationId) ??
+    null;
+  const activeChatScope = contextOverride ?? current?.scope ?? scope;
+  const agentScopeRef = useRef("");
+  agentScopeRef.current = JSON.stringify(activeChatScope);
+  const agentPortFor = (run: import("@/lib/ai-harness-state").AgentRun) => {
+    const backend = getVaultBackend();
+    if (!backend || !device || !canEditCurrent)
+      throw new Error("This chat is read-only.");
+    return notesAgentPort(
+      backend,
+      run.chatId,
+      device.id,
+      () =>
+        run.chatId === conversationId && run.scopeKey === agentScopeRef.current,
+      agentScopeRef.current,
+    );
+  };
+  const contextNoteId =
+    activeChatScope.kind === "note"
+      ? activeChatScope.noteId
+      : activeChatScope.kind === "selection" &&
+          activeChatScope.noteIds.length === 1
+        ? activeChatScope.noteIds[0]
+        : null;
   const contextNote = notes.find((note) => note.id === contextNoteId) ?? null;
   const isOwner = Boolean(current && device && current.owner.id === device.id);
-  const canEditCurrent = Boolean(isOwner && !current?.archivedAt && !current?.deletedAt);
+  const canEditCurrent = Boolean(
+    isOwner && !current?.archivedAt && !current?.deletedAt,
+  );
   const messages = current?.messages ?? [];
   const deviceNames = useMemo(() => {
     const values = conversations.map((conversation) => conversation.owner);
@@ -383,48 +477,66 @@ export function PersistentAIChat({
     return values;
   }, [conversations, device]);
 
-  const refreshHistory = useCallback(async (selectPreferred = false, selectedId?: string) => {
-    const backend = getVaultBackend();
-    if (!backend || !device) return [];
-    setHistoryLoading(true);
-    const selectionGeneration = historySelectionGeneration.current;
-    try {
-      let loaded = await loadChatConversations(backend);
-      if (await purgeExpiredChats(backend, loaded, device)) {
-        loaded = await loadChatConversations(backend);
+  const refreshHistory = useCallback(
+    async (selectPreferred = false, selectedId?: string) => {
+      const backend = getVaultBackend();
+      if (!backend || !device) return [];
+      setHistoryLoading(true);
+      const selectionGeneration = historySelectionGeneration.current;
+      try {
+        let loaded = await loadChatConversations(backend);
+        if (await purgeExpiredChats(backend, loaded, device)) {
+          loaded = await loadChatConversations(backend);
+        }
+        setConversations(loaded);
+        setConversationId((existingId) => {
+          if (selectionGeneration !== historySelectionGeneration.current)
+            return existingId;
+          if (selectedId) return selectedId;
+          if (
+            existingId &&
+            loaded.some((conversation) => conversation.id === existingId)
+          )
+            return existingId;
+          if (!selectPreferred || blankChat) return null;
+          return (
+            loaded.find(
+              (conversation) =>
+                conversation.owner.id === device.id &&
+                !conversation.archivedAt &&
+                !conversation.deletedAt,
+            )?.id ?? null
+          );
+        });
+        return loaded;
+      } catch (historyError) {
+        setError(`Could not load chat history: ${errorMessage(historyError)}`);
+        return [];
+      } finally {
+        setHistoryLoading(false);
       }
-      setConversations(loaded);
-      setConversationId((existingId) => {
-        if (selectionGeneration !== historySelectionGeneration.current) return existingId;
-        if (selectedId) return selectedId;
-        if (existingId && loaded.some((conversation) => conversation.id === existingId)) return existingId;
-        if (!selectPreferred || blankChat) return null;
-        return loaded.find((conversation) =>
-          conversation.owner.id === device.id && !conversation.archivedAt && !conversation.deletedAt,
-        )?.id ?? null;
-      });
-      return loaded;
-    } catch (historyError) {
-      setError(`Could not load chat history: ${errorMessage(historyError)}`);
-      return [];
-    } finally {
-      setHistoryLoading(false);
-    }
-  }, [blankChat, device]);
+    },
+    [blankChat, device],
+  );
 
   useEffect(() => {
     if (!visible || !device || !searchRequest || busy) return;
     historySelectionGeneration.current += 1;
     if (searchRequest.conversation) {
       const chat = searchRequest.conversation;
-      setConversations(current => [chat, ...current.filter(item => item.id !== chat.id)]);
+      setConversations((current) => [
+        chat,
+        ...current.filter((item) => item.id !== chat.id),
+      ]);
       setConversationId(chat.id);
       setBlankChat(false);
     } else {
       setConversationId(null);
       setBlankChat(true);
       setDraft(searchRequest.query ?? "");
-      setPendingDocuments(searchRequest.document ? [searchRequest.document] : []);
+      setPendingDocuments(
+        searchRequest.document ? [searchRequest.document] : [],
+      );
       replacePendingImages([]);
     }
     onSearchRequestHandled?.();
@@ -432,16 +544,23 @@ export function PersistentAIChat({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, device, searchRequest, busy]);
   useEffect(() => {
-    if (visible && conversationId) recordSearchVisit(getVaultBackend()?.location ?? null, `chat:${conversationId}`);
+    if (visible && conversationId)
+      recordSearchVisit(
+        getVaultBackend()?.location ?? null,
+        `chat:${conversationId}`,
+      );
   }, [visible, conversationId]);
 
-  useEffect(() => { void getChatDevice().then(setDevice); }, []);
+  useEffect(() => {
+    void getChatDevice().then(setDevice);
+  }, []);
 
   useEffect(() => {
     const visualViewport = window.visualViewport;
     const syncViewport = () => {
       const height = visualViewport?.height ?? window.innerHeight;
-      if (height > fullViewportHeight.current) fullViewportHeight.current = height;
+      if (height > fullViewportHeight.current)
+        fullViewportHeight.current = height;
       setViewport({
         height,
         offsetTop: visualViewport?.offsetTop ?? 0,
@@ -464,7 +583,8 @@ export function PersistentAIChat({
     const backend = getVaultBackend();
     void (async () => {
       const shared = backend ? await readSharedAiSettings(backend) : null;
-      const profiles: Partial<Record<MobileCloudProvider, AiProviderConfig>> = {};
+      const profiles: Partial<Record<MobileCloudProvider, AiProviderConfig>> =
+        {};
       for (const provider of ["openrouter", "compatible"] as const) {
         const profile = shared?.settings.profiles[provider];
         if (profile) profiles[provider] = { provider, ...profile };
@@ -472,12 +592,16 @@ export function PersistentAIChat({
       setProviderProfiles(profiles);
 
       const sharedActive = shared?.active ?? null;
-      const selectedProvider: MobileCloudProvider = sharedActive?.provider === "openrouter" ||
+      const selectedProvider: MobileCloudProvider =
+        sharedActive?.provider === "openrouter" ||
         sharedActive?.provider === "compatible"
-        ? sharedActive.provider
-        : "openrouter";
-      const selected = profiles[selectedProvider] ??
-        (sharedActive && sharedActive.provider !== "codex" && sharedActive.provider !== "anthropic"
+          ? sharedActive.provider
+          : "openrouter";
+      const selected =
+        profiles[selectedProvider] ??
+        (sharedActive &&
+        sharedActive.provider !== "codex" &&
+        sharedActive.provider !== "anthropic"
           ? { ...sharedActive, provider: selectedProvider }
           : DEFAULT_AI_PROVIDER_CONFIGS[selectedProvider]);
       setMobileProvider(selectedProvider);
@@ -491,22 +615,29 @@ export function PersistentAIChat({
       }
       if (selected.baseUrl) {
         try {
-          return await configureCloudAI({ endpoint: selected.baseUrl, model: selected.model });
+          return await configureCloudAI({
+            endpoint: selected.baseUrl,
+            model: selected.model,
+          });
         } catch {
           // The synced profile is still useful even when this device needs credentials.
         }
       }
       return getCloudAIStatus();
-    })().then((next) => {
-      if (!active) return;
-      setCloudStatus(next);
-      setCloudEndpoint(next.endpoint);
-      setCloudModel(next.model);
-      setEditingAPIKey(!next.configured);
-    }).catch((statusError) => {
-      if (active) setError(errorMessage(statusError));
-    });
-    return () => { active = false; };
+    })()
+      .then((next) => {
+        if (!active) return;
+        setCloudStatus(next);
+        setCloudEndpoint(next.endpoint);
+        setCloudModel(next.model);
+        setEditingAPIKey(!next.configured);
+      })
+      .catch((statusError) => {
+        if (active) setError(errorMessage(statusError));
+      });
+    return () => {
+      active = false;
+    };
   }, [nativeCloudAIAvailable]);
 
   useEffect(() => {
@@ -519,7 +650,14 @@ export function PersistentAIChat({
     } else {
       void refreshHistory(false);
     }
-  }, [blankChat, conversationId, device, refreshHistory, visible, searchRequest]);
+  }, [
+    blankChat,
+    conversationId,
+    device,
+    refreshHistory,
+    visible,
+    searchRequest,
+  ]);
 
   useEffect(() => {
     if (!visible || !device) return;
@@ -530,8 +668,14 @@ export function PersistentAIChat({
   useEffect(() => {
     if (!current || !device) return;
     const ownerKey = `${current.ownerGeneration}:${current.owner.id}`;
-    if (previousOwner.current && previousOwner.current !== ownerKey && current.owner.id !== device.id) {
-      setNotice(`This conversation is now owned by ${chatDeviceLabel(current.owner, deviceNames)}.`);
+    if (
+      previousOwner.current &&
+      previousOwner.current !== ownerKey &&
+      current.owner.id !== device.id
+    ) {
+      setNotice(
+        `This conversation is now owned by ${chatDeviceLabel(current.owner, deviceNames)}.`,
+      );
     }
     previousOwner.current = ownerKey;
   }, [current, device, deviceNames]);
@@ -557,7 +701,9 @@ export function PersistentAIChat({
         if (progress.build) setSpeechBuild(progress.build);
         const transcript = progress.transcript.trim();
         const prefix = speechDraftPrefix.current;
-        setDraft(`${prefix}${prefix && transcript ? (/\s$/.test(prefix) ? "" : " ") : ""}${transcript}`);
+        setDraft(
+          `${prefix}${prefix && transcript ? (/\s$/.test(prefix) ? "" : " ") : ""}${transcript}`,
+        );
       } catch (progressError) {
         if (!active || speechProgressFailed.current) return;
         speechProgressFailed.current = true;
@@ -601,7 +747,10 @@ export function PersistentAIChat({
         model: next.model,
         favoriteModels: [...new Set([...favoriteModels, next.model])],
       };
-      setProviderProfiles((current) => ({ ...current, [mobileProvider]: savedProfile }));
+      setProviderProfiles((current) => ({
+        ...current,
+        [mobileProvider]: savedProfile,
+      }));
       const backend = getVaultBackend();
       if (backend) {
         await writeSharedAiSettings(backend, savedProfile);
@@ -624,7 +773,9 @@ export function PersistentAIChat({
       setCloudModel(next.model);
       setMobileProvider("openrouter");
       setEditingAPIKey(false);
-      setFavoriteModels((current) => current.includes(next.model) ? current : [...current, next.model]);
+      setFavoriteModels((current) =>
+        current.includes(next.model) ? current : [...current, next.model],
+      );
       setDiscoveredModels(await getCloudAIModels());
       setModelSearch("");
       const savedProfile: AiProviderConfig = {
@@ -633,7 +784,10 @@ export function PersistentAIChat({
         model: next.model,
         favoriteModels: [...new Set([...favoriteModels, next.model])],
       };
-      setProviderProfiles((current) => ({ ...current, openrouter: savedProfile }));
+      setProviderProfiles((current) => ({
+        ...current,
+        openrouter: savedProfile,
+      }));
       const backend = getVaultBackend();
       if (backend) {
         await writeSharedAiSettings(backend, savedProfile);
@@ -661,7 +815,9 @@ export function PersistentAIChat({
       setDiscoveredModels(await getCloudAIModels());
       setModelSearch("");
     } catch (modelError) {
-      setError(`${errorMessage(modelError)} You can still enter a model ID manually.`);
+      setError(
+        `${errorMessage(modelError)} You can still enter a model ID manually.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -676,7 +832,8 @@ export function PersistentAIChat({
       favoriteModels,
     };
     const profiles = { ...providerProfiles, [mobileProvider]: currentProfile };
-    const nextProfile = profiles[provider] ?? DEFAULT_AI_PROVIDER_CONFIGS[provider];
+    const nextProfile =
+      profiles[provider] ?? DEFAULT_AI_PROVIDER_CONFIGS[provider];
     setProviderProfiles(profiles);
     setMobileProvider(provider);
     setCloudEndpoint(nextProfile.baseUrl);
@@ -692,38 +849,16 @@ export function PersistentAIChat({
     }
     setBusy(true);
     try {
-      const next = await configureCloudAI({ endpoint: nextProfile.baseUrl, model: nextProfile.model });
+      const next = await configureCloudAI({
+        endpoint: nextProfile.baseUrl,
+        model: nextProfile.model,
+      });
       setCloudStatus(next);
       setEditingAPIKey(!next.configured);
     } catch {
       setEditingAPIKey(true);
     } finally {
       setBusy(false);
-    }
-  };
-
-  const generateAnswerWithCloud = (
-    prompt: string,
-    images: Array<{ bytes: Uint8Array; mimeType: string }> = [],
-    onDelta?: (delta: string) => void,
-  ) => generateCloudAI(prompt, images, onDelta);
-
-  const updateMemory = async (conversation: ChatConversation, backend: VaultBackend, localDevice: ChatDevice) => {
-    if (conversation.owner.id !== localDevice.id) return;
-    const candidates = conversation.messages.slice(0, -6);
-    if (candidates.length < 4) return;
-    const covered = new Set(conversation.summary?.coveredMessageIds ?? []);
-    const newMessages = candidates.filter((message) => !covered.has(message.id));
-    if (newMessages.length < 4) return;
-    setMemoryBusy(true);
-    try {
-      const text = await generateAnswerWithCloud(conversationSummaryPrompt(conversation, newMessages));
-      await saveChatSummary(backend, conversation, localDevice, text, candidates.map((message) => message.id));
-      await refreshHistory(false, conversation.id);
-    } catch (summaryError) {
-      mobileDiagnostic("mobile-ai.summary.error", { error: errorMessage(summaryError) });
-    } finally {
-      setMemoryBusy(false);
     }
   };
 
@@ -735,102 +870,254 @@ export function PersistentAIChat({
     question: string,
     regenerate = false,
   ) => {
+    if (!(await loadAllNotes()))
+      throw new Error(
+        "Notes could not be loaded. Try again after loading completes.",
+      );
     const activeScope = conversation.scope;
-    const scopedNotes = activeScope.kind === "note"
-      ? notes.filter((note) => note.id === activeScope.noteId)
-      : notesInAiScope(notes, activeScope as AiKnowledgeScope);
-    const retrieval = retrieveNotes(scopedNotes, question);
-    const previousMessages = conversation.messages.filter((message) => message.turnId !== turnId);
-    const turnMessage = conversation.messages.find((message) =>
-      message.turnId === turnId && message.role === "user");
-    const previousImages = questionReferencesImage(question)
-      ? [...previousMessages].reverse().find((message) => message.attachments?.length)?.attachments
-      : undefined;
-    const attachments = turnMessage?.attachments?.length ? turnMessage.attachments : previousImages ?? [];
-    const images = await Promise.all(attachments.slice(0, 4).map(async (attachment) => ({
-      bytes: await backend.readBinary(attachment.path),
-      mimeType: attachment.mimeType,
-    })));
-    const mutationRequested = !regenerate && questionRequestsNoteMutation(
+    const scopedNotes =
+      activeScope.kind === "note"
+        ? getNotes().filter((note) => note.id === activeScope.noteId)
+        : notesInAiScope(getNotes(), activeScope);
+    const scopeAtStart = JSON.stringify(activeScope);
+    const controller = new AbortController();
+    agentAbort.current = controller;
+    const port = notesAgentPort(
+      backend,
+      conversation.id,
+      localDevice.id,
+      () =>
+        !controller.signal.aborted && agentScopeRef.current === scopeAtStart,
+      scopeAtStart,
+    );
+    const createTypes =
+      activeScope.kind === "vault"
+        ? ["*"]
+        : activeScope.kind === "type"
+          ? [typeKey(activeScope.path)]
+          : [];
+    const runtime = await agentUI.start(
+      port,
+      localDevice.id,
       question,
-      retrieval.notes.map((note) => note.title),
+      scopedNotes,
+      createTypes,
+      regenerate ? "ask" : undefined,
+      conversation.id,
+      controller.signal,
+      contextNoteId ?? undefined,
     );
-    const documents = [...previousMessages, ...(turnMessage ? [turnMessage] : [])].flatMap((message) => message.documents ?? []);
-    const directAnswer = images.length || documents?.length || mutationRequested ? null : retrieval.directAnswer;
-    const basePrompt = buildNotesPrompt(
-      retrieval, previousMessages, question, conversation.summary?.text ?? null, images.length > 0 || Boolean(documents?.length),
+    const config: AiProviderConfig = {
+      provider: mobileProvider,
+      baseUrl: cloudEndpoint,
+      model: cloudModel,
+      favoriteModels,
+    };
+    const workerTransport = (
+      request: import("@/lib/ai-native-model").NativeAiRequest,
+      signal?: AbortSignal,
+    ) => generateMobileAgent(request, signal);
+    const settings = {
+      ...agentUI.settings,
+      maxInputTokens: Math.min(
+        agentUI.settings.maxInputTokens,
+        (
+          discoveredModels.find((model) => model.id === cloudModel) as {
+            contextWindow?: number;
+          }
+        )?.contextWindow ?? 32768,
+      ),
+    };
+    enableNotesWorkers(
+      port,
+      config,
+      settings,
+      conversation.id,
+      localDevice.id,
+      runtime,
+      workerTransport,
+      controller.signal,
     );
-    const documentContext = documents.length ? await selectDocumentContext(documents, question, discoveredModels.find((model) => model.id === cloudModel) ?? { id: cloudModel }, basePrompt, images.length) : null;
-    const prompt = directAnswer ? null : basePrompt + (documentContext?.text ?? "");
-    setDocumentContextStatus(documentContext ? `${documentContext.excerpts ? "Using file excerpts" : "Full file context"}${documentContext.fallback ? " · model capacity unknown; conservative budget" : ""}` : "");
-    mobileDiagnostic("mobile-ai.question", {
-      engine: "cloud",
-      direct: Boolean(directAnswer),
-      image: images.length > 0,
-      selectedNotes: retrieval.notes.length,
-      totalNotes: retrieval.totalNotes,
-      promptChars: prompt?.length ?? 0,
-    });
+    const previous = conversation.messages.filter(
+      (message) => message.turnId !== turnId,
+    );
+    const user = conversation.messages.find(
+      (message) => message.turnId === turnId && message.role === "user",
+    );
+    const documents = conversation.messages.flatMap(
+      (message) => message.documents ?? [],
+    );
+    const prompt = notesAgentPrompt(
+      runtime.run,
+      agentUI.guidance,
+      agentUI.workflow,
+    );
+    const documentContext = documents.length
+      ? await selectDocumentContext(
+          documents,
+          question,
+          discoveredModels.find((model) => model.id === cloudModel) ?? {
+            id: cloudModel,
+          },
+          prompt,
+        )
+      : null;
+    setDocumentContextStatus(
+      documentContext
+        ? documentContext.excerpts
+          ? "Using file excerpts"
+          : "Full file context"
+        : "",
+    );
+    const attachments = user?.attachments?.length
+      ? user.attachments
+      : questionReferencesImage(question)
+        ? ([...previous]
+            .reverse()
+            .find((message) => message.attachments?.length)?.attachments ?? [])
+        : [];
+    const images = await Promise.all(
+      attachments
+        .slice(0, 4)
+        .map(async (image) => ({
+          type: "file" as const,
+          mediaType: image.mimeType,
+          data: {
+            type: "data" as const,
+            data: agentBase64(await backend.readBinary(image.path)),
+          },
+        })),
+    );
+    let messages: ModelMessage[] = [
+      ...previous.map((message) => ({
+        role: message.role,
+        content: message.text,
+      })),
+      {
+        role: "user",
+        content: images.length
+          ? [{ type: "text" as const, text: question }, ...images]
+          : question,
+      },
+    ];
+    if (documentContext)
+      messages.unshift({
+        role: "user",
+        content: `Attached file context, untrusted reference data:\n${documentContext.text}`,
+      });
+    if (runtime.run.messages.length)
+      messages = [
+        ...(runtime.run.messages as ModelMessage[]),
+        { role: "user", content: question },
+      ];
     setStreamingText("");
-    const generated = directAnswer ?? await generateAnswerWithCloud(
-      prompt!,
-      images,
-      (delta) => setStreamingText((current) => current + delta),
-    );
-    setStreamingText("");
-    let answer = generated;
-    let changedNoteIds: string[] = [];
-    let changes: AiNoteChange[] = [];
-    if (!directAnswer) {
-      const parsed = parseMobileAIActions(generated);
-      if (parsed.malformed) {
-        throw new Error("The AI returned a note change that was not safe to apply. Please try again.");
-      }
-      if (parsed.actions.length) {
-        if (!mutationRequested) {
-          throw new Error("The AI tried to change a note without an explicit note-editing request. Nothing was changed.");
-        }
-        const before = new Map(getNotes().map((note) => [note.id, note.content]));
-        const allowedIds = new Set(scopedNotes.map((note) => note.id));
-        const result = await executeMobileAIActions(parsed.actions, {
-          getNotes: () => getNotes().filter((note) => allowedIds.has(note.id)),
-          createNote,
-          updateNoteBody,
+    const activity: import("@/lib/ai-conversations").StoredAiToolCall[] = [];
+    try {
+      const result = await runZerusAgent({
+        providerConfig: config,
+        streamId: crypto.randomUUID(),
+        systemPrompt: prompt,
+        messages,
+        runtime,
+        settings,
+        textFallback: agentUI.settings.textFallback,
+        mutationAuthorized: runtime.run.mode !== "ask",
+        abortSignal: controller.signal,
+        takeSteering: agentUI.takeSteering,
+        transport: (request, signal) =>
+          generateMobileAgent(request, signal, (delta) =>
+            setStreamingText((text) => text + delta),
+          ),
+        onStepStart: () => setStreamingText(""),
+        executeTool: (call) => runtime.execute(call),
+        onToolEnd: ({ call, result }) => {
+          activity.push({
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+            result: JSON.stringify(result),
+            status: result?.ok ? "complete" : "error",
+          });
+        },
+      });
+      const sources = runtime.run.events
+        .filter((event) => event.kind === "tool")
+        .flatMap((event) => {
+          const detail = event.detail as {
+            call?: { name: string };
+            result?: {
+              result?: {
+                id?: string;
+                body?: string;
+                revision?: string;
+                title?: string;
+                path?: string;
+              };
+            };
+          };
+          const value = detail?.result?.result;
+          return detail?.call?.name === "note_get" && value?.id
+            ? [
+                {
+                  noteId: value.id,
+                  title: value.title ?? "",
+                  type: value.path ?? "",
+                  excerpt: value.body ?? "",
+                  revision: value.revision ?? "",
+                },
+              ]
+            : [];
         });
-        changedNoteIds = result.changedNoteIds;
-        setUndoChanges(result.changedNoteIds.map((id) => ({ id, content: before.get(id) ?? null, after: getNotes().find((note) => note.id === id)?.content ?? null })));
-        changes = result.changedNoteIds.flatMap((id) => {
-          const latest = getNotes().find((note) => note.id === id);
-          return latest && before.has(id) ? [{ noteId: id, title: noteTitle(latest), before: noteBody(before.get(id)!), after: noteBody(latest.content) }] : [];
-        });
-        answer = result.message;
-      } else {
-        answer = cleanNotesAnswer(parsed.visibleText, prompt!, retrieval, images.length > 0);
-      }
+      const uniqueSources = [
+        ...new Map(sources.map((source) => [source.noteId, source])).values(),
+      ];
+      await appendAssistantMessage(backend, conversation, localDevice, {
+        turnId,
+        text: result.text,
+        sources: uniqueSources,
+        contextKind: "matches",
+        runId: runtime.run.id,
+        toolCalls: activity,
+        reasoning: result.reasoning,
+      });
+      await refreshHistory(false, conversation.id);
+    } catch (error) {
+      await appendAssistantMessage(backend, conversation, localDevice, {
+        turnId,
+        text: "The run was interrupted. Its activity, proposals and verified changes are saved below. Resume to continue.",
+        sources: [],
+        contextKind: "matches",
+        runId: runtime.run.id,
+        interrupted: true,
+        toolCalls: activity,
+      });
+      await refreshHistory(false, conversation.id);
+      throw error;
+    } finally {
+      agentAbort.current = null;
+      setStreamingText("");
     }
-    await appendAssistantMessage(backend, conversation, localDevice, {
-      turnId,
-      text: answer,
-      changes,
-      sources: sourceSnapshots(retrieval, notes),
-      contextKind: retrieval.contextKind,
-    });
-    const loaded = await refreshHistory(false, conversation.id);
-    const updated = loaded.find((candidate) => candidate.id === conversation.id);
-    mobileDiagnostic("mobile-ai.answer", {
-      engine: "cloud",
-      direct: Boolean(directAnswer),
-      image: images.length > 0,
-      changedNoteIds,
-    });
-    if (updated) void updateMemory(updated, backend, localDevice);
   };
 
-  const send = async () => {
-    const submittedImages = pendingImages;
-    const question = draft.trim() || (submittedImages.length || pendingDocuments.length ? "Summarize these attached files." : "");
+  const send = async (queuedContent?: string) => {
+    const submittedImages = queuedContent ? [] : pendingImages;
+    const question =
+      queuedContent ??
+      (draft.trim() ||
+        (submittedImages.length || pendingDocuments.length
+          ? "Summarize these attached files."
+          : ""));
     const backend = getVaultBackend();
-    if (!question || !backend || !device || !notesReady || busy || memoryBusy || selectingFiles.current || !cloudStatus?.configured) return;
+    if (
+      !question ||
+      !backend ||
+      !device ||
+      !notesReady ||
+      busy ||
+      memoryBusy ||
+      selectingFiles.current ||
+      !cloudStatus?.configured
+    )
+      return;
     if (current && !canEditCurrent) return;
     setDraft("");
     setBusy(true);
@@ -840,22 +1127,45 @@ export function PersistentAIChat({
       let working = current;
       let turnId: string;
       if (!working) {
-        const created = await createChatWithUserMessage(backend, device, question, submittedImages, contextOverride ?? scope, pendingDocuments);
+        const created = await createChatWithUserMessage(
+          backend,
+          device,
+          question,
+          submittedImages,
+          contextOverride ?? scope,
+          pendingDocuments,
+        );
         turnId = created.turnId;
         setBlankChat(false);
         const loaded = await refreshHistory(false, created.conversationId);
-        working = loaded.find((conversation) => conversation.id === created.conversationId) ?? null;
-        if (!working) throw new Error("The new conversation could not be reopened.");
+        working =
+          loaded.find(
+            (conversation) => conversation.id === created.conversationId,
+          ) ?? null;
+        if (!working)
+          throw new Error("The new conversation could not be reopened.");
       } else {
-        turnId = await appendUserMessage(backend, working, device, question, submittedImages, pendingDocuments);
+        turnId = await appendUserMessage(
+          backend,
+          working,
+          device,
+          question,
+          submittedImages,
+          pendingDocuments,
+        );
         const loaded = await refreshHistory(false, working.id);
-        working = loaded.find((conversation) => conversation.id === working!.id) ?? working;
+        working =
+          loaded.find((conversation) => conversation.id === working!.id) ??
+          working;
       }
       replacePendingImages([]);
       setPendingDocuments([]);
       await generateAnswer(backend, working, device, turnId, question);
     } catch (generationError) {
-      mobileDiagnostic("mobile-ai.error", { engine: "cloud", error: errorMessage(generationError) });
+      mobileDiagnostic("mobile-ai.error", {
+        engine: "cloud",
+        error: errorMessage(generationError),
+      });
       setError(errorMessage(generationError));
       await refreshHistory(false);
     } finally {
@@ -866,27 +1176,74 @@ export function PersistentAIChat({
 
   const regenerateAnswer = async (turnId: string) => {
     const backend = getVaultBackend();
-    const user = current?.messages.find((message) => message.turnId === turnId && message.role === "user");
-    if (!backend || !current || !device || !user || !canEditCurrent || busy || memoryBusy) return;
-    setBusy(true); setError(null);
+    const user = current?.messages.find(
+      (message) => message.turnId === turnId && message.role === "user",
+    );
+    if (
+      !backend ||
+      !current ||
+      !device ||
+      !user ||
+      !canEditCurrent ||
+      busy ||
+      memoryBusy
+    )
+      return;
+    setBusy(true);
+    setError(null);
     try {
       const question = `Provide a fresh answer without changing any notes. Earlier question: ${user.text}`;
-      const nextTurn = await appendUserMessage(backend, current, device, question);
+      const nextTurn = await appendUserMessage(
+        backend,
+        current,
+        device,
+        question,
+      );
       const loaded = await refreshHistory(false, current.id);
       const updated = loaded.find((chat) => chat.id === current.id);
-      if (updated) await generateAnswer(backend, updated, device, nextTurn, question, true);
-    } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); setStreamingText(""); }
+      if (updated)
+        await generateAnswer(
+          backend,
+          updated,
+          device,
+          nextTurn,
+          question,
+          true,
+        );
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+      setStreamingText("");
+    }
   };
 
   const retryTurn = async (turnId: string) => {
     const backend = getVaultBackend();
-    const question = current?.messages.find((message) => message.turnId === turnId && message.role === "user")?.text;
-    if (!backend || !device || !current || !question || !notesReady || !canEditCurrent || busy || memoryBusy || !cloudStatus?.configured) return;
+    const question = current?.messages.find(
+      (message) => message.turnId === turnId && message.role === "user",
+    )?.text;
+    if (
+      !backend ||
+      !device ||
+      !current ||
+      !question ||
+      !notesReady ||
+      !canEditCurrent ||
+      busy ||
+      memoryBusy ||
+      !cloudStatus?.configured
+    )
+      return;
     setBusy(true);
     setError(null);
-    try { await generateAnswer(backend, current, device, turnId, question); }
-    catch (generationError) { setError(errorMessage(generationError)); }
-    finally { setBusy(false); }
+    try {
+      await generateAnswer(backend, current, device, turnId, question);
+    } catch (generationError) {
+      setError(errorMessage(generationError));
+    } finally {
+      setBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -896,7 +1253,14 @@ export function PersistentAIChat({
   }, [conversationId, visible]);
 
   const selectImages = async (files: readonly File[]) => {
-    if (!files.length || selectingFiles.current || busy || memoryBusy || (current && !canEditCurrent)) return;
+    if (
+      !files.length ||
+      selectingFiles.current ||
+      busy ||
+      memoryBusy ||
+      (current && !canEditCurrent)
+    )
+      return;
     selectingFiles.current = true;
     const generation = fileSelectionGeneration.current;
     setPreparingImage(true);
@@ -905,7 +1269,9 @@ export function PersistentAIChat({
       const available = 4 - pendingImages.length;
       const documents = [...pendingDocuments];
       validateDocumentBatch(documents, files);
-      for (const file of files.filter((file) => !file.type.startsWith("image/"))) {
+      for (const file of files.filter(
+        (file) => !file.type.startsWith("image/"),
+      )) {
         const document = await prepareChatDocument(file);
         documents.push(document);
         validateDocumentBatch(documents, []);
@@ -913,7 +1279,10 @@ export function PersistentAIChat({
       if (generation !== fileSelectionGeneration.current) return;
       setPendingDocuments(documents);
       const prepared: PreparedChatImage[] = [];
-      for (const file of files.filter((file) => file.type.startsWith("image/")).slice(0, available)) prepared.push(await prepareChatImage(file));
+      for (const file of files
+        .filter((file) => file.type.startsWith("image/"))
+        .slice(0, available))
+        prepared.push(await prepareChatImage(file));
       pendingImagesRef.current = [...pendingImagesRef.current, ...prepared];
       setPendingImages((current) => [...current, ...prepared]);
     } catch (imageError) {
@@ -930,7 +1299,12 @@ export function PersistentAIChat({
     if (!backend || !device || conversation.owner.id === device.id) return;
     const from = chatDeviceLabel(conversation.owner, deviceNames);
     const to = chatDeviceLabel(device, deviceNames);
-    if (!window.confirm(`Move this conversation from ${from} to ${to}? The other device will become read-only after syncing.`)) return;
+    if (
+      !window.confirm(
+        `Move this conversation from ${from} to ${to}? The other device will become read-only after syncing.`,
+      )
+    )
+      return;
     await transferChatOwnership(backend, conversation, device);
     setBlankChat(false);
     await refreshHistory(false, conversation.id);
@@ -938,10 +1312,19 @@ export function PersistentAIChat({
     setHistoryActionsId(null);
   };
 
-  const mutateConversation = async (conversation: ChatConversation, kind: "archive" | "restore" | "delete") => {
+  const mutateConversation = async (
+    conversation: ChatConversation,
+    kind: "archive" | "restore" | "delete",
+  ) => {
     const backend = getVaultBackend();
     if (!backend || !device || conversation.owner.id !== device.id) return;
-    if (kind === "delete" && !window.confirm("Move this conversation to Recently Deleted? It will be permanently removed after 30 days.")) return;
+    if (
+      kind === "delete" &&
+      !window.confirm(
+        "Move this conversation to Recently Deleted? It will be permanently removed after 30 days.",
+      )
+    )
+      return;
     await setChatLifecycle(backend, conversation, device, kind);
     setOptionsOpen(false);
     setHistoryActionsId(null);
@@ -960,10 +1343,15 @@ export function PersistentAIChat({
   const renameConversation = async (conversation: ChatConversation) => {
     const backend = getVaultBackend();
     if (!backend || !device || conversation.owner.id !== device.id) return;
-    const title = window.prompt("Conversation title", conversation.title)?.trim();
+    const title = window
+      .prompt("Conversation title", conversation.title)
+      ?.trim();
     if (!title || title === conversation.title) return;
     await renameChat(backend, conversation, device, title);
-    await refreshHistory(false, conversation.id === current?.id ? conversation.id : undefined);
+    await refreshHistory(
+      false,
+      conversation.id === current?.id ? conversation.id : undefined,
+    );
     setOptionsOpen(false);
     setHistoryActionsId(null);
   };
@@ -976,7 +1364,12 @@ export function PersistentAIChat({
   const resetMemory = async () => {
     const backend = getVaultBackend();
     if (!backend || !device || !current || !isOwner) return;
-    if (!window.confirm("Reset this conversation's rolling memory? The transcript will remain unchanged.")) return;
+    if (
+      !window.confirm(
+        "Reset this conversation's rolling memory? The transcript will remain unchanged.",
+      )
+    )
+      return;
     await resetChatSummary(backend, current, device);
     await refreshHistory(false, current.id);
     setMemoryOpen(false);
@@ -990,9 +1383,15 @@ export function PersistentAIChat({
       try {
         const transcript = (await stopOnDeviceSpeechRecognition()).trim();
         const prefix = speechDraftPrefix.current;
-        if (transcript) setDraft(`${prefix}${prefix && !/\s$/.test(prefix) ? " " : ""}${transcript}`);
-      } catch (speechError) { setError(errorMessage(speechError)); }
-      finally { setSpeechState("idle"); }
+        if (transcript)
+          setDraft(
+            `${prefix}${prefix && !/\s$/.test(prefix) ? " " : ""}${transcript}`,
+          );
+      } catch (speechError) {
+        setError(errorMessage(speechError));
+      } finally {
+        setSpeechState("idle");
+      }
       return;
     }
     setSpeechState("starting");
@@ -1029,17 +1428,24 @@ export function PersistentAIChat({
     onClose();
   };
 
-  useEffect(() => () => {
-    if (swipeTimer.current !== null) window.clearTimeout(swipeTimer.current);
-    for (const image of pendingImagesRef.current) URL.revokeObjectURL(image.previewUrl);
-  }, []);
+  useEffect(
+    () => () => {
+      if (swipeTimer.current !== null) window.clearTimeout(swipeTimer.current);
+      for (const image of pendingImagesRef.current)
+        URL.revokeObjectURL(image.previewUrl);
+    },
+    [],
+  );
 
   const finishSwipe = (complete?: () => void) => {
     setSwipeDragging(false);
     if (!complete) {
       setSwipeSettling(true);
       setSwipeX(0);
-      swipeTimer.current = window.setTimeout(() => setSwipeSettling(false), 240);
+      swipeTimer.current = window.setTimeout(
+        () => setSwipeSettling(false),
+        240,
+      );
       return;
     }
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -1057,8 +1463,21 @@ export function PersistentAIChat({
   };
 
   const handleSwipeStart = (event: ReactTouchEvent<HTMLDivElement>) => {
-    if (swipeSettling || optionsOpen || settingsOpen || memoryOpen || snapshotOpen || historyActionsId) return;
-    if ((event.target as HTMLElement).closest("textarea, input, [contenteditable='true']")) return;
+    if (
+      swipeSettling ||
+      optionsOpen ||
+      settingsOpen ||
+      memoryOpen ||
+      snapshotOpen ||
+      historyActionsId
+    )
+      return;
+    if (
+      (event.target as HTMLElement).closest(
+        "textarea, input, [contenteditable='true']",
+      )
+    )
+      return;
     const touch = event.touches[0];
     if (!touch) return;
     swipeStart.current = { x: touch.clientX, y: touch.clientY, axis: null };
@@ -1071,7 +1490,8 @@ export function PersistentAIChat({
     const deltaX = touch.clientX - start.x;
     const deltaY = touch.clientY - start.y;
     if (!start.axis && Math.max(Math.abs(deltaX), Math.abs(deltaY)) >= 8) {
-      start.axis = Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
+      start.axis =
+        Math.abs(deltaX) > Math.abs(deltaY) ? "horizontal" : "vertical";
       if (start.axis === "horizontal") setSwipeDragging(true);
     }
     if (start.axis !== "horizontal") return;
@@ -1088,7 +1508,10 @@ export function PersistentAIChat({
       setSwipeX(0);
       return;
     }
-    const direction = horizontalSwipeDirection(start, { x: touch.clientX, y: touch.clientY });
+    const direction = horizontalSwipeDirection(start, {
+      x: touch.clientX,
+      y: touch.clientY,
+    });
     if (direction === "right") {
       finishSwipe(historyVisible ? onCloseHistory : close);
     } else {
@@ -1107,17 +1530,37 @@ export function PersistentAIChat({
   };
 
   const canChat = Boolean(cloudStatus?.configured);
+  queuedSendRef.current = {
+    send: (text) => void send(text),
+    take: agentUI.takeQueued,
+  };
+  useEffect(() => {
+    if (!busy && agentUI.queued.length && canEditCurrent) {
+      const text = queuedSendRef.current?.take();
+      if (text) queuedSendRef.current?.send(text);
+    }
+  }, [busy, agentUI.queued, canEditCurrent]);
   const savedCloudKeyApplies = Boolean(
-    cloudStatus?.configured
-    && cloudStatus.endpoint.replace(/\/+$/, "") === cloudEndpoint.trim().replace(/\/+$/, ""),
+    cloudStatus?.configured &&
+      cloudStatus.endpoint.replace(/\/+$/, "") ===
+        cloudEndpoint.trim().replace(/\/+$/, ""),
   );
   const unanswered = new Set(unansweredTurnIds(messages));
-  const filteredHistory = device ? filterConversations(conversations, device, historyFilter, historyQuery) : [];
+  const filteredHistory = device
+    ? filterConversations(conversations, device, historyFilter, historyQuery)
+    : [];
   const normalizedModelSearch = modelSearch.trim().toLowerCase();
   const filteredModels = normalizedModelSearch
-    ? discoveredModels.filter((model) => `${model.name} ${model.id}`.toLowerCase().includes(normalizedModelSearch))
+    ? discoveredModels.filter((model) =>
+        `${model.name} ${model.id}`
+          .toLowerCase()
+          .includes(normalizedModelSearch),
+      )
     : discoveredModels;
-  const historyActionsConversation = conversations.find((conversation) => conversation.id === historyActionsId) ?? null;
+  const historyActionsConversation =
+    conversations.find(
+      (conversation) => conversation.id === historyActionsId,
+    ) ?? null;
   const viewportStyle: CSSProperties = {
     top: viewport.offsetTop,
     height: viewport.height,
@@ -1127,13 +1570,26 @@ export function PersistentAIChat({
   return (
     <div
       data-ai-chat="true"
-      onDragOver={(event) => { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }}
-      onDrop={(event) => { event.preventDefault(); event.stopPropagation(); void selectImages(Array.from(event.dataTransfer.files)); }}
-      className={cn("absolute inset-x-0 z-[75] flex-col overflow-hidden bg-zerus-editor text-zerus-text", visible ? "flex" : "hidden")}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "copy";
+      }}
+      onDrop={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void selectImages(Array.from(event.dataTransfer.files));
+      }}
+      className={cn(
+        "absolute inset-x-0 z-[75] flex-col overflow-hidden bg-zerus-editor text-zerus-text",
+        visible ? "flex" : "hidden",
+      )}
       style={{
         ...viewportStyle,
         transform: `translate3d(${swipeX}px, 0, 0)`,
-        transition: swipeDragging ? "none" : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)",
+        transition: swipeDragging
+          ? "none"
+          : "transform 240ms cubic-bezier(0.22, 1, 0.36, 1)",
         willChange: swipeDragging || swipeSettling ? "transform" : undefined,
         touchAction: "pan-y",
       }}
@@ -1143,156 +1599,1252 @@ export function PersistentAIChat({
       onTouchStart={handleSwipeStart}
       onTouchMove={handleSwipeMove}
       onTouchEnd={handleSwipeEnd}
-      onTouchCancel={() => { swipeStart.current = null; finishSwipe(); }}
+      onTouchCancel={() => {
+        swipeStart.current = null;
+        finishSwipe();
+      }}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}>
-        <Button variant="ghost" size="icon" onClick={close} className="h-10 w-10 rounded-full bg-muted" aria-label="Close AI chat"><ArrowLeft className="h-5 w-5" /></Button>
+      <header
+        className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={close}
+          className="h-10 w-10 rounded-full bg-muted"
+          aria-label="Close AI chat"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[18px] font-semibold">{current?.title ?? "New chat"}</h2>
-          <button type="button" onClick={() => setSettingsOpen(true)} className="flex max-w-full items-center gap-1.5 truncate text-xs text-muted-foreground" aria-label="Change chat model">
+          <h2 className="truncate text-[18px] font-semibold">
+            {current?.title ?? "New chat"}
+          </h2>
+          <button
+            type="button"
+            onClick={() => setSettingsOpen(true)}
+            className="flex max-w-full items-center gap-1.5 truncate text-xs text-muted-foreground"
+            aria-label="Change chat model"
+          >
             <Cloud className="h-3 w-3 shrink-0 text-zerus-accent" />
-            <span className="truncate">{cloudStatus ? cloudEndpointLabel(cloudStatus.endpoint) : "Cloud"} · {cloudStatus?.model ?? "setup needed"}</span>
+            <span className="truncate">
+              {cloudStatus ? cloudEndpointLabel(cloudStatus.endpoint) : "Cloud"}{" "}
+              · {cloudStatus?.model ?? "setup needed"}
+            </span>
           </button>
         </div>
-        <Button variant="ghost" size="icon" onClick={() => setOptionsOpen(true)} className="h-10 w-10 rounded-full bg-muted" aria-label="Chat options"><MoreHorizontal className="h-5 w-5" /></Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setOptionsOpen(true)}
+          className="h-10 w-10 rounded-full bg-muted"
+          aria-label="Chat options"
+        >
+          <MoreHorizontal className="h-5 w-5" />
+        </Button>
       </header>
 
-      {notice && <button type="button" onClick={() => setNotice(null)} className="shrink-0 bg-zerus-accent/10 px-4 py-2 text-left text-xs text-zerus-accent">{notice} <span className="float-right">Dismiss</span></button>}
-      {undoChanges.length > 0 && <div className="flex shrink-0 items-center gap-2 bg-zerus-accent/10 px-4 py-2 text-xs text-zerus-accent">
-        <span className="min-w-0 flex-1">AI updated {undoChanges.length} {undoChanges.length === 1 ? "note" : "notes"}.</span>
-        <button type="button" className="font-semibold" onClick={() => {
-          if (undoChanges.some((change) => getNotes().find((note) => note.id === change.id)?.content !== change.after)) { setError("A note changed after the AI edit. Review the saved changes before undoing."); return; }
-          for (const change of undoChanges) {
-            if (change.content === null) void trashNote(change.id);
-            else updateNoteBody(change.id, noteBody(change.content));
-          }
-          setUndoChanges([]);
-        }}>Undo</button>
-        <button type="button" aria-label="Dismiss undo" onClick={() => setUndoChanges([])}><X className="h-3.5 w-3.5" /></button>
-      </div>}
+      {notice && (
+        <button
+          type="button"
+          onClick={() => setNotice(null)}
+          className="shrink-0 bg-zerus-accent/10 px-4 py-2 text-left text-xs text-zerus-accent"
+        >
+          {notice} <span className="float-right">Dismiss</span>
+        </button>
+      )}
+      {undoChanges.length > 0 && (
+        <div className="flex shrink-0 items-center gap-2 bg-zerus-accent/10 px-4 py-2 text-xs text-zerus-accent">
+          <span className="min-w-0 flex-1">
+            AI updated {undoChanges.length}{" "}
+            {undoChanges.length === 1 ? "note" : "notes"}.
+          </span>
+          <button
+            type="button"
+            className="font-semibold"
+            onClick={() => {
+              if (
+                undoChanges.some(
+                  (change) =>
+                    getNotes().find((note) => note.id === change.id)
+                      ?.content !== change.after,
+                )
+              ) {
+                setError(
+                  "A note changed after the AI edit. Review the saved changes before undoing.",
+                );
+                return;
+              }
+              for (const change of undoChanges) {
+                if (change.content === null) void trashNote(change.id);
+                else updateNoteBody(change.id, noteBody(change.content));
+              }
+              setUndoChanges([]);
+            }}
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            aria-label="Dismiss undo"
+            onClick={() => setUndoChanges([])}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {!canChat ? (
         <main className="flex min-h-0 flex-1 flex-col items-center justify-center px-7 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-zerus-accent/10 text-zerus-accent"><Cloud className="h-8 w-8" /></span>
+          <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-zerus-accent/10 text-zerus-accent">
+            <Cloud className="h-8 w-8" />
+          </span>
           <h3 className="mt-5 text-[24px] font-bold">Cloud notes chat</h3>
-          <p className="mt-2 max-w-xs text-sm leading-5 text-muted-foreground">Connect OpenRouter or another OpenAI-compatible API. Matching note excerpts are sent with each question.</p>
-          <Button onClick={() => setSettingsOpen(true)} className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90"><Settings2 className="mr-2 h-5 w-5" />Set up cloud chat</Button>
-          {error && <p className="mt-4 max-w-xs rounded-[13px] bg-destructive/10 px-4 py-3 text-sm leading-5 text-destructive">{error}</p>}
+          <p className="mt-2 max-w-xs text-sm leading-5 text-muted-foreground">
+            Connect OpenRouter or another OpenAI-compatible API. Matching note
+            excerpts are sent with each question.
+          </p>
+          <Button
+            onClick={() => setSettingsOpen(true)}
+            className="mt-6 h-12 w-full max-w-xs rounded-[14px] bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90"
+          >
+            <Settings2 className="mr-2 h-5 w-5" />
+            Set up cloud chat
+          </Button>
+          {error && (
+            <p className="mt-4 max-w-xs rounded-[13px] bg-destructive/10 px-4 py-3 text-sm leading-5 text-destructive">
+              {error}
+            </p>
+          )}
         </main>
       ) : (
         <>
-          <ChatContextPicker note={contextNote} notes={notes} scope={contextOverride ?? (current?.scope.kind === "note" ? { kind: "selection", noteIds: [current.scope.noteId] } : current?.scope ?? (scope.kind === "note" ? { kind: "selection", noteIds: [scope.noteId] } : scope))} selected={contextOverride?.kind === "selection" ? contextOverride.noteIds : activeChatScope.kind === "selection" ? activeChatScope.noteIds : null} disabled={busy || memoryBusy || Boolean(current && !canEditCurrent)} onChange={(ids) => {
-            const next = ids === null ? (scope.kind === "note" ? { kind: "selection" as const, noteIds: [scope.noteId] } : scope) : { kind: "selection" as const, noteIds: ids };
-            setContextOverride(next);
-            const backend = getVaultBackend();
-            if (current && device && backend) void setChatScope(backend, current, device, next).then(() => refreshHistory(false, current.id)).catch((error) => setError(errorMessage(error)));
-          }} />
+          <ChatContextPicker
+            note={contextNote}
+            notes={notes}
+            scope={
+              contextOverride ??
+              (current?.scope.kind === "note"
+                ? { kind: "selection", noteIds: [current.scope.noteId] }
+                : (current?.scope ??
+                  (scope.kind === "note"
+                    ? { kind: "selection", noteIds: [scope.noteId] }
+                    : scope)))
+            }
+            selected={
+              contextOverride?.kind === "selection"
+                ? contextOverride.noteIds
+                : activeChatScope.kind === "selection"
+                  ? activeChatScope.noteIds
+                  : null
+            }
+            disabled={busy || memoryBusy || Boolean(current && !canEditCurrent)}
+            onChange={(ids) => {
+              const next =
+                ids === null
+                  ? scope.kind === "note"
+                    ? { kind: "selection" as const, noteIds: [scope.noteId] }
+                    : scope
+                  : { kind: "selection" as const, noteIds: ids };
+              setContextOverride(next);
+              const backend = getVaultBackend();
+              if (current && device && backend)
+                void setChatScope(backend, current, device, next)
+                  .then(() => refreshHistory(false, current.id))
+                  .catch((error) => setError(errorMessage(error)));
+            }}
+          />
+          <NotesAgentControls agent={agentUI} busy={busy} />
           <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5">
-            {messages.length === 0 && <div className="mx-auto mt-12 max-w-xs text-center"><Sparkles className="mx-auto h-7 w-7 text-zerus-accent" /><p className="mt-3 text-[17px] font-semibold">Ask about your notes</p><p className="mt-1 text-sm leading-5 text-muted-foreground">This chat is saved with the vault after your first message.</p><div className="mt-4 flex flex-col gap-2">{["Summarize these notes", "Find related ideas", "Extract action items"].map((prompt) => <button key={prompt} className="rounded-xl border border-border p-3 text-sm hover:bg-muted/60" onClick={() => setDraft(prompt)}>{prompt}</button>)}</div></div>}
+            {messages.length === 0 && (
+              <div className="mx-auto mt-12 max-w-xs text-center">
+                <Sparkles className="mx-auto h-7 w-7 text-zerus-accent" />
+                <p className="mt-3 text-[17px] font-semibold">
+                  Ask about your notes
+                </p>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                  This chat is saved with the vault after your first message.
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  {[
+                    "Summarize these notes",
+                    "Find related ideas",
+                    "Extract action items",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      className="rounded-xl border border-border p-3 text-sm hover:bg-muted/60"
+                      onClick={() => setDraft(prompt)}
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="space-y-3">
               {messages.map((message) => (
-                <div key={message.id} className={cn("max-w-[88%]", message.role === "user" && "ml-auto")}>
-                  {message.documents?.map((document, index) => <p key={index} className="mb-1 break-all text-right text-xs text-muted-foreground">{document.name}</p>)}
-                  {message.role === "user" && message.attachments?.map((attachment) => (
-                    <div key={attachment.id} className="mb-1 flex justify-end">
-                      <PersistedChatImage attachment={attachment} />
-                    </div>
+                <div
+                  key={message.id}
+                  className={cn(
+                    "max-w-[88%]",
+                    message.role === "user" && "ml-auto",
+                  )}
+                >
+                  {message.documents?.map((document, index) => (
+                    <p
+                      key={index}
+                      className="mb-1 break-all text-right text-xs text-muted-foreground"
+                    >
+                      {document.name}
+                    </p>
                   ))}
-                  <div className={cn("min-w-0 rounded-[18px] px-4 py-3 text-[15px] leading-6", message.role === "user" ? "bg-zerus-accent text-primary-foreground" : "bg-zerus-surface text-zerus-text")}><AiMarkdown inverted={message.role === "user"} onOpenNote={onOpenNote}>{message.text}</AiMarkdown>{message.role === "assistant" && <ChatAnswerActions text={message.text} changes={message.changes} note={contextNote} disabled={!canEditCurrent || busy || memoryBusy} onRegenerate={() => void regenerateAnswer(message.turnId)} />}</div>
-                  {message.role === "assistant" && message.sources && message.sources.length > 0 && <div className="mt-2 px-1"><p className="mb-1.5 text-[11px] font-medium text-muted-foreground">{message.contextKind === "similar" ? "Similar notes" : message.contextKind === "choices" ? "Choose a note" : message.contextKind === "matches" ? "Matching context" : "Recent context (no direct match)"}</p><div className="flex flex-wrap gap-1.5">{message.sources.map((source) => {
-                    const note = notes.find((candidate) => candidate.id === source.noteId);
-                    const changed = note ? chatContentRevision(note.content) !== source.revision : false;
-                    const showType = message.contextKind === "similar" || message.contextKind === "choices";
-                    return <button type="button" onClick={() => openSource(source)} key={`${message.id}-${source.noteId}`} title={note ? `Open ${source.title}` : `View saved excerpt from ${source.title}`} className="max-w-full truncate rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground">{source.title}{showType ? ` · ${source.type}` : ""}{!note ? " · deleted" : changed ? " · changed" : ""}</button>;
-                  })}</div></div>}
-                  {message.role === "user" && unanswered.has(message.turnId) && !busy && notesReady && canEditCurrent && <button type="button" onClick={() => void retryTurn(message.turnId)} className="mt-1 flex items-center gap-1 text-xs text-zerus-accent"><RotateCcw className="h-3 w-3" />Retry interrupted answer</button>}
+                  {message.role === "user" &&
+                    message.attachments?.map((attachment) => (
+                      <div
+                        key={attachment.id}
+                        className="mb-1 flex justify-end"
+                      >
+                        <PersistedChatImage attachment={attachment} />
+                      </div>
+                    ))}
+                  <div
+                    className={cn(
+                      "min-w-0 rounded-[18px] px-4 py-3 text-[15px] leading-6",
+                      message.role === "user"
+                        ? "bg-zerus-accent text-primary-foreground"
+                        : "bg-zerus-surface text-zerus-text",
+                    )}
+                  >
+                    <AiMarkdown
+                      inverted={message.role === "user"}
+                      onOpenNote={onOpenNote}
+                    >
+                      {message.text}
+                    </AiMarkdown>
+                    {message.role === "assistant" && (
+                      <ChatAnswerActions
+                        text={message.text}
+                        changes={message.runId ? [] : message.changes}
+                        note={contextNote}
+                        disabled={!canEditCurrent || busy || memoryBusy}
+                        onRegenerate={() =>
+                          void regenerateAnswer(message.turnId)
+                        }
+                      />
+                    )}
+                  </div>
+                  {message.role === "assistant" &&
+                    message.sources &&
+                    message.sources.length > 0 && (
+                      <div className="mt-2 px-1">
+                        <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                          {message.contextKind === "similar"
+                            ? "Similar notes"
+                            : message.contextKind === "choices"
+                              ? "Choose a note"
+                              : message.contextKind === "matches"
+                                ? "Matching context"
+                                : "Recent context (no direct match)"}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {message.sources.map((source) => {
+                            const note = notes.find(
+                              (candidate) => candidate.id === source.noteId,
+                            );
+                            const changed = note
+                              ? chatContentRevision(note.content) !==
+                                source.revision
+                              : false;
+                            const showType =
+                              message.contextKind === "similar" ||
+                              message.contextKind === "choices";
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => openSource(source)}
+                                key={`${message.id}-${source.noteId}`}
+                                title={
+                                  note
+                                    ? `Open ${source.title}`
+                                    : `View saved excerpt from ${source.title}`
+                                }
+                                className="max-w-full truncate rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground"
+                              >
+                                {source.title}
+                                {showType ? ` · ${source.type}` : ""}
+                                {!note
+                                  ? " · deleted"
+                                  : changed
+                                    ? " · changed"
+                                    : ""}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  {message.role === "user" &&
+                    unanswered.has(message.turnId) &&
+                    !busy &&
+                    notesReady &&
+                    canEditCurrent && (
+                      <button
+                        type="button"
+                        onClick={() => void retryTurn(message.turnId)}
+                        className="mt-1 flex items-center gap-1 text-xs text-zerus-accent"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        Retry interrupted answer
+                      </button>
+                    )}
                 </div>
               ))}
-              {busy && <div className="max-w-[90%] rounded-[18px] bg-zerus-surface px-4 py-3 text-sm text-zerus-text">
-                {streamingText ? <AiMarkdown onOpenNote={onOpenNote}>{visibleChatStream(streamingText)}</AiMarkdown> : <p className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin text-zerus-accent" />Searching notes…</p>}
-                <button type="button" onClick={() => void stopCloudAI()} className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-zerus-accent"><Square className="h-3 w-3 fill-current" />Stop</button>
-              </div>}
-              {memoryBusy && <p className="flex items-center text-xs text-muted-foreground"><Brain className="mr-1.5 h-3.5 w-3.5" />Updating conversation memory…</p>}
-              {error && <p className="rounded-[13px] bg-destructive/10 px-4 py-3 text-sm leading-5 text-destructive">{error}</p>}
+              {busy && (
+                <div className="max-w-[90%] rounded-[18px] bg-zerus-surface px-4 py-3 text-sm text-zerus-text">
+                  {streamingText ? (
+                    <AiMarkdown onOpenNote={onOpenNote}>
+                      {visibleChatStream(streamingText)}
+                    </AiMarkdown>
+                  ) : (
+                    <p className="flex items-center text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin text-zerus-accent" />
+                      Working on your notes…
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      agentAbort.current?.abort();
+                      void stopCloudAI();
+                    }}
+                    className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-zerus-accent"
+                  >
+                    <Square className="h-3 w-3 fill-current" />
+                    Stop
+                  </button>
+                </div>
+              )}
+              <NotesAgentRunView
+                agent={agentUI}
+                busy={busy}
+                port={agentPortFor}
+                onResume={(run, answer) => {
+                  agentUI.requestResume(run);
+                  void send(answer ?? "Continue the saved run.");
+                }}
+              />
+              {memoryBusy && (
+                <p className="flex items-center text-xs text-muted-foreground">
+                  <Brain className="mr-1.5 h-3.5 w-3.5" />
+                  Updating conversation memory…
+                </p>
+              )}
+              {error && (
+                <p className="rounded-[13px] bg-destructive/10 px-4 py-3 text-sm leading-5 text-destructive">
+                  {error}
+                </p>
+              )}
             </div>
           </main>
-          {!canEditCurrent && current ? <div className="shrink-0 border-t border-border/60 bg-zerus-surface px-4 py-3 text-center"><p className="text-xs text-muted-foreground">{current.deletedAt ? "This conversation is in Recently Deleted." : current.archivedAt ? "This conversation is archived." : `Read-only · owned by ${chatDeviceLabel(current.owner, deviceNames)}`}</p>{!isOwner && <Button onClick={() => void transferOwnership(current)} className="mt-2 h-10 rounded-full bg-zerus-accent px-5 text-sm text-primary-foreground hover:bg-zerus-accent/90">Continue on this device</Button>}</div> : <form className="shrink-0 border-t border-border/60 bg-zerus-surface/95 p-3 backdrop-blur-xl" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-            {!notesReady && <div className="mb-2 flex items-center justify-center text-xs text-muted-foreground" aria-live="polite">{notesPreparationError ? <><span>{notesPreparationError}</span><button type="button" onClick={onRetryNotesPreparation} className="ml-2 font-semibold text-zerus-accent">Retry</button></> : <><Loader2 className="mr-2 h-4 w-4 animate-spin text-zerus-accent" />Preparing all notes for search…</>}</div>}
-            {speechState !== "idle" && <div className="mb-2 flex items-center justify-center gap-2 text-xs font-medium text-zerus-accent"><span className={cn("h-2 w-2 rounded-full bg-zerus-accent", speechState === "listening" && "animate-pulse")} />{speechState === "starting" ? "Preparing on-device dictation…" : speechState === "stopping" ? "Finishing transcript…" : `Live transcription · ${speechEngine === "speechAnalyzer" ? "SpeechAnalyzer" : "legacy engine"}${speechBuild ? ` · build ${speechBuild}` : ""}`}</div>}
-            {pendingImages.length > 0 && <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
-              {pendingImages.map((image, index) => <div key={image.previewUrl} className="relative shrink-0">
-                <img src={image.previewUrl} alt={`Selected attachment ${index + 1}`} width={image.width} height={image.height} className="h-20 w-20 rounded-lg object-cover" />
-                <button type="button" onClick={() => {
-                  URL.revokeObjectURL(image.previewUrl);
-                  const next = pendingImagesRef.current.filter((candidate) => candidate !== image);
-                  pendingImagesRef.current = next;
-                  setPendingImages(next);
-                }} className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground" aria-label={`Remove image ${index + 1}`}><X className="h-4 w-4" /></button>
-              </div>)}
-            </div>}
-            {documentContextStatus && <p role="status" className="mb-2 text-xs text-muted-foreground">{documentContextStatus}</p>}
-            {pendingDocuments.map((document, index) => <div key={index} className="mb-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground"><span className="min-w-0 flex-1 break-all">{document.name}</span><button type="button" aria-label={`Remove ${document.name}`} onClick={() => setPendingDocuments((current) => current.filter((_, position) => position !== index))}><X className="h-4 w-4" /></button></div>)}
-            <div className="flex min-w-0 items-end gap-2 rounded-[24px] border border-border bg-zerus-editor p-1.5 pl-1 focus-within:border-zerus-accent/65">
-              <input ref={imageInput} type="file" multiple className="hidden" onChange={(event) => { void selectImages(Array.from(event.target.files ?? [])); event.currentTarget.value = ""; }} />
-              <button type="button" onClick={() => imageInput.current?.click()} disabled={busy || memoryBusy || preparingImage || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground disabled:opacity-50" aria-label="Add files" title="Add files">{preparingImage ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : <Paperclip className="h-[18px] w-[18px]" />}</button>
-              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={1} enterKeyHint="send" placeholder={speechState === "listening" ? "Listening…" : pendingImages.length ? "Ask about these images" : "Ask about your notes"} className="max-h-28 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-zerus-text outline-none placeholder:text-muted-foreground" />
-              <button type="button" onClick={() => void toggleSpeech()} disabled={busy || memoryBusy || speechState === "starting" || speechState === "stopping"} aria-label={speechState === "listening" ? "Stop dictation" : "Dictate message"} className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50", speechState === "listening" ? "bg-zerus-accent text-primary-foreground" : "bg-muted text-muted-foreground")}>{speechState === "starting" || speechState === "stopping" ? <Loader2 className="h-[17px] w-[17px] animate-spin" /> : speechState === "listening" ? <Square className="h-3.5 w-3.5 fill-current" /> : <Mic className="h-[18px] w-[18px]" />}</button>
-              <button type="submit" disabled={(!draft.trim() && !pendingImages.length && !pendingDocuments.length) || !notesReady || busy || memoryBusy || preparingImage || speechState !== "idle"} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zerus-accent text-primary-foreground disabled:bg-muted disabled:text-muted-foreground" aria-label="Send message"><Send className="h-[18px] w-[18px]" /></button>
+          {!canEditCurrent && current ? (
+            <div className="shrink-0 border-t border-border/60 bg-zerus-surface px-4 py-3 text-center">
+              <p className="text-xs text-muted-foreground">
+                {current.deletedAt
+                  ? "This conversation is in Recently Deleted."
+                  : current.archivedAt
+                    ? "This conversation is archived."
+                    : `Read-only · owned by ${chatDeviceLabel(current.owner, deviceNames)}`}
+              </p>
+              {!isOwner && (
+                <Button
+                  onClick={() => void transferOwnership(current)}
+                  className="mt-2 h-10 rounded-full bg-zerus-accent px-5 text-sm text-primary-foreground hover:bg-zerus-accent/90"
+                >
+                  Continue on this device
+                </Button>
+              )}
             </div>
-          </form>}
+          ) : (
+            <form
+              className="shrink-0 border-t border-border/60 bg-zerus-surface/95 p-3 backdrop-blur-xl"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (busy) {
+                  agentUI.queue(draft);
+                  setDraft("");
+                } else void send();
+              }}
+            >
+              <NotesAgentPending agent={agentUI} />
+              {busy && draft.trim() && (
+                <div className="mb-2 flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      agentUI.steer(draft);
+                      setDraft("");
+                    }}
+                  >
+                    Steer this run
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      agentUI.queue(draft);
+                      setDraft("");
+                    }}
+                  >
+                    Queue next message
+                  </Button>
+                </div>
+              )}
+              {!notesReady && (
+                <div
+                  className="mb-2 flex items-center justify-center text-xs text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {notesPreparationError ? (
+                    <>
+                      <span>{notesPreparationError}</span>
+                      <button
+                        type="button"
+                        onClick={onRetryNotesPreparation}
+                        className="ml-2 font-semibold text-zerus-accent"
+                      >
+                        Retry
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin text-zerus-accent" />
+                      Preparing all notes for search…
+                    </>
+                  )}
+                </div>
+              )}
+              {speechState !== "idle" && (
+                <div className="mb-2 flex items-center justify-center gap-2 text-xs font-medium text-zerus-accent">
+                  <span
+                    className={cn(
+                      "h-2 w-2 rounded-full bg-zerus-accent",
+                      speechState === "listening" && "animate-pulse",
+                    )}
+                  />
+                  {speechState === "starting"
+                    ? "Preparing on-device dictation…"
+                    : speechState === "stopping"
+                      ? "Finishing transcript…"
+                      : `Live transcription · ${speechEngine === "speechAnalyzer" ? "SpeechAnalyzer" : "legacy engine"}${speechBuild ? ` · build ${speechBuild}` : ""}`}
+                </div>
+              )}
+              {pendingImages.length > 0 && (
+                <div className="mb-2 flex gap-2 overflow-x-auto pb-1">
+                  {pendingImages.map((image, index) => (
+                    <div key={image.previewUrl} className="relative shrink-0">
+                      <img
+                        src={image.previewUrl}
+                        alt={`Selected attachment ${index + 1}`}
+                        width={image.width}
+                        height={image.height}
+                        className="h-20 w-20 rounded-lg object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          URL.revokeObjectURL(image.previewUrl);
+                          const next = pendingImagesRef.current.filter(
+                            (candidate) => candidate !== image,
+                          );
+                          pendingImagesRef.current = next;
+                          setPendingImages(next);
+                        }}
+                        className="absolute -right-1 -top-1 flex h-7 w-7 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                        aria-label={`Remove image ${index + 1}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {documentContextStatus && (
+                <p role="status" className="mb-2 text-xs text-muted-foreground">
+                  {documentContextStatus}
+                </p>
+              )}
+              {pendingDocuments.map((document, index) => (
+                <div
+                  key={index}
+                  className="mb-2 flex min-w-0 items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <span className="min-w-0 flex-1 break-all">
+                    {document.name}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${document.name}`}
+                    onClick={() =>
+                      setPendingDocuments((current) =>
+                        current.filter((_, position) => position !== index),
+                      )
+                    }
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              <div className="flex min-w-0 items-end gap-2 rounded-[24px] border border-border bg-zerus-editor p-1.5 pl-1 focus-within:border-zerus-accent/65">
+                <input
+                  ref={imageInput}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    void selectImages(Array.from(event.target.files ?? []));
+                    event.currentTarget.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => imageInput.current?.click()}
+                  disabled={
+                    busy ||
+                    memoryBusy ||
+                    preparingImage ||
+                    speechState !== "idle"
+                  }
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground disabled:opacity-50"
+                  aria-label="Add files"
+                  title="Add files"
+                >
+                  {preparingImage ? (
+                    <Loader2 className="h-[17px] w-[17px] animate-spin" />
+                  ) : (
+                    <Paperclip className="h-[18px] w-[18px]" />
+                  )}
+                </button>
+                <textarea
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  rows={1}
+                  enterKeyHint="send"
+                  placeholder={
+                    speechState === "listening"
+                      ? "Listening…"
+                      : pendingImages.length
+                        ? "Ask about these images"
+                        : "Ask about your notes"
+                  }
+                  className="max-h-28 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-zerus-text outline-none placeholder:text-muted-foreground"
+                />
+                <button
+                  type="button"
+                  onClick={() => void toggleSpeech()}
+                  disabled={
+                    busy ||
+                    memoryBusy ||
+                    speechState === "starting" ||
+                    speechState === "stopping"
+                  }
+                  aria-label={
+                    speechState === "listening"
+                      ? "Stop dictation"
+                      : "Dictate message"
+                  }
+                  className={cn(
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full disabled:opacity-50",
+                    speechState === "listening"
+                      ? "bg-zerus-accent text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {speechState === "starting" || speechState === "stopping" ? (
+                    <Loader2 className="h-[17px] w-[17px] animate-spin" />
+                  ) : speechState === "listening" ? (
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  ) : (
+                    <Mic className="h-[18px] w-[18px]" />
+                  )}
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    (!draft.trim() &&
+                      !pendingImages.length &&
+                      !pendingDocuments.length) ||
+                    !notesReady ||
+                    memoryBusy ||
+                    preparingImage ||
+                    speechState !== "idle"
+                  }
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zerus-accent text-primary-foreground disabled:bg-muted disabled:text-muted-foreground"
+                  aria-label={busy ? "Queue next message" : "Send message"}
+                >
+                  <Send className="h-[18px] w-[18px]" />
+                </button>
+              </div>
+            </form>
+          )}
         </>
       )}
 
-      {optionsOpen && <div className="absolute inset-0 z-20 flex items-end bg-foreground/55" onClick={() => setOptionsOpen(false)}><div className="w-full rounded-t-[26px] bg-zerus-surface px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3" onClick={(event) => event.stopPropagation()}><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted-foreground/30" /><button type="button" onClick={startNewChat} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><Plus className="h-5 w-5 text-zerus-accent" />New chat</button><button type="button" onClick={() => { setOptionsOpen(false); onOpenHistory(); }} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><History className="h-5 w-5 text-zerus-accent" />Conversation history</button><button type="button" onClick={() => { setOptionsOpen(false); setSettingsOpen(true); }} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><Settings2 className="h-5 w-5 text-zerus-accent" />Chat model</button>{current?.summary && <button type="button" onClick={() => { setOptionsOpen(false); setMemoryOpen(true); }} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><Brain className="h-5 w-5 text-zerus-accent" />Conversation memory</button>}{current && !isOwner && <button type="button" onClick={() => void transferOwnership(current)} className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-zerus-accent"><RotateCcw className="h-5 w-5" />Continue on this device</button>}{current && isOwner && <><button type="button" onClick={() => void renameCurrent()} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left">Rename</button>{current.archivedAt || current.deletedAt ? <button type="button" onClick={() => void mutateCurrent("restore")} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><RotateCcw className="h-5 w-5" />Restore</button> : <button type="button" onClick={() => void mutateCurrent("archive")} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><Archive className="h-5 w-5" />Archive</button>}{!current.deletedAt && <button type="button" onClick={() => void mutateCurrent("delete")} className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-destructive"><Trash2 className="h-5 w-5" />Delete</button>}</>}</div></div>}
-
-      {settingsOpen && <div className="absolute inset-0 z-40 flex flex-col bg-zerus-editor" role="dialog" aria-modal="true" aria-label="Chat model settings">
-        <header className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)" }}>
-          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(false)} className="h-10 w-10 rounded-full bg-muted" aria-label="Back to chat"><ArrowLeft className="h-5 w-5" /></Button>
-          <h2 className="text-[20px] font-semibold">Chat model</h2>
-        </header>
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
-          <div className="mx-auto max-w-lg space-y-5">
-            <p className="text-xs leading-5 text-muted-foreground">Questions and matching note excerpts are sent to the selected provider. Credentials stay in the iOS Keychain and are never written to your vault.</p>
-
-            <div className="grid grid-cols-2 rounded-xl bg-muted p-1" aria-label="AI provider">
-              {(["openrouter", "compatible"] as MobileCloudProvider[]).map((provider) => <button key={provider} type="button" onClick={() => void selectMobileProvider(provider)} className={cn("min-h-10 rounded-lg px-3 text-sm font-semibold", mobileProvider === provider ? "bg-zerus-accent text-primary-foreground" : "text-muted-foreground")}>{provider === "openrouter" ? "OpenRouter" : "OpenAI-compatible"}</button>)}
-            </div>
-
-            {mobileProvider === "openrouter" ? <div className="space-y-3">
-              <div className="rounded-xl bg-zerus-surface px-4 py-3"><p className="text-sm font-medium">OpenRouter account</p><p className="mt-1 text-xs text-muted-foreground">{savedCloudKeyApplies ? "Connected securely with a credential stored in Keychain." : "Sign in securely in your browser. Zerus never writes this credential to the vault."}</p></div>
-              <Button onClick={() => void signInWithOpenRouter()} disabled={busy} className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90">
-                {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
-                {savedCloudKeyApplies ? "Reconnect OpenRouter" : "Connect OpenRouter"}
-              </Button>
-            </div> : <>
-              <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">API endpoint</span><Input value={cloudEndpoint} onChange={(event) => setCloudEndpoint(event.target.value)} inputMode="url" autoCapitalize="none" autoCorrect="off" className="h-12 rounded-xl border-border bg-zerus-surface text-base" placeholder="https://api.example.com/v1" /></label>
-              {savedCloudKeyApplies && !editingAPIKey ? <div className="flex items-center gap-3 rounded-xl bg-zerus-surface px-4 py-3"><div className="min-w-0 flex-1"><p className="text-sm font-medium">API key stored securely</p><p className="mt-0.5 text-xs text-muted-foreground">The key is hidden and remains in Keychain.</p></div><Button type="button" variant="outline" onClick={() => setEditingAPIKey(true)} className="h-9 shrink-0 rounded-lg border-border bg-muted/50">Change API key</Button></div> : <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">API key</span><Input type="password" value={cloudAPIKey} onChange={(event) => setCloudAPIKey(event.target.value)} autoCapitalize="none" autoCorrect="off" autoComplete="new-password" className="h-12 rounded-xl border-border bg-zerus-surface text-base" placeholder="Enter API key" /></label>}
-            </>}
-
-            <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Model ID</span><Input value={cloudModel} onChange={(event) => setCloudModel(event.target.value)} autoCapitalize="none" autoCorrect="off" className="h-12 rounded-xl border-border bg-zerus-surface text-base" placeholder={mobileProvider === "openrouter" ? "openai/gpt-5.4-mini" : "Model ID"} /></label>
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2"><span className="text-xs font-medium text-muted-foreground">Favourite models</span><button type="button" onClick={() => setFavoriteModels((current) => current.includes(cloudModel.trim()) ? current : [...current, cloudModel.trim()].filter(Boolean))} className="text-xs font-semibold text-zerus-accent">Save current</button></div>
-              <div className="flex flex-wrap gap-2">{favoriteModels.length ? favoriteModels.map((model) => <button key={model} type="button" onClick={() => setCloudModel(model)} className={cn("max-w-full truncate rounded-full border px-3 py-1.5 text-xs", model === cloudModel ? "border-zerus-accent bg-zerus-accent/10 text-zerus-accent" : "border-border bg-muted/50 text-muted-foreground")}>{model}</button>) : <p className="text-xs text-muted-foreground">Save models here for quick switching.</p>}</div>
-            </div>
-
-            <Button type="button" variant="outline" onClick={() => void discoverModels()} disabled={busy || !cloudEndpoint.trim() || (!savedCloudKeyApplies && !cloudAPIKey.trim())} className="h-12 w-full rounded-xl border-border bg-muted/50">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Test connection & discover models</Button>
-            {discoveredModels.length > 0 && <div className="space-y-2">
-              <div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} enterKeyHint="search" autoCapitalize="none" autoCorrect="off" placeholder="Search models" className="h-12 rounded-xl border-border bg-zerus-surface pl-9 text-base" /></div>
-              <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl bg-zerus-surface p-2">{filteredModels.length ? filteredModels.map((model) => <button key={model.id} type="button" onClick={() => { setCloudModel(model.id); setFavoriteModels((current) => current.includes(model.id) ? current : [...current, model.id]); }} className="block w-full rounded-lg px-2 py-2 text-left text-xs active:bg-muted"><span className="block truncate font-medium text-foreground">{model.name}</span><span className="block truncate text-[11px] text-muted-foreground">{model.id}</span></button>) : <p className="px-2 py-5 text-center text-xs text-muted-foreground">No models match “{modelSearch}”.</p>}</div>
-            </div>}
-            {error && <p className="rounded-xl bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">{error}</p>}
-            <Button onClick={() => void saveCloudSettings()} disabled={busy || !cloudEndpoint.trim() || !cloudModel.trim() || (!savedCloudKeyApplies && !cloudAPIKey.trim())} className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90">{busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save {mobileProvider === "openrouter" ? "OpenRouter" : "compatible"} model</Button>
+      {optionsOpen && (
+        <div
+          className="absolute inset-0 z-20 flex items-end bg-foreground/55"
+          onClick={() => setOptionsOpen(false)}
+        >
+          <div
+            className="w-full rounded-t-[26px] bg-zerus-surface px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted-foreground/30" />
+            <button
+              type="button"
+              onClick={startNewChat}
+              className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+            >
+              <Plus className="h-5 w-5 text-zerus-accent" />
+              New chat
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOptionsOpen(false);
+                onOpenHistory();
+              }}
+              className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+            >
+              <History className="h-5 w-5 text-zerus-accent" />
+              Conversation history
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setOptionsOpen(false);
+                setSettingsOpen(true);
+              }}
+              className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+            >
+              <Settings2 className="h-5 w-5 text-zerus-accent" />
+              Chat model
+            </button>
+            {current?.summary && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOptionsOpen(false);
+                  setMemoryOpen(true);
+                }}
+                className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+              >
+                <Brain className="h-5 w-5 text-zerus-accent" />
+                Conversation memory
+              </button>
+            )}
+            {current && !isOwner && (
+              <button
+                type="button"
+                onClick={() => void transferOwnership(current)}
+                className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-zerus-accent"
+              >
+                <RotateCcw className="h-5 w-5" />
+                Continue on this device
+              </button>
+            )}
+            {current && isOwner && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => void renameCurrent()}
+                  className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                >
+                  Rename
+                </button>
+                {current.archivedAt || current.deletedAt ? (
+                  <button
+                    type="button"
+                    onClick={() => void mutateCurrent("restore")}
+                    className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                  >
+                    <RotateCcw className="h-5 w-5" />
+                    Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void mutateCurrent("archive")}
+                    className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                  >
+                    <Archive className="h-5 w-5" />
+                    Archive
+                  </button>
+                )}
+                {!current.deletedAt && (
+                  <button
+                    type="button"
+                    onClick={() => void mutateCurrent("delete")}
+                    className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-destructive"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                    Delete
+                  </button>
+                )}
+              </>
+            )}
           </div>
-        </main>
-      </div>}
+        </div>
+      )}
 
-      {historyVisible && device && <div className="absolute inset-0 z-30 flex flex-col bg-zerus-editor"><header className="flex items-center gap-3 border-b border-border/60 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]"><Button variant="ghost" size="icon" onClick={onCloseHistory} className="rounded-full bg-muted" aria-label="Back to chat"><ArrowLeft className="h-5 w-5" /></Button><h2 className="flex-1 text-[20px] font-semibold">Conversation history</h2><Button variant="ghost" size="icon" onClick={() => { startNewChat(); onCloseHistory(); }} className="rounded-full bg-zerus-accent text-primary-foreground hover:bg-zerus-accent/90"><Plus className="h-5 w-5" /></Button></header><div className="px-4 pt-4"><div className="relative"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search conversations" className="h-11 rounded-xl border-border bg-zerus-surface pl-9" /></div><div className="mt-3 flex gap-2 overflow-x-auto pb-2">{(["all", "device", "other", "archived", "deleted"] as HistoryFilter[]).map((filter) => <button type="button" key={filter} onClick={() => setHistoryFilter(filter)} className={cn("whitespace-nowrap rounded-full px-3 py-1.5 text-xs", historyFilter === filter ? "bg-zerus-accent text-primary-foreground" : "bg-muted text-muted-foreground")}>{filter === "all" ? "All" : filter === "device" ? "This device" : filter === "other" ? "Other devices" : filter === "archived" ? "Archived" : "Recently Deleted"}</button>)}</div></div><main className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{historyLoading && filteredHistory.length === 0 ? <Loader2 className="mx-auto mt-12 h-6 w-6 animate-spin text-zerus-accent" /> : filteredHistory.length === 0 ? <p className="mt-12 text-center text-sm text-muted-foreground">No conversations found.</p> : <div className="overflow-hidden rounded-[16px] bg-zerus-surface">{filteredHistory.map((conversation) => <HistoryConversationRow key={conversation.id} conversation={conversation} device={device} deviceNames={deviceNames} onOpen={() => { setConversationId(conversation.id); setBlankChat(false); onCloseHistory(); }} onActions={() => setHistoryActionsId(conversation.id)} />)}</div>}</main></div>}
+      {settingsOpen && (
+        <div
+          className="absolute inset-0 z-40 flex flex-col bg-zerus-editor"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chat model settings"
+        >
+          <header
+            className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3"
+            style={{
+              paddingTop: "calc(env(safe-area-inset-top, 0px) + 0.75rem)",
+            }}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSettingsOpen(false)}
+              className="h-10 w-10 rounded-full bg-muted"
+              aria-label="Back to chat"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h2 className="text-[20px] font-semibold">Chat model</h2>
+          </header>
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
+            <div className="mx-auto max-w-lg space-y-5">
+              <p className="text-xs leading-5 text-muted-foreground">
+                Questions and matching note excerpts are sent to the selected
+                provider. Credentials stay in the iOS Keychain and are never
+                written to your vault.
+              </p>
 
-      {historyActionsConversation && device && <div className="absolute inset-0 z-40 flex items-end bg-foreground/60" onClick={() => setHistoryActionsId(null)} role="dialog" aria-modal="true" aria-label={`Actions for ${historyActionsConversation.title}`}><div className="w-full select-none rounded-t-[26px] bg-zerus-surface px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3" onClick={(event) => event.stopPropagation()}><div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted-foreground/30" /><p className="truncate border-b border-border/60 px-2 pb-3 text-sm font-semibold text-foreground">{historyActionsConversation.title}</p>{historyActionsConversation.owner.id !== device.id ? <button type="button" onClick={() => void transferOwnership(historyActionsConversation)} className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-zerus-accent"><RotateCcw className="h-5 w-5" />Continue on this device</button> : <><button type="button" onClick={() => void renameConversation(historyActionsConversation)} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left">Rename</button>{historyActionsConversation.archivedAt || historyActionsConversation.deletedAt ? <button type="button" onClick={() => void mutateConversation(historyActionsConversation, "restore")} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><RotateCcw className="h-5 w-5" />Restore</button> : <button type="button" onClick={() => void mutateConversation(historyActionsConversation, "archive")} className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"><Archive className="h-5 w-5" />Archive</button>}{!historyActionsConversation.deletedAt && <button type="button" onClick={() => void mutateConversation(historyActionsConversation, "delete")} className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-destructive"><Trash2 className="h-5 w-5" />Delete</button>}</>}</div></div>}
+              <div
+                className="grid grid-cols-2 rounded-xl bg-muted p-1"
+                aria-label="AI provider"
+              >
+                {(["openrouter", "compatible"] as MobileCloudProvider[]).map(
+                  (provider) => (
+                    <button
+                      key={provider}
+                      type="button"
+                      onClick={() => void selectMobileProvider(provider)}
+                      className={cn(
+                        "min-h-10 rounded-lg px-3 text-sm font-semibold",
+                        mobileProvider === provider
+                          ? "bg-zerus-accent text-primary-foreground"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {provider === "openrouter"
+                        ? "OpenRouter"
+                        : "OpenAI-compatible"}
+                    </button>
+                  ),
+                )}
+              </div>
 
-      {memoryOpen && current?.summary && <div className="absolute inset-0 z-40 flex items-end bg-foreground/60" onClick={() => setMemoryOpen(false)}><div className="max-h-[75%] w-full overflow-y-auto rounded-t-[26px] bg-zerus-surface p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><h2 className="flex items-center gap-2 text-lg font-semibold"><Brain className="h-5 w-5 text-zerus-accent" />Conversation memory</h2><Button variant="ghost" size="icon" onClick={() => setMemoryOpen(false)}><X className="h-5 w-5" /></Button></div><p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-foreground">{current.summary.text}</p><p className="mt-4 text-xs text-muted-foreground">Covers {current.summary.coveredMessageIds.length} messages.</p>{isOwner && <Button variant="ghost" onClick={() => void resetMemory()} className="mt-3 text-zerus-accent">Reset memory</Button>}</div></div>}
+              {mobileProvider === "openrouter" ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-zerus-surface px-4 py-3">
+                    <p className="text-sm font-medium">OpenRouter account</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {savedCloudKeyApplies
+                        ? "Connected securely with a credential stored in Keychain."
+                        : "Sign in securely in your browser. Zerus never writes this credential to the vault."}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => void signInWithOpenRouter()}
+                    disabled={busy}
+                    className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90"
+                  >
+                    {busy ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Cloud className="mr-2 h-4 w-4" />
+                    )}
+                    {savedCloudKeyApplies
+                      ? "Reconnect OpenRouter"
+                      : "Connect OpenRouter"}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                      API endpoint
+                    </span>
+                    <Input
+                      value={cloudEndpoint}
+                      onChange={(event) => setCloudEndpoint(event.target.value)}
+                      inputMode="url"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      className="h-12 rounded-xl border-border bg-zerus-surface text-base"
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </label>
+                  {savedCloudKeyApplies && !editingAPIKey ? (
+                    <div className="flex items-center gap-3 rounded-xl bg-zerus-surface px-4 py-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          API key stored securely
+                        </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          The key is hidden and remains in Keychain.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setEditingAPIKey(true)}
+                        className="h-9 shrink-0 rounded-lg border-border bg-muted/50"
+                      >
+                        Change API key
+                      </Button>
+                    </div>
+                  ) : (
+                    <label className="block">
+                      <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                        API key
+                      </span>
+                      <Input
+                        type="password"
+                        value={cloudAPIKey}
+                        onChange={(event) => setCloudAPIKey(event.target.value)}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        autoComplete="new-password"
+                        className="h-12 rounded-xl border-border bg-zerus-surface text-base"
+                        placeholder="Enter API key"
+                      />
+                    </label>
+                  )}
+                </>
+              )}
 
-      {snapshotOpen && <div className="absolute inset-0 z-40 flex items-end bg-foreground/60" onClick={() => setSnapshotOpen(null)}><div className="max-h-[78%] w-full overflow-y-auto rounded-t-[26px] bg-zerus-surface p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><div><p className="text-xs text-zerus-accent">Saved source snapshot</p><h2 className="mt-1 text-lg font-semibold">{snapshotOpen.title}</h2></div><Button variant="ghost" size="icon" onClick={() => setSnapshotOpen(null)}><X className="h-5 w-5" /></Button></div><p className="mt-4 whitespace-pre-wrap rounded-xl bg-muted/60 p-4 text-sm leading-6 text-foreground">{snapshotOpen.excerpt}</p></div></div>}
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                  Model ID
+                </span>
+                <Input
+                  value={cloudModel}
+                  onChange={(event) => setCloudModel(event.target.value)}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  className="h-12 rounded-xl border-border bg-zerus-surface text-base"
+                  placeholder={
+                    mobileProvider === "openrouter"
+                      ? "openai/gpt-5.4-mini"
+                      : "Model ID"
+                  }
+                />
+              </label>
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    Favourite models
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFavoriteModels((current) =>
+                        current.includes(cloudModel.trim())
+                          ? current
+                          : [...current, cloudModel.trim()].filter(Boolean),
+                      )
+                    }
+                    className="text-xs font-semibold text-zerus-accent"
+                  >
+                    Save current
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {favoriteModels.length ? (
+                    favoriteModels.map((model) => (
+                      <button
+                        key={model}
+                        type="button"
+                        onClick={() => setCloudModel(model)}
+                        className={cn(
+                          "max-w-full truncate rounded-full border px-3 py-1.5 text-xs",
+                          model === cloudModel
+                            ? "border-zerus-accent bg-zerus-accent/10 text-zerus-accent"
+                            : "border-border bg-muted/50 text-muted-foreground",
+                        )}
+                      >
+                        {model}
+                      </button>
+                    ))
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Save models here for quick switching.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void discoverModels()}
+                disabled={
+                  busy ||
+                  !cloudEndpoint.trim() ||
+                  (!savedCloudKeyApplies && !cloudAPIKey.trim())
+                }
+                className="h-12 w-full rounded-xl border-border bg-muted/50"
+              >
+                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Test
+                connection & discover models
+              </Button>
+              {discoveredModels.length > 0 && (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={modelSearch}
+                      onChange={(event) => setModelSearch(event.target.value)}
+                      enterKeyHint="search"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      placeholder="Search models"
+                      className="h-12 rounded-xl border-border bg-zerus-surface pl-9 text-base"
+                    />
+                  </div>
+                  <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl bg-zerus-surface p-2">
+                    {filteredModels.length ? (
+                      filteredModels.map((model) => (
+                        <button
+                          key={model.id}
+                          type="button"
+                          onClick={() => {
+                            setCloudModel(model.id);
+                            setFavoriteModels((current) =>
+                              current.includes(model.id)
+                                ? current
+                                : [...current, model.id],
+                            );
+                          }}
+                          className="block w-full rounded-lg px-2 py-2 text-left text-xs active:bg-muted"
+                        >
+                          <span className="block truncate font-medium text-foreground">
+                            {model.name}
+                          </span>
+                          <span className="block truncate text-[11px] text-muted-foreground">
+                            {model.id}
+                          </span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-2 py-5 text-center text-xs text-muted-foreground">
+                        No models match “{modelSearch}”.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+              {error && (
+                <p className="rounded-xl bg-destructive/10 px-3 py-2.5 text-xs leading-5 text-destructive">
+                  {error}
+                </p>
+              )}
+              <Button
+                onClick={() => void saveCloudSettings()}
+                disabled={
+                  busy ||
+                  !cloudEndpoint.trim() ||
+                  !cloudModel.trim() ||
+                  (!savedCloudKeyApplies && !cloudAPIKey.trim())
+                }
+                className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90"
+              >
+                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save{" "}
+                {mobileProvider === "openrouter" ? "OpenRouter" : "compatible"}{" "}
+                model
+              </Button>
+            </div>
+          </main>
+        </div>
+      )}
+
+      {historyVisible && device && (
+        <div className="absolute inset-0 z-30 flex flex-col bg-zerus-editor">
+          <header className="flex items-center gap-3 border-b border-border/60 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onCloseHistory}
+              className="rounded-full bg-muted"
+              aria-label="Back to chat"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <h2 className="flex-1 text-[20px] font-semibold">
+              Conversation history
+            </h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => {
+                startNewChat();
+                onCloseHistory();
+              }}
+              className="rounded-full bg-zerus-accent text-primary-foreground hover:bg-zerus-accent/90"
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          </header>
+          <div className="px-4 pt-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Search conversations"
+                className="h-11 rounded-xl border-border bg-zerus-surface pl-9"
+              />
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+              {(
+                [
+                  "all",
+                  "device",
+                  "other",
+                  "archived",
+                  "deleted",
+                ] as HistoryFilter[]
+              ).map((filter) => (
+                <button
+                  type="button"
+                  key={filter}
+                  onClick={() => setHistoryFilter(filter)}
+                  className={cn(
+                    "whitespace-nowrap rounded-full px-3 py-1.5 text-xs",
+                    historyFilter === filter
+                      ? "bg-zerus-accent text-primary-foreground"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {filter === "all"
+                    ? "All"
+                    : filter === "device"
+                      ? "This device"
+                      : filter === "other"
+                        ? "Other devices"
+                        : filter === "archived"
+                          ? "Archived"
+                          : "Recently Deleted"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {historyLoading && filteredHistory.length === 0 ? (
+              <Loader2 className="mx-auto mt-12 h-6 w-6 animate-spin text-zerus-accent" />
+            ) : filteredHistory.length === 0 ? (
+              <p className="mt-12 text-center text-sm text-muted-foreground">
+                No conversations found.
+              </p>
+            ) : (
+              <div className="overflow-hidden rounded-[16px] bg-zerus-surface">
+                {filteredHistory.map((conversation) => (
+                  <HistoryConversationRow
+                    key={conversation.id}
+                    conversation={conversation}
+                    device={device}
+                    deviceNames={deviceNames}
+                    onOpen={() => {
+                      setConversationId(conversation.id);
+                      setBlankChat(false);
+                      onCloseHistory();
+                    }}
+                    onActions={() => setHistoryActionsId(conversation.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
+      )}
+
+      {historyActionsConversation && device && (
+        <div
+          className="absolute inset-0 z-40 flex items-end bg-foreground/60"
+          onClick={() => setHistoryActionsId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Actions for ${historyActionsConversation.title}`}
+        >
+          <div
+            className="w-full select-none rounded-t-[26px] bg-zerus-surface px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-3"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-muted-foreground/30" />
+            <p className="truncate border-b border-border/60 px-2 pb-3 text-sm font-semibold text-foreground">
+              {historyActionsConversation.title}
+            </p>
+            {historyActionsConversation.owner.id !== device.id ? (
+              <button
+                type="button"
+                onClick={() =>
+                  void transferOwnership(historyActionsConversation)
+                }
+                className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-zerus-accent"
+              >
+                <RotateCcw className="h-5 w-5" />
+                Continue on this device
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void renameConversation(historyActionsConversation)
+                  }
+                  className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                >
+                  Rename
+                </button>
+                {historyActionsConversation.archivedAt ||
+                historyActionsConversation.deletedAt ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void mutateConversation(
+                        historyActionsConversation,
+                        "restore",
+                      )
+                    }
+                    className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                  >
+                    <RotateCcw className="h-5 w-5" />
+                    Restore
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void mutateConversation(
+                        historyActionsConversation,
+                        "archive",
+                      )
+                    }
+                    className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
+                  >
+                    <Archive className="h-5 w-5" />
+                    Archive
+                  </button>
+                )}
+                {!historyActionsConversation.deletedAt && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void mutateConversation(
+                        historyActionsConversation,
+                        "delete",
+                      )
+                    }
+                    className="flex w-full items-center gap-3 px-2 py-3.5 text-left text-destructive"
+                  >
+                    <Trash2 className="h-5 w-5" />
+                    Delete
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {memoryOpen && current?.summary && (
+        <div
+          className="absolute inset-0 z-40 flex items-end bg-foreground/60"
+          onClick={() => setMemoryOpen(false)}
+        >
+          <div
+            className="max-h-[75%] w-full overflow-y-auto rounded-t-[26px] bg-zerus-surface p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <Brain className="h-5 w-5 text-zerus-accent" />
+                Conversation memory
+              </h2>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMemoryOpen(false)}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-foreground">
+              {current.summary.text}
+            </p>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Covers {current.summary.coveredMessageIds.length} messages.
+            </p>
+            {isOwner && (
+              <Button
+                variant="ghost"
+                onClick={() => void resetMemory()}
+                className="mt-3 text-zerus-accent"
+              >
+                Reset memory
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {snapshotOpen && (
+        <div
+          className="absolute inset-0 z-40 flex items-end bg-foreground/60"
+          onClick={() => setSnapshotOpen(null)}
+        >
+          <div
+            className="max-h-[78%] w-full overflow-y-auto rounded-t-[26px] bg-zerus-surface p-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-zerus-accent">
+                  Saved source snapshot
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  {snapshotOpen.title}
+                </h2>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSnapshotOpen(null)}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <p className="mt-4 whitespace-pre-wrap rounded-xl bg-muted/60 p-4 text-sm leading-6 text-foreground">
+              {snapshotOpen.excerpt}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

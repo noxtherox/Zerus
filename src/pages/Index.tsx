@@ -276,18 +276,20 @@ const Index = () => {
   const activeTypeView = activeTypeKey
     ? typeViewConfigFor(vault.typeViews, activeTypeKey)
     : null;
+  const structuredTypeViewOpen =
+    filter.kind === "type" && activeTypeView?.mode !== "list";
   const effectiveListFilters = activeTypeView?.filters ?? listFilters;
   const filterOptions = useMemo(
     () =>
-      filterNotes(notes, effectiveFilter, "", {
+      structuredTypeViewOpen ? [] : filterNotes(notes, effectiveFilter, "", {
         ...EMPTY_NOTE_LIST_FILTERS,
         showArchived: effectiveListFilters.showArchived,
       }),
-    [notes, effectiveFilter, effectiveListFilters.showArchived],
+    [notes, effectiveFilter, effectiveListFilters.showArchived, structuredTypeViewOpen],
   );
   const visibleNotes = useMemo(
-    () => filterNotes(notes, effectiveFilter, search, effectiveListFilters),
-    [notes, effectiveFilter, search, effectiveListFilters],
+    () => structuredTypeViewOpen ? [] : filterNotes(notes, effectiveFilter, search, effectiveListFilters),
+    [notes, effectiveFilter, search, effectiveListFilters, structuredTypeViewOpen],
   );
   const aiKnowledgeScope = useMemo<AiKnowledgeScope>(() => {
     if (effectiveFilter.kind === "type") {
@@ -309,9 +311,6 @@ const Index = () => {
   const activeSavedTypeViews = activeTypeKey
     ? vault.savedTypeViews[activeTypeKey] ?? []
     : [];
-  const structuredTypeViewOpen =
-    filter.kind === "type" && activeTypeView?.mode !== "list";
-
   const currentWorkspaceSeed = (): WorkspaceTabSeed | null => {
     const active = activeWorkspaceTab(noteTabs);
     if (active) {

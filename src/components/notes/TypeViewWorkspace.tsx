@@ -391,7 +391,9 @@ function GalleryView({
         ? propertyGroupLabels(propertyValue(note, groupBy))
         : ["All notes"];
       for (const label of labels) {
-        grouped.set(label, [...(grouped.get(label) ?? []), note]);
+        const group = grouped.get(label);
+        if (group) group.push(note);
+        else grouped.set(label, [note]);
       }
     }
     return [...grouped];
@@ -634,16 +636,29 @@ function BoardView({
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
-  const columns = useMemo(() => {
-    if (!property) return [];
-    const values = new Set<string>(propertyDef?.listOptions ?? []);
+  const groupedNotes = useMemo(() => {
+    const groups = new Map<string, Note[]>();
+    if (!property) return groups;
+    for (const label of [NO_VALUE, ...(propertyDef?.listOptions ?? [])]) {
+      groups.set(label, []);
+    }
     for (const note of notes) {
       const value = propertyValue(note, property);
-      if (Array.isArray(value)) value.forEach((item) => values.add(item));
-      else if (value !== undefined && value !== "") values.add(String(value));
+      const labels = value === undefined || value === ""
+        ? [NO_VALUE]
+        : Array.isArray(value) ? value : [String(value)];
+      for (const label of new Set(labels)) {
+        const group = groups.get(label);
+        if (group) group.push(note);
+        else groups.set(label, [note]);
+      }
     }
-    return reconcileBoardColumnOrder([NO_VALUE, ...values], columnOrder);
-  }, [columnOrder, notes, property, propertyDef]);
+    return groups;
+  }, [notes, property, propertyDef]);
+  const columns = useMemo(
+    () => reconcileBoardColumnOrder([...groupedNotes.keys()], columnOrder),
+    [columnOrder, groupedNotes],
+  );
 
   if (!property) {
     return <EmptyView message="Choose a property above to create Kanban columns." />;
@@ -697,13 +712,7 @@ function BoardView({
             <BoardColumn
               key={column}
               value={column}
-              notes={notes.filter((note) => {
-                const value = propertyValue(note, property);
-                if (column === NO_VALUE) return value === undefined || value === "";
-                return Array.isArray(value)
-                  ? value.includes(column)
-                  : String(value) === column;
-              })}
+              notes={groupedNotes.get(column)!}
               visibleProperties={visibleProperties}
               selectedIds={selectedIds}
               onActivate={onActivate}
@@ -744,19 +753,20 @@ function PropertyEditor({
       <span className="flex max-w-56 flex-wrap gap-1 px-1">
         {references.map((reference) => {
           const related = findNoteByTitle(reference, allNotes);
+          const label = related ? noteTitle(related) : noteReferenceLabel(reference, []);
           return related ? (
             <button
               key={reference}
               type="button"
               className="max-w-full truncate rounded bg-muted px-1.5 py-0.5 text-left hover:underline"
-              title={noteReferenceLabel(reference, allNotes)}
+              title={label}
               onClick={() => onOpen(related.id)}
             >
-              {noteReferenceLabel(reference, allNotes)}
+              {label}
             </button>
           ) : (
-            <span key={reference} className="max-w-full truncate rounded bg-muted px-1.5 py-0.5" title={noteReferenceLabel(reference, allNotes)}>
-              {noteReferenceLabel(reference, allNotes)}
+            <span key={reference} className="max-w-full truncate rounded bg-muted px-1.5 py-0.5" title={label}>
+              {label}
             </span>
           );
         })}

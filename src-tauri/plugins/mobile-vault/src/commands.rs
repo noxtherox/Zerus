@@ -88,8 +88,12 @@ pub(crate) async fn generate_cloud_ai<R: Runtime>(
 }
 
 #[command]
-pub(crate) async fn stop_cloud_ai<R: Runtime>(app: AppHandle<R>) -> Result<()> {
-    app.mobile_vault().stop_cloud_ai()
+pub(crate) async fn stop_cloud_ai<R: Runtime>(
+    app: AppHandle<R>,
+    request: Option<CloudAiStopRequest>,
+) -> Result<()> {
+    app.mobile_vault()
+        .stop_cloud_ai(request.unwrap_or_default())
 }
 
 #[command]
@@ -125,6 +129,9 @@ pub(crate) async fn device_name<R: Runtime>(app: AppHandle<R>) -> Result<DeviceN
 }
 
 #[command]
-pub(crate) async fn google_drive<R: Runtime>(app: AppHandle<R>, request: serde_json::Value) -> Result<serde_json::Value> {
+pub(crate) async fn google_drive<R: Runtime>(
+    app: AppHandle<R>,
+    request: serde_json::Value,
+) -> Result<serde_json::Value> {
     app.mobile_vault().google_drive(request)
 }
