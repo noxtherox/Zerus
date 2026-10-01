@@ -148,11 +148,7 @@ export function BacklinksPanel({
           />
         )}
       </div>
-      <NoteOutline key={note.id} container={editorContainer} onNavigate={() => { if (expanded) onToggleExpanded(); }} />
-      {!isTrashed(note) && (
-        <AttachmentsSection note={note} expanded={expanded} />
-      )}
-      <div className="min-h-0 flex-1 px-4 py-3">
+      <div className="px-4 pb-3">
         {linkedTasks.length > 0 && (
           <div className="mb-4">
             <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
@@ -171,7 +167,8 @@ export function BacklinksPanel({
           </div>
         )}
         {total > 0 ? (
-            <div className={cn("space-y-4", (relationTotal > 0 || linkedTasks.length > 0) && "mt-4")}>
+            <div className={cn("space-y-4", linkedTasks.length > 0 && "mt-4")}>
+            <div className="text-xs font-semibold text-muted-foreground">Backlinks</div>
             {[...groups.entries()].map(([type, linkingNotes]) => (
               <div key={type}>
                 <div className="mb-1.5 flex items-center gap-1 text-xs font-medium text-zerus-accent">
@@ -228,6 +225,10 @@ export function BacklinksPanel({
           </div>
         ) : null}
       </div>
+      <NoteOutline key={note.id} container={editorContainer} onNavigate={() => { if (expanded) onToggleExpanded(); }} />
+      {!isTrashed(note) && (
+        <AttachmentsSection note={note} expanded={expanded} />
+      )}
     </aside>
   );
 }

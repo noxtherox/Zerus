@@ -33,6 +33,7 @@ import {
   createFileNote,
   createLinkNote,
   createNote,
+  deleteTypeViewPreset,
   initStore,
   moveExternalNoteToVault,
   moveSavedLinkToVault,
@@ -97,6 +98,7 @@ import {
   openTypeInActiveTab,
   openTypeInNewTab,
   openGlobalInNewTab,
+  reorderNoteTab,
   replaceActiveTabNote,
   toggleNoteTabPinned,
   updateActiveTypeTab,
@@ -543,6 +545,11 @@ const Index = () => {
     handleTypeViewChange(view.config);
   };
 
+  const handleDeleteSavedTypeView = (id: string) => {
+    if (!activeTypeKey) return;
+    deleteTypeViewPreset(activeTypeKey, id);
+  };
+
   const handleOpenNoteInNewTab = (id: string) => {
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
@@ -973,6 +980,9 @@ const Index = () => {
                   setNoteTabs((tabs) => toggleNoteTabPinned(tabs, tabId))
                 }
                 onClose={handleCloseTab}
+                onReorder={(tabId, targetTabId) =>
+                  setNoteTabs((tabs) => reorderNoteTab(tabs, tabId, targetTabId))
+                }
               />
             )}
             <div className="min-h-0 min-w-0 flex-1">
@@ -1010,10 +1020,12 @@ const Index = () => {
                       vaultLocation={vault.location}
                       editor={editorWorkspace}
                       onOpenNote={handleOpenStructuredNote}
+                      onOpenNoteInNewTab={handleOpenNoteInNewTab}
                       onCreateNote={() => void handleCreateNote()}
                       onToggleAi={() => setAiOpen((current) => !current)}
                       onConfigChange={handleTypeViewChange}
                       onApplySavedView={handleApplySavedTypeView}
+                      onDeleteSavedView={handleDeleteSavedTypeView}
                       onSaveView={handleSaveTypeView}
                       onHideSubtypeNotesChange={handleHideSubtypeNotesChange}
                       onSetProperty={setNoteProperty}
@@ -1077,6 +1089,7 @@ const Index = () => {
                       savedViews={activeSavedTypeViews}
                       onViewModeChange={(mode) => handleTypeViewChange({ mode })}
                       onApplySavedView={handleApplySavedTypeView}
+                      onDeleteSavedView={handleDeleteSavedTypeView}
                       onSaveView={handleSaveTypeView}
                       hideSubtypeNotes={hideSubtypeNotes}
                       onHideSubtypeNotesChange={handleHideSubtypeNotesChange}

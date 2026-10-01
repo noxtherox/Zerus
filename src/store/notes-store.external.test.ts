@@ -1,5 +1,6 @@
 import { getBacklinksGroupedByType } from "@/lib/links";
 import { getNoteProperties } from "@/lib/frontmatter";
+import { defaultTypeViewConfig } from "@/lib/note-views";
 import {
   mkdtemp,
   mkdir,
@@ -118,6 +119,7 @@ import {
   duplicateNote,
   toggleNoteArchived,
   deleteNoteForever,
+  deleteTypeViewPreset,
   flushPendingWrites,
   getNotes,
   getPropertySchemas,
@@ -132,12 +134,14 @@ import {
   resolveNoteConflict,
   restoreNote,
   savePastedImage,
+  saveTypeViewPreset,
   setNoteType,
   synchronizeDesktopFiles,
   switchDesktopVault,
   trashNote,
   updateTypeProperty,
   updateNoteBody,
+  updateTypeView,
 } from "./notes-store";
 import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
 import { getFileHubReference } from "@/lib/file-hubs";
@@ -865,7 +869,7 @@ describe("external note store workflow", () => {
         getNotes(),
         hiddenSchemas,
       );
-      expect([...backlinks.values()].flat().map((note) => note.id)).toEqual([task.id]);
+      expect([...backlinks.values()].flat()).toEqual([]);
 
       setNoteProperty(epic.id, inverseName, null);
       expect(getNoteProperties(getNotes().find((note) => note.id === task.id)!.content).Epic).toBeUndefined();
@@ -877,6 +881,61 @@ describe("external note store workflow", () => {
         relationInverseHidden: false,
       });
       expect(getPropertySchemas().epics[0].relationHidden).toBe(false);
+    } finally {
+      await switchDesktopVault(vault);
+    }
+  });
+
+  it("upgrades legacy one-way relations on load and preserves inverse values through removal and reopen", async () => {
+    const relationVault = join(root, "legacy-relations-vault");
+    await Promise.all([
+      mkdir(join(relationVault, "tasks"), { recursive: true }),
+      mkdir(join(relationVault, "epics"), { recursive: true }),
+      mkdir(join(relationVault, ".zerus"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(relationVault, "tasks", "First.md"), "---\nepic: Epic\n---\n# First\n"),
+      writeFile(join(relationVault, "tasks", "Second.md"), "---\nEpic: Epic\nReview epic: Epic\n---\n# Second\n"),
+      writeFile(join(relationVault, "epics", "Epic.md"), "# Epic\n"),
+      writeFile(join(relationVault, ".zerus", "properties.json"), JSON.stringify({
+        tasks: [
+          { name: "Epic", type: "relation", relationTypeKey: "epics" },
+          { name: "Review epic", type: "relation", relationTypeKey: "epics" },
+        ],
+        epics: [{ name: "Tasks", type: "relation", relationTypeKey: "tasks" }],
+      })),
+    ]);
+    try {
+      await switchDesktopVault(relationVault);
+      const first = getNotes().find((note) => noteTitle(note) === "First")!;
+      const second = getNotes().find((note) => noteTitle(note) === "Second")!;
+      const epic = getNotes().find((note) => noteTitle(note) === "Epic")!;
+      const inverse = () => getNoteProperties(getNotes().find((note) => note.id === epic.id)!.content).Tasks;
+      expect(inverse()).toEqual(expect.arrayContaining([
+        `zerus:${first.id}|First`, `zerus:${second.id}|Second`,
+      ]));
+      expect(getPropertySchemas().epics[0].relationMultiple).toBe(true);
+      expect(getPropertySchemas().epics[0].relationPairId).toBe(getPropertySchemas().tasks[0].relationPairId);
+      const reviewInverse = getPropertySchemas().epics.find((definition) =>
+        definition.relationPairId === getPropertySchemas().tasks[1].relationPairId,
+      )!;
+      expect(reviewInverse.name).not.toBe("Tasks");
+      expect(getNoteProperties(getNotes().find((note) => note.id === epic.id)!.content)[reviewInverse.name]).toEqual([`zerus:${second.id}|Second`]);
+      expect(getBacklinksGroupedByType(getNotes().find((note) => note.id === epic.id)!, getNotes(), getPropertySchemas()).size).toBe(0);
+      expect(await flushPendingWrites()).toBe(true);
+
+      await switchDesktopVault(vault);
+      await switchDesktopVault(relationVault);
+      expect(inverse()).toHaveLength(2);
+      setNoteProperty(first.id, "Epic", null);
+      expect(inverse()).toEqual([`zerus:${second.id}|Second`]);
+      setNoteProperty(second.id, "Review epic", null);
+      expect(inverse()).toEqual([`zerus:${second.id}|Second`]);
+      expect(await flushPendingWrites()).toBe(true);
+      await switchDesktopVault(vault);
+      await switchDesktopVault(relationVault);
+      expect(getNoteProperties(getNotes().find((note) => note.id === first.id)!.content).epic).toBeUndefined();
+      expect(inverse()).toEqual([`zerus:${second.id}|Second`]);
     } finally {
       await switchDesktopVault(vault);
     }
@@ -936,6 +995,52 @@ describe("external note store workflow", () => {
     await trashNote(copy!.id);
     await deleteNoteForever(copy!.id);
     expect(await readFile(join(vault, reference.path!), "utf8")).toBe("attachment bytes");
+  });
+
+  it("persists saved-view deletion across reopen without changing notes, the active layout, or other presets", async () => {
+    const viewVault = join(root, "saved-views-vault");
+    await mkdir(join(viewVault, "work"), { recursive: true });
+    const notePath = join(viewVault, "work", "Project.md");
+    await writeFile(notePath, "# Project\n");
+    const presetsPath = join(viewVault, ".zerus", "saved-views.json");
+    const activeViewPath = join(viewVault, ".zerus", "views.json");
+    const config = { ...defaultTypeViewConfig(), mode: "board" as const, groupBy: "Status" };
+    try {
+      await switchDesktopVault(viewVault);
+      updateTypeView("work", config);
+      const removed = saveTypeViewPreset("work", "Remove me", config)!;
+      const kept = saveTypeViewPreset("work", "Keep me", config)!;
+      const other = saveTypeViewPreset("other", "Other type", config)!;
+      expect(await flushPendingWrites()).toBe(true);
+      const originalNote = await readFile(notePath, "utf8");
+      const originalActiveView = await readFile(activeViewPath, "utf8");
+
+      deleteTypeViewPreset("other", removed.id);
+      deleteTypeViewPreset("work", "missing-view");
+      deleteTypeViewPreset("", removed.id);
+      deleteTypeViewPreset(" / work / ", removed.id);
+      expect(await flushPendingWrites()).toBe(true);
+      expect(JSON.parse(await readFile(presetsPath, "utf8"))).toEqual({
+        work: [kept], other: [other],
+      });
+      expect(await readFile(activeViewPath, "utf8")).toBe(originalActiveView);
+      expect(await readFile(notePath, "utf8")).toBe(originalNote);
+
+      await switchDesktopVault(vault);
+      await switchDesktopVault(viewVault);
+      const added = saveTypeViewPreset("work", "After reopen", config)!;
+      expect(await flushPendingWrites()).toBe(true);
+      expect(JSON.parse(await readFile(presetsPath, "utf8"))).toEqual({
+        work: [kept, added], other: [other],
+      });
+
+      deleteTypeViewPreset("work", kept.id);
+      deleteTypeViewPreset("work", added.id);
+      expect(await flushPendingWrites()).toBe(true);
+      expect(JSON.parse(await readFile(presetsPath, "utf8"))).toEqual({ other: [other] });
+    } finally {
+      await switchDesktopVault(vault);
+    }
   });
 
 });

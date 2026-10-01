@@ -1,4 +1,21 @@
-import { Pin, X } from "@/lib/icons";
+import {
+  closestCenter,
+  DndContext,
+  KeyboardCode,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { ArrowLeft, ArrowRight, Pin, X } from "@/lib/icons";
 import { noteTitle, type Note } from "@/lib/note-utils";
 import { GLOBAL_TAB_LABELS, type WorkspaceTab } from "@/lib/note-tabs";
 import type { TypeIcons } from "@/lib/type-icons";
@@ -21,6 +38,7 @@ interface NoteTabsProps {
   onActivate: (tabId: string) => void;
   onTogglePinned: (tabId: string) => void;
   onClose: (tabId: string) => void;
+  onReorder: (tabId: string, targetTabId: string) => void;
 }
 
 export function NoteTabs({
@@ -31,87 +49,192 @@ export function NoteTabs({
   onActivate,
   onTogglePinned,
   onClose,
+  onReorder,
 }: NoteTabsProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+      keyboardCodes: {
+        start: [KeyboardCode.Space],
+        cancel: [KeyboardCode.Esc],
+        end: [KeyboardCode.Space, KeyboardCode.Enter],
+      },
+    }),
+  );
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (over && active.id !== over.id) {
+      onReorder(String(active.id), String(over.id));
+    }
+  };
+
   return (
-    <div
-      className="flex h-9 shrink-0 overflow-x-auto border-b border-border/60 bg-zerus-surface px-1 pt-1"
-      role="tablist"
-      aria-label="Open workspaces"
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+      accessibility={{
+        screenReaderInstructions: {
+          draggable:
+            "Press Space to pick up a tab, use the left and right arrow keys to move it, and press Space or Enter to drop it. Press Escape to cancel.",
+        },
+      }}
     >
-      {tabs.map((tab) => {
-        const note =
-          tab.kind === "note"
-            ? notes.find((candidate) => candidate.id === tab.noteId)
-            : null;
-        const title =
-          tab.kind === "type"
-            ? (tab.typePath.at(-1) ?? "Type")
-            : tab.kind === "global"
-              ? GLOBAL_TAB_LABELS[tab.filter.kind]
-              : note
-                ? noteTitle(note)
-                : "Closed note";
-        const fullTitle =
-          tab.kind === "type" ? tab.typePath.join(" / ") : title;
-        const active = tab.id === activeTabId;
-        return (
-          <ContextMenu key={tab.id}>
-            <ContextMenuTrigger asChild>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={active}
-                title={fullTitle}
-                onClick={() => onActivate(tab.id)}
-                onMouseDown={(event) =>
-                  handleMiddleMouseDown(event, () => onClose(tab.id))
+      <div
+        className="flex h-9 shrink-0 overflow-x-auto border-b border-border/60 bg-zerus-surface px-1 pt-1"
+        role="tablist"
+        aria-label="Open workspaces"
+      >
+        <SortableContext
+          items={tabs.map((tab) => tab.id)}
+          strategy={horizontalListSortingStrategy}
+        >
+          {tabs.map((tab, index) => {
+            const noteId =
+              tab.kind === "note"
+                ? tab.noteId
+                : tab.kind === "type" && tab.editorOpen
+                  ? tab.selectedNoteId
+                  : null;
+            const note =
+              noteId
+                ? notes.find((candidate) => candidate.id === noteId)
+                : null;
+            const title =
+              tab.kind === "type"
+                ? (note ? noteTitle(note) : (tab.typePath.at(-1) ?? "Type"))
+                : tab.kind === "global"
+                  ? GLOBAL_TAB_LABELS[tab.filter.kind]
+                  : note
+                    ? noteTitle(note)
+                    : "Closed note";
+            const fullTitle =
+              tab.kind === "type" && !note ? tab.typePath.join(" / ") : title;
+            return (
+              <SortableWorkspaceTab
+                key={tab.id}
+                tab={tab}
+                title={title}
+                fullTitle={fullTitle}
+                active={tab.id === activeTabId}
+                typeIcons={typeIcons}
+                onActivate={onActivate}
+                onTogglePinned={onTogglePinned}
+                onClose={onClose}
+                onMoveLeft={
+                  index > 0
+                    ? () => onReorder(tab.id, tabs[index - 1].id)
+                    : undefined
                 }
-                className={cn(
-                  "group flex h-8 min-w-28 max-w-56 items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors",
-                  active
-                    ? "border-border/70 bg-zerus-editor text-foreground"
-                    : "border-transparent text-muted-foreground hover:bg-zerus-text/[0.04] hover:text-foreground",
-                )}
-              >
-                {tab.kind === "type" && (
-                  <TypeIcon
-                    icon={typeIcons[tab.typePath.join("/")]}
-                    size={13}
-                  />
-                )}
-                {tab.pinned && (
-                  <Pin size={12} className="shrink-0 text-zerus-accent" />
-                )}
-                <span className="min-w-0 flex-1 truncate text-left">{title}</span>
-                {!tab.pinned && (
-                  <span
-                    role="button"
-                    tabIndex={-1}
-                    aria-label={`Close ${fullTitle}`}
-                    className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-muted group-hover:opacity-70"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onClose(tab.id);
-                    }}
-                  >
-                    <X size={11} />
-                  </span>
-                )}
-              </button>
-            </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem onClick={() => onTogglePinned(tab.id)}>
-                <Pin size={14} className="mr-2" />
-                {tab.pinned ? "Unpin tab" : "Pin tab"}
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              <ContextMenuItem onClick={() => onClose(tab.id)}>
-                <X size={14} className="mr-2" /> Close tab
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
-        );
-      })}
-    </div>
+                onMoveRight={
+                  index < tabs.length - 1
+                    ? () => onReorder(tab.id, tabs[index + 1].id)
+                    : undefined
+                }
+              />
+            );
+          })}
+        </SortableContext>
+      </div>
+    </DndContext>
+  );
+}
+
+function SortableWorkspaceTab({
+  tab,
+  title,
+  fullTitle,
+  active,
+  typeIcons,
+  onActivate,
+  onTogglePinned,
+  onClose,
+  onMoveLeft,
+  onMoveRight,
+}: Pick<NoteTabsProps, "typeIcons" | "onActivate" | "onTogglePinned" | "onClose"> & {
+  tab: WorkspaceTab;
+  title: string;
+  fullTitle: string;
+  active: boolean;
+  onMoveLeft?: () => void;
+  onMoveRight?: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({
+      id: tab.id,
+      attributes: { role: "tab", roleDescription: "sortable tab" },
+    });
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <button
+          ref={setNodeRef}
+          {...attributes}
+          {...listeners}
+          type="button"
+          aria-selected={active}
+          style={{
+            transform: CSS.Translate.toString(
+              transform ? { ...transform, y: 0 } : null,
+            ),
+            transition,
+          }}
+          title={fullTitle}
+          onClick={() => onActivate(tab.id)}
+          onMouseDown={(event) =>
+            handleMiddleMouseDown(event, () => onClose(tab.id))
+          }
+          className={cn(
+            "group relative flex h-8 min-w-28 max-w-56 shrink-0 touch-none select-none items-center gap-1.5 rounded-t-md border border-b-0 px-2.5 text-xs transition-colors",
+            isDragging && "z-10 cursor-grabbing shadow-sm",
+            active
+              ? "border-border/70 bg-zerus-editor text-foreground"
+              : "border-transparent text-muted-foreground hover:bg-zerus-text/[0.04] hover:text-foreground",
+          )}
+        >
+          {tab.kind === "type" && (
+            <TypeIcon icon={typeIcons[tab.typePath.join("/")]} size={13} />
+          )}
+          {tab.pinned && (
+            <Pin size={12} className="shrink-0 text-zerus-accent" />
+          )}
+          <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+          {!tab.pinned && (
+            <span
+              role="button"
+              tabIndex={-1}
+              aria-label={`Close ${fullTitle}`}
+              className="flex h-4 w-4 shrink-0 items-center justify-center rounded opacity-0 hover:bg-muted group-hover:opacity-70"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose(tab.id);
+              }}
+            >
+              <X size={11} />
+            </span>
+          )}
+        </button>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem disabled={!onMoveLeft} onClick={onMoveLeft}>
+          <ArrowLeft size={14} className="mr-2" /> Move left
+        </ContextMenuItem>
+        <ContextMenuItem disabled={!onMoveRight} onClick={onMoveRight}>
+          <ArrowRight size={14} className="mr-2" /> Move right
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onTogglePinned(tab.id)}>
+          <Pin size={14} className="mr-2" />
+          {tab.pinned ? "Unpin tab" : "Pin tab"}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onClose(tab.id)}>
+          <X size={14} className="mr-2" /> Close tab
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

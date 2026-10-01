@@ -41,7 +41,10 @@ export function getOutgoingRelationTitles(
   const titles: string[] = [];
   for (const def of effectiveProperties(typePath, schemas)) {
     if (def.type !== "relation" || (!includeHidden && def.relationHidden)) continue;
-    const value = props[def.name];
+    const key = Object.keys(props).find(
+      (name) => name.toLowerCase() === def.name.toLowerCase(),
+    );
+    const value = key === undefined ? undefined : props[key];
     if (value == null) continue;
     for (const title of Array.isArray(value) ? value : [value]) {
       if (typeof title === "string" && title.trim()) titles.push(title.trim());
@@ -55,11 +58,13 @@ export function hasRelationTo(
   source: Note,
   target: Note,
   schemas: PropertySchemas,
+  includeHidden = false,
 ): boolean {
   return getOutgoingRelationTitles(
     source.content,
     noteTypePath(source),
     schemas,
+    includeHidden,
   ).some((title) => noteReferenceMatches(title, target));
 }
 
@@ -115,9 +120,9 @@ export function getBacklinksGroupedByType(
     ).some((title) => resolve(title)?.id === target.id);
     const reciprocalRelation =
       relationLinksToTarget &&
-      hasRelationTo(target, note, schemas);
-    // A reciprocal relation is already shown in Properties. Keep body mentions,
-    // since they provide separate context even when the two notes are related.
+      hasRelationTo(target, note, schemas, true);
+    // Paired relations belong to Properties, including intentionally hidden
+    // inverses. Body mentions still provide their own context.
     if (!bodyLinksToTarget && (!relationLinksToTarget || reciprocalRelation))
       continue;
     const key = typeKey(noteTypePath(note));

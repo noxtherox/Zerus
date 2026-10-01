@@ -1483,6 +1483,7 @@ async function loadVault(nextBackend: VaultBackend) {
       isRefreshing: false,
     });
     stabilizeVaultLinks();
+    migrateLegacyRelations();
     startupEditedNoteIds.clear();
     for (const id of editedIds) {
       pendingFlush.set(
@@ -1495,7 +1496,7 @@ async function loadVault(nextBackend: VaultBackend) {
         cacheIdentity,
         vaultNotes,
         extraTypes,
-        recoveredSchemas,
+        state.schemas,
         typeIcons,
         typeViews,
         savedTypeViews,
@@ -1508,7 +1509,7 @@ async function loadVault(nextBackend: VaultBackend) {
         vaultPath: nextBackend.location,
       }).catch((error) => reportError("register vault with CLI", error));
     }
-    if (recoveredSchemas !== schemas) {
+    if (recoveredSchemas !== schemas && state.schemas === recoveredSchemas) {
       void nextBackend
         .write(SCHEMAS_PATH, JSON.stringify(recoveredSchemas, null, 2))
         .catch((error) => reportError("repair moved relation definitions", error));
@@ -1581,6 +1582,7 @@ async function loadNextMobileNoteBatch(limit = MOBILE_NOTE_PAGE_SIZE): Promise<v
         isLoadingMoreNotes: false,
       });
       stabilizeVaultLinks();
+      migrateLegacyRelations();
       if (!hasMoreNotes) saveCurrentStartupCache();
     } catch (error) {
       setState({ isLoadingMoreNotes: false });
@@ -1876,6 +1878,7 @@ export async function synchronizeMobileFiles() {
       isLoadingMoreNotes: false,
     });
     stabilizeVaultLinks();
+    migrateLegacyRelations();
     saveCurrentStartupCache();
   } catch (error) {
     console.error("Zerus: failed to synchronize mobile files", error);
@@ -2245,6 +2248,7 @@ export async function synchronizeDesktopFiles() {
       });
       if (notesChanged) {
         stabilizeVaultLinks();
+        migrateLegacyRelations();
         saveNoteDisplayState();
       }
     }
@@ -4260,9 +4264,11 @@ async function performSavePastedImage(
 
 // ---- note properties & per-type definitions ---------------------------------
 
+let migratingLegacyRelations = false;
+
 function saveSchemas(schemas: PropertySchemas) {
   setState({ schemas });
-  if (!backend) return;
+  if (!backend || migratingLegacyRelations) return;
   backend
     .write(SCHEMAS_PATH, JSON.stringify(schemas, null, 2))
     .catch((error) => reportError("save property definitions", error));
@@ -4480,7 +4486,7 @@ function ensureReverseDefinition(source: Note, target: Note, sourceDef: Property
     return { ...legacy, def: definition };
   }
 
-  const reverse = reciprocalRelation(source, target, state.schemas);
+  const reverse = reciprocalRelation(source, target, state.schemas, pairId);
   if (!reverse) return null;
   const definition = {
     ...reverse.definition,
@@ -4526,11 +4532,50 @@ function addReverseReference(source: Note, target: Note, sourceDef: PropertyDef)
   if (relationReferences(value, source.id)) return;
   const values = value == null || value === "" ? [] : Array.isArray(value) ? value.map(String) : [String(value)];
   const reference = noteReference(source);
+  // Older schemas may have a single-note inverse shared by several sources.
+  // Preserve its existing references when bringing the relation into sync.
+  const multiple = Boolean(entry.def.relationMultiple || values.length);
+  if (multiple && !entry.def.relationMultiple) {
+    replaceSchemaDefinition(entry.ownerKey, entry.def.name, {
+      ...entry.def,
+      relationMultiple: true,
+    });
+  }
   setNotePropertyRaw(
     target.id,
     entry.def.name,
-    entry.def.relationMultiple ? [...values, reference] : reference,
+    multiple ? [...values, reference] : reference,
   );
+}
+
+/** Upgrade populated legacy fields once; paired edits own subsequent synchronization. */
+function migrateLegacyRelations() {
+  if (state.hasMoreNotes || closingAfterFlush || migratingLegacyRelations) return;
+  const schemasBefore = state.schemas;
+  const legacy = state.notes.flatMap((note) =>
+    noteBulkBlockReason(note.id) ? [] : effectivePropertyDefinitions(noteTypePath(note), state.schemas)
+      .filter(({ def }) => def.type === "relation" && !def.relationPairId)
+      .map(({ def }) => ({ sourceId: note.id, name: def.name })),
+  );
+  migratingLegacyRelations = true;
+  try {
+    for (const { sourceId, name } of legacy) {
+      const source = state.notes.find((note) => note.id === sourceId);
+      if (!source) continue;
+      const targets = [...relationTargetIds(propertyValueFor(source, name))]
+        .filter((id) => id !== sourceId && !noteBulkBlockReason(id));
+      if (!targets.length) continue;
+      const paired = ensureRelationPair(source, name);
+      if (!paired) continue;
+      for (const targetId of targets) {
+        const target = state.notes.find((note) => note.id === targetId);
+        if (target) addReverseReference(source, target, paired.def);
+      }
+    }
+  } finally {
+    migratingLegacyRelations = false;
+    if (state.schemas !== schemasBefore) saveSchemas(state.schemas);
+  }
 }
 
 /** Sets a property and keeps paired relation values synchronized in both notes. */
@@ -4557,7 +4602,6 @@ export function setNoteProperty(
     if (target) removeReverseReference(source, target, relation.def.relationPairId!);
   }
   for (const targetId of after) {
-    if (before.has(targetId)) continue;
     const target = state.notes.find((note) => note.id === targetId);
     if (target) addReverseReference(source, target, relation.def);
   }
@@ -4692,6 +4736,18 @@ export function saveTypeViewPreset(
     : [...existing, next];
   saveNamedTypeViews({ ...state.savedTypeViews, [ownerKey]: views });
   return next;
+}
+
+/** Deletes a named preset while preserving the type's active configuration. */
+export function deleteTypeViewPreset(typeKeyOrPath: string, viewId: string) {
+  const ownerKey = schemaOwnerKey(typeKeyOrPath);
+  const existing = state.savedTypeViews[ownerKey];
+  if (!existing?.some((view) => view.id === viewId)) return;
+  const remaining = existing.filter((view) => view.id !== viewId);
+  const savedTypeViews = { ...state.savedTypeViews };
+  if (remaining.length) savedTypeViews[ownerKey] = remaining;
+  else delete savedTypeViews[ownerKey];
+  saveNamedTypeViews(savedTypeViews);
 }
 
 // ---- type icons ---------------------------------------------------------------

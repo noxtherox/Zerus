@@ -249,6 +249,21 @@ export function toggleNoteTabPinned(
   };
 }
 
+export function reorderNoteTab(
+  state: NoteTabsState,
+  tabId: string,
+  targetTabId: string,
+): NoteTabsState {
+  const fromIndex = state.tabs.findIndex((tab) => tab.id === tabId);
+  const toIndex = state.tabs.findIndex((tab) => tab.id === targetTabId);
+  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return state;
+
+  const tabs = [...state.tabs];
+  const [tab] = tabs.splice(fromIndex, 1);
+  tabs.splice(toIndex, 0, tab);
+  return { ...state, tabs };
+}
+
 export function closeNoteTab(
   state: NoteTabsState,
   tabId: string,

@@ -33,6 +33,7 @@ import {
   Search,
   Sparkles,
   Table2,
+  Trash2,
 } from "@/lib/icons";
 import { boardCollisionDetection } from "@/lib/board-dnd";
 import { Button } from "@/components/ui/button";
@@ -92,6 +93,8 @@ import {
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
 import { useBulkSelection } from "@/lib/use-bulk-selection";
+import { useNoteActivation } from "@/lib/use-note-activation";
+import { NoteContextMenu, NoteContextMenuProvider } from "./NoteContextMenu";
 import {
   BulkActionsToolbar,
   type BulkMutationRequest,
@@ -139,6 +142,7 @@ export function TypeViewSwitcher({
   hideSubtypeNotes,
   onChange,
   onApplySavedView,
+  onDeleteSavedView,
   onSaveView,
   onHideSubtypeNotesChange,
 }: {
@@ -148,6 +152,7 @@ export function TypeViewSwitcher({
   hideSubtypeNotes: boolean;
   onChange: (mode: NoteViewMode) => void;
   onApplySavedView: (view: SavedTypeView) => void;
+  onDeleteSavedView: (id: string) => void;
   onSaveView: (name: string) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
 }) {
@@ -221,15 +226,24 @@ export function TypeViewSwitcher({
             savedViews.map((view) => {
               const active = sameTypeViewConfig(config, view.config);
               return (
-                <DropdownMenuItem
-                  key={view.id}
-                  className="min-h-10 gap-3 px-2.5"
-                  onSelect={() => onApplySavedView(view)}
-                >
-                  <Bookmark size={17} className="text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                  {active && <CheckCircle2 size={16} className="text-zerus-accent" />}
-                </DropdownMenuItem>
+                <div key={view.id} className="flex items-center gap-1">
+                  <DropdownMenuItem
+                    className="min-h-10 min-w-0 flex-1 gap-3 px-2.5"
+                    onSelect={() => onApplySavedView(view)}
+                  >
+                    <Bookmark size={17} className="shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">{view.name}</span>
+                    {active && <CheckCircle2 size={16} className="shrink-0 text-zerus-accent" />}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="min-h-10 w-9 shrink-0 justify-center p-0 text-muted-foreground focus:text-destructive"
+                    title={`Delete saved view ${view.name}`}
+                    onSelect={() => onDeleteSavedView(view.id)}
+                  >
+                    <Trash2 size={16} aria-hidden="true" />
+                    <span className="sr-only">Delete saved view {view.name}</span>
+                  </DropdownMenuItem>
+                </div>
               );
             })
           ) : (
@@ -329,6 +343,7 @@ function NoteCard({
   }, [image]);
 
   return (
+    <NoteContextMenu note={note}>
     <button
       type="button"
       className={cn(
@@ -362,6 +377,7 @@ function NoteCard({
       </span>
       <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-3" />
     </button>
+    </NoteContextMenu>
   );
 }
 
@@ -473,6 +489,7 @@ function DraggableBoardCard({ note, visibleProperties, selected, order, onActiva
   });
   const style: CSSProperties = { transform: CSS.Translate.toString(transform) };
   return (
+    <NoteContextMenu note={note}>
     <button
       type="button"
       ref={setNodeRef}
@@ -504,6 +521,7 @@ function DraggableBoardCard({ note, visibleProperties, selected, order, onActiva
       )}
       <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-2" />
     </button>
+    </NoteContextMenu>
   );
 }
 
@@ -617,6 +635,7 @@ function BoardView({
   columnOrder,
   selectedIds,
   onActivate,
+  onDragStart,
   onRequestBulkMutation,
   onColumnOrderChange,
   onSetProperty,
@@ -628,6 +647,7 @@ function BoardView({
   columnOrder: string[] | undefined;
   selectedIds: ReadonlySet<string>;
   onActivate: (event: ReactMouseEvent, id: string, order?: string[]) => void;
+  onDragStart: () => void;
   onRequestBulkMutation: (noteIds: string[], mutation: { properties: Array<{ name: string; operation: "set" | "clear"; value?: PropertyValue }> }) => void;
   onColumnOrderChange: (order: string[]) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
@@ -700,6 +720,7 @@ function BoardView({
   return (
     <DndContext
       sensors={sensors}
+      onDragStart={onDragStart}
       collisionDetection={boardCollisionDetection}
       onDragEnd={handleDragEnd}
     >
@@ -877,8 +898,8 @@ function TableView({
           </thead>
           <tbody>
             {notes.map((note) => (
+              <NoteContextMenu key={note.id} note={note}>
               <tr
-                key={note.id}
                 className={cn("cursor-pointer hover:bg-zerus-text/[0.02]", selectedIds.has(note.id) && "bg-zerus-accent/10")}
                 onClick={(event) => {
                   if (!(event.target as HTMLElement).closest("input, select, textarea, button, a")) {
@@ -887,6 +908,7 @@ function TableView({
                 }}
               >
                 <td
+                  data-note-selection
                   className="w-10 cursor-pointer border-b border-r border-border/50 px-3 py-2"
                   onClick={(event) => {
                     event.stopPropagation();
@@ -913,6 +935,7 @@ function TableView({
                   </td>
                 ))}
               </tr>
+              </NoteContextMenu>
             ))}
           </tbody>
         </table>
@@ -983,8 +1006,8 @@ function CalendarView({
                   <>
                     <div className="mb-1 text-right text-[10px] text-muted-foreground">{day}</div>
                     {(dated.get(day) ?? []).map((note) => (
+                      <NoteContextMenu key={note.id} note={note}>
                       <button
-                        key={note.id}
                         className={cn("mb-1 block w-full truncate rounded border-l-2 border-zerus-accent bg-zerus-accent/10 px-1.5 py-1 text-left text-[10px]", selectedIds.has(note.id) && "ring-2 ring-zerus-accent")}
                         aria-pressed={selectedIds.has(note.id)}
                         onClick={(event) => onActivate(event, note.id, chronologicalOrder)}
@@ -992,6 +1015,7 @@ function CalendarView({
                         <span className="block truncate">{noteTitle(note)}</span>
                         <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1" />
                       </button>
+                      </NoteContextMenu>
                     ))}
                   </>
                 )}
@@ -1006,10 +1030,12 @@ function CalendarView({
         </div>
         <div className="space-y-2">
           {undated.map((note) => (
-            <button key={note.id} className={cn("w-full rounded-md border bg-background p-2.5 text-left text-xs font-medium", selectedIds.has(note.id) && "border-zerus-accent bg-zerus-accent/10 ring-1 ring-zerus-accent")} aria-pressed={selectedIds.has(note.id)} onClick={(event) => onActivate(event, note.id, chronologicalOrder)}>
+            <NoteContextMenu key={note.id} note={note}>
+            <button className={cn("w-full rounded-md border bg-background p-2.5 text-left text-xs font-medium", selectedIds.has(note.id) && "border-zerus-accent bg-zerus-accent/10 ring-1 ring-zerus-accent")} aria-pressed={selectedIds.has(note.id)} onClick={(event) => onActivate(event, note.id, chronologicalOrder)}>
               <span className="block truncate">{noteTitle(note)}</span>
               <PropertyPills note={note} visibleProperties={visibleProperties} className="mt-1.5" />
             </button>
+            </NoteContextMenu>
           ))}
         </div>
       </aside>
@@ -1039,10 +1065,12 @@ interface TypeViewWorkspaceProps {
   vaultLocation: string | null;
   editor: ReactNode;
   onOpenNote: (id: string) => void;
+  onOpenNoteInNewTab: (id: string) => void;
   onCreateNote: () => void;
   onToggleAi: () => void;
   onConfigChange: (patch: Partial<TypeViewConfig>) => void;
   onApplySavedView: (view: SavedTypeView) => void;
+  onDeleteSavedView: (id: string) => void;
   onSaveView: (name: string) => void;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
   onSetProperty: (id: string, name: string, value: PropertyValue | null) => void;
@@ -1062,10 +1090,12 @@ export function TypeViewWorkspace({
   vaultLocation,
   editor,
   onOpenNote,
+  onOpenNoteInNewTab,
   onCreateNote,
   onToggleAi,
   onConfigChange,
   onApplySavedView,
+  onDeleteSavedView,
   onSaveView,
   onHideSubtypeNotesChange,
   onSetProperty,
@@ -1099,10 +1129,14 @@ export function TypeViewWorkspace({
   const requestBulkMutation = (noteIds: string[], mutation: NonNullable<BulkMutationRequest["mutation"]>) => {
     setBulkRequest({ id: Date.now(), noteIds, mutation });
   };
+  const activation = useNoteActivation(onOpenNote, onOpenNoteInNewTab, `${selectionResetKey}:${config.mode}:${editorOpen}:${vaultLocation}:${bulkSelection.selectMode}`);
   const handleActivate = (event: ReactMouseEvent, id: string, order?: string[]) => {
-    if (bulkSelection.handleModifiedClick(event, id, order)) return;
+    if (bulkSelection.handleModifiedClick(event, id, order)) {
+      activation.cancel();
+      return;
+    }
     bulkSelection.clearSelection();
-    onOpenNote(id);
+    activation.activate(event, id);
   };
   const filterOptions = useMemo(
     () =>
@@ -1136,9 +1170,20 @@ export function TypeViewWorkspace({
   }
 
   return (
+    <NoteContextMenuProvider
+      selectedIds={bulkSelection.selectedIds}
+      disabled={isRefreshing}
+      onOpenNote={onOpenNote}
+      onOpenNoteInNewTab={onOpenNoteInNewTab}
+      onBulkRequest={setBulkRequest}
+      onInteraction={activation.cancel}
+    >
     <div
       className={cn("flex h-full min-w-0 flex-col overflow-hidden bg-zerus-editor", isRefreshing && "pointer-events-none opacity-70")}
       onKeyDown={bulkSelection.handleCollectionKeyDown}
+      onPointerDownCapture={(event) => {
+        if ((event.target as HTMLElement).closest("header, input, select, textarea, [role=combobox], [data-note-selection]")) activation.cancel();
+      }}
     >
       <header className="min-w-0 shrink-0 border-b border-border/60">
         <div className="flex min-w-0 flex-wrap items-center gap-2 px-4 py-3">
@@ -1223,6 +1268,7 @@ export function TypeViewWorkspace({
             hideSubtypeNotes={hideSubtypeNotes}
             onChange={(mode) => onConfigChange({ mode })}
             onApplySavedView={onApplySavedView}
+            onDeleteSavedView={onDeleteSavedView}
             onSaveView={onSaveView}
             onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
@@ -1261,8 +1307,8 @@ export function TypeViewWorkspace({
           <span className="ml-auto flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Auto-saved
           </span>
-          {(bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
             <BulkActionsToolbar
+              className={bulkSelection.selectMode || bulkSelection.selectedIds.size > 0 ? undefined : "hidden"}
               presentation="inline"
               notes={filteredNotes}
               selectedIds={bulkSelection.selectedIds}
@@ -1274,7 +1320,6 @@ export function TypeViewWorkspace({
               externalRequest={bulkRequest}
               onExternalRequestHandled={() => setBulkRequest(null)}
             />
-          )}
         </div>
       </header>
       <main className="min-h-0 min-w-0 w-full flex-1 overflow-auto">
@@ -1288,6 +1333,7 @@ export function TypeViewWorkspace({
             columnOrder={activeGroupBy ? config.boardColumnOrder[boardColumnOrderKey(activeGroupBy)] : undefined}
             selectedIds={bulkSelection.selectedIds}
             onActivate={handleActivate}
+            onDragStart={activation.cancel}
             onRequestBulkMutation={requestBulkMutation}
             onColumnOrderChange={(order) => {
               if (!activeGroupBy) return;
@@ -1305,5 +1351,6 @@ export function TypeViewWorkspace({
         {config.mode === "calendar" && <CalendarView notes={filteredNotes} dateProperty={config.dateProperty} visibleProperties={config.visibleProperties} selectedIds={bulkSelection.selectedIds} onActivate={handleActivate} />}
       </main>
     </div>
+    </NoteContextMenuProvider>
   );
 }

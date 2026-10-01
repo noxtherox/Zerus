@@ -3,7 +3,6 @@ import { useState } from "react";
 import {
   Archive,
   ArrowLeftRight,
-  ArrowRight,
   Calendar,
   CheckSquare,
   ExternalLink,
@@ -716,7 +715,6 @@ interface DefFormProps {
   submitLabel: string;
   existingTypePaths: string[][];
   allowedTypes?: PropertyType[];
-  relationOwnerLabel?: string;
   onSubmit: (def: PropertyDef) => void;
   onDelete?: () => void;
 }
@@ -796,7 +794,6 @@ function DefForm({
   submitLabel,
   existingTypePaths,
   allowedTypes,
-  relationOwnerLabel,
   onSubmit,
   onDelete,
 }: DefFormProps) {
@@ -900,15 +897,16 @@ function DefForm({
             Allow multiple notes
           </label>
           <label className="flex items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground">
-            <span>
-              Show only on {relationOwnerLabel?.split("/").at(-1) || "this type"}
-            </span>
+            <span>Hide on the related type</span>
             <Switch
               checked={relationInverseHidden}
               onCheckedChange={setRelationInverseHidden}
-              aria-label="Show relation only on this type"
+              aria-label="Hide the inverse relation"
             />
           </label>
+          <p className="px-0.5 text-[11px] text-muted-foreground">
+            Relations always sync both ways.
+          </p>
         </>
       )}
       {type === "list" && (
@@ -1290,7 +1288,7 @@ export function RelationsSection({
                     className="mb-1.5 flex items-center gap-1 rounded text-left text-xs font-medium text-zerus-accent hover:underline"
                     title={`Defined on "${ownerLabel}" — applies to it and all its sub-types`}
                   >
-                    <ArrowRight size={12} className="shrink-0" />
+                    <ArrowLeftRight size={12} className="shrink-0" />
                     <span className="truncate">{def.name}</span>
                     {relationCount > 0 && (
                       <span className="text-muted-foreground">
@@ -1309,7 +1307,6 @@ export function RelationsSection({
                     submitLabel="Save"
                     existingTypePaths={existingTypePaths}
                     allowedTypes={["relation"]}
-                    relationOwnerLabel={ownerLabel}
                     onSubmit={(next) => {
                       updateTypeProperty(ownerKey, def.name, next);
                       setEditing(null);
@@ -1377,7 +1374,6 @@ export function RelationsSection({
               submitLabel="Add"
               existingTypePaths={existingTypePaths}
               allowedTypes={["relation"]}
-              relationOwnerLabel={selectedAddOwnerLabel}
               onSubmit={(def) => {
                 addTypeProperty(selectedAddOwnerKey, def);
                 setAddOpen(false);

@@ -298,13 +298,14 @@ export function BulkActionsToolbar({
   className,
   presentation = "standalone",
 }: BulkActionsToolbarProps) {
-  const selectedNotes = useMemo(
-    () => notes.filter((note) => selectedIds.has(note.id)),
-    [notes, selectedIds],
+  const [propertyNoteIds, setPropertyNoteIds] = useState<string[]>([]);
+  const propertyNotes = useMemo(
+    () => notes.filter((note) => propertyNoteIds.includes(note.id)),
+    [notes, propertyNoteIds],
   );
   const properties = useMemo(
-    () => commonProperties(selectedNotes, schemas),
-    [schemas, selectedNotes],
+    () => commonProperties(propertyNotes, schemas),
+    [schemas, propertyNotes],
   );
   const history = useBulkActionHistory(vaultLocation);
   const [propertyDialogOpen, setPropertyDialogOpen] = useState(false);
@@ -320,6 +321,7 @@ export function BulkActionsToolbar({
     if (externalRequest && consumedRequest.current !== externalRequest.id) {
       consumedRequest.current = externalRequest.id;
       if (externalRequest.openProperties) {
+        setPropertyNoteIds(externalRequest.noteIds);
         setPropertyChanges([]);
         setPropertyDialogOpen(true);
       } else if (externalRequest.mutation) {
@@ -415,6 +417,7 @@ export function BulkActionsToolbar({
               <Pin size={14} className="mr-2 rotate-45" /> Unpin
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!selectedIds.size} onSelect={() => {
+              setPropertyNoteIds([...selectedIds]);
               setPropertyChanges([]);
               setPropertyDialogOpen(true);
             }}>
@@ -432,15 +435,15 @@ export function BulkActionsToolbar({
       <Dialog open={propertyDialogOpen} onOpenChange={setPropertyDialogOpen}>
         <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Edit properties for {selectedIds.size} notes</DialogTitle>
+            <DialogTitle>Edit properties for {propertyNoteIds.length} {propertyNoteIds.length === 1 ? "note" : "notes"}</DialogTitle>
             <DialogDescription>Only compatible properties shared by every selected note are available. Clear keeps the key with an explicit empty value.</DialogDescription>
           </DialogHeader>
-          <PropertyChangeComposer notes={selectedNotes} properties={properties} changes={propertyChanges} onChanges={setPropertyChanges} />
+          <PropertyChangeComposer notes={propertyNotes} properties={properties} changes={propertyChanges} onChanges={setPropertyChanges} />
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPropertyDialogOpen(false)}>Cancel</Button>
             <Button disabled={!propertyChanges.length} onClick={() => {
               setPropertyDialogOpen(false);
-              prepare({ properties: propertyChanges });
+              prepare({ properties: propertyChanges }, propertyNoteIds);
             }}>Review changes</Button>
           </DialogFooter>
         </DialogContent>

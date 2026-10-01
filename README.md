@@ -53,7 +53,11 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   the app. Missing or ambiguous legacy targets remain unchanged; links already
   broken by an earlier rename need their target selected again.
 - **Structured properties** — define text, URL, number, date, checkbox, list,
-  and note-relation fields. Values remain readable YAML frontmatter.
+  and note-relation fields. Relations synchronize additions and removals in
+  both notes; older unpaired relations are upgraded when the vault loads.
+  Hiding an inverse field affects its visibility only. Backlinks from note text
+  appear alongside relations, above the heading outline. Values remain readable
+  YAML frontmatter.
 - **Global search** — press ⌘F (Ctrl+F on Windows) or use Search everything to
   find notes, external notes, files, saved links, tasks, and AI conversations.
   Matches include note bodies and frontmatter keys/values, with titles ranked
@@ -93,8 +97,12 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   Mobile reloads tasks after the vault opens and refreshes them while active and
   when returning to the app.
 - **Navigation and recovery** — work across note, type, and global-view tabs;
+  triple-click/tap or middle-click notes to open them in a tab. Right-click a
+  note in List, Gallery, Kanban, Table, or Calendar for the same note actions,
+  including opening a tab, duplicating, archiving, pinning, and editing properties;
   middle-click types or global navigation items to open them in a tab from either
-  the expanded or collapsed sidebar. Existing tabs are reused. Move backward and
+  the expanded or collapsed sidebar. Existing tabs are reused. Reorder tabs by
+  dragging them or using their context menu. Move backward and
   forward through navigation history and restore earlier versions of a note.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them; when copying or moving one into the vault, bring its local
@@ -146,7 +154,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
   light and dark themes, type icons, and list, gallery, board, table, or calendar
   type views. Save named view presets to reuse a type's layout, grouping, visible
-  properties, sorting, and filters.
+  properties, sorting, and filters. Delete a saved preset with the trash icon in
+  the view menu; your current layout and notes stay intact.
 
 ## Platforms
 

@@ -5,6 +5,7 @@ import type { Options as ToMarkdownExtension } from "mdast-util-to-markdown";
 const TABLE_WIDTHS = "zerusColumnWidths";
 const TABLE_WIDTHS_COMMENT =
   /^<!--\s*zerus-table-widths:\s*([0-9]+(?:\s*,\s*[0-9]+)*)\s*-->$/;
+const TABLE_WIDTHS_MDX = /^<zerus-table-widths widths="([0-9]+(?:,[0-9]+)*)" \/>$/;
 
 type TableData = Record<string, unknown> & { zerusColumnWidths?: number[] };
 
@@ -13,7 +14,7 @@ function isParent(node: Mdast.Node): node is Mdast.Parent {
 }
 
 function parseWidths(value: string): number[] | null {
-  const match = value.match(TABLE_WIDTHS_COMMENT);
+  const match = value.match(TABLE_WIDTHS_COMMENT) ?? value.match(TABLE_WIDTHS_MDX);
   if (!match) return null;
   const widths = match[1].split(",").map((width) => Number(width.trim()));
   return widths.every(
@@ -21,6 +22,24 @@ function parseWidths(value: string): number[] | null {
   )
     ? widths
     : null;
+}
+
+/** MDX discards HTML comments; use a temporary node until table import consumes it. */
+export function prepareTableWidthMarker(node: Mdast.Node): string | null {
+  let value: string | null = null;
+  if (node.type === "html") value = (node as Mdast.Html).value;
+  else if (node.type === "paragraph" && isParent(node) && node.children.length === 1) {
+    const child = node.children[0];
+    if (child.type === "text") value = (child as Mdast.Text).value;
+  }
+  if (value === null) return null;
+  const widths = parseWidths(value.trim());
+  if (!widths) return null;
+  // Keep a blank line so CommonMark can still recognize the following table
+  // when compatibility preparation is applied again.
+  return TABLE_WIDTHS_MDX.test(value.trim())
+    ? value
+    : `<zerus-table-widths widths="${widths.join(",")}" />\n`;
 }
 
 /** Widths are editor metadata; the GFM table remains readable in every Markdown app. */
@@ -55,9 +74,16 @@ export function setTableColumnWidths(
 
 function restoreWidths(parent: Mdast.Parent): void {
   for (let index = 0; index < parent.children.length; index += 1) {
-    const node = parent.children[index] as Mdast.Node;
-    if (node.type === "html") {
-      const widths = parseWidths((node as Mdast.Html).value.trim());
+    const node = parent.children[index] as Mdast.RootContent;
+    if (node.type === "html" || node.type === "mdxJsxFlowElement") {
+      let widths: number[] | null = null;
+      if (node.type === "html") widths = parseWidths(node.value.trim());
+      else if (node.name === "zerus-table-widths" && node.attributes.length === 1) {
+        const attribute = node.attributes[0];
+        if (attribute.type === "mdxJsxAttribute" && attribute.name === "widths" && typeof attribute.value === "string") {
+          widths = parseWidths(`<!-- zerus-table-widths: ${attribute.value} -->`);
+        }
+      }
       const table = parent.children[index + 1];
       if (widths && table?.type === "table") {
         setTableColumnWidths(table, widths);

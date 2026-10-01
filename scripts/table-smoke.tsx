@@ -4,6 +4,10 @@ import { createRoot } from "react-dom/client";
 import { MarkdownEditor } from "../src/components/editor/MdxMarkdownEditor";
 import "../src/globals.css";
 const fixtures = {
+  widths:
+    "# Weld Session Tag Management\n\nBefore table.\n\n<!-- zerus-table-widths: 174,106,148,99,192 -->\n| Customer Value | Urgency | Technical Value | Effort | Total |\n| --- | --- | --- | --- | --- |\n| 3 | 3 | 5 | 5 | 16 |\n\nAfter table.",
+  escapedWidths:
+    "# Previously escaped width marker\n\n\\<!-- zerus-table-widths: 174,106,148,99,192 -->\n\n| Customer Value | Urgency | Technical Value | Effort | Total |\n| --- | --- | --- | --- | --- |\n| 3 | 3 | 5 | 5 | 16 |\n\nAfter table.",
   leadingRule:
     "---\n\n## Priority summary\n\n| # | Request |\n|---|---|\n| 1 | **Formatted** text and `inline code` |\n\n---\n\nAfter table.",
   small:
@@ -26,13 +30,25 @@ const fixtures = {
     "\n\nAfter table.",
 };
 export function Harness() {
-  const [kind, setKind] = useState<"small" | "large" | "recovery" | "leadingRule">("small");
+  const [kind, setKind] = useState<keyof typeof fixtures | "recovery">("small");
   const [readOnly, setReadOnly] = useState(false);
   const [markdown, setMarkdown] = useState(fixtures.small);
   const [revision, setRevision] = useState(0);
   return (
     <main style={{ maxWidth: 1000, margin: "auto", padding: 16 }}>
       <nav style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <button onClick={() => {
+          setKind("widths");
+          setMarkdown(fixtures.widths);
+        }}>
+          Saved widths fixture
+        </button>
+        <button onClick={() => {
+          setKind("escapedWidths");
+          setMarkdown(fixtures.escapedWidths);
+        }}>
+          Escaped widths fixture
+        </button>
         <button onClick={() => {
           setKind("leadingRule");
           setMarkdown(fixtures.leadingRule);

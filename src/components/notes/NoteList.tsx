@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { format, isToday, isYesterday } from "date-fns";
 import {
   Archive,
-  Copy,
-  ArchiveRestore,
   CheckSquare,
-  FolderSearch,
   FileText,
   ImageIcon,
   FilePlus2,
@@ -13,10 +10,8 @@ import {
   Pin,
   Plus,
   Search,
-  SlidersHorizontal,
   Trash2,
   Undo2,
-  X,
 } from "@/lib/icons";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -36,7 +31,6 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
-  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -46,7 +40,6 @@ import {
   isExternalNote,
   noteSnippet,
   noteListTitle,
-  noteTitle,
   noteTypePath,
   typeKey,
 } from "@/lib/note-utils";
@@ -58,18 +51,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  closeExternalNote,
-  duplicateNote,
   deleteTrashedImageForever,
-  deleteNoteForever,
   emptyTrash,
-  restoreNote,
   restoreTrashedImage,
   openImageInDefaultApp,
-  revealNoteInDesktop,
-  toggleNoteArchived,
-  toggleNotePinned,
-  trashNote,
   type TrashedImage,
 } from "@/store/notes-store";
 import { NoteListFilters } from "./NoteListFilters";
@@ -81,10 +66,10 @@ import { fileExtension, getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference } from "@/lib/link-hubs";
 import { AddLinkDialog } from "./AddLinkDialog";
 import {
-  fileManagerName,
   primaryModifierLabel,
 } from "@/lib/desktop-platform";
-import { handleMiddleMouseDown } from "@/lib/middle-click";
+import { useNoteActivation } from "@/lib/use-note-activation";
+import { NoteContextMenu, NoteContextMenuProvider } from "./NoteContextMenu";
 import { useBulkSelection } from "@/lib/use-bulk-selection";
 import {
   BulkActionsToolbar,
@@ -124,6 +109,7 @@ interface NoteListProps {
   savedViews: SavedTypeView[];
   onViewModeChange?: (mode: TypeViewConfig["mode"]) => void;
   onApplySavedView: (view: SavedTypeView) => void;
+  onDeleteSavedView: (id: string) => void;
   onSaveView: (name: string) => void;
   hideSubtypeNotes: boolean;
   onHideSubtypeNotesChange: (hidden: boolean) => void;
@@ -154,18 +140,14 @@ export function NoteList({
   savedViews,
   onViewModeChange,
   onApplySavedView,
+  onDeleteSavedView,
   onSaveView,
   hideSubtypeNotes,
   onHideSubtypeNotesChange,
   schemas,
   vaultLocation,
 }: NoteListProps) {
-  const [trashTarget, setTrashTarget] = useState<Note | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
   const [deleteImageTarget, setDeleteImageTarget] = useState<TrashedImage | null>(null);
-  const [closeExternalTarget, setCloseExternalTarget] = useState<Note | null>(
-    null,
-  );
   const [visibleNoteCount, setVisibleNoteCount] = useState(INITIAL_NOTE_COUNT);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
   const [bulkRequest, setBulkRequest] = useState<BulkMutationRequest | null>(null);
@@ -188,6 +170,7 @@ export function NoteList({
     noteIds,
     `${filterKey}:${listFilterKey}:${search}`,
   );
+  const activation = useNoteActivation(onSelectNote, onOpenNoteInNewTab, `${filterKey}:${listFilterKey}:${search}:${vaultLocation}:${selectedNoteId}:${bulkSelection.selectMode}`);
   const heading =
     filter.kind === "type"
       ? filter.path.join(" / ")
@@ -226,6 +209,15 @@ export function NoteList({
   }, [hasMoreNotes, notes.length]);
 
   return (
+    <NoteContextMenuProvider
+      selectedIds={bulkSelection.selectedIds}
+      disabled={isRefreshing}
+      inTrash={inTrash}
+      onOpenNote={onSelectNote}
+      onOpenNoteInNewTab={onOpenNoteInNewTab}
+      onBulkRequest={setBulkRequest}
+      onInteraction={activation.cancel}
+    >
     <div
       className="flex h-full flex-col bg-zerus-surface"
       onKeyDown={bulkSelection.handleCollectionKeyDown}
@@ -245,6 +237,7 @@ export function NoteList({
             hideSubtypeNotes={hideSubtypeNotes}
             onChange={onViewModeChange}
             onApplySavedView={onApplySavedView}
+            onDeleteSavedView={onDeleteSavedView}
             onSaveView={onSaveView}
             onHideSubtypeNotesChange={onHideSubtypeNotesChange}
           />
@@ -312,8 +305,9 @@ export function NoteList({
           </Button>
         )}
       </div>
-      {!inTrash && (bulkSelection.selectMode || bulkSelection.selectedIds.size > 0) && (
+      {!inTrash && (
         <BulkActionsToolbar
+          className={bulkSelection.selectMode || bulkSelection.selectedIds.size > 0 ? undefined : "hidden"}
           notes={notes}
           selectedIds={bulkSelection.selectedIds}
           schemas={schemas}
@@ -429,23 +423,17 @@ export function NoteList({
               ? linkHub.url
               : noteSnippet(note);
           const type = typeKey(noteTypePath(note));
-          const bulkTargetIds = bulkSelection.selectedIds.has(note.id)
-            ? [...bulkSelection.selectedIds]
-            : [note.id];
           return (
-            <ContextMenu key={note.id}>
-              <ContextMenuTrigger asChild disabled={isRefreshing}>
+            <NoteContextMenu key={note.id} note={note}>
                 <button
                   onClick={(event) => {
-                    if (!inTrash && bulkSelection.handleModifiedClick(event, note.id)) return;
+                    if (!inTrash && bulkSelection.handleModifiedClick(event, note.id)) {
+                      activation.cancel();
+                      return;
+                    }
                     bulkSelection.clearSelection();
-                    onSelectNote(note.id);
+                    activation.activate(event, note.id);
                   }}
-                  onMouseDown={(event) =>
-                    handleMiddleMouseDown(event, () =>
-                      onOpenNoteInNewTab(note.id),
-                    )
-                  }
                   className={cn(
                     "block w-full border-b border-border/40 px-4 py-3 text-left transition-colors",
                     bulkSelection.selectedIds.has(note.id)
@@ -501,88 +489,7 @@ export function NoteList({
                     </span>
                   </div>
                 </button>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem onClick={() => onOpenNoteInNewTab(note.id)}>
-                  <FilePlus2 size={14} className="mr-2" /> Open in new tab
-                </ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem
-                  onClick={() => void revealNoteInDesktop(note.id)}
-                >
-                  <FolderSearch size={14} className="mr-2" /> Reveal in{" "}
-                  {fileManagerName}
-                </ContextMenuItem>
-                {external ? (
-                  <>
-                    <ContextMenuItem
-                      onClick={() => setCloseExternalTarget(note)}
-                    >
-                      <X size={14} className="mr-2" /> Close note
-                    </ContextMenuItem>
-                  </>
-                ) : inTrash ? (
-                  <>
-                    <ContextMenuItem onClick={() => void restoreNote(note.id)}>
-                      <Undo2 size={14} className="mr-2" /> Restore
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      className="text-destructive"
-                      onClick={() => setDeleteTarget(note)}
-                    >
-                      <Trash2 size={14} className="mr-2" /> Delete forever
-                    </ContextMenuItem>
-                  </>
-                ) : (
-                  <>
-                    {bulkSelection.selectedIds.size <= 1 && (
-                      <ContextMenuItem onClick={() => void duplicateNote(note.id).then((copy) => {
-                        if (copy) onSelectNote(copy.id);
-                      })}>
-                        <Copy size={14} className="mr-2" /> Duplicate note
-                      </ContextMenuItem>
-                    )}
-                    {bulkSelection.selectedIds.size > 1 ? (
-                      <>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: true } })}>
-                          <Archive size={14} className="mr-2" /> Archive {bulkTargetIds.length} notes
-                        </ContextMenuItem>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { archived: false } })}>
-                          <ArchiveRestore size={14} className="mr-2" /> Unarchive {bulkTargetIds.length} notes
-                        </ContextMenuItem>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: true } })}>
-                          <Pin size={14} className="mr-2" /> Pin {bulkTargetIds.length} notes
-                        </ContextMenuItem>
-                        <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, mutation: { pinned: false } })}>
-                          <Pin size={14} className="mr-2" /> Unpin {bulkTargetIds.length} notes
-                        </ContextMenuItem>
-                      </>
-                    ) : (
-                      <>
-                        <ContextMenuItem onSelect={() => toggleNoteArchived(note.id)}>
-                          {archived ? <ArchiveRestore size={14} className="mr-2" /> : <Archive size={14} className="mr-2" />}
-                          {archived ? "Unarchive" : "Archive"}
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => toggleNotePinned(note.id)}>
-                          <Pin size={14} className="mr-2" /> {note.pinned ? "Unpin" : "Pin"}
-                        </ContextMenuItem>
-                      </>
-                    )}
-                    <ContextMenuItem onClick={() => setBulkRequest({ id: Date.now(), noteIds: bulkTargetIds, openProperties: true })}>
-                      <SlidersHorizontal size={14} className="mr-2" /> Edit properties…
-                    </ContextMenuItem>
-                    {bulkSelection.selectedIds.size <= 1 && (
-                      <ContextMenuItem
-                        className="text-destructive"
-                        onClick={() => setTrashTarget(note)}
-                      >
-                        <Trash2 size={14} className="mr-2" /> Move to trash
-                      </ContextMenuItem>
-                    )}
-                  </>
-                )}
-              </ContextMenuContent>
-            </ContextMenu>
+            </NoteContextMenu>
           );
         })}
         {hasMoreNotes && (
@@ -619,102 +526,12 @@ export function NoteList({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog
-        open={trashTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setTrashTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Move “{trashTarget ? noteTitle(trashTarget) : "this note"}” to
-              trash?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              You can restore this note later from Trash.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={() => {
-                if (trashTarget) void trashNote(trashTarget.id);
-              }}
-            >
-              Move to trash
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
-        open={closeExternalTarget !== null}
-        onOpenChange={(open) => !open && setCloseExternalTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle
-              className="line-clamp-3"
-              title={closeExternalTarget ? noteTitle(closeExternalTarget) : "this note"}
-            >
-              Close “{closeExternalTarget
-                ? noteTitle(closeExternalTarget)
-                : "this note"}”?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              Zerus will stop tracking this external note. The file will be
-              saved and left in its current location.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (closeExternalTarget) {
-                  void closeExternalNote(closeExternalTarget.id);
-                }
-              }}
-            >
-              Close note
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog
-        open={deleteTarget !== null}
-        onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete “{deleteTarget ? noteTitle(deleteTarget) : "this note"}” forever?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone.
-              {deleteTarget && getFileHubReference(deleteTarget)?.managed
-                ? ` The managed file “${getFileHubReference(deleteTarget)?.name}” will also be permanently deleted.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className={buttonVariants({ variant: "destructive" })}
-              onClick={() => {
-                if (deleteTarget) void deleteNoteForever(deleteTarget.id);
-              }}
-            >
-              Delete forever
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <AddLinkDialog
         open={addLinkOpen}
         onOpenChange={setAddLinkOpen}
         onAdd={onCreateLink}
       />
     </div>
+    </NoteContextMenuProvider>
   );
 }

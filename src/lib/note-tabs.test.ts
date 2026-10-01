@@ -5,6 +5,7 @@ import {
   closeNoteTab,
   openNoteInActiveTab,
   openGlobalInNewTab,
+  reorderNoteTab,
   replaceActiveTabNote,
   openNoteInNewTab,
   openTypeInActiveTab,
@@ -126,4 +127,36 @@ describe("workspace tabs", () => {
     expect(state.tabs).toHaveLength(1);
     expect(state.tabs[0].id).toBe(state.activeTabId);
   });
+
+  it.each([
+    { from: 0, to: 2, order: ["note", "global", "type"] },
+    { from: 2, to: 0, order: ["global", "type", "note"] },
+  ])(
+    "reorders mixed tabs from $from to $to without changing the workspace",
+    ({ from, to, order }) => {
+      let state = openTypeInNewTab(INITIAL_NOTE_TABS_STATE, null, ["work"]);
+      state = updateActiveTypeTab(state, {
+        selectedNoteId: "project-a", editorOpen: true,
+      });
+      state = toggleNoteTabPinned(state, state.activeTabId!);
+      state = openNoteInNewTab(state, null, "note-a", allNotes);
+      state = openGlobalInNewTab(state, null, { kind: "files" });
+      state = replaceActiveTabNote(state, "file-a");
+      const activeId = state.activeTabId!;
+
+      const reordered = reorderNoteTab(
+        state, state.tabs[from].id, state.tabs[to].id,
+      );
+      expect(reordered.tabs.map((tab) => tab.kind)).toEqual(order);
+      expect(state.tabs.map((tab) => tab.kind)).toEqual(["type", "note", "global"]);
+      expect(reordered.activeTabId).toBe(activeId);
+      expect(activeWorkspaceTab(reordered)).toMatchObject({
+        kind: "global", filter: { kind: "files" }, selectedNoteId: "file-a",
+      });
+      expect(activeWorkspaceTab(closeNoteTab(reordered, activeId))).toMatchObject({
+        kind: "type", typePath: ["work"], pinned: true,
+        selectedNoteId: "project-a", editorOpen: true,
+      });
+    },
+  );
 });

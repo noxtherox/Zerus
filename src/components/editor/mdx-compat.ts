@@ -1,4 +1,4 @@
-import type { RootContent } from "mdast";
+import type { Node, RootContent } from "mdast";
 import { toMarkdown } from "mdast-util-to-markdown";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
@@ -7,6 +7,7 @@ import { mdxJsxFromMarkdown } from "mdast-util-mdx-jsx";
 import { mdxJsx } from "micromark-extension-mdx-jsx";
 import { mdxMd } from "micromark-extension-mdx-md";
 import { unified } from "unified";
+import { prepareTableWidthMarker } from "./table-widths";
 
 const markdownParser = unified().use(remarkParse).use(remarkGfm);
 
@@ -76,10 +77,15 @@ export function prepareMarkdownForMdxEditor(input: string, allowCodeBlocks = tru
 
   function prepare(literalHtml: boolean): string {
     const replacements: { start: number; end: number; value: string }[] = [];
-    function visit(node: RootContent) {
+    function visit(node: RootContent, next?: Node) {
       const start = node.position?.start.offset;
       const end = node.position?.end.offset;
-      if (node.type === "code" && start !== undefined && end !== undefined &&
+      const widthMarker = next?.type === "table" ? prepareTableWidthMarker(node) : null;
+      if (widthMarker !== null && start !== undefined && end !== undefined) {
+        const prefix = source.slice(source.lastIndexOf("\n", start - 1) + 1, start)
+          .replace(/[^> \t]/gu, " ");
+        replacements.push({ start, end, value: widthMarker.replace(/\n$/u, `\n${prefix}`) });
+      } else if (node.type === "code" && start !== undefined && end !== undefined &&
           (!allowCodeBlocks || !/^[ \t]*(`{3,}|~{3,})/u.test(source.slice(start, end)))) {
         // Indentation in notes is prose, never an implicit request for code.
         // Escape literal contents so punctuation cannot become Markdown or JSX.
@@ -97,10 +103,10 @@ export function prepareMarkdownForMdxEditor(input: string, allowCodeBlocks = tru
             isEscaped(original, offset) ? character : `\\${character}`);
         if (value !== original) replacements.push({ start, end, value });
       } else if ("children" in node) {
-        node.children.forEach(visit);
+        node.children.forEach((child, index, children) => visit(child, children[index + 1]));
       }
     }
-    tree.children.forEach(visit);
+    tree.children.forEach((node, index, children) => visit(node, children[index + 1]));
     let result = source;
     for (const { start, end, value } of replacements.reverse()) {
       result = result.slice(0, start) + value + result.slice(end);
