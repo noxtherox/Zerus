@@ -4,6 +4,8 @@ Default permissions for the plugin
 
 #### This default permission set includes the following:
 
+- `allow-register-listener`
+- `allow-remove-listener`
 - `allow-pick-vault-folder`
 - `allow-google-drive`
 - `allow-restore-vault-folder`
@@ -15,6 +17,7 @@ Default permissions for the plugin
 - `allow-cloud-ai-status`
 - `allow-configure-cloud-ai`
 - `allow-connect-openrouter`
+- `allow-chatgpt`
 - `allow-cloud-ai-models`
 - `allow-generate-cloud-ai`
 - `allow-stop-cloud-ai`
@@ -55,6 +58,32 @@ Enables the cancel_speech_recognition command without any pre-configured scope.
 <td>
 
 Denies the cancel_speech_recognition command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-chatgpt`
+
+</td>
+<td>
+
+Enables the chatgpt command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-chatgpt`
+
+</td>
+<td>
+
+Denies the chatgpt command without any pre-configured scope.
 
 </td>
 </tr>
@@ -393,6 +422,58 @@ Enables the pick_vault_folder command without any pre-configured scope.
 <td>
 
 Denies the pick_vault_folder command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-register-listener`
+
+</td>
+<td>
+
+Enables the register_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-register-listener`
+
+</td>
+<td>
+
+Denies the register_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:allow-remove-listener`
+
+</td>
+<td>
+
+Enables the remove_listener command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`mobile-vault:deny-remove-listener`
+
+</td>
+<td>
+
+Denies the remove_listener command without any pre-configured scope.
 
 </td>
 </tr>

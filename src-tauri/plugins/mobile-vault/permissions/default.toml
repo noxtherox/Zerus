@@ -1,6 +1,8 @@
 [default]
 description = "Default permissions for the plugin"
 permissions = [
+  "allow-register-listener",
+  "allow-remove-listener",
   "allow-pick-vault-folder",
   "allow-google-drive",
   "allow-restore-vault-folder",
@@ -12,6 +14,7 @@ permissions = [
   "allow-cloud-ai-status",
   "allow-configure-cloud-ai",
   "allow-connect-openrouter",
+  "allow-chatgpt",
   "allow-cloud-ai-models",
   "allow-generate-cloud-ai",
   "allow-stop-cloud-ai",

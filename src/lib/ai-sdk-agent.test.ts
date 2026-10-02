@@ -55,7 +55,10 @@ describe("runZerusAgent", () => {
     });
   });
 
-  it("lets ToolLoopAgent execute a Zerus tool and continue", async () => {
+  it.each([
+    { provider: "openrouter" as const, nativeTools: false },
+    { provider: "codex" as const, nativeTools: true },
+  ])("lets ToolLoopAgent execute a Zerus tool and continue ($provider, nativeTools=$nativeTools)", async ({ provider, nativeTools }) => {
     vi.mocked(invoke)
       .mockResolvedValueOnce({
         content: "",
@@ -80,7 +83,8 @@ describe("runZerusAgent", () => {
     const onToolEnd = vi.fn();
 
     const result = await runZerusAgent({
-      providerConfig,
+      providerConfig: { ...providerConfig, provider, baseUrl: provider === "codex" ? "codex://chatgpt" : providerConfig.baseUrl },
+      nativeTools,
       streamId: "request-2",
       systemPrompt: "Use the supplied notes.",
       messages: [{ role: "user", content: "Which note mentions Brazil?" }],

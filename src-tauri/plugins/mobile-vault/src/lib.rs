@@ -47,6 +47,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::cloud_ai_status,
             commands::configure_cloud_ai,
             commands::connect_openrouter,
+            commands::chatgpt,
             commands::cloud_ai_models,
             commands::generate_cloud_ai,
             commands::stop_cloud_ai,

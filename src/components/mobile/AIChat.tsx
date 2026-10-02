@@ -1,10 +1,13 @@
 import type { ModelMessage } from "@ai-sdk/provider-utils";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   NotesAgentControls,
   NotesAgentRunView,
   NotesAgentPending,
 } from "@/components/ai/NotesAgentControls";
 import { useNotesAgent } from "@/components/ai/useNotesAgent";
+import { useAiChatPreferences } from "@/components/ai/useAiChatPreferences";
+import { ChatAppearanceSettings } from "@/components/ai/ChatAppearanceSettings";
 import { notesAgentPort } from "@/lib/ai-harness-store";
 import { notesAgentPrompt } from "@/lib/ai-harness-prompt";
 import { runZerusAgent } from "@/lib/ai-sdk-agent";
@@ -72,6 +75,7 @@ import {
 import { chatDeviceLabel, getChatDevice } from "@/lib/mobile-device";
 import {
   cloudEndpointLabel,
+  chatGPTAccount,
   connectOpenRouter,
   configureCloudAI,
   getCloudAIStatus,
@@ -115,12 +119,16 @@ import {
 } from "@/lib/shared-ai-settings";
 import {
   DEFAULT_AI_PROVIDER_CONFIGS,
+  CODEX_PROVIDER_URL,
+  readAiProviderConfig,
+  readAiProviderProfile,
+  saveAiProviderConfig,
   type AiProviderConfig,
 } from "@/lib/ai-provider-config";
 
 type HistoryFilter = "all" | "device" | "other" | "archived" | "deleted";
 
-type MobileCloudProvider = "openrouter" | "compatible";
+type MobileCloudProvider = "codex" | "openrouter" | "compatible";
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -342,6 +350,7 @@ export function PersistentAIChat({
   } | null>(null);
   const swipeTimer = useRef<number | null>(null);
   const imageInput = useRef<HTMLInputElement | null>(null);
+  const composerInput = useRef<HTMLTextAreaElement | null>(null);
   const [pendingDocuments, setPendingDocuments] = useState<ChatDocument[]>([]);
   const [documentContextStatus, setDocumentContextStatus] = useState("");
   const selectingFiles = useRef(false);
@@ -353,6 +362,8 @@ export function PersistentAIChat({
   const [blankChat, setBlankChat] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const appearance = useAiChatPreferences(getVaultBackend(), visible);
+  const { simpleMode } = appearance;
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [snapshotOpen, setSnapshotOpen] = useState<ChatSourceSnapshot | null>(
     null,
@@ -372,11 +383,12 @@ export function PersistentAIChat({
   const [cloudModel, setCloudModel] = useState("openai/gpt-5-mini");
   const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
   const [discoveredModels, setDiscoveredModels] = useState<
-    Array<{ id: string; name: string }>
+    Array<{ id: string; name: string; contextWindow?: number | null }>
   >([]);
   const [modelSearch, setModelSearch] = useState("");
   const [cloudAPIKey, setCloudAPIKey] = useState("");
   const [editingAPIKey, setEditingAPIKey] = useState(false);
+  const [chatGPTConnecting, setChatGPTConnecting] = useState(false);
   const [draft, setDraft] = useState("");
   const [pendingImages, setPendingImages] = useState<PreparedChatImage[]>([]);
   const [preparingImage, setPreparingImage] = useState(false);
@@ -589,10 +601,13 @@ export function PersistentAIChat({
         const profile = shared?.settings.profiles[provider];
         if (profile) profiles[provider] = { provider, ...profile };
       }
+      profiles.codex = readAiProviderProfile("codex");
       setProviderProfiles(profiles);
+      const nativeStatus = nativeCloudAIAvailable ? await getCloudAIStatus() : null;
+      const preferChatGPT = nativeStatus?.endpoint === CODEX_PROVIDER_URL || readAiProviderConfig().provider === "codex";
 
       const sharedActive = shared?.active ?? null;
-      const selectedProvider: MobileCloudProvider =
+      const selectedProvider: MobileCloudProvider = preferChatGPT ? "codex" :
         sharedActive?.provider === "openrouter" ||
         sharedActive?.provider === "compatible"
           ? sharedActive.provider
@@ -613,6 +628,10 @@ export function PersistentAIChat({
           configured: false,
         } satisfies CloudAIStatus;
       }
+      if (selectedProvider === "codex") {
+        const session = await chatGPTAccount("status");
+        return configureCloudAI({ endpoint: CODEX_PROVIDER_URL, model: session.model });
+      }
       if (selected.baseUrl) {
         try {
           return await configureCloudAI({
@@ -625,8 +644,19 @@ export function PersistentAIChat({
       }
       return getCloudAIStatus();
     })()
-      .then((next) => {
+      .then(async (next) => {
         if (!active) return;
+        setCloudStatus(next);
+        setCloudEndpoint(next.endpoint);
+        setCloudModel(next.model);
+        setEditingAPIKey(!next.configured);
+        if (next.endpoint === CODEX_PROVIDER_URL && next.configured && nativeCloudAIAvailable) {
+          const models = await getCloudAIModels();
+          if (!active) return;
+          setDiscoveredModels(models);
+          next = await getCloudAIStatus();
+          if (!active) return;
+        }
         setCloudStatus(next);
         setCloudEndpoint(next.endpoint);
         setCloudModel(next.model);
@@ -727,6 +757,49 @@ export function PersistentAIChat({
     if (!historyVisible) setHistoryActionsId(null);
   }, [historyVisible]);
 
+  const rememberProvider = async (profile: AiProviderConfig) => {
+    setProviderProfiles((current) => ({ ...current, [profile.provider]: profile }));
+    saveAiProviderConfig(profile);
+    const backend = getVaultBackend();
+    if (backend && profile.provider !== "codex") await writeSharedAiSettings(backend, profile);
+  };
+
+  const changeChatGPTAccount = async (
+    operation: "connect" | "addAccount" | "selectAccount" | "signOut",
+    accountID?: string,
+  ) => {
+    setBusy(true);
+    setChatGPTConnecting(operation === "connect" || operation === "addAccount" ||
+      (operation === "selectAccount" && !cloudStatus?.accounts?.find((account) => account.id === accountID)?.connected));
+    setError(null);
+    setNotice(null);
+    try {
+      let next = await chatGPTAccount(operation, accountID);
+      const models = next.configured ? await getCloudAIModels() : [];
+      if (next.configured) next = await getCloudAIStatus();
+      setCloudStatus(next);
+      setMobileProvider("codex");
+      setCloudEndpoint(CODEX_PROVIDER_URL);
+      setCloudModel(next.model);
+      setCloudAPIKey("");
+      setEditingAPIKey(false);
+      setDiscoveredModels(models);
+      setModelSearch("");
+      await rememberProvider({ provider: "codex", baseUrl: CODEX_PROVIDER_URL, model: next.model, favoriteModels });
+      setNotice(next.revocationUnconfirmed
+        ? "Signed out locally. Remote revocation could not be confirmed; disconnect Zerus in ChatGPT settings."
+        : operation === "signOut" ? "Signed out of ChatGPT on this device."
+        : "Connected. Eligible requests use your ChatGPT plan allowance.");
+    } catch (connectionError) {
+      setError(errorMessage(connectionError));
+      const next = await getCloudAIStatus().catch(() => null);
+      if (next) setCloudStatus(next);
+    } finally {
+      setChatGPTConnecting(false);
+      setBusy(false);
+    }
+  };
+
   const saveCloudSettings = async () => {
     setBusy(true);
     setError(null);
@@ -747,14 +820,7 @@ export function PersistentAIChat({
         model: next.model,
         favoriteModels: [...new Set([...favoriteModels, next.model])],
       };
-      setProviderProfiles((current) => ({
-        ...current,
-        [mobileProvider]: savedProfile,
-      }));
-      const backend = getVaultBackend();
-      if (backend) {
-        await writeSharedAiSettings(backend, savedProfile);
-      }
+      await rememberProvider(savedProfile);
       setSettingsOpen(false);
     } catch (configurationError) {
       setError(errorMessage(configurationError));
@@ -784,14 +850,7 @@ export function PersistentAIChat({
         model: next.model,
         favoriteModels: [...new Set([...favoriteModels, next.model])],
       };
-      setProviderProfiles((current) => ({
-        ...current,
-        openrouter: savedProfile,
-      }));
-      const backend = getVaultBackend();
-      if (backend) {
-        await writeSharedAiSettings(backend, savedProfile);
-      }
+      await rememberProvider(savedProfile);
       setSettingsOpen(false);
     } catch (connectionError) {
       setError(errorMessage(connectionError));
@@ -804,19 +863,23 @@ export function PersistentAIChat({
     setBusy(true);
     setError(null);
     try {
+      const session = mobileProvider === "codex" ? await chatGPTAccount("status") : null;
       const next = await configureCloudAI({
         endpoint: cloudEndpoint,
-        model: cloudModel,
+        model: session?.model ?? cloudModel,
         apiKey: cloudAPIKey || undefined,
       });
       setCloudStatus(next);
       setCloudAPIKey("");
       setEditingAPIKey(false);
       setDiscoveredModels(await getCloudAIModels());
+      const current = await getCloudAIStatus();
+      setCloudStatus(current);
+      setCloudModel(current.model);
       setModelSearch("");
     } catch (modelError) {
       setError(
-        `${errorMessage(modelError)} You can still enter a model ID manually.`,
+        mobileProvider === "codex" ? errorMessage(modelError) : `${errorMessage(modelError)} You can still enter a model ID manually.`,
       );
     } finally {
       setBusy(false);
@@ -843,19 +906,35 @@ export function PersistentAIChat({
     setDiscoveredModels([]);
     setModelSearch("");
     setError(null);
+    setNotice(null);
+    saveAiProviderConfig(nextProfile);
+    if (!nativeCloudAIAvailable) {
+      setCloudStatus({ endpoint: nextProfile.baseUrl, model: nextProfile.model, configured: false });
+      return;
+    }
     if (!nextProfile.baseUrl) {
       setEditingAPIKey(true);
       return;
     }
     setBusy(true);
     try {
-      const next = await configureCloudAI({
+      const session = provider === "codex" ? await chatGPTAccount("status") : null;
+      let next = await configureCloudAI({
         endpoint: nextProfile.baseUrl,
-        model: nextProfile.model,
+        model: session?.model ?? nextProfile.model,
       });
       setCloudStatus(next);
+      setCloudModel(next.model);
       setEditingAPIKey(!next.configured);
-    } catch {
+      if (provider === "codex" && next.configured) {
+        setDiscoveredModels(await getCloudAIModels());
+        next = await getCloudAIStatus();
+      }
+      setCloudStatus(next);
+      setCloudModel(next.model);
+      setEditingAPIKey(!next.configured);
+    } catch (configurationError) {
+      setError(errorMessage(configurationError));
       setEditingAPIKey(true);
     } finally {
       setBusy(false);
@@ -937,6 +1016,7 @@ export function PersistentAIChat({
       runtime,
       workerTransport,
       controller.signal,
+      mobileProvider === "codex",
     );
     const previous = conversation.messages.filter(
       (message) => message.turnId !== turnId,
@@ -1020,7 +1100,8 @@ export function PersistentAIChat({
         messages,
         runtime,
         settings,
-        textFallback: agentUI.settings.textFallback,
+        textFallback: mobileProvider === "codex" ? false : agentUI.settings.textFallback,
+        nativeTools: mobileProvider === "codex",
         mutationAuthorized: runtime.run.mode !== "ask",
         abortSignal: controller.signal,
         takeSteering: agentUI.takeSteering,
@@ -1570,6 +1651,7 @@ export function PersistentAIChat({
   return (
     <div
       data-ai-chat="true"
+      data-chat-mode={simpleMode ? "simple" : "full"}
       onDragOver={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1621,7 +1703,7 @@ export function PersistentAIChat({
           <h2 className="truncate text-[18px] font-semibold">
             {current?.title ?? "New chat"}
           </h2>
-          <button
+          {!simpleMode && <button
             type="button"
             onClick={() => setSettingsOpen(true)}
             className="flex max-w-full items-center gap-1.5 truncate text-xs text-muted-foreground"
@@ -1632,7 +1714,7 @@ export function PersistentAIChat({
               {cloudStatus ? cloudEndpointLabel(cloudStatus.endpoint) : "Cloud"}{" "}
               · {cloudStatus?.model ?? "setup needed"}
             </span>
-          </button>
+          </button>}
         </div>
         <Button
           variant="ghost"
@@ -1702,7 +1784,7 @@ export function PersistentAIChat({
           </span>
           <h3 className="mt-5 text-[24px] font-bold">Cloud notes chat</h3>
           <p className="mt-2 max-w-xs text-sm leading-5 text-muted-foreground">
-            Connect OpenRouter or another OpenAI-compatible API. Matching note
+            Connect ChatGPT, OpenRouter or an OpenAI-compatible API. Matching note
             excerpts are sent with each question.
           </p>
           <Button
@@ -1720,7 +1802,7 @@ export function PersistentAIChat({
         </main>
       ) : (
         <>
-          <ChatContextPicker
+          {!simpleMode && <ChatContextPicker
             note={contextNote}
             notes={notes}
             scope={
@@ -1754,19 +1836,23 @@ export function PersistentAIChat({
                   .then(() => refreshHistory(false, current.id))
                   .catch((error) => setError(errorMessage(error)));
             }}
-          />
-          <NotesAgentControls agent={agentUI} busy={busy} />
-          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5">
+          />}
+          {!simpleMode && <NotesAgentControls agent={agentUI} busy={busy} />}
+          <main
+            aria-label="Chat messages"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5"
+            onClickCapture={() => composerInput.current?.blur()}
+          >
             {messages.length === 0 && (
               <div className="mx-auto mt-12 max-w-xs text-center">
                 <Sparkles className="mx-auto h-7 w-7 text-zerus-accent" />
                 <p className="mt-3 text-[17px] font-semibold">
-                  Ask about your notes
+                  {simpleMode ? "How can I help?" : "Ask about your notes"}
                 </p>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
                   This chat is saved with the vault after your first message.
                 </p>
-                <div className="mt-4 flex flex-col gap-2">
+                {!simpleMode && <div className="mt-4 flex flex-col gap-2">
                   {[
                     "Summarize these notes",
                     "Find related ideas",
@@ -1780,7 +1866,7 @@ export function PersistentAIChat({
                       {prompt}
                     </button>
                   ))}
-                </div>
+                </div>}
               </div>
             )}
             <div className="space-y-3">
@@ -1823,8 +1909,9 @@ export function PersistentAIChat({
                     >
                       {message.text}
                     </AiMarkdown>
-                    {message.role === "assistant" && (
+                    {message.role === "assistant" && (!simpleMode || (!message.runId && Boolean(message.changes?.length))) && (
                       <ChatAnswerActions
+                        compact={simpleMode}
                         text={message.text}
                         changes={message.runId ? [] : message.changes}
                         note={contextNote}
@@ -1835,7 +1922,7 @@ export function PersistentAIChat({
                       />
                     )}
                   </div>
-                  {message.role === "assistant" &&
+                  {!simpleMode && message.role === "assistant" &&
                     message.sources &&
                     message.sources.length > 0 && (
                       <div className="mt-2 px-1">
@@ -1927,6 +2014,7 @@ export function PersistentAIChat({
                 </div>
               )}
               <NotesAgentRunView
+                compact={simpleMode}
                 agent={agentUI}
                 busy={busy}
                 port={agentPortFor}
@@ -1978,7 +2066,7 @@ export function PersistentAIChat({
               }}
             >
               <NotesAgentPending agent={agentUI} />
-              {busy && draft.trim() && (
+              {!simpleMode && busy && draft.trim() && (
                 <div className="mb-2 flex gap-2">
                   <Button
                     type="button"
@@ -2040,7 +2128,7 @@ export function PersistentAIChat({
                     ? "Preparing on-device dictation…"
                     : speechState === "stopping"
                       ? "Finishing transcript…"
-                      : `Live transcription · ${speechEngine === "speechAnalyzer" ? "SpeechAnalyzer" : "legacy engine"}${speechBuild ? ` · build ${speechBuild}` : ""}`}
+                      : simpleMode ? "Listening…" : `Live transcription · ${speechEngine === "speechAnalyzer" ? "SpeechAnalyzer" : "legacy engine"}${speechBuild ? ` · build ${speechBuild}` : ""}`}
                 </div>
               )}
               {pendingImages.length > 0 && (
@@ -2130,6 +2218,7 @@ export function PersistentAIChat({
                   )}
                 </button>
                 <textarea
+                  ref={composerInput}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   rows={1}
@@ -2139,8 +2228,9 @@ export function PersistentAIChat({
                       ? "Listening…"
                       : pendingImages.length
                         ? "Ask about these images"
-                        : "Ask about your notes"
+                        : simpleMode ? "Message AI…" : "Ask about your notes"
                   }
+                  aria-label="Message AI"
                   className="max-h-28 min-h-9 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-[16px] leading-6 text-zerus-text outline-none placeholder:text-muted-foreground"
                 />
                 <button
@@ -2232,9 +2322,9 @@ export function PersistentAIChat({
               className="flex w-full items-center gap-3 border-b border-border/60 px-2 py-3.5 text-left"
             >
               <Settings2 className="h-5 w-5 text-zerus-accent" />
-              Chat model
+              AI settings
             </button>
-            {current?.summary && (
+            {!simpleMode && current?.summary && (
               <button
                 type="button"
                 onClick={() => {
@@ -2306,7 +2396,7 @@ export function PersistentAIChat({
           className="absolute inset-0 z-40 flex flex-col bg-zerus-editor"
           role="dialog"
           aria-modal="true"
-          aria-label="Chat model settings"
+          aria-label="AI settings"
         >
           <header
             className="flex shrink-0 items-center gap-3 border-b border-border/60 px-4 pb-3"
@@ -2323,10 +2413,16 @@ export function PersistentAIChat({
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <h2 className="text-[20px] font-semibold">Chat model</h2>
+            <h2 className="text-[20px] font-semibold">AI settings</h2>
           </header>
           <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-5">
             <div className="mx-auto max-w-lg space-y-5">
+              <ChatAppearanceSettings
+                simpleMode={simpleMode}
+                onSimpleModeChange={(enabled) => void appearance.changeSimpleMode(enabled)}
+                disabled={appearance.saving || busy}
+                error={appearance.error}
+              />
               <p className="text-xs leading-5 text-muted-foreground">
                 Questions and matching note excerpts are sent to the selected
                 provider. Credentials stay in the iOS Keychain and are never
@@ -2334,10 +2430,10 @@ export function PersistentAIChat({
               </p>
 
               <div
-                className="grid grid-cols-2 rounded-xl bg-muted p-1"
+                className="grid grid-cols-3 rounded-xl bg-muted p-1"
                 aria-label="AI provider"
               >
-                {(["openrouter", "compatible"] as MobileCloudProvider[]).map(
+                {(["codex", "openrouter", "compatible"] as MobileCloudProvider[]).map(
                   (provider) => (
                     <button
                       key={provider}
@@ -2350,15 +2446,51 @@ export function PersistentAIChat({
                           : "text-muted-foreground",
                       )}
                     >
-                      {provider === "openrouter"
-                        ? "OpenRouter"
-                        : "OpenAI-compatible"}
+                      {provider === "codex" ? "ChatGPT" : provider === "openrouter" ? "OpenRouter" : "Other API"}
                     </button>
                   ),
                 )}
               </div>
 
-              {mobileProvider === "openrouter" ? (
+              {mobileProvider === "codex" ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl bg-zerus-surface px-4 py-3">
+                    <p className="text-sm font-medium">{savedCloudKeyApplies ? "Using ChatGPT plan" : "Your ChatGPT account"}</p>
+                    {cloudStatus?.account && <p className="mt-1 break-words text-sm">{cloudStatus.account}</p>}
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      Eligible Plus and Pro accounts can use their shared ChatGPT allowance. Tokens stay securely on this device.
+                      {!nativeCloudAIAvailable && " Sign-in is available in the iOS app."}
+                    </p>
+                  </div>
+                  {Boolean(cloudStatus?.accounts?.length) && (
+                    <label className="block text-xs font-medium text-muted-foreground">
+                      Saved ChatGPT account
+                      <select className="mt-1.5 h-12 w-full rounded-xl border border-border bg-zerus-surface px-3 text-sm text-foreground"
+                        value={cloudStatus?.accounts?.find((account) => account.active)?.id ?? ""}
+                        disabled={busy}
+                        onChange={(event) => void changeChatGPTAccount("selectAccount", event.target.value)}>
+                        {cloudStatus?.accounts?.map((account) => <option key={account.id} value={account.id}>{account.label}{account.connected ? "" : " · Sign in needed"}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <Button onClick={() => void changeChatGPTAccount("connect")} disabled={busy || !nativeCloudAIAvailable}
+                    className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90">
+                    {chatGPTConnecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
+                    {chatGPTConnecting ? "Waiting for ChatGPT…" : savedCloudKeyApplies ? "Reconnect ChatGPT" : "Continue with ChatGPT"}
+                  </Button>
+                  {chatGPTConnecting && <Button variant="outline" className="h-11 w-full rounded-xl" onClick={() => void chatGPTAccount("cancel").catch((cancelError) => setError(errorMessage(cancelError)))}>Cancel sign-in</Button>}
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-zerus-accent">
+                    {nativeCloudAIAvailable && <button type="button" disabled={busy} onClick={() => void changeChatGPTAccount("addAccount")}>Add another account</button>}
+                    {savedCloudKeyApplies && <button type="button" disabled={busy} onClick={() => void changeChatGPTAccount("signOut")}>Sign out</button>}
+                    <button type="button" onClick={() => {
+                      if (nativeCloudAIAvailable) void openUrl("https://chatgpt.com/settings/usage").catch((usageError) => setError(errorMessage(usageError)));
+                      else window.open("https://chatgpt.com/settings/usage", "_blank", "noopener,noreferrer");
+                    }}>Manage usage</button>
+                  </div>
+                  <p className="text-xs leading-5 text-muted-foreground">ChatGPT provides no access to your ChatGPT conversations or memories. Zerus sends the note context you select. Its output-token setting is advisory; run and total-token limits still apply.</p>
+                  {notice && <p role="status" className="rounded-xl bg-muted px-3 py-2.5 text-xs leading-5 text-muted-foreground">{notice}</p>}
+                </div>
+              ) : mobileProvider === "openrouter" ? (
                 <div className="space-y-3">
                   <div className="rounded-xl bg-zerus-surface px-4 py-3">
                     <p className="text-sm font-medium">OpenRouter account</p>
@@ -2440,9 +2572,19 @@ export function PersistentAIChat({
 
               <label className="block">
                 <span className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                  Model ID
+                  {mobileProvider === "codex" ? "Selected ChatGPT model" : "Model ID"}
                 </span>
-                <Input
+                {mobileProvider === "codex" ? (
+                  <select
+                    value={discoveredModels.some((model) => model.id === cloudModel) ? cloudModel : ""}
+                    disabled={busy || !savedCloudKeyApplies || !discoveredModels.length}
+                    onChange={(event) => setCloudModel(event.target.value)}
+                    className="h-12 w-full rounded-xl border border-border bg-zerus-surface px-3 text-base text-foreground disabled:opacity-50"
+                  >
+                    <option value="" disabled>{savedCloudKeyApplies ? "Refresh models to choose" : "Sign in to choose a model"}</option>
+                    {discoveredModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                  </select>
+                ) : <Input
                   value={cloudModel}
                   onChange={(event) => setCloudModel(event.target.value)}
                   autoCapitalize="none"
@@ -2453,7 +2595,7 @@ export function PersistentAIChat({
                       ? "openai/gpt-5.4-mini"
                       : "Model ID"
                   }
-                />
+                />}
               </label>
               <div>
                 <div className="mb-2 flex items-center justify-between gap-2">
@@ -2462,6 +2604,7 @@ export function PersistentAIChat({
                   </span>
                   <button
                     type="button"
+                    disabled={!cloudModel.trim() || (mobileProvider === "codex" && !discoveredModels.some((model) => model.id === cloudModel))}
                     onClick={() =>
                       setFavoriteModels((current) =>
                         current.includes(cloudModel.trim())
@@ -2480,6 +2623,7 @@ export function PersistentAIChat({
                       <button
                         key={model}
                         type="button"
+                        disabled={mobileProvider === "codex" && !discoveredModels.some((entry) => entry.id === model)}
                         onClick={() => setCloudModel(model)}
                         className={cn(
                           "max-w-full truncate rounded-full border px-3 py-1.5 text-xs",
@@ -2510,10 +2654,10 @@ export function PersistentAIChat({
                 }
                 className="h-12 w-full rounded-xl border-border bg-muted/50"
               >
-                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Test
-                connection & discover models
+                {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {mobileProvider === "codex" ? "Refresh ChatGPT models" : "Test connection & discover models"}
               </Button>
-              {discoveredModels.length > 0 && (
+              {mobileProvider !== "codex" && discoveredModels.length > 0 && (
                 <div className="space-y-2">
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -2570,12 +2714,13 @@ export function PersistentAIChat({
                   busy ||
                   !cloudEndpoint.trim() ||
                   !cloudModel.trim() ||
+                  (mobileProvider === "codex" && !discoveredModels.some((model) => model.id === cloudModel)) ||
                   (!savedCloudKeyApplies && !cloudAPIKey.trim())
                 }
                 className="h-12 w-full rounded-xl bg-zerus-accent font-semibold text-primary-foreground hover:bg-zerus-accent/90"
               >
                 {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save{" "}
-                {mobileProvider === "openrouter" ? "OpenRouter" : "compatible"}{" "}
+                {mobileProvider === "codex" ? "ChatGPT" : mobileProvider === "openrouter" ? "OpenRouter" : "compatible"}{" "}
                 model
               </Button>
             </div>

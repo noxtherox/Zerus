@@ -66,6 +66,14 @@ pub(crate) async fn configure_cloud_ai<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn chatgpt<R: Runtime>(
+    app: AppHandle<R>,
+    request: serde_json::Value,
+) -> Result<CloudAiStatusResponse> {
+    app.mobile_vault().chatgpt(request)
+}
+
+#[command]
 pub(crate) async fn connect_openrouter<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<CloudAiStatusResponse> {

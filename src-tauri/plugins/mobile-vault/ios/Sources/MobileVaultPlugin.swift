@@ -20,7 +20,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   private var previewURL: URL?
   private var previewDirectoryURL: URL?
   private var webviewOffsetObservation: NSKeyValueObservation?
-  private lazy var cloudAI = CloudAIManager()
+  @MainActor private lazy var cloudAI = CloudAIManager()
   private var cloudAITasks: [String: Task<Void, Never>] = [:]
   private var googleDriveStorage: AnyObject?
   private var openRouterSession: ASWebAuthenticationSession?
@@ -414,15 +414,29 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   }
 
   @objc public func cloudAIStatus(_ invoke: Invoke) {
-    invoke.resolve(cloudAI.status())
+    Task { @MainActor in invoke.resolve(cloudAI.status()) }
   }
 
   @objc public func configureCloudAI(_ invoke: Invoke) {
+    Task { @MainActor in
     do {
       let request = try invoke.parseArgs(CloudAIConfigureRequest.self)
       invoke.resolve(try cloudAI.configure(request))
     } catch {
       invoke.reject(error.localizedDescription)
+    }
+    }
+  }
+
+  @objc public func chatGPT(_ invoke: Invoke) {
+    Task { @MainActor in
+      do {
+        let request = try invoke.parseArgs(ChatGPTCommand.self)
+        if !["status", "cancel"].contains(request.operation) {
+          for task in self.cloudAITasks.values { task.cancel() }
+        }
+        invoke.resolve(try await self.cloudAI.handleChatGPT(request))
+      } catch { invoke.reject(error is CancellationError ? "ChatGPT sign-in cancelled." : error.localizedDescription) }
     }
   }
 
@@ -439,6 +453,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   }
 
   @objc public func connectOpenRouter(_ invoke: Invoke) {
+    Task { @MainActor in
     let verifier = (0..<48).map { _ in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~".randomElement()! }
     let verifierText = String(verifier)
     let digest = SHA256.hash(data: Data(verifierText.utf8))
@@ -468,7 +483,7 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
         invoke.reject(error?.localizedDescription ?? "OpenRouter sign-in was cancelled")
         return
       }
-      Task {
+      Task { @MainActor in
         do {
           invoke.resolve(try await self.cloudAI.connectOpenRouter(code: code, verifier: verifierText))
         } catch {
@@ -483,10 +498,11 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
       openRouterSession = nil
       invoke.reject("Could not start OpenRouter sign-in")
     }
+    }
   }
 
   @objc public func cloudAIModels(_ invoke: Invoke) {
-    Task {
+    Task { @MainActor in
       do { invoke.resolve(try await cloudAI.models()) }
       catch { invoke.reject(error.localizedDescription) }
     }

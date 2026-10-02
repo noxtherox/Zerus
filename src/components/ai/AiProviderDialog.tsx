@@ -26,12 +26,17 @@ import {
   type CloudAiModel,
 } from "@/lib/ai-provider-config";
 import { openExternalUrl } from "@/lib/external-links";
+import { ChatAppearanceSettings } from "./ChatAppearanceSettings";
 
 const API_KEY_CREATION_URLS: Partial<Record<AiProvider, string>> = {
   anthropic: "https://platform.claude.com/settings/keys",
 };
 
 interface AiProviderDialogProps {
+  simpleMode: boolean;
+  savingAppearance: boolean;
+  appearanceError: string;
+  onSimpleModeChange: (enabled: boolean) => void;
   open: boolean;
   config: AiProviderConfig;
   models: CloudAiModel[];
@@ -50,6 +55,10 @@ interface AiProviderDialogProps {
 }
 
 export function AiProviderDialog({
+  simpleMode,
+  savingAppearance,
+  appearanceError,
+  onSimpleModeChange,
   open,
   config,
   models,
@@ -147,13 +156,19 @@ export function AiProviderDialog({
     >
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Configure AI chat</DialogTitle>
+          <DialogTitle>AI settings</DialogTitle>
           <DialogDescription>
             Use your ChatGPT plan through Codex, or connect a cloud API.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          <ChatAppearanceSettings
+            simpleMode={simpleMode}
+            onSimpleModeChange={onSimpleModeChange}
+            disabled={savingAppearance}
+            error={appearanceError}
+          />
           <div className="space-y-2">
             <Label>Provider</Label>
             <Select value={provider} onValueChange={(value) => selectProvider(value as AiProvider)}>
@@ -397,7 +412,7 @@ export function AiProviderDialog({
               onOpenChange(false);
             }}
           >
-            Cancel
+            Close
           </Button>
           <Button
             disabled={!canSave}

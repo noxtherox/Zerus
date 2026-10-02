@@ -2142,20 +2142,39 @@ export function MobileZerus() {
     const update = () => {
       const active = document.activeElement;
       const editable = active instanceof Element && Boolean(active.closest("input:not([type=checkbox]), textarea, [contenteditable=true], [role=textbox]"));
-      if (!editable) { setKeyboardDismissBottom(null); return; }
+      if (!editable || active?.closest('[data-ai-chat="true"]')) { setKeyboardDismissBottom(null); return; }
       const viewport = window.visualViewport;
-      setKeyboardDismissBottom(Math.max(12, window.innerHeight - (viewport?.height ?? window.innerHeight) - (viewport?.offsetTop ?? 0) + 12));
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportBottom = viewportTop + (viewport?.height ?? window.innerHeight);
+      let buttonBottom = viewportBottom - 12;
+      if (active instanceof Element) {
+        const field = active.getBoundingClientRect();
+        const buttonRight = (viewport?.offsetLeft ?? 0) + (viewport?.width ?? window.innerWidth) - 16;
+        // Keep the floating fallback above fields that occupy its keyboard-edge position.
+        if (field.right > buttonRight - 44 && field.left < buttonRight && field.bottom > buttonBottom - 44 && field.top < buttonBottom) {
+          buttonBottom = Math.max(viewportTop + 56, field.top - 8);
+        }
+      }
+      const bottom = Math.max(12, window.innerHeight - buttonBottom);
+      setKeyboardDismissBottom(bottom);
     };
     const afterBlur = () => window.setTimeout(update, 0);
     document.addEventListener("focusin", update);
     document.addEventListener("focusout", afterBlur);
     window.visualViewport?.addEventListener("resize", update);
     window.visualViewport?.addEventListener("scroll", update);
+    window.addEventListener("resize", update);
+    document.addEventListener("scroll", update, { capture: true, passive: true });
+    document.addEventListener("input", update);
+    update();
     return () => {
       document.removeEventListener("focusin", update);
       document.removeEventListener("focusout", afterBlur);
       window.visualViewport?.removeEventListener("resize", update);
       window.visualViewport?.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+      document.removeEventListener("scroll", update, true);
+      document.removeEventListener("input", update);
     };
   }, []);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
@@ -2559,6 +2578,20 @@ export function MobileZerus() {
     return changed;
   };
 
+  const keyboardDismissControl = keyboardDismissBottom !== null && (
+    <button
+      type="button"
+      onPointerDown={event => event.preventDefault()}
+      onClick={() => { (document.activeElement as HTMLElement | null)?.blur(); setKeyboardDismissBottom(null); }}
+      style={{ bottom: keyboardDismissBottom }}
+      className="fixed right-4 z-[100] flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-zerus-accent text-white shadow-lg"
+      aria-label="Dismiss keyboard"
+      title="Dismiss keyboard"
+    >
+      <ArrowDown className="h-5 w-5" aria-hidden="true" />
+    </button>
+  );
+
   return (
     <div className={cn("flex min-h-screen items-center justify-center bg-zerus-sidebar p-0", !isNativeApp && "md:p-8")}>
       <section className={cn("mobile-zerus-themed relative flex h-[100dvh] w-full max-w-none flex-col overflow-hidden bg-zerus-editor text-zerus-text md:max-w-[393px] md:h-[852px] md:rounded-[42px] md:border-[7px] md:border-zerus-sidebar md:shadow-[0_28px_70px_rgba(0,0,0,0.35)]", isNativeApp && "mobile-native-shell")} style={{ "--mobile-content-top": isNativeApp ? "var(--mobile-safe-area-top, env(safe-area-inset-top))" : "44px" } as CSSProperties} aria-label="Zerus mobile app">
@@ -2810,7 +2843,7 @@ export function MobileZerus() {
             isNativeApp={isNativeApp}
           />
         )}
-        {keyboardDismissBottom !== null && <button type="button" onPointerDown={event => event.preventDefault()} onClick={() => { (document.activeElement as HTMLElement | null)?.blur(); setKeyboardDismissBottom(null); }} style={{ bottom: keyboardDismissBottom }} className="fixed right-4 z-[100] min-h-11 rounded-full bg-zerus-accent px-5 text-sm font-semibold text-white shadow-lg" aria-label="Dismiss keyboard">Done</button>}
+        {keyboardDismissControl}
         {!isNativeApp && <div className="pointer-events-none absolute bottom-1.5 left-1/2 z-50 h-1 w-32 -translate-x-1/2 rounded-full bg-[#f5f3ef]" />}
       </section>
       <div className="pointer-events-none fixed bottom-5 right-6 hidden items-center gap-2 rounded-full bg-[#232323]/90 px-3 py-2 text-xs font-medium text-[#aaa6a0] shadow-sm backdrop-blur sm:flex"><FileText className="h-3.5 w-3.5" />Interactive iOS prototype</div>

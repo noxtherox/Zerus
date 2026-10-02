@@ -18,12 +18,14 @@ export function ChatAnswerActions({
   changes = [],
   onRegenerate,
   disabled = false,
+  compact = false,
 }: {
   text: string;
   note?: Note | null;
   changes?: AiNoteChange[];
   onRegenerate?: () => void;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   const [localChanges, setLocalChanges] = useState<AiNoteChange[]>([]);
   const [undone, setUndone] = useState(false);
@@ -45,6 +47,7 @@ export function ChatAnswerActions({
   return (
     <div className="mt-3 border-t border-current/15 pt-1">
       <div className="flex flex-wrap items-center gap-1">
+        {!compact && <>
         <button
           className={button}
           disabled={busy}
@@ -127,6 +130,7 @@ export function ChatAnswerActions({
             Regenerate
           </button>
         )}
+        </>}
         {allChanges.length > 0 && (
           <button
             className={button}

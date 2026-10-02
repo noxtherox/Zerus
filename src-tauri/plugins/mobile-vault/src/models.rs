@@ -44,6 +44,20 @@ pub struct CloudAiStatusResponse {
     pub endpoint: String,
     pub model: String,
     pub configured: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accounts: Option<Vec<ChatGptAccountSummary>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revocation_unconfirmed: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct ChatGptAccountSummary {
+    pub id: String,
+    pub label: String,
+    pub connected: bool,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

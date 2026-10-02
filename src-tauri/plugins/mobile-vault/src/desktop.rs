@@ -65,6 +65,10 @@ impl<R: Runtime> MobileVault<R> {
         self.cloud_ai_status()
     }
 
+    pub fn chatgpt(&self, _request: serde_json::Value) -> crate::Result<CloudAiStatusResponse> {
+        self.cloud_ai_status()
+    }
+
     pub fn cloud_ai_models(&self) -> crate::Result<CloudAiModelsResponse> {
         Err(crate::Error::Unavailable(
             "Mobile model discovery is only available in the iOS app".into(),

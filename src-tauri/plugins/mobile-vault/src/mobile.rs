@@ -94,6 +94,12 @@ impl<R: Runtime> MobileVault<R> {
             .map_err(Into::into)
     }
 
+    pub fn chatgpt(&self, request: serde_json::Value) -> crate::Result<CloudAiStatusResponse> {
+        self.0
+            .run_mobile_plugin("chatGPT", request)
+            .map_err(Into::into)
+    }
+
     pub fn cloud_ai_models(&self) -> crate::Result<CloudAiModelsResponse> {
         self.0
             .run_mobile_plugin("cloudAIModels", EmptyRequest::default())

@@ -1,4 +1,6 @@
 const COMMANDS: &[&str] = &[
+    "register_listener",
+    "remove_listener",
     "pick_vault_folder",
     "google_drive",
     "restore_vault_folder",
@@ -9,7 +11,11 @@ const COMMANDS: &[&str] = &[
     "open_file",
     "cloud_ai_status",
     "configure_cloud_ai",
+    "connect_openrouter",
+    "chatgpt",
+    "cloud_ai_models",
     "generate_cloud_ai",
+    "stop_cloud_ai",
     "start_speech_recognition",
     "speech_recognition_progress",
     "stop_speech_recognition",

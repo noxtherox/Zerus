@@ -4,6 +4,7 @@ import {
   NotesAgentPending,
 } from "./NotesAgentControls";
 import { useNotesAgent } from "./useNotesAgent";
+import { useAiChatPreferences } from "./useAiChatPreferences";
 import { notesAgentPort } from "@/lib/ai-harness-store";
 import { notesAgentPrompt } from "@/lib/ai-harness-prompt";
 import { enableNotesWorkers } from "@/lib/ai-harness-workers";
@@ -346,6 +347,8 @@ export function AiPanel({
     [selectedNoteIds, sharedConversation?.scope, scope],
   );
   const agentUI = useNotesAgent(getVaultBackend(), chatId);
+  const appearance = useAiChatPreferences(getVaultBackend(), open);
+  const { simpleMode } = appearance;
   const scopeKeyRef = useRef("");
   scopeKeyRef.current = JSON.stringify(effectiveScope);
   const agentPortFor = (run: import("@/lib/ai-harness-state").AgentRun) => {
@@ -1478,6 +1481,7 @@ export function AiPanel({
       <div
         ref={panelRef}
         data-ai-chat="true"
+        data-chat-mode={simpleMode ? "simple" : "full"}
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes("Files")) return;
           event.preventDefault();
@@ -1528,6 +1532,9 @@ export function AiPanel({
                 <Sparkles size={15} />
               </div>
               <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+                {simpleMode ? (
+                  <h2 className="truncate text-sm font-medium">{sharedConversation?.title ?? "AI chat"}</h2>
+                ) : <>
                 <Select
                   value={providerConfig.model}
                   onValueChange={(model) => {
@@ -1571,6 +1578,7 @@ export function AiPanel({
                   }{" "}
                   · web search off · provider defaults
                 </div>
+                </>}
               </div>
             </div>
             <div className="ml-2 flex shrink-0 items-center gap-0.5">
@@ -1593,7 +1601,7 @@ export function AiPanel({
                 size="icon"
                 className="h-8 w-8 rounded-md"
                 onClick={() => setProviderDialogOpen(true)}
-                disabled={BROWSER_PREVIEW || sending}
+                disabled={sending}
                 title="Configure AI chat"
                 aria-label="Configure AI chat"
               >
@@ -1622,6 +1630,7 @@ export function AiPanel({
             </div>
           </header>
 
+          {!simpleMode && <>
           <div className="truncate border-b px-3 py-2 text-xs font-medium">
             {sharedConversation?.title ?? "New chat"}
           </div>
@@ -1669,6 +1678,7 @@ export function AiPanel({
               </p>
             </details>
           )}
+          </>}
           {BROWSER_PREVIEW && (
             <p className="border-b px-3 py-2 text-xs text-muted-foreground">
               Local preview · answers show retrieved excerpts. Cloud AI runs in
@@ -1728,12 +1738,12 @@ export function AiPanel({
               <div className="flex h-full items-center justify-center text-center text-sm text-muted-foreground">
                 <div className="max-w-64">
                   <p className="font-medium text-foreground">
-                    What would you like to work on?
+                    {simpleMode ? "How can I help?" : "What would you like to work on?"}
                   </p>
-                  <p className="mt-2">
+                  {!simpleMode && <p className="mt-2">
                     Ask about {context?.scopeLabel ?? "your notes"}.
-                  </p>
-                  <div className="mt-4 flex flex-col gap-2">
+                  </p>}
+                  {!simpleMode && <div className="mt-4 flex flex-col gap-2">
                     {[
                       note
                         ? "Summarize this note"
@@ -1750,7 +1760,7 @@ export function AiPanel({
                         {prompt}
                       </button>
                     ))}
-                  </div>
+                  </div>}
                 </div>
               </div>
             ) : (
@@ -1794,7 +1804,7 @@ export function AiPanel({
                   >
                     {message.content}
                   </AiMarkdown>
-                  {message.reasoning && (
+                  {!simpleMode && message.reasoning && (
                     <details className="mt-2 border-t border-current/15 pt-2 text-xs opacity-80">
                       <summary className="cursor-pointer">Reasoning</summary>
                       <div className="mt-1 whitespace-pre-wrap">
@@ -1802,10 +1812,10 @@ export function AiPanel({
                       </div>
                     </details>
                   )}
-                  {message.toolCalls && message.toolCalls.length > 0 && (
+                  {!simpleMode && message.toolCalls && message.toolCalls.length > 0 && (
                     <ToolCallList toolCalls={message.toolCalls} />
                   )}
-                  {message.sources && message.sources.length > 0 && (
+                  {!simpleMode && message.sources && message.sources.length > 0 && (
                     <details className="mt-3 border-t border-current/15 pt-2 text-xs">
                       <summary className="cursor-pointer">
                         Context used · {message.sources.length} notes
@@ -1830,8 +1840,9 @@ export function AiPanel({
                       </div>
                     </details>
                   )}
-                  {message.role === "assistant" && (
+                  {message.role === "assistant" && (!simpleMode || (!message.runId && Boolean(message.changes?.length))) && (
                     <ChatAnswerActions
+                      compact={simpleMode}
                       text={message.content}
                       note={note}
                       changes={message.runId ? [] : message.changes}
@@ -1856,7 +1867,7 @@ export function AiPanel({
                         Retry answer
                       </button>
                     )}
-                  {message.editApplied && (
+                  {!simpleMode && message.editApplied && (
                     <div className="mt-2 flex items-center gap-1.5 border-t border-current/15 pt-2 text-xs text-emerald-500">
                       <Check size={13} />
                       Note updated
@@ -1867,7 +1878,7 @@ export function AiPanel({
             )}
             {sending && (
               <>
-                {streamingToolCalls.length > 0 && (
+                {!simpleMode && streamingToolCalls.length > 0 && (
                   <div className="max-w-[92%] rounded-xl border border-border/70 bg-muted/35 px-3 py-2 text-muted-foreground">
                     <div className="text-xs font-medium">Activity</div>
                     <ToolCallList toolCalls={streamingToolCalls} />
@@ -1880,7 +1891,7 @@ export function AiPanel({
                     </AiMarkdown>
                   </div>
                 )}
-                {streamingReasoning ? (
+                {!simpleMode && streamingReasoning ? (
                   <div className="max-w-[92%] rounded-xl border border-border/70 bg-muted/35 px-3 py-2 text-xs text-muted-foreground">
                     <div className="mb-1 flex items-center gap-2 font-medium">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1895,7 +1906,7 @@ export function AiPanel({
                       </div>
                     </details>
                   </div>
-                ) : (
+                ) : (!simpleMode || !streamingText) && (
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Preparing your answer…
@@ -1904,6 +1915,7 @@ export function AiPanel({
               </>
             )}
             <NotesAgentRunView
+              compact={simpleMode}
               agent={agentUI}
               busy={sending}
               port={agentPortFor}
@@ -1947,10 +1959,10 @@ export function AiPanel({
               {documentContextStatus}
             </p>
           )}
-          <NotesAgentControls agent={agentUI} busy={sending} />
+          {!simpleMode && <NotesAgentControls agent={agentUI} busy={sending} />}
           <div className="shrink-0 border-t border-border/60 p-3">
             <NotesAgentPending agent={agentUI} />
-            {sending && draft.trim() && (
+            {!simpleMode && sending && draft.trim() && (
               <div className="mb-2 flex gap-2">
                 <Button
                   size="sm"
@@ -2065,7 +2077,7 @@ export function AiPanel({
                   } else void sendMessage();
                 }
               }}
-              placeholder={`Ask about ${context?.scopeLabel ?? "this context"}…`}
+              placeholder={simpleMode ? "Message AI…" : `Ask about ${context?.scopeLabel ?? "this context"}…`}
               className="min-h-20 resize-none"
               disabled={!context || !aiReady || !ownsSharedConversation}
             />
@@ -2137,6 +2149,10 @@ export function AiPanel({
         )}
       </div>
       <AiProviderDialog
+        simpleMode={simpleMode}
+        savingAppearance={appearance.saving}
+        appearanceError={appearance.error}
+        onSimpleModeChange={(enabled) => void appearance.changeSimpleMode(enabled)}
         open={providerDialogOpen}
         config={providerConfig}
         models={cloudModels}

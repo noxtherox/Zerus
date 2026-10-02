@@ -14,7 +14,7 @@ export async function previewChatAnswer(
             `### [${source.title}](zerus-note:${encodeURIComponent(source.noteId)})\n\n${source.excerpt}`,
         ),
       ].join("\n\n")
-    : "This is a **local preview**. No notes are included in the current context. Select notes above to try the chat controls.";
+    : "This is a **local preview**. No notes are included in the current context. Use Context in the full chat view to select notes.";
   for (let length = 0; length < text.length; length += 60) {
     signal.throwIfAborted();
     onText(text.slice(0, length + 60));

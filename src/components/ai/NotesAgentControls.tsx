@@ -241,11 +241,13 @@ export function NotesAgentRunView({
   busy,
   port,
   onResume,
+  compact = false,
 }: {
   agent: NotesAgentUI;
   busy: boolean;
   port: (run: AgentRun) => NotesAgentPort;
   onResume: (run: AgentRun, answer?: string) => void;
+  compact?: boolean;
 }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -254,8 +256,13 @@ export function NotesAgentRunView({
   const run = busy
     ? agent.runs[0]
     : (agent.runs.find((run) => run.id === selected) ?? agent.runs[0]);
-  if (!run) return null;
+  if (!run) return compact && agent.error ? <p role="alert" className="text-xs text-destructive">{agent.error}</p> : null;
   const pending = run.proposals.filter((item) => item.status === "pending");
+  const proposals = compact
+    ? run.proposals.filter((item) => item.status === "pending" || item.status === "conflict")
+    : run.proposals;
+  if (compact && !run.question && !proposals.length && !run.receipts.length &&
+      (busy || run.status === "complete") && !agent.error) return null;
   const action = (work: () => Promise<unknown>) => {
     setActing(true);
     void Promise.resolve()
@@ -280,12 +287,12 @@ export function NotesAgentRunView({
                   ? "Finished"
                   : "Work remaining"}
         </span>
-        <span className="ml-auto text-muted-foreground">
+        {!compact && <span className="ml-auto text-muted-foreground">
           {run.usage.steps} steps ·{" "}
           {run.receipts.filter((item) => !item.undoneAt).length} saved
-        </span>
+        </span>}
       </div>
-      {agent.runs.length > 1 && (
+      {!compact && agent.runs.length > 1 && (
         <select
           aria-label="Saved agent runs"
           value={run.id}
@@ -299,7 +306,7 @@ export function NotesAgentRunView({
           ))}
         </select>
       )}
-      {run.plan.length > 0 && (
+      {!compact && run.plan.length > 0 && (
         <ol className="space-y-1">
           {run.plan.map((step, index) => (
             <li
@@ -333,7 +340,7 @@ export function NotesAgentRunView({
           Approve {pending.length} changes
         </Button>
       )}
-      {run.proposals.map((proposal) => (
+      {proposals.map((proposal) => (
         <div key={proposal.id} className="rounded border border-border/60 p-2">
           <div className="flex items-start gap-2">
             <button
@@ -381,14 +388,14 @@ export function NotesAgentRunView({
                   )}
                 </pre>
               ))}
-              <details>
+              {!compact && <details>
                 <summary className="cursor-pointer text-muted-foreground">
                   Operation details
                 </summary>
                 <pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-[10px] text-muted-foreground">
                   {JSON.stringify(proposal.call.arguments, null, 2)}
                 </pre>
-              </details>
+              </details>}
             </>
           )}
           {proposal.status === "pending" && (
@@ -520,7 +527,7 @@ export function NotesAgentRunView({
             Resume saved run
           </Button>
         )}
-      <details>
+      {!compact && <details>
         <summary className="cursor-pointer text-muted-foreground">
           Activity & usage
         </summary>
@@ -557,7 +564,8 @@ export function NotesAgentRunView({
           {(run.usage.budgetTokens ?? 0).toLocaleString()} tokens, estimated
           where usage is unreported; includes compaction and workers.
         </p>
-      </details>
+      </details>}
+      {compact && agent.error && <p role="alert" className="text-destructive">{agent.error}</p>}
     </div>
   );
 }

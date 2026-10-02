@@ -1,11 +1,15 @@
 import Foundation
 import Security
 import CryptoKit
+import ZerusChatGPTCore
 
 struct CloudAIStatusResponse: Encodable {
   let endpoint: String
   let model: String
   let configured: Bool
+  var account: String? = nil
+  var accounts: [ChatGPTAccountSummary]? = nil
+  var revocationUnconfirmed: Bool? = nil
 }
 
 struct CloudAIConfigureRequest: Decodable {
@@ -43,15 +47,18 @@ struct CloudAIModelsResponse: Encodable {
   let models: [CloudAIModelResponse]
 }
 
+@MainActor
 final class CloudAIManager {
   private let endpointKey = "zerus.cloudAI.endpoint.v1"
   private let modelKey = "zerus.cloudAI.model.v1"
   private let keychainService = "com.zerus.notes.cloud-ai"
   private let defaultEndpoint = "https://openrouter.ai/api/v1"
   private let defaultModel = "openai/gpt-5-mini"
+  private let chatGPT = ChatGPTManager()
 
   func status() -> CloudAIStatusResponse {
     let endpoint = storedEndpoint()
+    if endpoint == ChatGPTManager.endpoint { return chatGPT.status() }
     let configured = (try? readAPIKey(endpoint: endpoint))?.isEmpty == false
     return CloudAIStatusResponse(
       endpoint: endpoint,
@@ -61,6 +68,12 @@ final class CloudAIManager {
   }
 
   func configure(_ request: CloudAIConfigureRequest) throws -> CloudAIStatusResponse {
+    if request.endpoint == ChatGPTManager.endpoint {
+      guard request.apiKey?.isEmpty != false else { throw CloudAIError.invalidEndpoint }
+      try chatGPT.configure(model: request.model.trimmingCharacters(in: .whitespacesAndNewlines))
+      UserDefaults.standard.set(ChatGPTManager.endpoint, forKey: endpointKey)
+      return status()
+    }
     let endpoint = try normalizedEndpoint(request.endpoint)
     let model = request.model.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !model.isEmpty else { throw CloudAIError.emptyModel }
@@ -96,6 +109,7 @@ final class CloudAIManager {
 
   func models() async throws -> CloudAIModelsResponse {
     let endpoint = storedEndpoint()
+    if endpoint == ChatGPTManager.endpoint { return try await chatGPT.models() }
     guard let apiKey = try readAPIKey(endpoint: endpoint), !apiKey.isEmpty,
           let url = URL(string: "\(endpoint)/models") else { throw CloudAIError.missingAPIKey }
     var request = URLRequest(url: url)
@@ -113,6 +127,7 @@ final class CloudAIManager {
   }
 
   func generate(_ request: CloudAIGenerateRequest, onDelta: @escaping (String) -> Void) async throws -> CloudAIGenerateResponse {
+    if storedEndpoint() == ChatGPTManager.endpoint { return try await chatGPT.generate(request, onDelta: onDelta) }
     let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !prompt.isEmpty || request.agentRequestJSON != nil else { throw CloudAIError.emptyPrompt }
     let endpoint = storedEndpoint()
@@ -172,6 +187,22 @@ final class CloudAIManager {
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (response["toolCalls"] as? [[String: Any]])?.isEmpty == false else { throw CloudAIError.emptyResponse }
     let json = try JSONSerialization.data(withJSONObject: response)
     return CloudAIGenerateResponse(answer: text, agentResponseJSON: request.agentRequestJSON == nil ? nil : String(data: json, encoding: .utf8))
+  }
+
+  func handleChatGPT(_ request: ChatGPTCommand) async throws -> CloudAIStatusResponse {
+    switch request.operation {
+    case "status": return chatGPT.status()
+    case "connect": try await chatGPT.signIn(accountID: request.accountID)
+    case "addAccount": try await chatGPT.signIn(addAccount: true)
+    case "selectAccount":
+      guard let id = request.accountID else { throw CloudAIError.invalidResponse }
+      try await chatGPT.selectAccount(id)
+    case "signOut": try await chatGPT.signOut()
+    case "cancel": chatGPT.cancelSignIn(); return chatGPT.status()
+    default: throw CloudAIError.invalidResponse
+    }
+    UserDefaults.standard.set(ChatGPTManager.endpoint, forKey: endpointKey)
+    return chatGPT.status()
   }
 
   private func performStreamingRequest(
@@ -263,8 +294,7 @@ final class CloudAIManager {
   }
 
   private func storedEndpoint() -> String {
-    (try? normalizedEndpoint(UserDefaults.standard.string(forKey: endpointKey) ?? defaultEndpoint))
-      ?? defaultEndpoint
+    CloudAIEndpoint.restored(UserDefaults.standard.string(forKey: endpointKey), fallback: defaultEndpoint)
   }
 
   private func storedModel() -> String {
@@ -284,12 +314,8 @@ final class CloudAIManager {
   }
 
   private func normalizedEndpoint(_ endpoint: String) throws -> String {
-    let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
-      .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    guard let url = URL(string: trimmed), url.scheme == "https", url.host != nil else {
-      throw CloudAIError.invalidEndpoint
-    }
-    return trimmed
+    do { return try CloudAIEndpoint.normalizedHTTP(endpoint) }
+    catch { throw CloudAIError.invalidEndpoint }
   }
 
   private func saveAPIKey(_ apiKey: String, endpoint: String) throws {

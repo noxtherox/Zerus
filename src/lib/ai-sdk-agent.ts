@@ -46,6 +46,7 @@ export interface RunZerusAgentOptions {
   onToolStart?: (event: ZerusAgentToolEvent) => void;
   onToolEnd?: (event: ZerusAgentToolEvent) => void;
   transport?: NativeAiTransport;
+  nativeTools?: boolean;
   textFallback?: boolean;
   runtime?: NotesAgentRuntime;
   settings?: AgentSettings;
@@ -237,7 +238,7 @@ export async function runZerusAgent(
     model: new ZerusNativeLanguageModel(
       options.providerConfig.model,
       transport,
-      options.providerConfig.provider === "codex" ||
+      (options.providerConfig.provider === "codex" && !options.nativeTools) ||
         options.textFallback === true,
       options.onStepStart,
       settings?.effort,

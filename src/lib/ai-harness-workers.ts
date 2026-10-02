@@ -21,6 +21,7 @@ export function enableNotesWorkers(
   parent: NotesAgentRuntime,
   transport?: NativeAiTransport,
   signal?: AbortSignal,
+  nativeTools?: boolean,
 ) {
   if (!settings.workers) return;
   port.analyze = async (question, snapshots) => {
@@ -70,6 +71,7 @@ export function enableNotesWorkers(
           streamId: crypto.randomUUID(),
           transport:
             transport ?? desktopAgentTransport(config, crypto.randomUUID()),
+          nativeTools,
           systemPrompt: notesAgentPrompt(run, { instructions: "", memory: "" }),
           messages: [{ role: "user", content: run.objective }],
           mutationAuthorized: false,

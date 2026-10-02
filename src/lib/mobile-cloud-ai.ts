@@ -4,6 +4,9 @@ export interface CloudAIStatus {
   endpoint: string;
   model: string;
   configured: boolean;
+  account?: string | null;
+  accounts?: Array<{ id: string; label: string; connected: boolean; active: boolean }> | null;
+  revocationUnconfirmed?: boolean | null;
 }
 
 export interface CloudAIConfiguration {
@@ -24,6 +27,7 @@ export interface CloudAIModel {
 }
 
 export function cloudEndpointLabel(endpoint: string): string {
+  if (endpoint === "codex://chatgpt") return "ChatGPT";
   try {
     const host = new URL(endpoint).hostname.toLowerCase();
     return host === "openrouter.ai" ? "OpenRouter" : host;
@@ -50,6 +54,13 @@ export async function configureCloudAI(
 
 export async function connectOpenRouter(): Promise<CloudAIStatus> {
   return invoke<CloudAIStatus>("plugin:mobile-vault|connect_openrouter");
+}
+
+export async function chatGPTAccount(
+  operation: "status" | "connect" | "addAccount" | "selectAccount" | "signOut" | "cancel",
+  accountID?: string,
+): Promise<CloudAIStatus> {
+  return invoke<CloudAIStatus>("plugin:mobile-vault|chatgpt", { request: { operation, accountID: accountID ?? null } });
 }
 
 export async function getCloudAIModels(): Promise<CloudAIModel[]> {

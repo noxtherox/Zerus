@@ -124,9 +124,13 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   matches, and move between results. PDF previews support selectable text and
   automatic fit-to-width sizing. Search requires a text layer; scanned PDFs need
   OCR from another tool first.
-- **Context-aware AI chat** — use ChatGPT through Codex, OpenAI, Anthropic,
+- **Context-aware AI chat** — use ChatGPT directly on iOS or through Codex on
+  desktop, OpenAI, Anthropic,
   OpenRouter, or another compatible API. Choose the notes used as context,
   stream or cancel answers, save answers as notes, and undo supported AI edits.
+  Toggle **Simple mode** in AI settings for a cleaner desktop or mobile chat
+  with messages and file uploads; mobile keeps on-device voice dictation.
+  The preference follows the vault, and required reviews and undo stay available.
   Upload images, searchable PDFs, and text-based files, or drop them inside chat
   to use them as conversation context without attaching them to the open note.
   Documents use full text when they fit the model context budget and searchable
@@ -162,7 +166,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
 The mobile workspace has bottom navigation for Notes, Tasks, global Search, and
 AI, with a highlighted New button in the center. Note navigation swipes start
 at the screen edges so tables can scroll horizontally. Sort and filter opens a
-mobile sheet, and a Done control dismisses the keyboard while editing. The
+mobile sheet, and a downward-arrow control dismisses the keyboard while editing. In AI
+chat, tapping the conversation area dismisses the keyboard without a separate button. The
 library includes saved Links, Files, external
 notes, types, and Recently Deleted. Mobile uses the desktop sort/date/property
 filters and bulk pin, archive, and property actions, including action previews
@@ -320,8 +325,13 @@ using it.
 
 Direct-provider API keys are stored in the device's secure credential store
 when supported, never in the vault or browser storage. The ChatGPT through Codex
-option delegates browser sign-in and credentials to the installed Codex
-app-server. The browser development preview exercises the chat interface using
+option on desktop delegates browser sign-in and credentials to the installed
+Codex app-server. On iOS, **Chat model → ChatGPT** connects an eligible account
+directly, keeps its renewable credentials in device-only Keychain storage, and
+uses the account's model catalog and shared plan allowance. Saved account
+selection, reconnection, sign-out and usage controls are included; see
+[`docs/chatgpt-ios.md`](docs/chatgpt-ios.md). The browser development preview
+exercises the chat interface using
 local excerpts and does not contact an AI provider.
 
 For context selection, shared desktop/mobile conversation history, response
