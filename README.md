@@ -39,8 +39,11 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   with the setting off, and each offers **Turn back into text**, with Undo support.
   Typing reuses parsed links from unchanged notes and avoids reparsing the
   editor’s own Markdown on each render, reducing work during text entry.
-  Images offer expand, edit, and undoable removal actions. A heading outline
-  in the desktop properties panel lets you jump through longer notes.
+  Images offer expand, edit, and undoable removal actions. Copying images between
+  open notes in the same vault preserves their asset references; copying to other
+  apps includes image data. Pasted clipboard images are saved as vault assets.
+  A heading outline in the desktop properties panel lets you jump through longer
+  notes.
   Title edits also reuse unchanged link-stabilization results and skip title
   lookups for labelled ID links, while preserving older title-based links.
 - **Connected notes** — use `@` or `[[` to find notes while writing, or choose
@@ -157,8 +160,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   note-get, and search JSON includes parsed YAML frontmatter in `properties`.
 - **Personalized workspace** — resize or collapse panels and choose from built-in
   light and dark themes, type icons, and list, gallery, board, table, or calendar
-  type views. Save named view presets to reuse a type's layout, grouping, visible
-  properties, sorting, and filters. Delete a saved preset with the trash icon in
+  type views. Set the note column's width and left or centered alignment in
+  **Settings → Appearance**. Save named view presets to reuse a type's layout,
+  grouping, visible properties, sorting, and filters. Delete a saved preset with the trash icon in
   the view menu; your current layout and notes stay intact.
 
 ## Platforms
