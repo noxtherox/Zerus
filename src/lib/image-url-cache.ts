@@ -11,6 +11,7 @@ type RevokeUrl = (url: string) => void;
  */
 export class ImageUrlCache {
   private readonly entries = new Map<string, CachedImageUrl>();
+  private readonly pathsByUrl = new Map<string, string>();
 
   constructor(private readonly revokeUrl: RevokeUrl = URL.revokeObjectURL) {}
 
@@ -30,6 +31,7 @@ export class ImageUrlCache {
         this.revokeUrl(url);
         return null;
       }
+      if (url) this.pathsByUrl.set(url, path);
       return url;
     });
     this.entries.set(path, entry);
@@ -42,8 +44,14 @@ export class ImageUrlCache {
     this.entries.delete(path);
     entry.invalidated = true;
     void entry.promise.then((url) => {
+      if (url) this.pathsByUrl.delete(url);
       if (url?.startsWith("blob:")) this.revokeUrl(url);
     });
+  }
+
+  /** Recovers the durable vault reference when a rendered image is copied. */
+  pathForUrl(url: string): string | null {
+    return this.pathsByUrl.get(url) ?? null;
   }
 
   clear(): void {

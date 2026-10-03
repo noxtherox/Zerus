@@ -1,4 +1,5 @@
 mod store_updates;
+mod image_clipboard;
 
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
@@ -2537,6 +2538,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_mobile_vault::init())
         .invoke_handler(tauri::generate_handler![
+            image_clipboard::copy_image_clipboard,
             store_updates::check_store_update,
             store_updates::install_store_update,
             open_file_in_default_app,

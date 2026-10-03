@@ -60,3 +60,19 @@ index 980d4cedf5bc4a7dda2b2ffba3c3cd94ca0ecfed..42907fb8858d2c0357ae796799c94d5d
      },
      (rootEditor) => {
        return rootEditor.registerCommand(
+diff --git a/dist/plugins/image/ImageNode.js b/dist/plugins/image/ImageNode.js
+index 9d20274b45bc7a03d08a95d83407bf6a1808587d..fe751c4b1ce8c962599a2ffce7b1fe2994dadbfb 100644
+--- a/dist/plugins/image/ImageNode.js
++++ b/dist/plugins/image/ImageNode.js
+@@ -6,7 +6,10 @@ import { DecoratorNode } from "lexical";
+ import { ImageEditor } from "./ImageEditor.js";
+ function convertImageElement(domNode) {
+   if (domNode instanceof HTMLImageElement) {
+-    const { alt: altText, src, title, width, height } = domNode;
++    const { alt: altText, title, width, height } = domNode;
++    // Keep vault-relative references rather than resolving them against the
++    // webview origin when an image is copied through HTML.
++    const src = domNode.getAttribute("src") ?? "";
+     const node = $createImageNode({ altText, src, title, width: width || void 0, height: height || void 0 });
+     return { node };
+   }

@@ -1,4 +1,5 @@
 import { withTimeout } from "@/lib/async-timeout";
+import { loadClipboardImage, writeImageClipboard } from "@/lib/image-clipboard";
 import { reciprocalRelation } from "@/lib/reciprocal-relations";
 import { stabilizeNoteLinks } from "@/lib/stable-note-links";
 import { useMemo, useSyncExternalStore } from "react";
@@ -3923,11 +3924,6 @@ function imageFileName(path: string): string {
   }
 }
 
-function imageMimeType(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  return MIME_BY_EXT[ext] ?? "image/png";
-}
-
 function clearImageUrlCache() {
   imageUrlCache.clear();
 }
@@ -3955,6 +3951,11 @@ export function getImageUrl(path: string): Promise<string | null> {
     });
 }
 
+/** Maps a copied image's display URL back to its current vault asset. */
+export function getVaultImagePathForUrl(url: string): string | null {
+  return imageUrlCache.pathForUrl(url);
+}
+
 /** Opens an embedded image in the platform's default app. */
 export async function openImageInDefaultApp(path: string): Promise<boolean> {
   try {
@@ -3980,17 +3981,7 @@ export async function openImageInDefaultApp(path: string): Promise<boolean> {
 /** Copies the actual image payload rather than its Markdown source. */
 export async function copyImageToClipboard(path: string): Promise<boolean> {
   try {
-    const url = await getImageUrl(path);
-    if (!url || !navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
-      return false;
-    }
-    const response = await fetch(url);
-    const source = await response.blob();
-    const type = source.type.startsWith("image/")
-      ? source.type
-      : imageMimeType(path);
-    const blob = source.type === type ? source : new Blob([source], { type });
-    await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+    await writeImageClipboard({ image: getImageUrl(path).then(loadClipboardImage) });
     return true;
   } catch (error) {
     reportError("copy image", error);
@@ -4231,15 +4222,16 @@ export function savePastedImage(
   bytes: Uint8Array,
   mime: string,
 ): Promise<string | null> {
-  return serializeImageMutation(() => performSavePastedImage(bytes, mime));
+  const targetBackend = backend;
+  return serializeImageMutation(() => performSavePastedImage(bytes, mime, targetBackend));
 }
 
 async function performSavePastedImage(
   bytes: Uint8Array,
   mime: string,
+  targetBackend: VaultBackend | null,
 ): Promise<string | null> {
-  const targetBackend = backend;
-  if (!targetBackend) return null;
+  if (!targetBackend || backend !== targetBackend) return null;
   const ext = EXT_BY_MIME[mime] ?? "png";
   const stamp = new Date()
     .toISOString()

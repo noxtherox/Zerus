@@ -1,4 +1,5 @@
 import { imageActionsPlugin } from "./image-actions";
+import { imageClipboardPlugin } from "./image-clipboard";
 import { codeBlockToParagraph } from "./code-block-text";
 import { loadCodeBlocksEnabled } from "@/lib/editor-preferences";
 import { ConvertibleCodeEditor, InsertEnabledCodeBlock } from "./code-block-controls";
@@ -360,6 +361,9 @@ const editorPlugins = [
   linkDialogPlugin({ LinkDialog: VaultLinkDialog }),
   linkDialogPositionPlugin(),
   noteLinkShortcutsPlugin(),
+  // Claim mixed image/HTML clipboard payloads before the image plugin's
+  // file-only paste handler or Lexical's HTML import can insert a blob URL.
+  imageClipboardPlugin(),
   imagePlugin({
     imageUploadHandler: async (file) => {
       const path = await savePastedImage(

@@ -9,6 +9,7 @@ describe("ImageUrlCache", () => {
     await expect(cache.get("assets/a.png", load)).resolves.toBe("blob:first");
     await expect(cache.get("assets/a.png", load)).resolves.toBe("blob:first");
     expect(load).toHaveBeenCalledTimes(1);
+    expect(cache.pathForUrl("blob:first")).toBe("assets/a.png");
   });
 
   it("invalidates only the changed image", async () => {
@@ -22,6 +23,8 @@ describe("ImageUrlCache", () => {
 
     expect(revoke).toHaveBeenCalledWith("blob:a");
     expect(revoke).not.toHaveBeenCalledWith("blob:b");
+    expect(cache.pathForUrl("blob:a")).toBeNull();
+    expect(cache.pathForUrl("blob:b")).toBe("assets/b.png");
     await expect(
       cache.get("assets/b.png", async () => "blob:replacement"),
     ).resolves.toBe("blob:b");
@@ -41,5 +44,6 @@ describe("ImageUrlCache", () => {
 
     await expect(result).resolves.toBeNull();
     expect(revoke).toHaveBeenCalledWith("blob:late");
+    expect(cache.pathForUrl("blob:late")).toBeNull();
   });
 });

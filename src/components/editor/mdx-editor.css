@@ -237,6 +237,11 @@
   line-height: 1.65;
 }
 
+/* Give the absolute placeholder the same auto-margin alignment as the editor. */
+.mdxeditor-root-contenteditable > .zerus-mdx-content {
+  inset-inline: 0;
+}
+
 .zerus-mdx-content > p:first-child,
 .zerus-mdx-content > h1:first-child,
 .zerus-mdx-content > h2:first-child,
