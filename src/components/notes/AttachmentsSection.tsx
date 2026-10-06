@@ -27,21 +27,22 @@ import { cn } from "@/lib/utils";
 interface AttachmentsSectionProps {
   note: Note;
   expanded: boolean;
+  hideHeading?: boolean;
 }
 
-export function AttachmentsSection({ note, expanded }: AttachmentsSectionProps) {
+export function AttachmentsSection({ note, expanded, hideHeading = false }: AttachmentsSectionProps) {
   const attachments = getNoteAttachments(note);
   if (!attachments.length) return null;
 
   return (
-    <section className="border-t border-border/60" aria-labelledby="attachments-heading">
-      <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <section className={hideHeading ? undefined : "border-t border-border/60"} aria-labelledby={hideHeading ? undefined : "attachments-heading"}>
+      {!hideHeading && <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <Paperclip size={13} />
         <span id="attachments-heading">Attachments</span>
         <span className="rounded-full bg-muted px-1.5 tabular-nums">
           {attachments.length}
         </span>
-      </div>
+      </div>}
       <ul
         className={cn(
           "p-3",

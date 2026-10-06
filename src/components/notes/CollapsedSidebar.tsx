@@ -1,6 +1,6 @@
 import { GlobalSearchButton } from "@/components/search/GlobalSearch";
 import { handleMiddleMouseDown } from "@/lib/middle-click";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { CheckSquare, FileStack, Files, Link2, Notebook, Settings, Trash2 } from "@/lib/icons";
 import { ZerusLogo } from "@/components/ZerusLogo";
 import type { NoteFilter } from "@/lib/filters";
@@ -21,6 +21,7 @@ interface CollapsedSidebarProps {
   extraTypes: string[][];
   typeIcons: TypeIcons;
   typeOrder: string[];
+  keptOpenBranches: ReadonlySet<string>;
   filter: NoteFilter;
   isDesktop: boolean;
   defaultNoteType: string[];
@@ -30,6 +31,7 @@ interface CollapsedSidebarProps {
   onOpenFilterInNewTab: (filter: NoteFilter) => void;
   onFilterChange: (filter: NoteFilter) => void;
   onRestore: () => void;
+  renderTypeContextMenu: (node: TypeNode, button: ReactNode) => ReactNode;
 }
 
 function pathsMatch(left: string[], right: string[]): boolean {
@@ -49,11 +51,12 @@ function isPathPrefix(prefix: string[], path: string[]): boolean {
 function visibleTypeNodes(
   nodes: TypeNode[],
   selectedPath: string[] | null,
+  keptOpenBranches: ReadonlySet<string>,
 ): TypeNode[] {
   return nodes.flatMap((node) => [
     node,
-    ...(selectedPath && isPathPrefix(node.path, selectedPath)
-      ? visibleTypeNodes(node.children, selectedPath)
+    ...(keptOpenBranches.has(typeKey(node.path)) || (selectedPath && isPathPrefix(node.path, selectedPath))
+      ? visibleTypeNodes(node.children, selectedPath, keptOpenBranches)
       : []),
   ]);
 }
@@ -63,6 +66,7 @@ export function CollapsedSidebar({
   extraTypes,
   typeIcons,
   typeOrder,
+  keptOpenBranches,
   filter,
   isDesktop,
   defaultNoteType,
@@ -72,11 +76,12 @@ export function CollapsedSidebar({
   onFilterChange,
   onOpenFilterInNewTab,
   onRestore,
+  renderTypeContextMenu,
 }: CollapsedSidebarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const types = buildTypeTree(notes, extraTypes, typeOrder);
   const selectedTypePath = filter.kind === "type" ? filter.path : null;
-  const visibleTypes = visibleTypeNodes(types, selectedTypePath);
+  const visibleTypes = visibleTypeNodes(types, selectedTypePath, keptOpenBranches);
 
   const iconButtonClass = (active: boolean) =>
     cn(
@@ -105,13 +110,13 @@ export function CollapsedSidebar({
         selectedTypePath.length >= 3 &&
         isPathPrefix(node.path, selectedTypePath)
       : false;
-    const expanded = selectedTypePath
-      ? node.children.length > 0 && isPathPrefix(node.path, selectedTypePath)
-      : false;
+    const expanded = node.children.length > 0 && (
+      keptOpenBranches.has(key) || (selectedTypePath !== null && isPathPrefix(node.path, selectedTypePath))
+    );
     const label = node.path.join(" / ");
     const contextual = immediateParent || directChild;
 
-    return (
+    return renderTypeContextMenu(node,
       <button
         key={key}
         type="button"

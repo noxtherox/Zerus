@@ -18,7 +18,6 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Sidebar } from "@/components/notes/Sidebar";
-import { CollapsedSidebar } from "@/components/notes/CollapsedSidebar";
 import { NoteList } from "@/components/notes/NoteList";
 import { TypeViewWorkspace } from "@/components/notes/TypeViewWorkspace";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
@@ -74,9 +73,11 @@ import { typeViewConfigFor, type SavedTypeView } from "@/lib/note-views";
 import {
   loadDefaultNoteType,
   loadHideSubtypeNotes,
+  loadKeptOpenNoteTypes,
   loadNoteTypeOrder,
   saveDefaultNoteType,
   saveHideSubtypeNotes,
+  saveKeptOpenNoteTypes,
   saveNoteTypeOrder,
 } from "@/lib/note-preferences";
 import { cn } from "@/lib/utils";
@@ -175,6 +176,7 @@ const Index = () => {
   const [searchChatRequest, setSearchChatRequest] = useState<SearchChatRequest | null>(null);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
+  const [keptOpenTypes, setKeptOpenTypes] = useState<string[]>([]);
   const [hideSubtypeNotes, setHideSubtypeNotes] = useState(false);
   const [expandedEditorOpen, setExpandedEditorOpen] = useState(false);
   const [noteTabs, setNoteTabs] = useState(INITIAL_NOTE_TABS_STATE);
@@ -392,6 +394,7 @@ const Index = () => {
   useEffect(() => {
     setDefaultNoteType(loadDefaultNoteType(vault.location));
     setTypeOrder(loadNoteTypeOrder(vault.location));
+    setKeptOpenTypes(loadKeptOpenNoteTypes(vault.location));
     setHideSubtypeNotes(loadHideSubtypeNotes(vault.location));
   }, [vault.location]);
 
@@ -408,6 +411,11 @@ const Index = () => {
   const handleHideSubtypeNotesChange = (hidden: boolean) => {
     setHideSubtypeNotes(hidden);
     saveHideSubtypeNotes(vault.location, hidden);
+  };
+
+  const handleKeptOpenTypesChange = (keys: string[]) => {
+    setKeptOpenTypes(keys);
+    saveKeptOpenNoteTypes(vault.location, keys);
   };
 
   const selectNoteInCurrentWorkspace = (
@@ -859,6 +867,7 @@ const Index = () => {
           vaultLocation={vault.location}
           onOpenChange={setAiOpen}
           onOpenNote={handleOpenNote}
+          onOpenNoteInNewTab={handleOpenNoteInNewTab}
         />
       )}
     </div>
@@ -894,11 +903,20 @@ const Index = () => {
             isColdRefreshing && "pointer-events-none",
           )}
         >
-          <CollapsedSidebar
+          <Sidebar
+            collapsed
+            taskCount={tasks.length}
+            trashedImageCount={vault.trashedImages.length + vault.trashedRevisions.length}
+            vaultLocation={vault.location}
+            onTypeOrderChange={handleTypeOrderChange}
+            onOpenTypeInNewTab={handleOpenTypeInNewTab}
+            onCollapse={() => sidebarPanelRef.current?.collapse()}
             notes={notes}
             extraTypes={vault.extraTypes}
             typeIcons={vault.typeIcons}
             typeOrder={typeOrder}
+            keptOpenTypes={keptOpenTypes}
+            onKeptOpenTypesChange={handleKeptOpenTypesChange}
             filter={filter}
             isDesktop={vault.isDesktop}
             defaultNoteType={defaultNoteType}
@@ -939,10 +957,12 @@ const Index = () => {
             <Sidebar
               notes={notes}
               taskCount={tasks.length}
-              trashedImageCount={vault.trashedImages.length}
+              trashedImageCount={vault.trashedImages.length + vault.trashedRevisions.length}
               extraTypes={vault.extraTypes}
               typeIcons={vault.typeIcons}
               typeOrder={typeOrder}
+              keptOpenTypes={keptOpenTypes}
+              onKeptOpenTypesChange={handleKeptOpenTypesChange}
               filter={filter}
               isDesktop={vault.isDesktop}
               vaultLocation={vault.location}
@@ -1042,6 +1062,7 @@ const Index = () => {
                       vaultLocation={vault.location}
                       onOpenChange={setAiOpen}
                       onOpenNote={handleOpenNote}
+                      onOpenNoteInNewTab={handleOpenNoteInNewTab}
                     />
                   )}
                 </div>

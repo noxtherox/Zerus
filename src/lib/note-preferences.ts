@@ -2,6 +2,7 @@ import { DEFAULT_TYPE, parseTypePath, typeKey } from "@/lib/note-utils";
 
 const DEFAULT_TYPE_STORAGE_PREFIX = "zerus.defaultNoteType.";
 const TYPE_ORDER_STORAGE_PREFIX = "zerus.noteTypeOrder.";
+const KEPT_OPEN_TYPES_STORAGE_PREFIX = "zerus.keptOpenNoteTypes.v1.";
 const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
 const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
 const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
@@ -276,6 +277,38 @@ export function saveNoteTypeOrder(
     localStorage.setItem(typeOrderStorageKey(vaultLocation), JSON.stringify(order));
   } catch {
     // Persistence is best-effort; the chosen order still applies this session.
+  }
+}
+
+/** Loads the folders kept expanded in a vault on this device. */
+export function loadKeptOpenNoteTypes(vaultLocation: string | null): string[] {
+  try {
+    const saved: unknown = JSON.parse(
+      localStorage.getItem(`${KEPT_OPEN_TYPES_STORAGE_PREFIX}${vaultLocation ?? "browser"}`) ?? "[]",
+    );
+    if (!Array.isArray(saved)) return [];
+    return [...new Set(saved.flatMap((value) => {
+      if (typeof value !== "string") return [];
+      const key = typeKey(parseTypePath(value));
+      return key ? [key] : [];
+    }))];
+  } catch {
+    return [];
+  }
+}
+
+/** Saves the keep-open choice independently for each vault on this device. */
+export function saveKeptOpenNoteTypes(
+  vaultLocation: string | null,
+  keys: string[],
+): void {
+  try {
+    localStorage.setItem(
+      `${KEPT_OPEN_TYPES_STORAGE_PREFIX}${vaultLocation ?? "browser"}`,
+      JSON.stringify(keys),
+    );
+  } catch {
+    // The folders still stay open this session when storage is unavailable.
   }
 }
 

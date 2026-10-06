@@ -149,6 +149,7 @@ interface AiPanelProps {
   vaultLocation: string | null;
   onOpenChange: (open: boolean) => void;
   onOpenNote: (noteId: string) => void;
+  onOpenNoteInNewTab: (noteId: string) => void;
 }
 
 const MAX_CHAT_IMAGES = 4;
@@ -281,6 +282,7 @@ export function AiPanel({
   vaultLocation,
   onOpenChange,
   onOpenNote,
+  onOpenNoteInNewTab,
 }: AiPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -1800,7 +1802,7 @@ export function AiPanel({
                   )}
                   <AiMarkdown
                     inverted={message.role === "user"}
-                    onOpenNote={onOpenNote}
+                    onOpenNote={onOpenNoteInNewTab}
                   >
                     {message.content}
                   </AiMarkdown>
@@ -1831,7 +1833,7 @@ export function AiPanel({
                             </p>
                             <button
                               className="underline"
-                              onClick={() => onOpenNote(source.noteId)}
+                              onClick={() => onOpenNoteInNewTab(source.noteId)}
                             >
                               Open current note
                             </button>
@@ -1886,7 +1888,7 @@ export function AiPanel({
                 )}
                 {streamingText && (
                   <div className="max-w-[92%] rounded-xl border border-border/70 bg-muted/35 px-3 py-2 text-sm">
-                    <AiMarkdown onOpenNote={onOpenNote}>
+                    <AiMarkdown onOpenNote={onOpenNoteInNewTab}>
                       {streamingText}
                     </AiMarkdown>
                   </div>

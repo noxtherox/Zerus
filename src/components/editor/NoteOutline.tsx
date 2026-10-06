@@ -7,7 +7,7 @@ interface Heading {
 }
 
 /** Read rendered headings so formatting, duplicate titles and editor recovery stay in sync. */
-export function NoteOutline({ container, onNavigate }: { container: HTMLDivElement | null; onNavigate: () => void }) {
+export function NoteOutline({ container, onNavigate, hideHeading = false }: { container: HTMLDivElement | null; onNavigate: () => void; hideHeading?: boolean }) {
   const [headings, setHeadings] = useState<Heading[]>([]);
   const [active, setActive] = useState(0);
 
@@ -94,11 +94,11 @@ export function NoteOutline({ container, onNavigate }: { container: HTMLDivEleme
     };
   }, [container]);
 
-  if (!headings.length) return null;
+  if (!headings.length) return hideHeading ? <p className="px-4 pb-3 text-xs text-muted-foreground">No headings in this note.</p> : null;
   const baseLevel = Math.min(...headings.map((heading) => heading.level));
   return (
-    <nav aria-label="Note headings" className="zerus-outline-panel shrink-0 border-t border-border/60">
-      <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outline</h2>
+    <nav aria-label="Note headings" className={hideHeading ? "zerus-outline-panel shrink-0" : "zerus-outline-panel shrink-0 border-t border-border/60"}>
+      {!hideHeading && <h2 className="px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Outline</h2>}
       <div className="zerus-outline-list">
         {headings.map((heading, index) => (
           <button key={index} type="button" title={heading.text}

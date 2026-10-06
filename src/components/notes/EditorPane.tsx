@@ -1,6 +1,6 @@
 import { parseNoteReference } from "@/lib/wikilinks";
 import { usePdfSearch } from "@/lib/pdf-search";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -73,6 +73,8 @@ import { ZerusLogo } from "@/components/ZerusLogo";
 import { TypePicker } from "./TypePicker";
 import { BacklinksPanel } from "./BacklinksPanel";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
+const RevisionContent = lazy(() => import("./RevisionContent").then((module) => ({ default: module.RevisionContent })));
+import { useNoteRevisions } from "@/lib/use-note-revisions";
 import { getBacklinksGroupedByType } from "@/lib/links";
 import {
   type Note,
@@ -305,6 +307,7 @@ export function EditorPane({
   onNavigateBack,
   onNavigateForward,
 }: EditorPaneProps) {
+  const revisions = useNoteRevisions(note);
   const [keepPropertiesOpen, setKeepPropertiesOpen] = useState(
     loadPropertiesPanelKeepOpen,
   );
@@ -686,10 +689,12 @@ export function EditorPane({
     }
     setHtmlPreviewDialogOpen(open);
   };
-  const backlinksPanel = !external && !linkHub && showBacklinks ? (
+  const backlinksPanel = !external && showBacklinks ? (
     <BacklinksPanel
       editorContainer={findContainer}
       note={note}
+      revisions={revisions}
+      revisionsDisabled={isBusy || isRefreshing || !!conflict}
       allNotes={allNotes}
       tasks={tasks}
       schemas={schemas}
@@ -738,7 +743,7 @@ export function EditorPane({
             )
           }
           onFollowLink={(title) => void handleFollowLink(title)}
-          readOnly={isBusy}
+          readOnly={isBusy || revisions.busy || trashed}
           isFullHeight={expandedSection === "markdown"}
           onToggleFullHeight={
             previewType ? () => toggleExpandedSection("markdown") : undefined
@@ -936,6 +941,7 @@ export function EditorPane({
                   className="h-7 w-7"
                   title="Note actions"
                   aria-label="Note actions"
+                  disabled={revisions.historical || revisions.busy}
                 >
                   <Ellipsis size={16} />
                 </Button>
@@ -1060,7 +1066,9 @@ export function EditorPane({
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button
+          </>
+        )}
+        {!external && <Button
               variant="ghost"
               size="icon"
               className={cn(
@@ -1079,9 +1087,7 @@ export function EditorPane({
                   {backlinkCount}
                 </span>
               )}
-            </Button>
-          </>
-        )}
+            </Button>}
         <EditorContextControls
           isDesktop={isDesktop}
           aiOpen={aiOpen}
@@ -1166,7 +1172,14 @@ export function EditorPane({
           </Button>
         </div>
       )}
-      {fileHub ? (
+      {revisions.previewNote && revisions.selected ? (
+        <div className="flex min-h-0 flex-1">
+          <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", backlinksPanel && expandBacklinks && "hidden")}>
+            <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading revision…</p>}><RevisionContent key={revisions.selected.id} note={revisions.previewNote} revisionId={revisions.selected.id} onOpenNote={onOpenNote} /></Suspense>
+          </div>
+          {backlinksPanel}
+        </div>
+      ) : fileHub ? (
         previewType ? (
           <div className="flex min-h-0 flex-1">
             <ResizablePanelGroup

@@ -1,3 +1,5 @@
+import { PropertiesPaneSections } from "./PropertiesPaneSections";
+import { getNoteAttachments } from "@/lib/note-attachments";
 import { useState } from "react";
 import { NoteOutline } from "@/components/editor/NoteOutline";
 import {
@@ -28,9 +30,13 @@ import { cn } from "@/lib/utils";
 import { AttachmentsSection } from "./AttachmentsSection";
 import type { Task } from "@/lib/tasks";
 import { handleMiddleMouseDown } from "@/lib/middle-click";
+import { RevisionControls } from "./RevisionControls";
+import type { NoteRevisionController } from "@/lib/use-note-revisions";
 
 interface BacklinksPanelProps {
   note: Note;
+  revisions: NoteRevisionController;
+  revisionsDisabled: boolean;
   editorContainer: HTMLDivElement | null;
   allNotes: Note[];
   tasks: Task[];
@@ -46,6 +52,8 @@ interface BacklinksPanelProps {
 
 export function BacklinksPanel({
   note,
+  revisions,
+  revisionsDisabled,
   editorContainer,
   allNotes,
   tasks,
@@ -104,26 +112,14 @@ export function BacklinksPanel({
           {expanded ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
         </Button>
       </div>
-      {!isTrashed(note) && (
-        <>
-          <PropertiesSection
-            note={note}
-            allNotes={allNotes}
-            onOpenNote={onOpenNote}
-            onOpenNoteInNewTab={onOpenNoteInNewTab}
-            expanded={expanded}
-          />
-        </>
-      )}
+      <PropertiesPaneSections sections={{
+        properties: !isTrashed(note) ? <PropertiesSection hideHeading note={note} allNotes={allNotes} onOpenNote={onOpenNote} onOpenNoteInNewTab={onOpenNoteInNewTab} expanded={expanded} /> : null,
+        revisions: <RevisionControls hideHeading note={note} controller={revisions} disabled={revisionsDisabled} onSelectRevision={expanded ? onToggleExpanded : undefined} />,
+        relations: <>
       <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Link2 size={13} />
-          Relations
-          {connectionTotal > 0 && (
-            <span className="rounded-full bg-muted px-1.5 tabular-nums">
-              {connectionTotal}
-            </span>
-          )}
+          {connectionTotal === 1 ? "1 connection" : `${connectionTotal} connections`}
         </div>
         <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
           <Archive size={12} />
@@ -225,10 +221,10 @@ export function BacklinksPanel({
           </div>
         ) : null}
       </div>
-      <NoteOutline key={note.id} container={editorContainer} onNavigate={() => { if (expanded) onToggleExpanded(); }} />
-      {!isTrashed(note) && (
-        <AttachmentsSection note={note} expanded={expanded} />
-      )}
+        </>,
+        outline: <NoteOutline hideHeading key={note.id} container={editorContainer} onNavigate={() => { if (expanded) onToggleExpanded(); }} />,
+        attachments: !isTrashed(note) && getNoteAttachments(note).length ? <AttachmentsSection hideHeading note={note} expanded={expanded} /> : null,
+      }} />
     </aside>
   );
 }

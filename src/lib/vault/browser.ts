@@ -351,19 +351,11 @@ export class BrowserVault implements VaultBackend {
   }
 
   private persist() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.files));
-    } catch {
-      // storage full or unavailable — keep working in memory
-    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.files));
   }
 
   private persistAssets() {
-    try {
-      localStorage.setItem(ASSETS_KEY, JSON.stringify(this.assets));
-    } catch {
-      // storage full or unavailable — keep working in memory
-    }
+    localStorage.setItem(ASSETS_KEY, JSON.stringify(this.assets));
   }
 
   private persistDirs() {
@@ -416,13 +408,19 @@ export class BrowserVault implements VaultBackend {
 
   async write(path: string, content: string): Promise<void> {
     const now = new Date().toISOString();
+    const previous = this.files[path];
     this.files[path] = {
       content,
       createdAt:
         this.files[path]?.createdAt ?? this.files[path]?.updatedAt ?? now,
       updatedAt: now,
     };
-    this.persist();
+    try { this.persist(); }
+    catch (error) {
+      if (previous) this.files[path] = previous;
+      else delete this.files[path];
+      throw error;
+    }
   }
 
   async writeNew(path: string, content: string): Promise<void> {
@@ -435,26 +433,33 @@ export class BrowserVault implements VaultBackend {
   async move(from: string, to: string): Promise<void> {
     const file = this.files[from];
     if (file) {
+      const previous = this.files;
+      this.files = { ...this.files };
       delete this.files[from];
       this.files[to] = file;
-      this.persist();
+      try { this.persist(); } catch (error) { this.files = previous; throw error; }
       return;
     }
     const asset = this.assets[from];
     if (asset === undefined) return;
+    const previous = this.assets;
+    this.assets = { ...this.assets };
     delete this.assets[from];
     this.assets[to] = asset;
-    this.persistAssets();
+    try { this.persistAssets(); } catch (error) { this.assets = previous; throw error; }
   }
 
   async removeFile(path: string): Promise<void> {
     if (path in this.assets) {
+      const previous = this.assets[path];
       delete this.assets[path];
-      this.persistAssets();
+      try { this.persistAssets(); } catch (error) { this.assets[path] = previous; throw error; }
       return;
     }
+    const previous = this.files[path];
     delete this.files[path];
-    this.persist();
+    try { this.persist(); }
+    catch (error) { if (previous) this.files[path] = previous; throw error; }
   }
 
   async exists(path: string): Promise<boolean> {
@@ -511,8 +516,14 @@ export class BrowserVault implements VaultBackend {
   }
 
   async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
+    const previous = this.assets[path];
     this.assets[path] = bytesToBase64(bytes);
-    this.persistAssets();
+    try { this.persistAssets(); }
+    catch (error) {
+      if (previous === undefined) delete this.assets[path];
+      else this.assets[path] = previous;
+      throw error;
+    }
   }
 
   async readBinary(path: string): Promise<Uint8Array> {

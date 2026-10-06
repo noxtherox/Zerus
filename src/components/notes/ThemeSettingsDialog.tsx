@@ -1,3 +1,4 @@
+import { PropertiesPaneSettings } from "./PropertiesPaneSections";
 import { EditorSettings } from "./EditorSettings";
 import { DateFormatSetting } from "./DateFormatSetting";
 import { useEffect, useState } from "react";
@@ -594,6 +595,7 @@ export function ThemeSettingsDialog({
           <TabsContent value="general" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           <DateFormatSetting />
           <EditorSettings />
+          <PropertiesPaneSettings />
           <p className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Note list
           </p>

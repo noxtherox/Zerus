@@ -1,3 +1,4 @@
+import { PropertiesPaneSections, PropertiesPaneSettings } from "@/components/notes/PropertiesPaneSections";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
@@ -7,7 +8,7 @@ import { driveCommand, isDriveSignInExpired, type DriveVaultSelection } from "@/
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
 import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
 import { parseNoteReference } from "@/lib/wikilinks";
-import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
+import { lazy, Suspense, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type TouchEvent as ReactTouchEvent } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -82,6 +83,10 @@ import { NoteExportDialog } from "@/components/notes/NoteExportDialog";
 import { TypeIcon } from "@/components/notes/TypeIcon";
 import { TypeCreationDialog } from "@/components/notes/TypeCreationDialog";
 import { VersionHistoryPanel } from "@/components/notes/VersionHistoryPanel";
+import { RevisionControls } from "@/components/notes/RevisionControls";
+const RevisionContent = lazy(() => import("@/components/notes/RevisionContent").then((module) => ({ default: module.RevisionContent })));
+import { RevisionTrash } from "@/components/notes/RevisionTrash";
+import { useNoteRevisions } from "@/lib/use-note-revisions";
 import { PersistentAIChat } from "@/components/mobile/AIChat";
 import { MobileThemeSettings } from "@/components/mobile/MobileThemeSettings";
 import type { ChatScope } from "@/lib/mobile-chat-history";
@@ -831,6 +836,7 @@ function NoteView({
   onOpenFile,
   onChat,
 }: NoteViewProps) {
+  const revisions = useNoteRevisions(note);
   const presentedNote = presentNote(note);
   const archived = isArchived(note);
   const trashed = isTrashed(note);
@@ -1161,8 +1167,9 @@ function NoteView({
           size="icon"
           className="h-11 w-11 touch-manipulation rounded-full text-zerus-text hover:bg-white/[0.12]"
           style={{ backgroundColor: "rgb(255 255 255 / var(--mobile-note-button-bg-opacity))" }}
-          onClick={() => setActionsOpen(true)}
-          aria-label="Note actions"
+          onClick={() => revisions.historical ? setPropertiesOpen(true) : setActionsOpen(true)}
+          aria-label={revisions.historical ? "Note properties" : "Note actions"}
+          disabled={revisions.busy}
         >
           <MoreHorizontal className="h-[20px] w-[20px]" />
         </Button>
@@ -1209,7 +1216,9 @@ function NoteView({
           </Button>
         </div>
       )}
-      <main
+      {revisions.previewNote && revisions.selected ? (
+        <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading revision…</p>}><RevisionContent key={revisions.selected.id} note={revisions.previewNote} revisionId={revisions.selected.id} onOpenNote={onOpenNote} mobile /></Suspense>
+      ) : <main
         className="mobile-note-body flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-2"
       >
         <div
@@ -1245,7 +1254,7 @@ function NoteView({
                 aria-label="Note title"
               />
             ) : (
-              <button type="button" onClick={() => setEditingTitle(true)} className="text-left">
+              <button type="button" onClick={() => setEditingTitle(true)} disabled={revisions.busy || trashed} className="text-left">
                 <h1 className="text-[27px] font-bold leading-[1.06] tracking-[-0.045em] text-[#24221f] dark:text-zerus-text">{presentedNote.title}</h1>
               </button>
             )}
@@ -1261,6 +1270,7 @@ function NoteView({
           <MarkdownEditor
             noteId={note.id}
             initialContent={draft}
+            readOnly={revisions.busy || trashed}
             getLinkableTitles={() => linkableNotes().map((candidate) => noteTitle(candidate))}
             isTitleResolved={(title) => !!findNoteByTitle(title, getNotes())}
             onChange={(body) => {
@@ -1277,7 +1287,7 @@ function NoteView({
             onScrollTopChange={updateHeaderProgress}
           />
         </div>
-      </main>
+      </main>}
       </div>
       {propertiesVisible && (
         <div
@@ -1303,7 +1313,8 @@ function NoteView({
             <Button variant="ghost" size="icon" className="h-11 w-11 shrink-0 rounded-full bg-zerus-text/[0.08] text-zerus-text hover:bg-zerus-text/[0.12]" onClick={() => settle(pageWidth(), () => setPropertiesOpen(false))} aria-label="Close properties"><X className="h-5 w-5" /></Button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <PropertiesSection
+            <PropertiesPaneSections sections={{
+              properties: <PropertiesSection hideHeading
               note={note}
               allNotes={allNotes}
               onOpenNote={(id) => {
@@ -1311,11 +1322,16 @@ function NoteView({
                 onOpenNote(id);
               }}
               expanded
-            />
-            <section className="border-t border-white/[0.07] px-4 py-4">
+            />,
+              revisions: !isExternalNote(note) ? <RevisionControls hideHeading
+              note={note}
+              controller={revisions}
+              onSelectRevision={() => setPropertiesOpen(false)}
+            /> : null,
+              relations: <section className="border-t border-white/[0.07] px-4 py-4">
               <div className="mb-3 flex items-center gap-2">
                 <h2 className="min-w-0 flex-1 text-xs font-semibold uppercase tracking-[0.08em] text-zerus-text/65">
-                  Relations & backlinks
+                  Connections
                   {backlinkTotal + relationTotal
                     ? ` · ${backlinkTotal + relationTotal}`
                     : ""}
@@ -1371,7 +1387,8 @@ function NoteView({
                   ))}
                 </div>
               ) : null}
-            </section>
+            </section>,
+            }} />
           </div>
         </div>
       )}
@@ -1906,7 +1923,7 @@ function MobileSettings({
           </div>
         )}
 
-        {page === "general" && <div className="pt-5"><DateFormatSetting /><EditorSettings />
+        {page === "general" && <div className="pt-5"><DateFormatSetting /><EditorSettings /><PropertiesPaneSettings />
           <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-[0.08em] text-zerus-text/45">New notes</p>
           <div className="rounded-[16px] bg-zerus-surface p-4">
             <label htmlFor="mobile-default-note-type" className="block text-[15px] font-semibold">Default type</label>
@@ -2346,8 +2363,8 @@ export function MobileZerus() {
     links: filterNotes(vault.notes, { kind: "links" }, "").length,
     external: filterNotes(vault.notes, { kind: "external" }, "").length,
     files: filterNotes(vault.notes, { kind: "files" }, "").length,
-    trash: filterNotes(vault.notes, { kind: "trash" }, "").length + vault.trashedImages.length,
-  }), [tasks, vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount, vault.trashedImages.length]);
+    trash: filterNotes(vault.notes, { kind: "trash" }, "").length + vault.trashedImages.length + vault.trashedRevisions.length,
+  }), [tasks, vault.isNotePaginationEnabled, vault.notes, vault.totalNoteCount, vault.trashedImages.length, vault.trashedRevisions.length]);
 
   const pushNavigation = (entry: MobileNavigationEntry) => {
     window.history.pushState(withMobileNavigationEntry(window.history.state, entry), "");
@@ -2656,6 +2673,7 @@ export function MobileZerus() {
                 <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Search Results</h2>{filteredNotes.length > 0 ? <div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{filteredNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div> : <div className="rounded-[18px] bg-zerus-surface px-5 py-12 text-center"><Search className="mx-auto h-7 w-7 text-zerus-text/50" /><p className="mt-3 text-[16px] font-semibold">No notes found</p><p className="mt-1 text-sm text-zerus-text/65">Try a different search or clear your filters.</p><Button variant="ghost" className="mt-3 min-h-11" onClick={() => { setQuery(""); setListFilters({ ...EMPTY_NOTE_LIST_FILTERS, sort: "updated-desc" }); }}>Clear search and filters</Button></div>}</section>
               ) : (
                 <div className="space-y-7">
+                  {scope.kind === "trash" && <RevisionTrash />}
                   {scope.kind === "trash" && vault.trashedImages.length > 0 && (
                     <section>
                       <h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Deleted Images</h2>
@@ -2678,7 +2696,7 @@ export function MobileZerus() {
                   )}
                   {pinnedNotes.length > 0 && <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">Pinned</h2><div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{pinnedNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div></section>}
                   {recentNotes.length > 0 && <section><h2 className="mb-2 px-1 text-[13px] font-semibold text-zerus-text/60">{scope.kind === "files" ? "Linked Files" : scope.kind === "external" ? "External Notes" : scope.kind === "trash" ? "Deleted Notes" : scope.kind === "links" ? "Saved links" : listFilters.sort.startsWith("title") ? "By title" : listFilters.sort.startsWith("created") ? "By date created" : "Recently updated"}</h2><div className="overflow-hidden rounded-xl bg-zerus-surface px-3">{recentNotes.map((note) => <NoteCard key={note.id} note={note} onOpen={openCard} selecting={bulkSelection.selectMode} selected={bulkSelection.selectedIds.has(note.id)} />)}</div></section>}
-                  {filteredNotes.length === 0 && (scope.kind !== "trash" || vault.trashedImages.length === 0) && <section className="rounded-[18px] bg-zerus-surface px-5 py-12 text-center">
+                  {filteredNotes.length === 0 && (scope.kind !== "trash" || (vault.trashedImages.length === 0 && vault.trashedRevisions.length === 0)) && <section className="rounded-[18px] bg-zerus-surface px-5 py-12 text-center">
                     {scope.kind === "files" ? <FilePlus2 className="mx-auto h-7 w-7 text-zerus-text/50" /> : scope.kind === "external" ? <ExternalLink className="mx-auto h-7 w-7 text-zerus-text/50" /> : <FileText className="mx-auto h-7 w-7 text-zerus-text/50" />}
                     <p className="mt-3 text-[16px] font-semibold">{scope.kind === "links" ? "No saved links" : scope.kind === "files" ? "No linked files" : scope.kind === "external" ? "No external notes" : "No notes here"}</p>
                     <p className="mt-1 text-sm text-zerus-text/65">{scope.kind === "links" ? "Keep useful web pages and your notes together." : scope.kind === "files" ? "Add any file and Zerus will keep its linked note in your vault." : scope.kind === "external" ? "Open a Markdown file without moving it into your vault." : "Create a note or adjust your filters to see more."}</p>{scope.kind !== "trash" && <Button className="mt-4 min-h-11" onClick={() => void createForScope()}>{scope.kind === "links" ? "Add a link" : scope.kind === "files" ? "Add a file" : scope.kind === "external" ? "Open a note" : "Create a note"}</Button>}

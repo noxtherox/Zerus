@@ -105,8 +105,34 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   including opening a tab, duplicating, archiving, pinning, and editing properties;
   middle-click types or global navigation items to open them in a tab from either
   the expanded or collapsed sidebar. Existing tabs are reused. Reorder tabs by
-  dragging them or using their context menu. Move backward and
+  dragging them or using their context menu. Right-click a folder and enable
+  **Keep folder open** to keep it and its parent folders expanded. The choice
+  is remembered per vault on this device and follows folder renames.
+  Move backward and
   forward through navigation history and restore earlier versions of a note.
+- **Properties pane layout** — drag section handles or use each section's menu
+  to reorder Properties, Revisions, Relations, Outline, and Attachments. Click a
+  section heading to collapse or expand it. The same controls and a reset are in
+  **Settings → General → Properties pane**. The layout applies to all notes in
+  the vault and is stored in `.zerus/properties-pane.json`, so it travels with
+  the vault. Mobile uses the saved order and collapsed state for its available
+  sections.
+- **Deliberate revisions** — use the Revisions section in note properties on
+  desktop, iOS, or the web to keep versions you choose to preserve. **New revision**
+  copies the current content and vault files into a new editable version; older
+  revisions are read-only and retain their own file bytes. **Make current** copies
+  an older revision into a new numbered version. Numbers and creation dates are
+  automatic, and revisions remain indefinitely until explicitly deleted.
+  Title, properties, folder, pinned status, and archive status belong to the whole
+  note. Deleting or restoring a note carries all its revisions with it. Individual
+  revisions go to Trash; deleting the current one selects the latest remaining
+  revision, and deleting the last one asks to move the whole note to Trash.
+  Emptying Trash permanently removes deleted revisions and unreferenced revision
+  files. Revision data lives in `.zerus/revisions/`, separately from automatic
+  history, and must travel with the vault. Bring external notes and linked files
+  into the vault first; missing local files block revision creation so an
+  incomplete copy is never presented as preserved. Remote web resources remain
+  links. Browser revisions use browser storage and are subject to its quota.
 - **Work with files outside the vault** — open standalone Markdown notes without
   importing them; when copying or moving one into the vault, bring its local
   Markdown images into the vault assets folder and update their references;

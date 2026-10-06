@@ -1,3 +1,4 @@
+import { DEFAULT_PROPERTIES_PANE_LAYOUT, PROPERTIES_PANE_PATH, loadPropertiesPaneLayout, normalizePropertiesPaneLayout, type PropertiesPaneLayout } from "@/lib/properties-pane";
 import { withTimeout } from "@/lib/async-timeout";
 import { loadClipboardImage, writeImageClipboard } from "@/lib/image-clipboard";
 import { reciprocalRelation } from "@/lib/reciprocal-relations";
@@ -162,6 +163,10 @@ import {
 } from "@/lib/note-history";
 import { ImageUrlCache } from "@/lib/image-url-cache";
 import {
+  changeNoteRevision, listTrashedRevisions, purgeRevisionTrash, readNoteRevisions, REVISION_TRANSACTION_KEY,
+  type NoteRevisions, type RevisionAction, type TrashedNoteRevision,
+} from "@/lib/note-revisions";
+import {
   createImageMutationQueue,
   imageReferenceCount,
   loadedNotesShareImage,
@@ -197,6 +202,8 @@ export interface VaultState {
   notes: Note[];
   /** Recoverable image attachments currently held in Zerus Trash. */
   trashedImages: TrashedImage[];
+  trashedRevisions: TrashedNoteRevision[];
+  revisionVersion: number;
   /** Total non-trashed vault notes, including notes whose bodies are not loaded yet. */
   totalNoteCount: number;
   /** Direct note totals keyed by exact type path. */
@@ -224,6 +231,9 @@ export interface VaultState {
   isRefreshing: boolean;
   /** Simultaneous editor and disk edits awaiting an explicit user choice. */
   conflicts: Readonly<Record<string, NoteConflict>>;
+  propertiesPaneLayout: PropertiesPaneLayout;
+  propertiesPaneLayoutSaving: boolean;
+  propertiesPaneLayoutError: string | null;
   historySettings: HistorySettings;
   historyError: string | null;
   error: string | null;
@@ -254,6 +264,8 @@ let state: VaultState = {
   isDesktop: false,
   notes: [],
   trashedImages: [],
+  trashedRevisions: [],
+  revisionVersion: 0,
   totalNoteCount: 0,
   typeNoteCounts: {},
   isNotePaginationEnabled: false,
@@ -269,6 +281,9 @@ let state: VaultState = {
   loadingNoteIds: new Set(),
   isRefreshing: false,
   conflicts: {},
+  propertiesPaneLayout: DEFAULT_PROPERTIES_PANE_LAYOUT,
+  propertiesPaneLayoutSaving: false,
+  propertiesPaneLayoutError: null,
   historySettings: DEFAULT_HISTORY_SETTINGS,
   historyError: null,
   error: null,
@@ -282,6 +297,7 @@ let initialized = false;
 const listeners = new Set<() => void>();
 const pendingFlush = new Map<string, ReturnType<typeof setTimeout>>();
 const inFlightFlush = new Map<string, Promise<boolean>>();
+const pendingRevisionChanges = new Set<Promise<void>>();
 const diskSnapshots = new Map<string, string>();
 const externalPathRegistry = new Map<string, string>();
 let desktopCloseHookInstalled = false;
@@ -1189,6 +1205,8 @@ async function loadVault(nextBackend: VaultBackend) {
     isDesktop: nextBackend.kind === "desktop",
     notes: [],
     trashedImages: [],
+    trashedRevisions: [],
+    revisionVersion: state.revisionVersion + 1,
     totalNoteCount: 0,
     typeNoteCounts: {},
     isNotePaginationEnabled: false,
@@ -1204,6 +1222,9 @@ async function loadVault(nextBackend: VaultBackend) {
     loadingNoteIds: new Set(),
     isRefreshing: false,
     conflicts: {},
+    propertiesPaneLayout: DEFAULT_PROPERTIES_PANE_LAYOUT,
+    propertiesPaneLayoutSaving: false,
+    propertiesPaneLayoutError: null,
     historySettings: DEFAULT_HISTORY_SETTINGS,
     historyError: null,
     error: null,
@@ -1306,8 +1327,10 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       savedTypeViews,
       fileLocations,
+      propertiesPaneLayout,
       historySettings,
       trashedImages,
+      trashedRevisions,
     ] = await readForStartup(Promise.all([
       canPage
         ? nextBackend.listNoteEntries!()
@@ -1324,8 +1347,13 @@ async function loadVault(nextBackend: VaultBackend) {
       loadTypeViews(nextBackend),
       loadSavedTypeViews(nextBackend),
       loadFileLocations(nextBackend),
+      loadPropertiesPaneLayout(nextBackend),
       loadHistorySettings(nextBackend),
       loadTrashedImages(nextBackend),
+      listTrashedRevisions(nextBackend).catch((error) => {
+        reportError("load revision Trash", error);
+        return [];
+      }),
     ]));
     if (!isCurrentLoad()) return;
     if (canPage) {
@@ -1477,8 +1505,10 @@ async function loadVault(nextBackend: VaultBackend) {
       typeViews,
       savedTypeViews,
       fileLocations,
+      propertiesPaneLayout,
       historySettings,
       trashedImages,
+      trashedRevisions,
       conflicts: restoredSession.conflicts,
       loadingNoteIds: new Set(),
       isRefreshing: false,
@@ -1818,8 +1848,19 @@ function installMobileFileSync() {
  * Refreshes a mobile/iCloud/Drive vault incrementally. Unchanged notes stay in
  * memory; only new or modified bodies are read, so this is safe to run often.
  */
+async function refreshSyncedRevisions(previous: Note[], targetBackend: VaultBackend): Promise<void> {
+  const tokens = new Map(previous.map((note) => [note.id, getNoteProperties(note.content)[REVISION_TRANSACTION_KEY]]));
+  const changed = state.notes.some((note) => tokens.get(note.id) !== getNoteProperties(note.content)[REVISION_TRANSACTION_KEY]);
+  if (!changed) return;
+  const trashedRevisions = await listTrashedRevisions(targetBackend);
+  if (backend === targetBackend && !state.busyNoteIds.size) {
+    setState({ trashedRevisions, revisionVersion: state.revisionVersion + 1 });
+  }
+}
+
 export async function synchronizeMobileFiles() {
   if (
+    state.busyNoteIds.size > 0 ||
     mobileSyncInFlight ||
     state.isRefreshing ||
     mobileNoteLoad ||
@@ -1834,9 +1875,10 @@ export async function synchronizeMobileFiles() {
 
   mobileSyncInFlight = true;
   const activeBackend = backend;
+  const revisionBasis = state.notes;
   try {
     const entries = (await activeBackend.listNoteEntries()).filter(isPageableMobileEntry);
-    if (backend !== activeBackend || state.status !== "ready") return;
+    if (backend !== activeBackend || state.status !== "ready" || state.busyNoteIds.size) return;
     const entriesByPath = new Map(entries.map((entry) => [entry.path, entry] as const));
     const managedNotes = state.notes.filter(
       (note) => !isExternalNote(note) && !isManagedSavedLink(note),
@@ -1846,7 +1888,7 @@ export async function synchronizeMobileFiles() {
       .filter((entry) => notesByPath.get(entry.path)?.updatedAt !== entry.updatedAt)
       .map((entry) => entry.path);
     const changedFiles = await activeBackend.loadFiles(changedPaths);
-    if (backend !== activeBackend || state.status !== "ready") return;
+    if (backend !== activeBackend || state.status !== "ready" || state.busyNoteIds.size) return;
 
     const pinned = loadPinnedPaths();
     const archived = loadArchivedPaths();
@@ -1881,6 +1923,8 @@ export async function synchronizeMobileFiles() {
     stabilizeVaultLinks();
     migrateLegacyRelations();
     saveCurrentStartupCache();
+    await refreshPropertiesPaneLayout(activeBackend);
+    await refreshSyncedRevisions(revisionBasis, activeBackend);
   } catch (error) {
     console.error("Zerus: failed to synchronize mobile files", error);
   } finally {
@@ -1896,6 +1940,7 @@ function desktopWatchEventIsRelevant(event: WatchEvent): boolean {
     if (metadataIndex < 0) return true;
     const metadataPath = normalized.slice(metadataIndex + "/.zerus/".length);
     return (
+      metadataPath === "properties-pane.json" ||
       metadataPath === "tasks.json" ||
       metadataPath === "file-locations.json"
     );
@@ -2025,6 +2070,7 @@ function desktopSyncBasisIsCurrent(basis: DesktopSyncBasisEntry[]): boolean {
 
 export async function synchronizeDesktopFiles() {
   if (
+    state.busyNoteIds.size > 0 ||
     desktopSyncInFlight ||
     state.status !== "ready" ||
     backend?.kind !== "desktop"
@@ -2035,6 +2081,7 @@ export async function synchronizeDesktopFiles() {
   desktopSyncInFlight = true;
   const activeBackend = backend;
   const syncBasis = captureDesktopSyncBasis();
+  const revisionBasis = state.notes;
   try {
     const externalNotes = state.notes.filter(isExternalNote);
     const [files, dirs, externalFiles, fileLocations] = await Promise.all([
@@ -2064,7 +2111,7 @@ export async function synchronizeDesktopFiles() {
     // added, or removed a note while it was in progress, its results may describe
     // the disk from before Zerus's own write. Ignore that stale scan and let
     // the next poll compare against the new snapshot.
-    if (!desktopSyncBasisIsCurrent(syncBasis)) return;
+    if (!desktopSyncBasisIsCurrent(syncBasis) || state.busyNoteIds.size) return;
 
     const latestNotes = [...state.notes];
     const nextConflicts = { ...state.conflicts };
@@ -2257,6 +2304,8 @@ export async function synchronizeDesktopFiles() {
     if (notesChanged || typesChanged || locationsChanged) {
       saveCurrentStartupCache();
     }
+    await refreshPropertiesPaneLayout(activeBackend);
+    await refreshSyncedRevisions(revisionBasis, activeBackend);
   } catch (error) {
     console.error("Zerus: failed to synchronize files", error);
   } finally {
@@ -2604,6 +2653,7 @@ export async function flushNoteWrites(id: string): Promise<boolean> {
 async function flushAll(
   options: { allowConflicts?: boolean } = {},
 ): Promise<boolean> {
+  if (pendingRevisionChanges.size) await Promise.allSettled([...pendingRevisionChanges]);
   const conflictIds = new Set(Object.keys(state.conflicts));
   const suspendedConflictCount = [...suspendedDesktopConflicts.values()].reduce(
     (total, conflicts) => total + conflicts.length,
@@ -2708,6 +2758,93 @@ export async function getNoteHistoryVersions(
   return listNoteHistory(backend, id);
 }
 
+export async function getNoteRevisions(id: string): Promise<NoteRevisions | null> {
+  const targetBackend = backend;
+  const note = state.notes.find((candidate) => candidate.id === id);
+  if (!targetBackend || !note || isExternalNote(note)) return null;
+  return readNoteRevisions(targetBackend, note);
+}
+
+export function updateNoteRevision(id: string, action: RevisionAction): Promise<void> {
+  const operation = performNoteRevisionChange(id, action);
+  pendingRevisionChanges.add(operation);
+  void operation.finally(() => pendingRevisionChanges.delete(operation)).catch(() => {});
+  return operation;
+}
+
+async function performNoteRevisionChange(id: string, action: RevisionAction): Promise<void> {
+  const targetBackend = backend;
+  if (!targetBackend || state.busyNoteIds.has(id) || state.loadingNoteIds.has(id) || state.isRefreshing) {
+    throw new Error("Wait for this note to finish loading or saving.");
+  }
+  setNoteBusy(id, true);
+  try {
+    if (!(await flushUntilIdle(id))) throw new Error("Save this note and resolve any conflicts first.");
+    const note = state.notes.find((candidate) => candidate.id === id);
+    if (!note || backend !== targetBackend) throw new Error("The vault changed. Please try again.");
+    const result = await changeNoteRevision(targetBackend, note, action);
+    if (backend !== targetBackend) return;
+    diskSnapshots.set(id, result.content);
+    updateNote(id, { content: result.content, updatedAt: new Date().toISOString() });
+    if (targetBackend instanceof GoogleDriveVault) targetBackend.clearDraft(note.path);
+    await recordHistorySafely(id, note.content, result.content, localHistorySource());
+    setState({
+      trashedRevisions: await listTrashedRevisions(targetBackend),
+      revisionVersion: state.revisionVersion + 1,
+    });
+    saveCurrentStartupCache();
+  } catch (error) {
+    // A failed acknowledgement can follow a successful note write. Reconcile it
+    // before another autosave could overwrite the committed revision pointer.
+    const latest = state.notes.find((candidate) => candidate.id === id);
+    if (latest && backend === targetBackend) {
+      try {
+        const disk = await targetBackend.readText(latest.path);
+        if (disk !== latest.content) setNoteConflict(latest, disk, "modified");
+      } catch { /* Keep the existing draft and report the original write failure. */ }
+    }
+    throw error;
+  } finally {
+    setNoteBusy(id, false);
+  }
+}
+
+/** Revision previews read vault copies; never open a frozen asset in an editable native app. */
+export async function readRevisionFile(path: string): Promise<Uint8Array> {
+  if (!backend) throw new Error("The vault is unavailable.");
+  if (!path.startsWith(".zerus/revisions/notes/") || path.split("/").includes("..")) {
+    throw new Error("Invalid revision file.");
+  }
+  return backend.readBinary(path);
+}
+
+export async function exportRevisionFile(path: string, name: string): Promise<void> {
+  const bytes = await readRevisionFile(path);
+  await exportFileBytes(bytes, name);
+}
+
+async function exportFileBytes(bytes: Uint8Array, name: string): Promise<void> {
+  if (isIOSRuntime()) {
+    await openMobileFileData(name, bytes);
+    return;
+  }
+  if (isTauri()) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const destination = await save({ defaultPath: name });
+    if (destination) {
+      const { writeFile } = await import("@tauri-apps/plugin-fs");
+      await writeFile(destination, bytes);
+    }
+    return;
+  }
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 export async function setNoteHistoryVersion(
   noteId: string,
   versionId: string,
@@ -2745,6 +2882,36 @@ export async function restoreNoteHistoryVersion(
 export async function clearNoteVersionHistory(noteId: string): Promise<void> {
   if (!backend) return;
   await clearStoredNoteHistory(backend, noteId);
+}
+
+/** Applies one vault-wide layout change; a failed save restores the last saved layout. */
+export async function updatePropertiesPaneLayout(layout: PropertiesPaneLayout): Promise<void> {
+  if (!backend || state.status !== "ready" || state.propertiesPaneLayoutSaving) return;
+  const target = backend;
+  const generation = vaultLoadGeneration;
+  const previous = state.propertiesPaneLayout;
+  const next = normalizePropertiesPaneLayout(layout);
+  setState({ propertiesPaneLayout: next, propertiesPaneLayoutSaving: true, propertiesPaneLayoutError: null });
+  try {
+    await target.write(PROPERTIES_PANE_PATH, JSON.stringify(next, null, 2));
+    if (backend === target && generation === vaultLoadGeneration) setState({ propertiesPaneLayoutSaving: false });
+  } catch (error) {
+    if (backend === target && generation === vaultLoadGeneration) setState({
+      propertiesPaneLayout: previous, propertiesPaneLayoutSaving: false,
+      propertiesPaneLayoutError: `Could not save the properties pane layout. ${String(error)}`,
+    });
+  }
+}
+
+async function refreshPropertiesPaneLayout(target: VaultBackend): Promise<void> {
+  if (state.propertiesPaneLayoutSaving) return;
+  const previous = state.propertiesPaneLayout;
+  const generation = vaultLoadGeneration;
+  const next = await loadPropertiesPaneLayout(target);
+  if (backend === target && generation === vaultLoadGeneration && !state.propertiesPaneLayoutSaving &&
+      state.propertiesPaneLayout === previous && JSON.stringify(previous) !== JSON.stringify(next)) {
+    setState({ propertiesPaneLayout: next });
+  }
 }
 
 export async function updateVersionHistorySettings(
@@ -3146,6 +3313,9 @@ export async function getFileHubStatus(id: string): Promise<FileHubStatus | null
   const note = state.notes.find((candidate) => candidate.id === id);
   const resolved = note ? resolvedHub(note) : null;
   if (!resolved) return null;
+  if (resolved.reference.kind === "vault" && resolved.reference.path && backend?.kind !== "desktop") {
+    return { resolved, exists: !!backend && await backend.exists(resolved.reference.path), size: null, modifiedAt: note?.updatedAt ?? null };
+  }
   if (!resolved.absolutePath) {
     return { resolved, exists: false, size: null, modifiedAt: null };
   }
@@ -3180,8 +3350,22 @@ export async function getFileHubStatus(id: string): Promise<FileHubStatus | null
   }
 }
 
+const browserDocumentUploads = new Map<string, File>();
+
 export async function chooseDocumentFile(): Promise<string | null> {
-  if (!isTauri()) return null;
+  if (!isTauri()) return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      if (!file) { resolve(null); return; }
+      const key = `browser-upload:${crypto.randomUUID()}`;
+      browserDocumentUploads.set(key, file);
+      resolve(key);
+    }, { once: true });
+    input.addEventListener("cancel", () => resolve(null), { once: true });
+    input.click();
+  });
   if (isIOSRuntime()) {
     return (await pickMobileFiles())[0]?.path ?? null;
   }
@@ -3409,9 +3593,25 @@ export async function attachFileToNote(
   mode: "auto" | "local" | "copy" = "auto",
 ): Promise<AttachFileResult> {
   const note = state.notes.find((candidate) => candidate.id === id);
-  if (!note || isExternalNote(note) || isTrashed(note) || !isTauri()) {
+  if (!note || isExternalNote(note) || isTrashed(note) || state.busyNoteIds.has(id)) {
     return { status: "failed" };
   }
+  const upload = browserDocumentUploads.get(selectedPath);
+  if (upload && backend?.kind === "browser") {
+    browserDocumentUploads.delete(selectedPath);
+    try {
+      const path = `.zerus/attachments/${id}/${crypto.randomUUID()}-${upload.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      await backend.writeBinary(path, new Uint8Array(await upload.arrayBuffer()));
+      const latest = state.notes.find((candidate) => candidate.id === id);
+      if (!latest) return { status: "failed" };
+      updateNoteContent(id, setFileHubReference(latest.content, {
+        id: getFileHubReference(latest)?.id ?? crypto.randomUUID(), name: upload.name,
+        kind: "vault", path, managed: true,
+      }));
+      return { status: "attached", noteId: id };
+    } catch (error) { reportError("attach file", error); return { status: "failed" }; }
+  }
+  if (!isTauri()) return { status: "failed" };
   const canonical = await canonicalizeFsPath(selectedPath);
   const duplicate = await findHubForAbsolutePath(canonical, id);
   if (duplicate) return { status: "duplicate", noteId: duplicate.id };
@@ -3525,6 +3725,12 @@ export async function openFileHub(
   mode: "preview" | "refresh" = "preview",
 ): Promise<void> {
   const note = state.notes.find((candidate) => candidate.id === id);
+  const reference = note ? getFileHubReference(note) : null;
+  if (reference?.kind === "vault" && reference.path && backend?.kind === "browser") {
+    try { await exportFileBytes(await backend.readBinary(reference.path), reference.name); }
+    catch (error) { reportError("download file", error); }
+    return;
+  }
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) return;
   try {
@@ -3557,6 +3763,12 @@ export async function readFileHubBytes(
   maximumBytes?: number,
 ): Promise<Uint8Array> {
   const note = state.notes.find((candidate) => candidate.id === id);
+  const reference = note ? getFileHubReference(note) : null;
+  if (reference?.kind === "vault" && reference.path && backend) {
+    const bytes = await backend.readBinary(reference.path);
+    if (maximumBytes !== undefined && bytes.length > maximumBytes) throw new Error("This file is too large to preview safely.");
+    return bytes;
+  }
   const path = note ? resolvedHub(note)?.absolutePath : null;
   if (!path) throw new Error("The file location is not configured on this device.");
   const driveLocation = parseGoogleDriveLocation(path);
@@ -5053,6 +5265,8 @@ export async function duplicateNote(id: string): Promise<Note | null> {
       pinned: false,
       archived: false,
     });
+    // A duplicate starts its own revision collection; it cannot inherit the source's commit pointer.
+    content = setContentProperty(content, REVISION_TRANSACTION_KEY, null);
     // The duplicate references the same document without taking ownership of it.
     const file = getFileHubReference(source);
     if (file?.managed) content = setFileHubReference(content, { ...file, managed: false });
@@ -5144,7 +5358,7 @@ async function moveNoteWithManagedDocument(note: Note, target: string) {
 }
 
 export async function setNoteType(id: string, typePath: string[]) {
-  if (!backend) return;
+  if (!backend || state.busyNoteIds.has(id)) return;
   await flushAll();
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note) || isTrashed(note) || !typePath.length)
@@ -5166,6 +5380,7 @@ export async function setNoteType(id: string, typePath: string[]) {
 }
 
 export function setNotePinned(id: string, pinned: boolean) {
+  if (state.busyNoteIds.has(id)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note)) return;
   if (note.pinned === pinned) return;
@@ -5181,6 +5396,7 @@ export function toggleNotePinned(id: string) {
 }
 
 export function setNoteArchived(id: string, archived: boolean) {
+  if (state.busyNoteIds.has(id)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note) || isTrashed(note)) return;
   if (Boolean(note.archived) === archived) return;
@@ -5212,8 +5428,8 @@ export function noteBulkBlockReason(id: string): string | null {
 }
 
 export async function trashNote(id: string) {
-  if (!backend) return;
-  await flushAll();
+  if (!backend || state.busyNoteIds.has(id)) return;
+  if (!(await flushAll())) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note) || isTrashed(note)) return;
   const dir = [TRASH_DIR, ...noteTypePath(note)].join("/");
@@ -5228,7 +5444,7 @@ export async function trashNote(id: string) {
 }
 
 export async function restoreNote(id: string) {
-  if (!backend) return;
+  if (!backend || state.busyNoteIds.has(id)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || !isTrashed(note)) return;
   const logical = logicalPath(note);
@@ -5242,7 +5458,7 @@ export async function restoreNote(id: string) {
 }
 
 export async function deleteNoteForever(id: string) {
-  if (!backend) return;
+  if (!backend || state.busyNoteIds.has(id)) return;
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note)) return;
   try {
@@ -5251,6 +5467,7 @@ export async function deleteNoteForever(id: string) {
       await backend.removeFile(reference.path);
     }
     await backend.removeFile(note.path);
+    await purgeRevisionTrash(backend, new Set([id]), false);
     await clearStoredNoteHistory(backend, id).catch((error) =>
       reportError("delete note history", error),
     );
@@ -5269,6 +5486,8 @@ export async function deleteNoteForever(id: string) {
         };
     setState({
       notes: state.notes.filter((candidate) => candidate.id !== id),
+      trashedRevisions: state.trashedRevisions.filter((entry) => entry.noteId !== id),
+      revisionVersion: state.revisionVersion + 1,
       ...summary,
     });
   } catch (error) {
@@ -5283,6 +5502,8 @@ export function emptyTrash(): Promise<void> {
 async function performEmptyTrash() {
   const targetBackend = backend;
   if (!targetBackend) return;
+  if (!(await loadAllNotes()) || !(await flushAll())) return;
+  if (backend !== targetBackend || state.busyNoteIds.size) return;
   const trashed = state.notes.filter((note) => isTrashed(note));
   const trashedImages = [...state.trashedImages];
   for (const note of trashed) {
@@ -5311,6 +5532,7 @@ async function performEmptyTrash() {
     }
   }
   await persistTrashedImages([], targetBackend);
+  await purgeRevisionTrash(targetBackend, new Set(trashed.map((note) => note.id)));
   if (backend !== targetBackend) return;
   for (const image of trashedImages) {
     invalidateImageUrl(image.trashPath);
@@ -5319,6 +5541,8 @@ async function performEmptyTrash() {
   setState({
     notes: state.notes.filter((note) => !isTrashed(note)),
     trashedImages: [],
+    trashedRevisions: [],
+    revisionVersion: state.revisionVersion + 1,
   });
   for (const note of trashed) {
     diskSnapshots.delete(note.id);

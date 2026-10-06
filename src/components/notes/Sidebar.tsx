@@ -18,23 +18,17 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  ArrowDown,
-  ArrowUp,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
   CheckSquare,
   FileStack,
-  FilePlus2,
   Files,
-  FolderPlus,
   GripVertical,
   Link2,
   Notebook,
-  Pencil,
   Plus,
   Settings,
-  Smile,
   Trash2,
 } from "@/lib/icons";
 import { cn } from "@/lib/utils";
@@ -62,12 +56,6 @@ import {
   setTypeIcon,
 } from "@/store/notes-store";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -89,6 +77,8 @@ import { buttonVariants } from "@/components/ui/button-variants";
 import { Input } from "@/components/ui/input";
 import { ThemeSettingsDialog } from "./ThemeSettingsDialog";
 import { TypeIcon } from "./TypeIcon";
+import { TypeContextMenu } from "./TypeContextMenu";
+import { CollapsedSidebar } from "./CollapsedSidebar";
 import { IconPickerDialog } from "./IconPickerDialog";
 import { TypeCreationDialog } from "./TypeCreationDialog";
 import { getFileHubReference } from "@/lib/file-hubs";
@@ -110,6 +100,8 @@ interface SidebarProps {
   typeIcons: TypeIcons;
   /** Full type keys in the user's preferred order. */
   typeOrder: string[];
+  keptOpenTypes: string[];
+  onKeptOpenTypesChange: (keys: string[]) => void;
   filter: NoteFilter;
   isDesktop: boolean;
   vaultLocation: string | null;
@@ -122,6 +114,8 @@ interface SidebarProps {
   onFilterChange: (filter: NoteFilter) => void;
   onOpenTypeInNewTab: (typePath: string[]) => void;
   onCollapse: () => void;
+  collapsed?: boolean;
+  onRestore?: () => void;
 }
 
 function flattenTypeKeys(nodes: TypeNode[]): string[] {
@@ -141,6 +135,8 @@ function SidebarRow({
   depth = 0,
   chevron,
   onToggle,
+  toggleLocked = false,
+  toggleTitle,
 }: {
   active: boolean;
   onClick: () => void;
@@ -151,6 +147,8 @@ function SidebarRow({
   depth?: number;
   chevron?: "open" | "closed" | "leaf";
   onToggle?: () => void;
+  toggleLocked?: boolean;
+  toggleTitle?: string;
 }) {
   return (
     <div
@@ -180,11 +178,13 @@ function SidebarRow({
       {chevron !== undefined && chevron !== "leaf" && (
         <button
           type="button"
-          aria-label={`${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
-          title={`${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
+          aria-label={toggleLocked ? `${label} is kept open` : `${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
+          aria-expanded={chevron === "open"}
+          aria-disabled={toggleLocked}
+          title={toggleTitle ?? `${chevron === "open" ? "Collapse" : "Expand"} ${label}`}
           onClick={(event) => {
             event.stopPropagation();
-            onToggle?.();
+            if (!toggleLocked) onToggle?.();
           }}
           className="flex h-6 w-5 shrink-0 items-center justify-center text-zerus-sidebar-fg/50 hover:text-zerus-sidebar-fg/90"
           tabIndex={-1}
@@ -206,11 +206,14 @@ function TypeTreeRows({
   parentKey,
   filter,
   expanded,
+  keptOpenTypes,
+  keptOpenBranches,
   visibleCounts,
   typeIcons,
   onFilterChange,
   onOpenTypeInNewTab,
   onToggle,
+  onKeepOpenChange,
   onRenameType,
   onAddSubtype,
   onDeleteType,
@@ -224,11 +227,14 @@ function TypeTreeRows({
   parentKey: string;
   filter: NoteFilter;
   expanded: Set<string>;
+  keptOpenTypes: ReadonlySet<string>;
+  keptOpenBranches: ReadonlySet<string>;
   visibleCounts: Readonly<Record<string, number>>;
   typeIcons: TypeIcons;
   onFilterChange: (filter: NoteFilter) => void;
   onOpenTypeInNewTab: (typePath: string[]) => void;
   onToggle: (key: string) => void;
+  onKeepOpenChange: (path: string[], keptOpen: boolean) => void;
   onRenameType: (node: TypeNode) => void;
   onAddSubtype: (node: TypeNode) => void;
   onDeleteType: (node: TypeNode) => void;
@@ -260,12 +266,15 @@ function TypeTreeRows({
                 depth={depth}
                 active={filter.kind === "type" && typeKey(filter.path) === key}
                 isOpen={isOpen}
+                keptOpen={keptOpenTypes.has(key)}
+                toggleLocked={keptOpenBranches.has(key)}
                 typeIcon={typeIcons[key]}
                 canMoveUp={index > 0}
                 canMoveDown={index < nodes.length - 1}
                 onFilterChange={onFilterChange}
                 onOpenTypeInNewTab={onOpenTypeInNewTab}
                 onToggle={onToggle}
+                onKeepOpenChange={onKeepOpenChange}
                 onRenameType={onRenameType}
                 onAddSubtype={onAddSubtype}
                 onDeleteType={onDeleteType}
@@ -284,11 +293,14 @@ function TypeTreeRows({
                   parentKey={key}
                   filter={filter}
                   expanded={expanded}
+                  keptOpenTypes={keptOpenTypes}
+                  keptOpenBranches={keptOpenBranches}
                   visibleCounts={visibleCounts}
                   typeIcons={typeIcons}
                   onFilterChange={onFilterChange}
                   onOpenTypeInNewTab={onOpenTypeInNewTab}
                   onToggle={onToggle}
+                  onKeepOpenChange={onKeepOpenChange}
                   onRenameType={onRenameType}
                   onAddSubtype={onAddSubtype}
                   onDeleteType={onDeleteType}
@@ -363,12 +375,15 @@ function SortableTypeRow({
   depth,
   active,
   isOpen,
+  keptOpen,
+  toggleLocked,
   typeIcon,
   canMoveUp,
   canMoveDown,
   onFilterChange,
   onOpenTypeInNewTab,
   onToggle,
+  onKeepOpenChange,
   onRenameType,
   onAddSubtype,
   onDeleteType,
@@ -380,12 +395,15 @@ function SortableTypeRow({
   depth: number;
   active: boolean;
   isOpen: boolean;
+  keptOpen: boolean;
+  toggleLocked: boolean;
   typeIcon: TypeIcons[string];
   canMoveUp: boolean;
   canMoveDown: boolean;
   onFilterChange: (filter: NoteFilter) => void;
   onOpenTypeInNewTab: (typePath: string[]) => void;
   onToggle: (key: string) => void;
+  onKeepOpenChange: (path: string[], keptOpen: boolean) => void;
   onRenameType: (node: TypeNode) => void;
   onAddSubtype: (node: TypeNode) => void;
   onDeleteType: (node: TypeNode) => void;
@@ -410,77 +428,65 @@ function SortableTypeRow({
       className={cn("relative group/type", isDragging && "z-20 opacity-70")}
       style={{ transform: CSS.Transform.toString(transform), transition }}
     >
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div className="relative">
-            <SidebarRow
-              active={active}
-              onClick={() => onFilterChange({ kind: "type", path: node.path })}
-              onOpenInNewTab={() => onOpenTypeInNewTab(node.path)}
-              icon={
-                <TypeIcon
-                  icon={typeIcon}
-                  open={isOpen && node.children.length > 0}
-                  size={15}
-                />
-              }
-              label={node.name}
-              depth={depth}
-              chevron={
-                node.children.length ? (isOpen ? "open" : "closed") : "leaf"
-              }
+      <TypeContextMenu
+        node={node}
+        canMoveUp={canMoveUp}
+        canMoveDown={canMoveDown}
+        keptOpen={keptOpen}
+        onKeepOpenChange={(checked) => onKeepOpenChange(node.path, checked)}
+        onOpenTypeInNewTab={onOpenTypeInNewTab}
+        onRenameType={onRenameType}
+        onAddSubtype={onAddSubtype}
+        onDeleteType={onDeleteType}
+        onChangeIcon={onChangeIcon}
+        onMoveUp={onMoveUp}
+        onMoveDown={onMoveDown}
+      >
+        <div className="relative">
+          <SidebarRow
+            active={active}
+            onClick={() => onFilterChange({ kind: "type", path: node.path })}
+            onOpenInNewTab={() => onOpenTypeInNewTab(node.path)}
+            icon={
+              <TypeIcon
+                icon={typeIcon}
+                open={isOpen && node.children.length > 0}
+                size={15}
+              />
+            }
+            label={node.name}
+            depth={depth}
+            chevron={
+              node.children.length ? (isOpen ? "open" : "closed") : "leaf"
+            }
               onToggle={() => onToggle(key)}
-            />
-            <button
-              ref={setActivatorNodeRef}
-              type="button"
-              aria-label={`Reorder ${node.name}`}
-              title={`Drag to reorder ${node.name}`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-              }}
-              className={cn(
-                "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-zerus-sidebar-fg/35 opacity-0 transition-opacity hover:text-zerus-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
-                node.children.length ? "right-5" : "right-0",
-              )}
-              {...attributes}
-              {...listeners}
-            >
-              <GripVertical size={13} aria-hidden="true" />
-            </button>
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onClick={() => onOpenTypeInNewTab(node.path)}>
-            <FilePlus2 size={14} className="mr-2" /> Open in new tab
-          </ContextMenuItem>
-          <ContextMenuItem disabled={!canMoveUp} onClick={onMoveUp}>
-            <ArrowUp size={14} className="mr-2" /> Move up
-          </ContextMenuItem>
-          <ContextMenuItem disabled={!canMoveDown} onClick={onMoveDown}>
-            <ArrowDown size={14} className="mr-2" /> Move down
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => onChangeIcon(node)}>
-            <Smile size={14} className="mr-2" /> Change icon
-          </ContextMenuItem>
-          <ContextMenuItem
-            disabled={node.path.length >= MAX_TYPE_DEPTH}
-            onClick={() => onAddSubtype(node)}
+              toggleLocked={toggleLocked}
+              toggleTitle={toggleLocked
+                ? keptOpen
+                  ? "Turn off Keep folder open in the folder menu to collapse"
+                  : "A nested folder is kept open"
+                : undefined}
+          />
+          <button
+            ref={setActivatorNodeRef}
+            type="button"
+            aria-label={`Reorder ${node.name}`}
+            title={`Drag to reorder ${node.name}`}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+            }}
+            className={cn(
+              "absolute top-1/2 flex h-7 w-6 -translate-y-1/2 touch-none cursor-grab items-center justify-center text-zerus-sidebar-fg/35 opacity-0 transition-opacity hover:text-zerus-sidebar-fg/80 active:cursor-grabbing group-hover/type:opacity-100 focus:opacity-100",
+              node.children.length ? "right-5" : "right-0",
+            )}
+            {...attributes}
+            {...listeners}
           >
-            <FolderPlus size={14} className="mr-2" /> Add subtype
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => onRenameType(node)}>
-            <Pencil size={14} className="mr-2" /> Rename type
-          </ContextMenuItem>
-          <ContextMenuItem
-            className="text-destructive"
-            onClick={() => onDeleteType(node)}
-          >
-            <Trash2 size={14} className="mr-2" /> Delete type
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
+            <GripVertical size={13} aria-hidden="true" />
+          </button>
+        </div>
+      </TypeContextMenu>
     </div>
   );
 }
@@ -492,6 +498,8 @@ export function Sidebar({
   extraTypes,
   typeIcons,
   typeOrder,
+  keptOpenTypes,
+  onKeptOpenTypesChange,
   filter,
   isDesktop,
   vaultLocation,
@@ -504,6 +512,8 @@ export function Sidebar({
   onOpenFilterInNewTab,
   onOpenTypeInNewTab,
   onCollapse,
+  collapsed = false,
+  onRestore = onCollapse,
 }: SidebarProps) {
   const tree = useMemo(
     () => buildTypeTree(notes, extraTypes, typeOrder),
@@ -637,6 +647,15 @@ export function Sidebar({
             : key,
       ),
     );
+    onKeptOpenTypesChange(
+      keptOpenTypes.map((key) =>
+        key === oldKey
+          ? newKey
+          : key.startsWith(oldPrefix)
+            ? `${newKey}/${key.slice(oldPrefix.length)}`
+            : key,
+      ),
+    );
     const defaultKey = typeKey(defaultNoteType);
     if (defaultKey === oldKey || defaultKey.startsWith(`${oldKey}/`)) {
       onDefaultNoteTypeChange([
@@ -672,6 +691,9 @@ export function Sidebar({
         (type) => type !== key && !type.startsWith(`${key}/`),
       ),
     );
+    onKeptOpenTypesChange(
+      keptOpenTypes.filter((type) => type !== key && !type.startsWith(`${key}/`)),
+    );
     const defaultKey = typeKey(defaultNoteType);
     if (defaultKey === key || defaultKey.startsWith(`${key}/`)) {
       onDefaultNoteTypeChange(DEFAULT_TYPE);
@@ -682,20 +704,50 @@ export function Sidebar({
     }
   };
 
-  // Folders always start collapsed. Expansion is intentionally session-local.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Ordinary expansion lasts for this session; kept-open folders and their
+  // ancestors stay expanded even after restarting or collapsing the sidebar.
+  const [sessionExpansion, setSessionExpansion] = useState(() => ({
+    vaultLocation,
+    keys: new Set<string>(),
+  }));
+  const keptOpenSet = useMemo(() => new Set(keptOpenTypes), [keptOpenTypes]);
+  const keptOpenBranches = useMemo(() => {
+    const validKeys = new Set(flattenTypeKeys(tree));
+    const branches = new Set<string>();
+    for (const key of keptOpenTypes) {
+      if (!validKeys.has(key)) continue;
+      const path = key.split("/");
+      for (let depth = 1; depth <= path.length; depth++) {
+        branches.add(typeKey(path.slice(0, depth)));
+      }
+    }
+    return branches;
+  }, [keptOpenTypes, tree]);
+  const expanded = useMemo(() => new Set([
+    ...(sessionExpansion.vaultLocation === vaultLocation ? sessionExpansion.keys : []),
+    ...keptOpenBranches,
+  ]), [sessionExpansion, vaultLocation, keptOpenBranches]);
   const [visibleTypeCounts, setVisibleTypeCounts] = useState<
     Record<string, number>
   >({});
   const typeScrollContainerRef = useRef<HTMLElement>(null);
 
   const toggle = (key: string) => {
-    setExpanded((previous) => {
-      const next = new Set(previous);
+    if (keptOpenBranches.has(key)) return;
+    setSessionExpansion((previous) => {
+      const next = new Set(previous.vaultLocation === vaultLocation ? previous.keys : []);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      return next;
+      return { vaultLocation, keys: next };
     });
+  };
+
+  const keepOpen = (path: string[], checked: boolean) => {
+    const key = typeKey(path);
+    const next = new Set(keptOpenTypes);
+    if (checked) next.add(key);
+    else next.delete(key);
+    onKeptOpenTypesChange([...next]);
   };
 
   const loadMoreTypes = (parentKey: string) => {
@@ -712,138 +764,191 @@ export function Sidebar({
   const [vaultsOpen, setVaultsOpen] = useState(false);
 
   return (
-    <div className="flex h-full flex-col bg-zerus-sidebar pt-4">
-      <div className="flex items-center justify-between px-4 pb-3">
-        <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-zerus-sidebar-fg/90">
-          <ZerusLogo
-            alt=""
-            className="h-6 w-6 shrink-0 rounded-sm"
-          />
-          <span className="truncate">Zerus</span>
-        </h1>
-        <button
-          type="button"
-          onClick={onCollapse}
-          title="Collapse navigation sidebar"
-          aria-label="Collapse navigation sidebar"
-          className="text-zerus-sidebar-fg/50 transition-colors hover:text-zerus-sidebar-fg/90"
-        >
-          <ChevronsLeft size={15} />
-        </button>
-      </div>
-      <nav
-        ref={typeScrollContainerRef}
-        className="flex-1 space-y-0.5 overflow-y-auto px-2"
-      >
-        <SidebarRow
-          active={filter.kind === "all"}
-          onClick={() => onFilterChange({ kind: "all" })}
-          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "all" })}
-          icon={<Notebook size={15} />}
-          label="All Notes"
-          count={activeCount}
+    <div className={cn("flex h-full flex-col bg-zerus-sidebar", !collapsed && "pt-4")}>
+      {collapsed ? (
+        <CollapsedSidebar
+          notes={notes}
+          extraTypes={extraTypes}
+          typeIcons={typeIcons}
+          typeOrder={typeOrder}
+          keptOpenBranches={keptOpenBranches}
+          filter={filter}
+          isDesktop={isDesktop}
+          defaultNoteType={defaultNoteType}
+          hideSubtypeNotes={hideSubtypeNotes}
+          onDefaultNoteTypeChange={onDefaultNoteTypeChange}
+          onHideSubtypeNotesChange={onHideSubtypeNotesChange}
+          onFilterChange={onFilterChange}
+          onOpenFilterInNewTab={onOpenFilterInNewTab}
+          onRestore={onRestore}
+          renderTypeContextMenu={(node, button) => {
+            const siblings = node.path.slice(0, -1).reduce<TypeNode[]>(
+              (nodes, name) => nodes.find((parent) => parent.name === name)?.children ?? [],
+              tree,
+            );
+            const key = typeKey(node.path);
+            const index = siblings.findIndex((sibling) => typeKey(sibling.path) === key);
+            const previous = siblings[index - 1];
+            const next = siblings[index + 1];
+            return (
+              <TypeContextMenu
+                key={key}
+                node={node}
+                canMoveUp={!!previous}
+                canMoveDown={!!next}
+                keptOpen={keptOpenSet.has(key)}
+                onKeepOpenChange={(checked) => keepOpen(node.path, checked)}
+                onOpenTypeInNewTab={onOpenTypeInNewTab}
+                onRenameType={startRename}
+                onAddSubtype={(target) => startTypeCreation(target.path)}
+                onDeleteType={setDeleteTarget}
+                onChangeIcon={setIconTarget}
+                onMoveUp={() => previous && reorderTypes(key, typeKey(previous.path), "before")}
+                onMoveDown={() => next && reorderTypes(key, typeKey(next.path), "after")}
+              >
+                {button}
+              </TypeContextMenu>
+            );
+          }}
         />
-        <SidebarRow
-          active={filter.kind === "tasks"}
-          onClick={() => onFilterChange({ kind: "tasks" })}
-          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "tasks" })}
-          icon={<CheckSquare size={15} />}
-          label="Tasks"
-          count={taskCount}
-        />
-        {isDesktop && (
-          <>
+      ) : (
+        <>
+          <div className="flex items-center justify-between px-4 pb-3">
+            <h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-wide text-zerus-sidebar-fg/90">
+              <ZerusLogo
+                alt=""
+                className="h-6 w-6 shrink-0 rounded-sm"
+              />
+              <span className="truncate">Zerus</span>
+            </h1>
+            <button
+              type="button"
+              onClick={onCollapse}
+              title="Collapse navigation sidebar"
+              aria-label="Collapse navigation sidebar"
+              className="text-zerus-sidebar-fg/50 transition-colors hover:text-zerus-sidebar-fg/90"
+            >
+              <ChevronsLeft size={15} />
+            </button>
+          </div>
+          <nav
+            ref={typeScrollContainerRef}
+            className="flex-1 space-y-0.5 overflow-y-auto px-2"
+          >
             <SidebarRow
-              active={filter.kind === "external"}
-              onClick={() => onFilterChange({ kind: "external" })}
-              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "external" })}
-              icon={<Files size={15} />}
-              label="External Notes"
-              count={externalCount}
+              active={filter.kind === "all"}
+              onClick={() => onFilterChange({ kind: "all" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "all" })}
+              icon={<Notebook size={15} />}
+              label="All Notes"
+              count={activeCount}
             />
             <SidebarRow
-              active={filter.kind === "files"}
-              onClick={() => onFilterChange({ kind: "files" })}
-              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "files" })}
-              icon={<FileStack size={15} />}
-              label="Files"
-              count={fileCount}
+              active={filter.kind === "tasks"}
+              onClick={() => onFilterChange({ kind: "tasks" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "tasks" })}
+              icon={<CheckSquare size={15} />}
+              label="Tasks"
+              count={taskCount}
             />
-          </>
-        )}
-        <SidebarRow
-          active={filter.kind === "links"}
-          onClick={() => onFilterChange({ kind: "links" })}
-          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "links" })}
-          icon={<Link2 size={15} />}
-          label="Links"
-          count={linkCount}
-        />
-        <div className="flex items-center justify-between pb-1 pl-3 pr-2 pt-4">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-zerus-sidebar-fg/40">
-            Types
-          </span>
-          <button
-            onClick={() => startTypeCreation()}
-            title="New type — it can stay empty until you add notes"
-            className="text-zerus-sidebar-fg/40 transition-colors hover:text-zerus-sidebar-fg/90"
-          >
-            <Plus size={13} />
-          </button>
-        </div>
-        <DndContext
-          sensors={typeSensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleTypeDragEnd}
-        >
-          <TypeTreeRows
-            nodes={tree}
-            depth={0}
-            parentKey=""
-            filter={filter}
-            expanded={expanded}
-            visibleCounts={visibleTypeCounts}
-            typeIcons={typeIcons}
-            onFilterChange={onFilterChange}
-            onOpenTypeInNewTab={onOpenTypeInNewTab}
-            onToggle={toggle}
-            onRenameType={startRename}
-            onAddSubtype={(node) => startTypeCreation(node.path)}
-            onDeleteType={setDeleteTarget}
-            onChangeIcon={setIconTarget}
-            onReorder={reorderTypes}
-            scrollContainerRef={typeScrollContainerRef}
-            onLoadMore={loadMoreTypes}
-          />
-        </DndContext>
-      </nav>
-      <div className="space-y-0.5 border-t border-zerus-sidebar-fg/10 p-2">
-        <GlobalSearchButton className="w-full px-2 py-1.5 text-zerus-sidebar-fg/70 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/90 [&>svg]:size-[15px] [&>svg]:shrink-0 [&>svg]:opacity-80" />
-        <SidebarRow
-          active={settingsOpen}
-          onClick={() => setSettingsOpen(true)}
-          icon={<Settings size={15} />}
-          label="Settings"
-        />
-        <SidebarRow
-          active={filter.kind === "trash"}
-          onClick={() => onFilterChange({ kind: "trash" })}
-          onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "trash" })}
-          icon={<Trash2 size={15} />}
-          label="Trash"
-          count={trashCount}
-        />
-        {isDesktop && (
-          <button
-            type="button"
-            onClick={() => setVaultsOpen(true)}
-            title={vaultLocation ?? undefined}
-            className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-zerus-sidebar-fg/40 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/70"
-          >
-            Vault: {vaultName ?? "choose folder…"}
-          </button>
-        )}
-      </div>
+            {isDesktop && (
+              <>
+                <SidebarRow
+                  active={filter.kind === "external"}
+                  onClick={() => onFilterChange({ kind: "external" })}
+                  onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "external" })}
+                  icon={<Files size={15} />}
+                  label="External Notes"
+                  count={externalCount}
+                />
+                <SidebarRow
+                  active={filter.kind === "files"}
+                  onClick={() => onFilterChange({ kind: "files" })}
+                  onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "files" })}
+                  icon={<FileStack size={15} />}
+                  label="Files"
+                  count={fileCount}
+                />
+              </>
+            )}
+            <SidebarRow
+              active={filter.kind === "links"}
+              onClick={() => onFilterChange({ kind: "links" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "links" })}
+              icon={<Link2 size={15} />}
+              label="Links"
+              count={linkCount}
+            />
+            <div className="flex items-center justify-between pb-1 pl-3 pr-2 pt-4">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-zerus-sidebar-fg/40">
+                Types
+              </span>
+              <button
+                onClick={() => startTypeCreation()}
+                title="New type — it can stay empty until you add notes"
+                className="text-zerus-sidebar-fg/40 transition-colors hover:text-zerus-sidebar-fg/90"
+              >
+                <Plus size={13} />
+              </button>
+            </div>
+            <DndContext
+              sensors={typeSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleTypeDragEnd}
+            >
+              <TypeTreeRows
+                nodes={tree}
+                depth={0}
+                parentKey=""
+                filter={filter}
+                expanded={expanded}
+                keptOpenTypes={keptOpenSet}
+                keptOpenBranches={keptOpenBranches}
+                visibleCounts={visibleTypeCounts}
+                typeIcons={typeIcons}
+                onFilterChange={onFilterChange}
+                onOpenTypeInNewTab={onOpenTypeInNewTab}
+                onToggle={toggle}
+                onKeepOpenChange={keepOpen}
+                onRenameType={startRename}
+                onAddSubtype={(node) => startTypeCreation(node.path)}
+                onDeleteType={setDeleteTarget}
+                onChangeIcon={setIconTarget}
+                onReorder={reorderTypes}
+                scrollContainerRef={typeScrollContainerRef}
+                onLoadMore={loadMoreTypes}
+              />
+            </DndContext>
+          </nav>
+          <div className="space-y-0.5 border-t border-zerus-sidebar-fg/10 p-2">
+            <GlobalSearchButton className="w-full px-2 py-1.5 text-zerus-sidebar-fg/70 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/90 [&>svg]:size-[15px] [&>svg]:shrink-0 [&>svg]:opacity-80" />
+            <SidebarRow
+              active={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
+              icon={<Settings size={15} />}
+              label="Settings"
+            />
+            <SidebarRow
+              active={filter.kind === "trash"}
+              onClick={() => onFilterChange({ kind: "trash" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "trash" })}
+              icon={<Trash2 size={15} />}
+              label="Trash"
+              count={trashCount}
+            />
+            {isDesktop && (
+              <button
+                type="button"
+                onClick={() => setVaultsOpen(true)}
+                title={vaultLocation ?? undefined}
+                className="w-full truncate rounded-md px-3 py-1 text-left text-[11px] text-zerus-sidebar-fg/40 transition-colors hover:bg-zerus-sidebar-fg/5 hover:text-zerus-sidebar-fg/70"
+              >
+                Vault: {vaultName ?? "choose folder…"}
+              </button>
+            )}
+          </div>
+        </>
+      )}
       <ThemeSettingsDialog
         open={settingsOpen}
         onOpenChange={setSettingsOpen}

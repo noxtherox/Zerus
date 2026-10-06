@@ -2,7 +2,7 @@ import type { ComponentPropsWithoutRef, MouseEvent } from "react";
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openExternalUrl } from "@/lib/external-links";
-import { noteIdFromAiHref } from "@/lib/ai-note-links";
+import { noteIdFromAiHref, prepareAiNoteLinks } from "@/lib/ai-note-links";
 import { cn } from "@/lib/utils";
 
 interface AiMarkdownProps {
@@ -76,6 +76,12 @@ export function AiMarkdown({
             className={cn(
               "font-medium underline decoration-current/40 underline-offset-2 hover:decoration-current",
               !inverted && "text-zerus-link",
+              noteIdFromAiHref(href) && [
+                "rounded px-1 py-0.5 box-decoration-clone focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zerus-accent",
+                inverted
+                  ? "bg-white/15 hover:bg-white/25"
+                  : "bg-zerus-accent/15 hover:bg-zerus-accent/25",
+              ],
             )}
             onClick={(event) => handleLinkClick(event, href)}
             rel="noreferrer"
@@ -131,7 +137,7 @@ export function AiMarkdown({
         ),
       }}
     >
-      {children}
+      {prepareAiNoteLinks(children)}
     </ReactMarkdown>
   );
 }

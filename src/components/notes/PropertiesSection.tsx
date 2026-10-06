@@ -960,6 +960,7 @@ interface PropertiesSectionProps {
   onOpenNote: (id: string) => void;
   onOpenNoteInNewTab?: (id: string) => void;
   expanded?: boolean;
+  hideHeading?: boolean;
 }
 
 interface RelationsSectionProps extends PropertiesSectionProps {
@@ -972,6 +973,7 @@ export function PropertiesSection({
   onOpenNote,
   onOpenNoteInNewTab,
   expanded,
+  hideHeading = false,
 }: PropertiesSectionProps) {
   const nameColumnClass = expanded ? "w-48" : "w-28";
   const schemas = useVaultSelector((vault) => vault.schemas);
@@ -1019,14 +1021,14 @@ export function PropertiesSection({
   };
 
   return (
-    <div className="border-b border-border/60">
-      <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className={hideHeading ? undefined : "border-b border-border/60"}>
+      {!hideHeading && <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         <SlidersHorizontal size={13} />
         Properties
         <span className="normal-case font-normal tracking-normal">
           · {ownKey || "unfiled"}
         </span>
-      </div>
+      </div>}
       <div className="space-y-0.5 px-3 py-2.5">
         {propertyEntries.length === 0 && extras.length === 0 && (
           <p className="px-1 pb-1 text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
 import type { PdfSearch } from "@/lib/pdf-search";
+import { isTauri } from "@tauri-apps/api/core";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import {
   ExternalLink,
@@ -123,9 +124,9 @@ export function FileHubPanel({
           </div>
           <div className="flex flex-wrap justify-end gap-1">
             <Button size="sm" className="h-8 gap-1.5 text-xs" disabled={!status?.exists} onClick={() => void openFileHub(note.id)}>
-              <ExternalLink size={13} /> Open in Default App
+              <ExternalLink size={13} /> {isTauri() ? "Open in Default App" : "Download file"}
             </Button>
-            <Button
+            {isTauri() && <Button
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 text-xs"
@@ -134,7 +135,7 @@ export function FileHubPanel({
               onClick={() => void revealFileHub(note.id)}
             >
               <FolderSearch size={13} /> Reveal
-            </Button>
+            </Button>}
             {status?.resolved.missingMapping && reference.locationId && (
               <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => void mapFileLocation(reference.locationId!).then(refresh)}>
                 <MapPin size={13} /> Configure Location

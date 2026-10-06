@@ -353,42 +353,10 @@ function ZerusToolbarControls() {
   );
 }
 
-const editorPlugins = [
-  headingsPlugin(),
-  quotePlugin(),
-  listsPlugin(),
-  linkPlugin(),
-  linkDialogPlugin({ LinkDialog: VaultLinkDialog }),
-  linkDialogPositionPlugin(),
-  noteLinkShortcutsPlugin(),
-  // Claim mixed image/HTML clipboard payloads before the image plugin's
-  // file-only paste handler or Lexical's HTML import can insert a blob URL.
-  imageClipboardPlugin(),
-  imagePlugin({
-    imageUploadHandler: async (file) => {
-      const path = await savePastedImage(
-        new Uint8Array(await file.arrayBuffer()),
-        file.type,
-      );
-      if (!path) throw new Error("The image could not be saved.");
-      return path;
-    },
-    imagePreviewHandler: async (source) => (await getImageUrl(source)) ?? source,
-  }),
-  imageActionsPlugin(),
-  elementTablePlugin(),
-  thematicBreakPlugin(),
-  // Note properties are stripped by noteBody before reaching this editor.
-  // Parsing frontmatter here mistakes a leading horizontal rule (after the
-  // mobile title is removed) for YAML and can reject ordinary Markdown tables.
-  codeBlockPlugin({ defaultCodeBlockLanguage: "", codeBlockEditorDescriptors: [{ priority: 100, match: () => true, Editor: ConvertibleCodeEditor }] }),
-  codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
-  proseShortcutsPlugin(),
-  searchPlugin(),
-  preserveEmptyParagraphsPlugin(),
-  toolbarPlugin({
-    toolbarClassName: "zerus-mdx-toolbar",
-    toolbarContents: () => (
+function RevisionAwareToolbar() {
+  const [readOnly] = useCellValues(readOnly$);
+  if (readOnly) return <ZerusToolbarControls />;
+  return (
       <>
         <UndoRedo />
         <Separator />
@@ -425,7 +393,45 @@ const editorPlugins = [
         <Separator />
         <ZerusToolbarControls />
       </>
-    ),
+  );
+}
+
+const editorPlugins = [
+  headingsPlugin(),
+  quotePlugin(),
+  listsPlugin(),
+  linkPlugin(),
+  linkDialogPlugin({ LinkDialog: VaultLinkDialog }),
+  linkDialogPositionPlugin(),
+  noteLinkShortcutsPlugin(),
+  // Claim mixed image/HTML clipboard payloads before the image plugin's
+  // file-only paste handler or Lexical's HTML import can insert a blob URL.
+  imageClipboardPlugin(),
+  imagePlugin({
+    imageUploadHandler: async (file) => {
+      const path = await savePastedImage(
+        new Uint8Array(await file.arrayBuffer()),
+        file.type,
+      );
+      if (!path) throw new Error("The image could not be saved.");
+      return path;
+    },
+    imagePreviewHandler: async (source) => (await getImageUrl(source)) ?? source,
+  }),
+  imageActionsPlugin(),
+  elementTablePlugin(),
+  thematicBreakPlugin(),
+  // Note properties are stripped by noteBody before reaching this editor.
+  // Parsing frontmatter here mistakes a leading horizontal rule (after the
+  // mobile title is removed) for YAML and can reject ordinary Markdown tables.
+  codeBlockPlugin({ defaultCodeBlockLanguage: "", codeBlockEditorDescriptors: [{ priority: 100, match: () => true, Editor: ConvertibleCodeEditor }] }),
+  codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
+  proseShortcutsPlugin(),
+  searchPlugin(),
+  preserveEmptyParagraphsPlugin(),
+  toolbarPlugin({
+    toolbarClassName: "zerus-mdx-toolbar",
+    toolbarContents: () => <RevisionAwareToolbar />,
   }),
 ];
 

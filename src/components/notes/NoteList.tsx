@@ -53,10 +53,12 @@ import {
 import {
   deleteTrashedImageForever,
   emptyTrash,
+  useVaultSelector,
   restoreTrashedImage,
   openImageInDefaultApp,
   type TrashedImage,
 } from "@/store/notes-store";
+import { RevisionTrash } from "./RevisionTrash";
 import { NoteListFilters } from "./NoteListFilters";
 import { TypeViewSwitcher } from "./TypeViewWorkspace";
 import { PropertyPills } from "./PropertyPills";
@@ -147,6 +149,8 @@ export function NoteList({
   schemas,
   vaultLocation,
 }: NoteListProps) {
+  const trashedRevisionCount = useVaultSelector((vault) => vault.trashedRevisions.length);
+  const [emptyConfirmOpen, setEmptyConfirmOpen] = useState(false);
   const [deleteImageTarget, setDeleteImageTarget] = useState<TrashedImage | null>(null);
   const [visibleNoteCount, setVisibleNoteCount] = useState(INITIAL_NOTE_COUNT);
   const [addLinkOpen, setAddLinkOpen] = useState(false);
@@ -257,12 +261,12 @@ export function NoteList({
           </Button>
         )}
         {inTrash ? (
-          notes.length + trashedImages.length > 0 && (
+          notes.length + trashedImages.length + trashedRevisionCount > 0 && (
             <Button
               variant="ghost"
               size="sm"
               className="h-7 text-xs text-destructive hover:text-destructive"
-              onClick={() => void emptyTrash()}
+              onClick={() => setEmptyConfirmOpen(true)}
             >
               Empty trash
             </Button>
@@ -353,7 +357,7 @@ export function NoteList({
         />
       </div>
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
-        {notes.length === 0 && (!inTrash || trashedImages.length === 0) && (
+        {notes.length === 0 && (!inTrash || (trashedImages.length === 0 && trashedRevisionCount === 0)) && (
           <p className="px-4 py-8 text-center text-sm text-muted-foreground">
             {search ||
             listFilters.date ||
@@ -373,6 +377,7 @@ export function NoteList({
                 : "No notes here yet."}
           </p>
         )}
+        {inTrash && <RevisionTrash />}
         {inTrash && trashedImages.map((image) => (
           <ContextMenu key={image.id}>
             <ContextMenuTrigger asChild>
@@ -502,6 +507,13 @@ export function NoteList({
           </div>
         )}
       </div>
+      <AlertDialog open={emptyConfirmOpen} onOpenChange={setEmptyConfirmOpen}>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Empty trash?</AlertDialogTitle>
+          <AlertDialogDescription>Deleted notes, revisions, and their unused files will be permanently removed. This cannot be undone.</AlertDialogDescription>
+        </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={() => void emptyTrash()}>Empty trash</AlertDialogAction>
+        </AlertDialogFooter></AlertDialogContent>
+      </AlertDialog>
       <AlertDialog
         open={deleteImageTarget !== null}
         onOpenChange={(open) => !open && setDeleteImageTarget(null)}
