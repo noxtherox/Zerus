@@ -23,6 +23,432 @@ fn cli() -> Command {
     Command::cargo_bin("zerus").unwrap()
 }
 
+fn run_json(vault: &TempDir, args: &[&str]) -> Value {
+    let output = cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "--no-input",
+        ])
+        .args(args)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn task_writes_preserve_lists_and_unknown_metadata() {
+    let vault = fixture();
+    fs::create_dir_all(vault.path().join(".zerus")).unwrap();
+    let path = vault.path().join(".zerus/tasks.json");
+    fs::write(
+        &path,
+        serde_json::to_vec(&serde_json::json!({
+            "generalListName": "Inbox", "lists": [{"id":"work", "name":"Work"}],
+            "categoryOptions": ["Planning"], "futureSetting": {"enabled":true},
+            "tasks": [{"id":"task-1", "title":"Ship", "listId":"work", "category":"Planning",
+                "updatedAt":"2026-10-01T00:00:00Z", "futureField":[1,2]}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    for args in [
+        vec!["task", "complete", "task-1"],
+        vec!["task", "reopen", "task-1"],
+        vec!["task", "update", "task-1", "--priority", "high"],
+        vec!["task", "category", "add", "Other"],
+    ] {
+        run_json(&vault, &args);
+        let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(saved["generalListName"], "Inbox");
+        assert_eq!(saved["lists"][0]["id"], "work");
+        assert_eq!(saved["tasks"][0]["listId"], "work");
+        assert_eq!(saved["futureSetting"]["enabled"], true);
+        assert_eq!(saved["tasks"][0]["futureField"], serde_json::json!([1, 2]));
+        assert_ne!(saved["tasks"][0]["updatedAt"], "2026-10-01T00:00:00Z");
+    }
+}
+
+fn paired_vault() -> TempDir {
+    let vault = fixture();
+    fs::create_dir_all(vault.path().join(".zerus")).unwrap();
+    fs::write(
+        vault.path().join(".zerus/properties.json"),
+        r#"{
+        "work":[{"name":"Related","type":"relation","relationTypeKey":"work",
+            "relationMultiple":true,"relationPairId":"pair-1"}]
+    }"#,
+    )
+    .unwrap();
+    vault
+}
+
+#[test]
+fn paired_relations_update_both_notes_and_undo_as_one_change() {
+    let vault = paired_vault();
+    let a = vault.path().join("work/Plan.md");
+    let b = vault.path().join("work/Archived.md");
+    let original_a = fs::read_to_string(&a).unwrap();
+    let original_b = fs::read_to_string(&b).unwrap();
+    let revision = run_json(&vault, &["note", "get", "work/Plan.md"])["data"]["note"]["revision"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let created = run_json(
+        &vault,
+        &[
+            "note",
+            "property",
+            "set",
+            "work/Plan.md",
+            "Related",
+            "[\"Old Plan\"]",
+            "--if-revision",
+            &revision,
+        ],
+    );
+    let linked_b = fs::read_to_string(&b).unwrap();
+    assert!(linked_b.contains("019f7922-8fae-7733-8357-48b16a134c38"));
+    assert!(fs::read_to_string(&a)
+        .unwrap()
+        .contains("019f7923-8fae-7733-8357-48b16a134c39"));
+    // A stale caller cannot change either side.
+    cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "note",
+            "property",
+            "unset",
+            "work/Plan.md",
+            "Related",
+            "--if-revision",
+            &revision,
+        ])
+        .assert()
+        .failure();
+    assert_eq!(fs::read_to_string(&b).unwrap(), linked_b);
+    let removed = run_json(
+        &vault,
+        &["note", "property", "unset", "work/Plan.md", "Related"],
+    );
+    assert!(!fs::read_to_string(&b).unwrap().contains("Related:"));
+    run_json(
+        &vault,
+        &["undo", removed["data"]["transactionId"].as_str().unwrap()],
+    );
+    assert_eq!(fs::read_to_string(&b).unwrap(), linked_b);
+    // A later edit on either endpoint blocks the whole undo before any writes.
+    fs::write(&b, format!("{linked_b}\nNewer edit\n")).unwrap();
+    let linked_a = fs::read_to_string(&a).unwrap();
+    cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "undo",
+            created["data"]["transactionId"].as_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+    assert_eq!(fs::read_to_string(&a).unwrap(), linked_a);
+    fs::write(&b, &linked_b).unwrap();
+    run_json(
+        &vault,
+        &["undo", created["data"]["transactionId"].as_str().unwrap()],
+    );
+    assert_eq!(fs::read_to_string(&a).unwrap(), original_a);
+    assert_eq!(fs::read_to_string(&b).unwrap(), original_b);
+}
+
+#[test]
+fn relation_writes_refuse_missing_pairs_without_partial_edits() {
+    let vault = paired_vault();
+    fs::create_dir_all(vault.path().join("other")).unwrap();
+    fs::write(
+        vault.path().join("other/Target.md"),
+        "---\nzerus-id: 019f7923-8fae-7733-8357-48b16a134c41\n---\n# Target\n",
+    )
+    .unwrap();
+    fs::write(vault.path().join(".zerus/properties.json"), r#"{"work":[{"name":"Related","type":"relation","relationMultiple":true,"relationPairId":"pair-1"}]}"#).unwrap();
+    let before = fs::read(vault.path().join("work/Plan.md")).unwrap();
+    let output = cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "note",
+            "property",
+            "set",
+            "work/Plan.md",
+            "Related",
+            "Target",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let failure: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert!(failure["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("inverse definition"));
+    assert_eq!(fs::read(vault.path().join("work/Plan.md")).unwrap(), before);
+}
+
+#[test]
+fn task_list_selection_matches_the_app_and_preserves_other_tasks() {
+    let vault = fixture();
+    fs::create_dir_all(vault.path().join(".zerus")).unwrap();
+    fs::write(vault.path().join(".zerus/tasks.json"), r#"{"generalListName":"Inbox","lists":[{"id":"work","name":"Work"}],"tasks":[],"categoryOptions":[]}"#).unwrap();
+    let lists = run_json(&vault, &["task", "lists"]);
+    assert_eq!(lists["data"][0]["name"], "Inbox");
+    let task = run_json(&vault, &["task", "create", "Ship", "--list", "Work"]);
+    assert_eq!(task["data"]["listId"], "work");
+    run_json(&vault, &["task", "create", "Personal"]);
+    assert_eq!(
+        run_json(&vault, &["task", "list", "--list", "work"])["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        run_json(&vault, &["task", "list", "--list", "Inbox"])["data"][0]["title"],
+        "Personal"
+    );
+    run_json(&vault, &["task", "update", "Ship", "--clear-list"]);
+    assert_eq!(
+        run_json(&vault, &["task", "list", "--list", "general"])["data"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    run_json(&vault, &["task", "update", "Ship", "--list", "work"]);
+    assert_eq!(
+        run_json(&vault, &["task", "get", "Ship"])["data"]["listId"],
+        "work"
+    );
+    cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "task",
+            "update",
+            "Ship",
+            "--list",
+            "missing",
+        ])
+        .assert()
+        .failure();
+    assert_eq!(
+        run_json(&vault, &["task", "get", "Ship"])["data"]["listId"],
+        "work"
+    );
+}
+
+#[test]
+fn interrupted_relation_transaction_can_be_recovered_without_overwriting_edits() {
+    for interrupted_undo in [false, true] {
+        let vault = paired_vault();
+        let transaction = run_json(
+            &vault,
+            &[
+                "note",
+                "property",
+                "set",
+                "work/Plan.md",
+                "Related",
+                "Old Plan",
+            ],
+        );
+        let transaction = if interrupted_undo {
+            run_json(
+                &vault,
+                &[
+                    "undo",
+                    transaction["data"]["transactionId"].as_str().unwrap(),
+                ],
+            )
+        } else {
+            transaction
+        };
+        let id = transaction["data"]["transactionId"].as_str().unwrap();
+        let journal_path = vault.path().join(format!(".zerus/history/cli/{id}.json"));
+        let mut journal: Value = serde_json::from_slice(&fs::read(&journal_path).unwrap()).unwrap();
+        journal["pending"] = true.into();
+        // Model a crash after only the source note was written.
+        let inverse = &journal["changes"][1];
+        fs::write(
+            vault.path().join(inverse["path"].as_str().unwrap()),
+            inverse["before"].as_str().unwrap(),
+        )
+        .unwrap();
+        fs::write(&journal_path, serde_json::to_vec(&journal).unwrap()).unwrap();
+        let blocked = cli()
+            .args([
+                "--vault",
+                vault.path().to_str().unwrap(),
+                "--json",
+                "note",
+                "property",
+                "unset",
+                "work/Plan.md",
+                "Related",
+            ])
+            .output()
+            .unwrap();
+        assert!(!blocked.status.success());
+        assert_eq!(
+            serde_json::from_slice::<Value>(&blocked.stderr).unwrap()["error"]["code"],
+            "transaction_pending"
+        );
+        run_json(&vault, &["undo", id]);
+        for change in journal["changes"].as_array().unwrap() {
+            assert_eq!(
+                fs::read_to_string(vault.path().join(change["path"].as_str().unwrap())).unwrap(),
+                change["before"].as_str().unwrap()
+            );
+        }
+        run_json(
+            &vault,
+            &[
+                "note",
+                "property",
+                "set",
+                "work/Plan.md",
+                "Related",
+                "Old Plan",
+            ],
+        );
+    }
+}
+
+#[test]
+fn relation_bulk_and_schema_removal_cannot_bypass_synchronization() {
+    let vault = paired_vault();
+    let before = fs::read(vault.path().join("work/Plan.md")).unwrap();
+    for args in [
+        vec![
+            "bulk",
+            "property-set",
+            "Plan",
+            "Related",
+            "Old Plan",
+            "--yes",
+        ],
+        vec![
+            "schema",
+            "remove",
+            "work",
+            "Related",
+            "--purge-values",
+            "--yes",
+        ],
+    ] {
+        cli()
+            .args(["--vault", vault.path().to_str().unwrap()])
+            .args(args)
+            .assert()
+            .failure();
+    }
+    assert_eq!(fs::read(vault.path().join("work/Plan.md")).unwrap(), before);
+    assert_eq!(
+        run_json(&vault, &["schema", "list", "work"])["data"][0]["relationPairId"],
+        "pair-1"
+    );
+    run_json(
+        &vault,
+        &[
+            "note",
+            "property",
+            "set",
+            "--path",
+            "work/Plan.md",
+            "Related",
+            "Old Plan",
+        ],
+    );
+    cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "type",
+            "move",
+            "work/Plan.md",
+            "--to",
+            "other",
+        ])
+        .assert()
+        .failure();
+    assert!(vault.path().join("work/Plan.md").is_file());
+    assert!(!vault.path().join("other/Plan.md").exists());
+}
+
+#[test]
+fn occupied_single_inverse_blocks_relation_replacement_before_any_writes() {
+    let vault = paired_vault();
+    fs::create_dir_all(vault.path().join("other")).unwrap();
+    fs::write(vault.path().join(".zerus/properties.json"), r#"{
+        "work":[{"name":"Related","type":"relation","relationTypeKey":"other","relationMultiple":true,"relationPairId":"pair-1"}],
+        "other":[{"name":"Owner","type":"relation","relationTypeKey":"work","relationMultiple":false,"relationPairId":"pair-1"}]
+    }"#).unwrap();
+    let target = vault.path().join("other/Target.md");
+    fs::write(&target, "---\nzerus-id: 019f7923-8fae-7733-8357-48b16a134c41\nOwner: Old Plan\n---\n# Target, with comma\n").unwrap();
+    let before_a = fs::read(vault.path().join("work/Plan.md")).unwrap();
+    let before_b = fs::read(&target).unwrap();
+    let output = cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "note",
+            "property",
+            "set",
+            "work/Plan.md",
+            "Related",
+            "[\"Target, with comma\"]",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        serde_json::from_slice::<Value>(&output.stderr).unwrap()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("already points")
+    );
+    assert_eq!(
+        fs::read(vault.path().join("work/Plan.md")).unwrap(),
+        before_a
+    );
+    assert_eq!(fs::read(&target).unwrap(), before_b);
+    run_json(
+        &vault,
+        &["note", "property", "unset", "other/Target.md", "Owner"],
+    );
+    run_json(
+        &vault,
+        &[
+            "note",
+            "property",
+            "set",
+            "work/Plan.md",
+            "Related",
+            "[\"Target, with comma\"]",
+        ],
+    );
+    assert!(fs::read_to_string(&target)
+        .unwrap()
+        .contains("019f7922-8fae-7733-8357-48b16a134c38"));
+}
+
 #[test]
 fn lists_active_notes_as_json() {
     let vault = fixture();
@@ -765,17 +1191,34 @@ fn renames_type_metadata_and_blocks_unrelated_file_deletion() {
 #[test]
 fn stable_id_backlinks_survive_renames_and_do_not_match_prefixes_or_stale_labels() {
     let vault = fixture();
-    fs::write(vault.path().join("work/Plan.md"),
-        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\n---\n# Renamed Plan\n").unwrap();
+    fs::write(
+        vault.path().join("work/Plan.md"),
+        "---\nzerus-id: 019f7922-8fae-7733-8357-48b16a134c38\n---\n# Renamed Plan\n",
+    )
+    .unwrap();
     fs::create_dir_all(vault.path().join(".zerus")).unwrap();
-    fs::write(vault.path().join(".zerus/properties.json"),
-        r#"{"work":[{"name":"Related","type":"relation"}]}"#).unwrap();
+    fs::write(
+        vault.path().join(".zerus/properties.json"),
+        r#"{"work":[{"name":"Related","type":"relation"}]}"#,
+    )
+    .unwrap();
     fs::write(vault.path().join("work/Source.md"),
         "---\nRelated: \"zerus:019f7922-8fae-7733-8357-48b16a134c38|Old title\"\n---\n# Source\n\n[[zerus:019f7922-8fae-7733-8357-48b16a134c38|Old title]]\n").unwrap();
-    fs::write(vault.path().join("work/Unrelated.md"),
-        "# Unrelated\n\n[[Renamed Plan Extended]] [[zerus:missing|Renamed Plan]]\n").unwrap();
-    let output = cli().args(["--vault", vault.path().to_str().unwrap(), "--json", "links", "work/Plan.md"])
-        .output().unwrap();
+    fs::write(
+        vault.path().join("work/Unrelated.md"),
+        "# Unrelated\n\n[[Renamed Plan Extended]] [[zerus:missing|Renamed Plan]]\n",
+    )
+    .unwrap();
+    let output = cli()
+        .args([
+            "--vault",
+            vault.path().to_str().unwrap(),
+            "--json",
+            "links",
+            "work/Plan.md",
+        ])
+        .output()
+        .unwrap();
     assert!(output.status.success());
     let value: Value = serde_json::from_slice(&output.stdout).unwrap();
     let backlinks = value["data"]["backlinks"].as_array().unwrap();

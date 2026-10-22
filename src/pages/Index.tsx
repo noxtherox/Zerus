@@ -1,3 +1,5 @@
+import { FileStorageDialog } from "@/components/notes/FileStorageDialog";
+import { useFileStorageChoice } from "@/hooks/use-file-storage-choice";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import {
@@ -23,6 +25,7 @@ import { TypeViewWorkspace } from "@/components/notes/TypeViewWorkspace";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { NoteTabs } from "@/components/notes/NoteTabs";
 import { EditorPane } from "@/components/notes/EditorPane";
+import { NotesMoveDialog, type NotesMoveRequest } from "@/components/notes/NotesMoveDialog";
 import { ZerusLogo } from "@/components/ZerusLogo";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -34,8 +37,6 @@ import {
   createNote,
   deleteTypeViewPreset,
   initStore,
-  moveExternalNoteToVault,
-  moveSavedLinkToVault,
   onDesktopVaultChanged,
   onDesktopNotesOpened,
   openExternalNotes,
@@ -168,11 +169,16 @@ const Index = () => {
     if (selectedTaskId) recordSearchVisit(vault.location, `task:${selectedTaskId}`);
   }, [selectedNoteId, selectedTaskId, vault.location]);
   const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [selectMode, setSelectMode] = useState(false);
+  const selection = { selectedIds, setSelectedIds, selectMode, setSelectMode };
+  const [moveRequest, setMoveRequest] = useState<NotesMoveRequest | null>(null);
   const [listFilters, setListFilters] =
     useState<NoteListFilters>(EMPTY_NOTE_LIST_FILTERS);
   const [listVisibleProperties, setListVisibleProperties] = useState<string[]>([]);
   const [isFocusMode, setIsFocusMode] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const { chooseStorage, storageDialogProps } = useFileStorageChoice();
   const [searchChatRequest, setSearchChatRequest] = useState<SearchChatRequest | null>(null);
   const [defaultNoteType, setDefaultNoteType] = useState<string[]>(DEFAULT_TYPE);
   const [typeOrder, setTypeOrder] = useState<string[]>([]);
@@ -460,7 +466,7 @@ const Index = () => {
 
   const handleCreateFile = async () => {
     if (vault.isRefreshing) return;
-    const note = await createFileNote(defaultNoteType);
+    const note = await createFileNote(defaultNoteType, chooseStorage);
     if (!note) return;
     setListFilters(EMPTY_NOTE_LIST_FILTERS);
     setSearch("");
@@ -670,14 +676,12 @@ const Index = () => {
     );
   };
 
-  const handleMoveExternalToVault = async (id: string, typePath: string[]) => {
-    const moved = await moveExternalNoteToVault(id, typePath);
-    if (!moved) return;
-    setListFilters(EMPTY_NOTE_LIST_FILTERS);
-    setSearch("");
-    navigate({
-      filter: { kind: "type", path: typePath },
-      selectedNoteId: id,
+  const handleMoveNote = (id: string, typePath: string[]) => {
+    const hasOtherSelectedNotes = selectedIds.size > 0 && (selectedIds.size > 1 || !selectedIds.has(id));
+    setMoveRequest({
+      noteIds: hasOtherSelectedNotes ? [...selectedIds] : [id],
+      openNoteId: hasOtherSelectedNotes ? id : undefined,
+      typePath,
     });
   };
 
@@ -824,20 +828,9 @@ const Index = () => {
             onCopyExternalToVault={(id, typePath) =>
               void handleCopyExternalToVault(id, typePath)
             }
-            onMoveExternalToVault={(id, typePath) =>
-              void handleMoveExternalToVault(id, typePath)
-            }
-            onMoveSavedLinkToVault={(id, typePath) =>
-              void (async () => {
-                if (!(await moveSavedLinkToVault(id, typePath))) return;
-                setListFilters(EMPTY_NOTE_LIST_FILTERS);
-                setSearch("");
-                navigate({
-                  filter: { kind: "type", path: typePath },
-                  selectedNoteId: id,
-                });
-              })()
-            }
+            onMoveExternalToVault={handleMoveNote}
+            onMoveSavedLinkToVault={handleMoveNote}
+            onMoveNote={handleMoveNote}
             isFocusMode={isFocusMode}
             onToggleFocusMode={handleToggleFocusMode}
             isDesktop={vault.isDesktop}
@@ -876,6 +869,20 @@ const Index = () => {
   return (
     <>
       <AutoUpdater />
+      <FileStorageDialog {...storageDialogProps} />
+      {moveRequest && <NotesMoveDialog
+        request={moveRequest}
+        notes={notes}
+        extraTypes={vault.extraTypes}
+        typeIcons={vault.typeIcons}
+        onClose={() => setMoveRequest(null)}
+        onMoved={(ids) => {
+          const movedIds = new Set(ids);
+          const remaining = new Set([...selectedIds].filter((id) => !movedIds.has(id)));
+          setSelectedIds(remaining);
+          if (!remaining.size) setSelectMode(false);
+        }}
+      />}
       <GlobalSearch onOpenItem={item => {
         if (item.note) handleOpenNote(item.id);
         else if (item.task) handleOpenTask(item.id);
@@ -1027,6 +1034,8 @@ const Index = () => {
                 <div className="flex h-full min-w-0">
                   <div className="min-w-0 flex-1">
                     <TypeViewWorkspace
+                      selection={selection}
+                      onMoveNotes={(noteIds) => setMoveRequest({ noteIds })}
                       typePath={filter.path}
                       notes={notes}
                       schemas={vault.schemas}
@@ -1075,13 +1084,17 @@ const Index = () => {
                   <ResizablePanel
                     id="note-list"
                     order={1}
-                    defaultSize={NOTE_LIST_WORKSPACE_SIZE}
+                    // This group remounts after Tasks and structured type views.
+                    // Restore the last split before onLayout records its initial size.
+                    defaultSize={isFocusMode ? 0 : workspacePanelLayoutRef.current[0]}
                     minSize={isFocusMode ? 0 : NOTE_LIST_MIN_SIZE}
                     maxSize={48}
                     collapsible={isFocusMode}
                     className={isFocusMode ? "invisible" : undefined}
                   >
                     <NoteList
+                      selection={selection}
+                      onMoveNotes={(noteIds) => setMoveRequest({ noteIds })}
                       notes={visibleNotes}
                       trashedImages={vault.trashedImages}
                       filterOptions={filterOptions}
@@ -1124,7 +1137,7 @@ const Index = () => {
                   <ResizablePanel
                     id="editor"
                     order={2}
-                    defaultSize={EDITOR_WORKSPACE_SIZE}
+                    defaultSize={isFocusMode ? 100 : workspacePanelLayoutRef.current[1]}
                     minSize={30}
                   >
                     {editorWorkspace}

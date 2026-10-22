@@ -46,6 +46,7 @@ import {
 import {
   type NoteAttachment,
   getNoteAttachments,
+  formatAttachmentMarkdown,
   setNoteAttachments,
 } from "@/lib/note-attachments";
 import {
@@ -104,6 +105,7 @@ import {
   pickMobileVaultFolder,
   restoreMobileVaultFolder,
 } from "@/lib/mobile-vault-picker";
+import type { ChooseFileStorage, FileStorageMode } from "@/lib/file-storage";
 import { showError } from "@/utils/toast";
 import { mobileDiagnostic } from "@/lib/mobile-diagnostics";
 import { loadDefaultNoteType } from "@/lib/note-preferences";
@@ -3004,7 +3006,7 @@ export async function openDocumentPathsFromDesktop(
 ): Promise<string[]> {
   const ids: string[] = [];
   for (const path of paths) {
-    const note = await createUnmanagedFileHubNote(
+    const note = await createFileHubNote(
       loadDefaultNoteType(state.location),
       path,
     );
@@ -3197,6 +3199,7 @@ export async function copyExternalNoteToVault(
 export async function moveExternalNoteToVault(
   id: string,
   typePath: string[],
+  options: { keepSourceImages?: boolean } = {},
 ): Promise<boolean> {
   if (!backend || !isSafeTypePath(typePath) || state.busyNoteIds.has(id)) {
     return false;
@@ -3235,7 +3238,7 @@ export async function moveExternalNoteToVault(
       forgetExternalPath(note.externalPath);
       saveExternalPaths();
       suggestIconsForNewType(typePath, existedKeys);
-      for (const sourcePath of importedImages.sourcePaths) {
+      for (const sourcePath of options.keepSourceImages ? [] : importedImages.sourcePaths) {
         try {
           await removeFsFile(sourcePath);
         } catch (error) {
@@ -3389,10 +3392,31 @@ export async function chooseAttachmentFiles(): Promise<string[]> {
 /** Creates a note for a document selected from the Files section. */
 export async function createFileNote(
   typePath: string[],
+  chooseStorage: ChooseFileStorage,
 ): Promise<Note | null> {
-  const picked = await chooseDocumentFile();
-  if (!picked) return null;
-  return createUnmanagedFileHubNote(typePath, picked);
+  const target = backend;
+  const generation = vaultLoadGeneration;
+  let picked: string | null = null;
+  try {
+    picked = await chooseDocumentFile();
+    if (!picked) return null;
+    const upload = browserDocumentUploads.get(picked);
+    if (!upload && isTauri()) {
+      const existing = await findHubForAbsolutePath(picked);
+      if (existing) return existing;
+    }
+    const mode = await chooseStorage(
+      upload?.name ?? fileNameFromPath(picked),
+      !upload && isTauri(),
+    );
+    if (!mode || target !== backend || generation !== vaultLoadGeneration) return null;
+    return await createFileHubNote(typePath, picked, mode);
+  } catch (error) {
+    reportError("create file note", error);
+    return null;
+  } finally {
+    if (picked) browserDocumentUploads.delete(picked);
+  }
 }
 
 /** Creates an app-managed web link outside the vault's note/type hierarchy. */
@@ -3531,54 +3555,88 @@ async function findHubForAbsolutePath(
   return null;
 }
 
-/**
- * Creates the note and its unmanaged file-hub metadata in one disk write.
- * This prevents a focus-triggered vault scan from observing a plain note
- * between creation and attachment.
- */
-async function createUnmanagedFileHubNote(
+/** Creates file metadata and any backup before exposing the new note. */
+async function createFileHubNote(
   typePath: string[],
   selectedPath: string,
+  mode: FileStorageMode = "external",
 ): Promise<Note | null> {
-  const canonical = await canonicalizeFsPath(selectedPath);
-  const existing = await findHubForAbsolutePath(canonical);
-  if (existing) return existing;
-
+  const target = backend;
+  if (!target) return null;
+  const upload = browserDocumentUploads.get(selectedPath);
+  const canonical = upload ? selectedPath : await canonicalizeFsPath(selectedPath);
+  if (!upload) {
+    const existing = await findHubForAbsolutePath(canonical);
+    if (existing) return existing;
+  }
   const id = crypto.randomUUID();
-  const name = fileNameFromPath(canonical);
-  const vaultPath = state.location
-    ? pathInsideRoot(state.location, canonical)
-    : null;
-  const locationMatch = mostSpecificLocation(
-    canonical,
-    state.fileLocations,
-    getFileLocationMappings(),
-  );
-  const reference: FileHubReference = vaultPath
-    ? { id, name, kind: "vault", path: vaultPath, managed: false }
-    : locationMatch
-      ? {
-          id,
-          name,
-          kind: "location",
-          locationId: locationMatch.location.id,
-          path: locationMatch.path,
-          managed: false,
-        }
-      : { id, name, kind: "local", managed: false };
+  const name = upload?.name ?? fileNameFromPath(canonical);
   const stem = name.replace(/\.[^.]+$/, "") || "Document";
-  const note = await createNote(
-    typePath,
-    setFileHubReference(`# ${stem}\n\n`, reference),
-  );
-  if (!note) return null;
-  if (reference.kind === "local") setFileHubMapping(id, canonical);
-  return note;
+  const draft = { id, path: `${typeKey(typePath.length ? typePath : DEFAULT_TYPE)}/${sanitizeFileStem(stem)}.md` };
+  const staged: string[] = [];
+  try {
+    let reference: FileHubReference;
+    if (upload) {
+      if (mode !== "copy" || target.kind !== "browser") return null;
+      const path = `.zerus/attachments/${id}/${crypto.randomUUID()}-${name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      await target.writeBinary(path, new Uint8Array(await upload.arrayBuffer()));
+      staged.push(path);
+      reference = { id, name, kind: "vault", path, managed: true };
+    } else if (mode === "copy") {
+      const path = await copyDocumentIntoVault(draft, canonical);
+      staged.push(path);
+      reference = { id, name, kind: "vault", path, managed: true };
+    } else {
+      reference = externalFileHubReference(id, name, canonical);
+    }
+    let content = setFileHubReference(`# ${stem}\n\n`, reference);
+    let backup: NoteAttachment | null = null;
+    if (mode === "external-backup") {
+      backup = await createFileBackup(draft, canonical);
+      staged.push(backup.path!);
+      content = appendFileBackup(content, backup);
+    }
+    const note = await createNote(typePath, content, id);
+    if (!note) {
+      for (const path of staged) await target.removeFile(path).catch(() => {});
+      return null;
+    }
+    if (reference.kind === "local") setFileHubMapping(id, canonical);
+    if (backup) setFileHubMapping(backup.id, canonical);
+    return note;
+  } catch (error) {
+    for (const path of staged) await target.removeFile(path).catch(() => {});
+    reportError("create file note", error);
+    return null;
+  } finally {
+    browserDocumentUploads.delete(selectedPath);
+  }
 }
 
-async function copyDocumentIntoVault(note: Note, source: string): Promise<string> {
+function externalFileHubReference(id: string, name: string, canonical: string): FileHubReference {
+  const vaultPath = state.location ? pathInsideRoot(state.location, canonical) : null;
+  const match = mostSpecificLocation(canonical, state.fileLocations, getFileLocationMappings());
+  if (vaultPath) return { id, name, kind: "vault", path: vaultPath, managed: false };
+  if (match) return { id, name, kind: "location", locationId: match.location.id, path: match.path, managed: false };
+  return { id, name, kind: "local", managed: false };
+}
+
+async function createFileBackup(note: Pick<Note, "id">, source: string): Promise<NoteAttachment> {
+  return {
+    id: crypto.randomUUID(), name: fileNameFromPath(source), kind: "vault",
+    path: await copyAttachmentIntoVault(note, source), managed: true,
+  };
+}
+
+function appendFileBackup(content: string, backup: NoteAttachment): string {
+  const next = setNoteAttachments(content, [...getNoteAttachments(content), backup]);
+  return withBody(next, `${noteBody(next).trimEnd()}\n\nBackup: ${formatAttachmentMarkdown(backup)}\n`);
+}
+
+async function copyDocumentIntoVault(note: Pick<Note, "path">, source: string): Promise<string> {
   if (!state.location) throw new Error("The vault is unavailable");
   const dir = note.path.split("/").slice(0, -1).join("/");
+  await backend?.mkDir(dir);
   return invoke<string>("copy_file_into_vault", {
     source,
     root: state.location,
@@ -3590,7 +3648,7 @@ async function copyDocumentIntoVault(note: Note, source: string): Promise<string
 export async function attachFileToNote(
   id: string,
   selectedPath: string,
-  mode: "auto" | "local" | "copy" = "auto",
+  mode: "auto" | "local" | FileStorageMode = "auto",
 ): Promise<AttachFileResult> {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || isExternalNote(note) || isTrashed(note) || state.busyNoteIds.has(id)) {
@@ -3620,11 +3678,6 @@ export async function attachFileToNote(
   const name = fileNameFromPath(canonical);
   let reference: FileHubReference | null = null;
   const vaultPath = state.location ? pathInsideRoot(state.location, canonical) : null;
-  const locationMatch = mostSpecificLocation(
-    canonical,
-    state.fileLocations,
-    getFileLocationMappings(),
-  );
   try {
     if (mode === "copy") {
       reference = {
@@ -3636,24 +3689,23 @@ export async function attachFileToNote(
       };
     } else if (vaultPath && mode === "auto") {
       reference = { id: idValue, name, kind: "vault", path: vaultPath, managed: false };
-    } else if (locationMatch && mode === "auto") {
-      reference = {
-        id: idValue,
-        name,
-        kind: "location",
-        locationId: locationMatch.location.id,
-        path: locationMatch.path,
-        managed: false,
-      };
+    } else if (mode === "external" || mode === "external-backup") {
+      reference = externalFileHubReference(idValue, name, canonical);
     } else if (mode === "local") {
       reference = { id: idValue, name, kind: "local", managed: false };
-      setFileHubMapping(idValue, canonical);
     } else {
       return { status: "needs-choice", path: canonical };
     }
-    setFileHubMapping(idValue, null);
-    if (reference.kind === "local") setFileHubMapping(idValue, canonical);
-    updateNoteContent(id, setFileHubReference(note.content, reference));
+    const backup = mode === "external-backup" ? await createFileBackup(note, canonical) : null;
+    const latest = state.notes.find((candidate) => candidate.id === id);
+    if (!latest) return { status: "failed" };
+    let content = setFileHubReference(latest.content, reference);
+    if (backup) {
+      content = appendFileBackup(content, backup);
+      setFileHubMapping(backup.id, canonical);
+    }
+    setFileHubMapping(idValue, reference.kind === "local" ? canonical : null);
+    updateNoteContent(id, content);
     return { status: "attached", noteId: id };
   } catch (error) {
     reportError("attach document", error);
@@ -3891,7 +3943,7 @@ function attachmentAbsolutePath(attachment: NoteAttachment): string | null {
 }
 
 async function copyAttachmentIntoVault(
-  note: Note,
+  note: Pick<Note, "id">,
   source: string,
 ): Promise<string> {
   if (!state.location) throw new Error("The vault is unavailable");
@@ -5357,26 +5409,74 @@ async function moveNoteWithManagedDocument(note: Note, target: string) {
   }
 }
 
-export async function setNoteType(id: string, typePath: string[]) {
-  if (!backend || state.busyNoteIds.has(id)) return;
-  await flushAll();
-  const note = state.notes.find((candidate) => candidate.id === id);
-  if (!note || isExternalNote(note) || isTrashed(note) || !typePath.length)
-    return;
-  if (typeKey(noteTypePath(note)) === typeKey(typePath)) return;
-  // the move may create the type — capture what existed before to only
-  // suggest icons for genuinely new type levels
-  const existedKeys = existingTypeKeys();
-  const schemas = preserveRelationsForTypeMove(note, typePath, state.schemas);
-  const target = uniquePath(typeKey(typePath), fileStem(note.path), id);
+export async function setNoteType(id: string, typePath: string[]): Promise<boolean> {
+  if (!backend || !isSafeTypePath(typePath) || noteBulkBlockReason(id)) return false;
+  setNoteBusy(id, true);
   try {
+    if (!(await flushNoteWrites(id))) return false;
+    const note = state.notes.find((candidate) => candidate.id === id);
+    if (!note) return false;
+    if (typeKey(noteTypePath(note)) === typeKey(typePath)) return true;
+    const existedKeys = existingTypeKeys();
+    const schemas = preserveRelationsForTypeMove(note, typePath, state.schemas);
+    const target = await uniqueManagedDocumentPath(typeKey(typePath), fileNameFromPath(note.path), note.path);
     await moveNoteWithManagedDocument(note, target);
     if (schemas !== state.schemas) saveSchemas(schemas);
     saveNoteDisplayState();
     await suggestIconsForNewType(typePath, existedKeys);
+    return true;
   } catch (error) {
     reportError("move note", error);
+    return false;
+  } finally {
+    setNoteBusy(id, false);
   }
+}
+
+export interface NotesMoveResult {
+  movedIds: string[];
+  skipped: { noteId: string; title: string; reason: string }[];
+  failed: { noteId: string; title: string; reason: string }[];
+}
+
+export async function moveNotesToType(
+  noteIds: string[],
+  typePath: string[],
+  onProgress?: (completed: number, total: number) => void,
+): Promise<NotesMoveResult> {
+  const result: NotesMoveResult = { movedIds: [], skipped: [], failed: [] };
+  const ids = [...new Set(noteIds)];
+  const location = state.location;
+  for (const [index, id] of ids.entries()) {
+    const note = state.notes.find((candidate) => candidate.id === id);
+    const title = note ? noteTitle(note) : "Missing note";
+    const reason = !backend || state.location !== location ? "The vault changed or is unavailable"
+      : !isSafeTypePath(typePath) ? "Choose a valid destination folder"
+      : !note ? "Note is no longer available"
+      : isTrashed(note) ? "Note is in Trash"
+      : state.loadingNoteIds.has(id) ? "Note is still loading"
+      : state.busyNoteIds.has(id) ? "Note is busy"
+      : state.conflicts[id] ? "Resolve this note’s conflict first"
+      : !isExternalNote(note) && !isManagedSavedLink(note) && typeKey(noteTypePath(note)) === typeKey(typePath)
+        ? "Already in this folder" : null;
+    if (reason || !note) {
+      result.skipped.push({ noteId: id, title, reason: reason ?? "Missing note" });
+    } else {
+      try {
+        const moved = isExternalNote(note)
+          ? await moveExternalNoteToVault(id, typePath, { keepSourceImages: true })
+          : isManagedSavedLink(note)
+            ? await moveSavedLinkToVault(id, typePath)
+            : await setNoteType(id, typePath);
+        if (moved) result.movedIds.push(id);
+        else result.failed.push({ noteId: id, title, reason: "Could not move this note. Check for save errors or conflicts." });
+      } catch (error) {
+        result.failed.push({ noteId: id, title, reason: error instanceof Error ? error.message : "Could not move this note" });
+      }
+    }
+    onProgress?.(index + 1, ids.length);
+  }
+  return result;
 }
 
 export function setNotePinned(id: string, pinned: boolean) {

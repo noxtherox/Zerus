@@ -1,3 +1,5 @@
+import { FileStorageDialog } from "@/components/notes/FileStorageDialog";
+import { useFileStorageChoice } from "@/hooks/use-file-storage-choice";
 import { PropertiesPaneSections, PropertiesPaneSettings } from "@/components/notes/PropertiesPaneSections";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
 import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
@@ -854,7 +856,7 @@ function NoteView({
   const [exportOpen, setExportOpen] = useState(false);
   const [trashConfirmOpen, setTrashConfirmOpen] = useState(false);
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
-  const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
+  const { chooseStorage, storageDialogProps } = useFileStorageChoice();
   useEffect(() => {
     setDraft(presentedNote.body);
     setTitleDraft(presentedNote.title);
@@ -950,7 +952,11 @@ function NoteView({
     if (result.status === "duplicate") {
       onOpenNote(result.noteId);
     } else if (result.status === "needs-choice") {
-      setPendingAttachPath(result.path);
+      const mode = await chooseStorage(result.path.split(/[\\/]/).pop() ?? result.path, true, "attach");
+      if (!mode) return;
+      const attached = await attachFileToNote(note.id, result.path, mode);
+      if (attached.status === "attached") setFileExists(true);
+      if (attached.status === "duplicate") onOpenNote(attached.noteId);
     } else if (result.status === "attached") {
       setFileExists(true);
     }
@@ -960,6 +966,7 @@ function NoteView({
     const status = await getFileHubStatus(note.id);
     const path = status?.resolved.absolutePath;
     if (!path || !status.exists) return;
+    if (await chooseStorage(status.resolved.reference.name, false, "copy") !== "copy") return;
     const result = await attachFileToNote(note.id, path, "copy");
     if (result.status === "attached") setFileExists(true);
   };
@@ -1468,44 +1475,7 @@ function NoteView({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <Dialog open={pendingAttachPath !== null} onOpenChange={(open) => { if (!open) setPendingAttachPath(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>How should this file be attached?</DialogTitle>
-          </DialogHeader>
-          <p className="break-all text-sm text-muted-foreground">{pendingAttachPath}</p>
-          <p className="text-sm text-muted-foreground">A local link stays on this device. A vault copy is portable and will move and trash together with this note.</p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingAttachPath) {
-                  void attachFileToNote(note.id, pendingAttachPath, "local").then((result) => {
-                    if (result.status === "attached") setFileExists(true);
-                    if (result.status === "duplicate") onOpenNote(result.noteId);
-                  });
-                }
-                setPendingAttachPath(null);
-              }}
-            >
-              Link Locally
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingAttachPath) {
-                  void attachFileToNote(note.id, pendingAttachPath, "copy").then((result) => {
-                    if (result.status === "attached") setFileExists(true);
-                    if (result.status === "duplicate") onOpenNote(result.noteId);
-                  });
-                }
-                setPendingAttachPath(null);
-              }}
-            >
-              Copy into Vault
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FileStorageDialog {...storageDialogProps} />
       <AlertDialog open={trashConfirmOpen} onOpenChange={setTrashConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -2145,6 +2115,7 @@ function VaultSetup({
 }
 
 export function MobileZerus() {
+  const { chooseStorage, storageDialogProps } = useFileStorageChoice();
   const isNativeApp = "__TAURI_INTERNALS__" in window;
   const vault = useVault();
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
@@ -2579,7 +2550,7 @@ export function MobileZerus() {
       return;
     }
     if (scope.kind === "files") {
-      const note = await createFileNote(creationType);
+      const note = await createFileNote(creationType, chooseStorage);
       if (note) openNote(note.id);
       return;
     }
@@ -2611,6 +2582,7 @@ export function MobileZerus() {
 
   return (
     <div className={cn("flex min-h-screen items-center justify-center bg-zerus-sidebar p-0", !isNativeApp && "md:p-8")}>
+      <FileStorageDialog {...storageDialogProps} />
       <section className={cn("mobile-zerus-themed relative flex h-[100dvh] w-full max-w-none flex-col overflow-hidden bg-zerus-editor text-zerus-text md:max-w-[393px] md:h-[852px] md:rounded-[42px] md:border-[7px] md:border-zerus-sidebar md:shadow-[0_28px_70px_rgba(0,0,0,0.35)]", isNativeApp && "mobile-native-shell")} style={{ "--mobile-content-top": isNativeApp ? "var(--mobile-safe-area-top, env(safe-area-inset-top))" : "44px" } as CSSProperties} aria-label="Zerus mobile app">
         {!isNativeApp && <StatusBar />}
         {vault.status === "pick-vault" || (vault.status === "error" && vaultSetupOpen) ? (

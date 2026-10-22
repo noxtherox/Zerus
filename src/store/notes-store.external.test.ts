@@ -116,6 +116,8 @@ import {
   closeExternalNote,
   copyExternalNoteToVault,
   createNote,
+  createFileNote,
+  getFileHubStatus,
   duplicateNote,
   toggleNoteArchived,
   deleteNoteForever,
@@ -126,6 +128,7 @@ import {
   getNoteConflict,
   initStore,
   moveExternalNoteToVault,
+  moveNotesToType,
   openDocumentPathsFromDesktop,
   openExternalNotes,
   prioritizeNoteLoad,
@@ -144,6 +147,7 @@ import {
   updateTypeView,
 } from "./notes-store";
 import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
+import { getNoteAttachments } from "@/lib/note-attachments";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
 import { setZerusState } from "@/lib/zerus-metadata";
@@ -249,7 +253,7 @@ describe("external note store workflow", () => {
           const directory = join(args.root, args.relativeDirectory);
           const extension = extname(args.fileName);
           const stem = basename(args.fileName, extension);
-          await mkdir(directory, { recursive: true });
+          await nodeStat(directory);
           for (let index = 0; ; index += 1) {
             const fileName = `${stem}${index === 0 ? "" : ` ${index + 1}`}${extension}`;
             const target = join(directory, fileName);
@@ -626,6 +630,127 @@ describe("external note store workflow", () => {
       missingPath,
     ]);
   });
+
+  it("moves a mixed selection with managed files, attachments, and shared external images", async () => {
+    const destination = ["batch-move"];
+    const note = (await createNote(["inbox"], "# Batch ordinary\n"))!;
+    const managed = (await createNote(["inbox"], "# Batch managed\n"))!;
+    const document = join(root, "batch-managed.pdf");
+    await writeFile(document, "managed bytes");
+    await attachFileToNote(managed.id, document, "copy");
+    const linkedSource = join(root, "batch-linked.pdf");
+    await writeFile(linkedSource, "linked bytes");
+    mocks.picked = linkedSource;
+    const linked = (await createFileNote(["inbox"], async () => "external-backup"))!;
+    const attachments = getNoteAttachments(getNotes().find((candidate) => candidate.id === linked.id)!);
+    const imagePath = join(root, "shared-batch.png");
+    await writeFile(imagePath, new Uint8Array([1, 2, 3]));
+    const externalPaths = [join(root, "Batch external one.md"), join(root, "Batch external two.md")];
+    await Promise.all(externalPaths.map((path) => writeFile(path, "# External\n\n![Shared](shared-batch.png)\n")));
+    mocks.picked = externalPaths;
+    const externalIds = await openExternalNotes();
+    await flushPendingWrites();
+    await mkdir(join(vault, "batch-move"), { recursive: true });
+    await writeFile(join(vault, "batch-move", "Batch ordinary.md"), "untouched collision");
+    const ids = [note.id, managed.id, linked.id, ...externalIds];
+    const result = await moveNotesToType([...ids, note.id], destination);
+    expect(result).toEqual({ movedIds: ids, skipped: [], failed: [] });
+    for (const id of ids) {
+      const moved = getNotes().find((candidate) => candidate.id === id)!;
+      expect(noteTypePath(moved)).toEqual(destination);
+      expect(moved.externalPath).toBeUndefined();
+      expect(await readFile(join(vault, moved.path), "utf8")).toBe(moved.content);
+    }
+    await expect(readFile(join(vault, "batch-move", "Batch ordinary.md"), "utf8")).resolves.toBe("untouched collision");
+    const movedManaged = getNotes().find((candidate) => candidate.id === managed.id)!;
+    await expect(readFile(join(vault, getFileHubReference(movedManaged)!.path!), "utf8")).resolves.toBe("managed bytes");
+    const movedLinked = getNotes().find((candidate) => candidate.id === linked.id)!;
+    expect(getNoteAttachments(movedLinked)).toEqual(attachments);
+    await expect(readFile(join(vault, attachments[0].path!), "utf8")).resolves.toBe("linked bytes");
+    await expect(readFile(linkedSource, "utf8")).resolves.toBe("linked bytes");
+    expect((await getFileHubStatus(linked.id))?.resolved.absolutePath).toBe(linkedSource);
+    for (const id of externalIds) {
+      const moved = getNotes().find((candidate) => candidate.id === id)!;
+      const imported = moved.content.match(/!\[Shared\]\(([^)]+)\)/)![1];
+      await expect(readFile(join(vault, decodeURIComponent(imported)))).resolves.toEqual(Buffer.from([1, 2, 3]));
+    }
+    await expect(readFile(imagePath)).resolves.toEqual(Buffer.from([1, 2, 3]));
+    for (const path of externalPaths) await expect(nodeStat(path)).rejects.toThrow();
+  });
+
+  it("keeps unsaved sources in place and continues moving the rest of a selection", async () => {
+    const failed = (await createNote(["inbox"], "# Batch failed save\n"))!;
+    const ready = (await createNote(["inbox"], "# Batch ready\n"))!;
+    const alreadyThere = (await createNote(["batch-results"], "# Already there\n"))!;
+    await flushPendingWrites();
+    const failedPath = join(vault, failed.path);
+    mocks.failWrites.add(failedPath);
+    updateNoteBody(failed.id, "# Batch failed save\n\nUnsaved changes\n");
+    try {
+      const result = await moveNotesToType([failed.id, "missing-batch-note", alreadyThere.id, ready.id], ["batch-results"]);
+      expect(result.movedIds).toEqual([ready.id]);
+      expect(result.failed.map((issue) => issue.noteId)).toEqual([failed.id]);
+      expect(result.skipped.map((issue) => issue.noteId)).toEqual(["missing-batch-note", alreadyThere.id]);
+      expect(getNotes().find((candidate) => candidate.id === failed.id)?.path).toBe(failed.path);
+      await expect(readFile(failedPath, "utf8")).resolves.not.toContain("Unsaved changes");
+      expect(noteTypePath(getNotes().find((candidate) => candidate.id === ready.id)!)).toEqual(["batch-results"]);
+    } finally {
+      mocks.failWrites.delete(failedPath);
+      await flushPendingWrites();
+    }
+  });
+
+  it("waits for a file storage choice and cancels without creating a note", async () => {
+    const source = join(root, "one", "Cancelled file.pdf");
+    await writeFile(source, "source bytes");
+    mocks.picked = source;
+    const noteIds = getNotes().map((note) => note.id);
+    let cancel!: (mode: null) => void;
+    const choose = vi.fn(() => new Promise<null>((resolve) => { cancel = resolve; }));
+    const pending = createFileNote(["inbox"], choose);
+    await waitFor(() => choose.mock.calls.length === 1);
+    expect(getNotes().map((note) => note.id)).toEqual(noteIds);
+    cancel(null);
+    await expect(pending).resolves.toBeNull();
+    expect(getNotes().map((note) => note.id)).toEqual(noteIds);
+    await expect(readFile(source, "utf8")).resolves.toBe("source bytes");
+  });
+
+  it.each(["copy", "external", "external-backup"] as const)(
+    "creates a file note using %s while preserving the source",
+    async (mode) => {
+      const source = join(root, "one", `Storage ${mode}.pdf`);
+      await writeFile(source, "original document bytes");
+      mocks.picked = source;
+      const created = await createFileNote(mode === "copy" ? ["storage", "new-type"] : ["inbox"], async () => mode);
+      expect(created).not.toBeNull();
+      await flushPendingWrites();
+      const note = getNotes().find((candidate) => candidate.id === created!.id)!;
+      const hub = getFileHubReference(note)!;
+      expect(hub.kind).toBe(mode === "copy" ? "vault" : "local");
+      if (mode === "copy") {
+        await expect(readFile(join(vault, hub.path!), "utf8")).resolves.toBe("original document bytes");
+      } else {
+        expect((await getFileHubStatus(note.id))?.resolved.absolutePath).toBe(source);
+      }
+      const attachments = getNoteAttachments(note);
+      expect(attachments).toHaveLength(mode === "external-backup" ? 1 : 0);
+      if (mode === "external-backup") {
+        expect(attachments[0].kind).toBe("vault");
+        expect(note.content).toContain(`](zerus-attachment:${attachments[0].id})`);
+        await writeFile(source, "edited external document");
+        await expect(readFile(join(vault, attachments[0].path!), "utf8")).resolves.toBe("original document bytes");
+        await setNoteType(note.id, ["research"]);
+        await trashNote(note.id);
+        await restoreNote(note.id);
+      }
+      await expect(readFile(source, "utf8")).resolves.toBe(
+        mode === "external-backup" ? "edited external document" : "original document bytes",
+      );
+      const disk = await readFile(join(vault, getNotes().find((candidate) => candidate.id === note.id)!.path), "utf8");
+      expect(getNoteAttachments(disk)).toEqual(attachments);
+    },
+  );
 
   it("keeps linked sources untouched and manages copied documents with their hub", async () => {
     const document = join(root, "one", "Product Walkthrough.mp4");

@@ -72,7 +72,7 @@ import {
 } from "@/lib/desktop-platform";
 import { useNoteActivation } from "@/lib/use-note-activation";
 import { NoteContextMenu, NoteContextMenuProvider } from "./NoteContextMenu";
-import { useBulkSelection } from "@/lib/use-bulk-selection";
+import { useBulkSelection, type ControlledBulkSelection } from "@/lib/use-bulk-selection";
 import {
   BulkActionsToolbar,
   type BulkMutationRequest,
@@ -89,6 +89,8 @@ function formatNoteDate(iso: string): string {
 }
 
 interface NoteListProps {
+  selection: ControlledBulkSelection;
+  onMoveNotes: (ids: string[]) => void;
   notes: Note[];
   trashedImages: TrashedImage[];
   filterOptions: Note[];
@@ -120,6 +122,8 @@ interface NoteListProps {
 }
 
 export function NoteList({
+  selection,
+  onMoveNotes,
   notes,
   trashedImages,
   filterOptions,
@@ -172,7 +176,8 @@ export function NoteList({
   const noteIds = useMemo(() => notes.map((note) => note.id), [notes]);
   const bulkSelection = useBulkSelection(
     noteIds,
-    `${filterKey}:${listFilterKey}:${search}`,
+    `${vaultLocation}:${filterKey}:${listFilterKey}:${search}`,
+    selection,
   );
   const activation = useNoteActivation(onSelectNote, onOpenNoteInNewTab, `${filterKey}:${listFilterKey}:${search}:${vaultLocation}:${selectedNoteId}:${bulkSelection.selectMode}`);
   const heading =
@@ -319,6 +324,7 @@ export function NoteList({
           onClear={bulkSelection.clearSelection}
           onSelectAll={bulkSelection.selectAll}
           onRemoveSelected={bulkSelection.removeSelected}
+          onMoveNotes={onMoveNotes}
           externalRequest={bulkRequest}
           onExternalRequestHandled={() => setBulkRequest(null)}
         />

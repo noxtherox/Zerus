@@ -92,7 +92,7 @@ import {
 } from "@/lib/note-utils";
 import { getImageUrl } from "@/store/notes-store";
 import { cn } from "@/lib/utils";
-import { useBulkSelection } from "@/lib/use-bulk-selection";
+import { useBulkSelection, type ControlledBulkSelection } from "@/lib/use-bulk-selection";
 import { useNoteActivation } from "@/lib/use-note-activation";
 import { NoteContextMenu, NoteContextMenuProvider } from "./NoteContextMenu";
 import {
@@ -1052,6 +1052,8 @@ function EmptyView({ message }: { message: string }) {
 }
 
 interface TypeViewWorkspaceProps {
+  selection: ControlledBulkSelection;
+  onMoveNotes: (ids: string[]) => void;
   typePath: string[];
   notes: Note[];
   schemas: PropertySchemas;
@@ -1077,6 +1079,8 @@ interface TypeViewWorkspaceProps {
 }
 
 export function TypeViewWorkspace({
+  selection,
+  onMoveNotes,
   typePath,
   notes,
   schemas,
@@ -1121,10 +1125,10 @@ export function TypeViewWorkspace({
     [filteredNotes],
   );
   const selectionResetKey = useMemo(
-    () => `${typePath.join("/")}:${search}:${JSON.stringify(config.filters)}:${hideSubtypeNotes}`,
-    [config.filters, hideSubtypeNotes, search, typePath],
+    () => `${vaultLocation}:${typePath.join("/")}:${search}:${JSON.stringify(config.filters)}:${hideSubtypeNotes}`,
+    [config.filters, hideSubtypeNotes, search, typePath, vaultLocation],
   );
-  const bulkSelection = useBulkSelection(filteredNoteIds, selectionResetKey);
+  const bulkSelection = useBulkSelection(filteredNoteIds, selectionResetKey, selection);
   const [bulkRequest, setBulkRequest] = useState<BulkMutationRequest | null>(null);
   const requestBulkMutation = (noteIds: string[], mutation: NonNullable<BulkMutationRequest["mutation"]>) => {
     setBulkRequest({ id: Date.now(), noteIds, mutation });
@@ -1317,6 +1321,7 @@ export function TypeViewWorkspace({
               onClear={bulkSelection.clearSelection}
               onSelectAll={bulkSelection.selectAll}
               onRemoveSelected={bulkSelection.removeSelected}
+              onMoveNotes={onMoveNotes}
               externalRequest={bulkRequest}
               onExternalRequestHandled={() => setBulkRequest(null)}
             />

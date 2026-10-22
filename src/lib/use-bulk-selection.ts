@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction, type KeyboardEvent, type MouseEvent } from "react";
+
+export interface ControlledBulkSelection {
+  selectedIds: Set<string>;
+  setSelectedIds: Dispatch<SetStateAction<Set<string>>>;
+  selectMode: boolean;
+  setSelectMode: Dispatch<SetStateAction<boolean>>;
+}
 
 export interface BulkSelectionState {
   selectedIds: ReadonlySet<string>;
@@ -16,16 +23,23 @@ export interface BulkSelectionState {
 export function useBulkSelection(
   orderedIds: string[],
   resetKey: string,
+  selection?: ControlledBulkSelection,
 ): BulkSelectionState {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [selectMode, setSelectModeState] = useState(false);
+  const [localSelectedIds, setLocalSelectedIds] = useState<Set<string>>(() => new Set());
+  const [localSelectMode, setLocalSelectMode] = useState(false);
+  const { selectedIds, setSelectedIds, selectMode, setSelectMode: setSelectModeState } = selection ?? {
+    selectedIds: localSelectedIds,
+    setSelectedIds: setLocalSelectedIds,
+    selectMode: localSelectMode,
+    setSelectMode: setLocalSelectMode,
+  };
   const anchorId = useRef<string | null>(null);
 
   const clearSelection = useCallback(() => {
     setSelectedIds(new Set());
     setSelectModeState(false);
     anchorId.current = null;
-  }, []);
+  }, [setSelectedIds, setSelectModeState]);
 
   useEffect(() => {
     clearSelection();
@@ -34,7 +48,7 @@ export function useBulkSelection(
   const setSelectMode = useCallback((enabled: boolean) => {
     setSelectModeState(enabled);
     if (!enabled && selectedIds.size === 0) anchorId.current = null;
-  }, [selectedIds.size]);
+  }, [selectedIds.size, setSelectModeState]);
 
   const toggleOne = useCallback((
     id: string,
@@ -58,7 +72,7 @@ export function useBulkSelection(
       anchorId.current = id;
       return next;
     });
-  }, [orderedIds]);
+  }, [orderedIds, setSelectedIds]);
 
   const handleModifiedClick = useCallback((
     event: MouseEvent,
@@ -77,7 +91,7 @@ export function useBulkSelection(
     setSelectedIds(new Set(orderedIds));
     setSelectModeState(true);
     anchorId.current = orderedIds.at(-1) ?? null;
-  }, [orderedIds]);
+  }, [orderedIds, setSelectedIds, setSelectModeState]);
 
   const removeSelected = useCallback((ids: Iterable<string>) => {
     const removed = new Set(ids);
@@ -86,12 +100,12 @@ export function useBulkSelection(
       if (!next.size) setSelectModeState(false);
       return next;
     });
-  }, []);
+  }, [setSelectedIds, setSelectModeState]);
 
   const retainSelected = useCallback((ids: Iterable<string>) => {
     const retained = new Set(ids);
     setSelectedIds((current) => new Set([...current].filter((id) => retained.has(id))));
-  }, []);
+  }, [setSelectedIds]);
 
   const handleCollectionKeyDown = useCallback((event: KeyboardEvent) => {
     const target = event.target as HTMLElement;

@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   CheckSquare,
   ChevronDown,
+  FolderInput,
   History,
   Loader2,
   Pin,
@@ -75,6 +76,7 @@ interface BulkActionsToolbarProps {
   onClear: () => void;
   onSelectAll: () => void;
   onRemoveSelected: (ids: Iterable<string>) => void;
+  onMoveNotes?: (ids: string[]) => void;
   externalRequest?: BulkMutationRequest | null;
   onExternalRequestHandled?: () => void;
   className?: string;
@@ -293,6 +295,7 @@ export function BulkActionsToolbar({
   onClear,
   onSelectAll,
   onRemoveSelected,
+  onMoveNotes,
   externalRequest,
   onExternalRequestHandled,
   className,
@@ -403,6 +406,11 @@ export function BulkActionsToolbar({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
               </>
+            )}
+            {onMoveNotes && (
+              <DropdownMenuItem disabled={!selectedIds.size} onSelect={() => onMoveNotes([...selectedIds])}>
+                <FolderInput size={14} className="mr-2" /> Move to folder…
+              </DropdownMenuItem>
             )}
             <DropdownMenuItem disabled={!selectedIds.size} onSelect={() => prepare({ archived: true })}>
               <Archive size={14} className="mr-2" /> Archive

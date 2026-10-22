@@ -4,6 +4,10 @@ The `zerus` command automates local Zerus vaults while keeping Markdown
 as the primary document format. Install it and the optional AI-agent skills
 from **Settings → CLI** in the desktop app.
 
+The current CLI is **0.3.0**, paired with agent skill **3**. Check
+`zerus --version` after installing. Older 0.2.0 binaries predate task lists and
+paired relation writes; update them before making task or relation changes.
+
 ## Vaults and output
 
 Register vaults with `zerus vault add NAME PATH`, inspect them with
@@ -48,6 +52,22 @@ note IDs. `attachment add-copy` returns the exact `zerus-attachment:` Markdown
 reference that can be inserted into the note body. Managed vault copies move
 with their notes during type moves, trash, restore, and undo.
 
+Discover task lists with `task lists`. `task list --list ID_OR_NAME` filters by
+list; `task create TITLE --list ID_OR_NAME` and `task update SELECTOR --list
+ID_OR_NAME` assign tasks. Exact list IDs take precedence over names; ambiguous
+names fail rather than selecting arbitrarily. `--list general` always selects
+the built-in list, including when it has a custom name. `task update SELECTOR
+--clear-list` moves a task back there. Create and rename lists in the app.
+Task writes preserve list definitions, assignments, the custom General name,
+and unfamiliar task/document metadata. Changed tasks receive an `updatedAt`
+timestamp; unrelated tasks retain theirs.
+
+`file attach-copy` makes a managed vault copy and replaces the note's current
+file association; inspect `file get` first. The source file stays in place.
+External-connection and external-connection-with-backup creation remain app
+workflows. `attachment add-copy` adds a separate snapshot without replacing
+the file-hub association.
+
 The desktop note menu exports one rendered note as HTML, PDF, or DOCX. CLI
 `export OUTPUT` has a different purpose: it exports selected notes as portable
 raw Markdown plus `zerus-export.json`.
@@ -56,6 +76,45 @@ Selectors accept an exact relative path, a unique note-ID prefix, or an exact
 title. Ambiguous interactive selections display title, path, and ID; scripts
 receive an `ambiguous_selector` error instead. Content mutations accept
 `--if-revision sha256:…` for optimistic concurrency.
+
+## Paired relation edits
+
+`note property set|unset` synchronizes existing paired relation definitions in
+both notes. Inspect `schema list TYPE_PATH` first: the definitions on both
+endpoints must share a `relationPairId`, accept the opposite note's type, and
+have compatible multiplicity. Read the source and pass its `--if-revision`;
+the CLI also checks the affected inverse notes before writing. Stable references
+avoid ambiguous titles:
+
+```sh
+zerus --vault VAULT --json --no-input note property set Work/Plan.md Related \
+  '["[[zerus:019f7923-8fae-7733-8357-48b16a134c39]]"]' \
+  --if-revision sha256:REVISION_FROM_NOTE_GET
+```
+
+The edit returns one transaction ID. `undo TRANSACTION_ID` restores both sides
+and refuses to overwrite later edits on either note. Validation failures write
+neither endpoint; write failures attempt to roll back completed writes. A crash
+or incomplete rollback leaves a pending history record. If a command reports
+`transaction_pending`, inspect `history` and run `undo TRANSACTION_ID` to recover
+before continuing. Pending records are retained beyond normal history limits.
+
+Missing or legacy unpaired definitions require migration or configuration in
+the app. CLI bulk relation edits, removal of paired schema definitions, and
+type moves of notes with populated paired relations are blocked; use the app
+for those operations. CLI `schema add ... relation` creates an unpaired
+definition; open the vault in Zerus to pair it before editing its values.
+
+## Deliberate revisions and backups
+
+Creating, promoting, trashing, and restoring deliberate note revisions remain
+app features. CLI content edits change the live current note. Automatic CLI
+`history` and `undo` are separate from `.zerus/revisions`; never edit revision
+indexes, files, or pointer metadata directly.
+
+CLI `export` includes raw Markdown notes and `zerus-export.json`. It does not
+copy managed files or deliberate revision history and is not a complete vault
+backup. Copy the entire vault, including `.zerus`, for that purpose.
 
 ## Property schemas
 

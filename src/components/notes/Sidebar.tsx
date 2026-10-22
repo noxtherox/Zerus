@@ -852,25 +852,23 @@ export function Sidebar({
               count={taskCount}
             />
             {isDesktop && (
-              <>
-                <SidebarRow
-                  active={filter.kind === "external"}
-                  onClick={() => onFilterChange({ kind: "external" })}
-                  onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "external" })}
-                  icon={<Files size={15} />}
-                  label="External Notes"
-                  count={externalCount}
-                />
-                <SidebarRow
-                  active={filter.kind === "files"}
-                  onClick={() => onFilterChange({ kind: "files" })}
-                  onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "files" })}
-                  icon={<FileStack size={15} />}
-                  label="Files"
-                  count={fileCount}
-                />
-              </>
+              <SidebarRow
+                active={filter.kind === "external"}
+                onClick={() => onFilterChange({ kind: "external" })}
+                onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "external" })}
+                icon={<Files size={15} />}
+                label="External Notes"
+                count={externalCount}
+              />
             )}
+            <SidebarRow
+              active={filter.kind === "files"}
+              onClick={() => onFilterChange({ kind: "files" })}
+              onOpenInNewTab={() => onOpenFilterInNewTab({ kind: "files" })}
+              icon={<FileStack size={15} />}
+              label="Files"
+              count={fileCount}
+            />
             <SidebarRow
               active={filter.kind === "links"}
               onClick={() => onFilterChange({ kind: "links" })}

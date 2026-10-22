@@ -39,8 +39,8 @@ struct CliRunResult {
     truncated: bool,
 }
 
-const BUNDLED_CLI_VERSION: &str = "0.2.0";
-const ZERUS_SKILL_VERSION: &str = "2";
+const BUNDLED_CLI_VERSION: &str = "0.3.0";
+const ZERUS_SKILL_VERSION: &str = "3";
 const ZERUS_SKILL_MARKDOWN: &str = include_str!("../skills/zerus-skill.md");
 
 fn cli_target_path() -> Result<std::path::PathBuf, String> {

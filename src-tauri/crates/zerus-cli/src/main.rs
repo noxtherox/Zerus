@@ -16,6 +16,8 @@ use zerus_core::{
     VaultRegistry,
 };
 
+mod relations;
+
 const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Parser)]
@@ -194,18 +196,17 @@ enum PropertyCommand {
         #[command(flatten)]
         selector: NoteSelector,
     },
+    /// Set SELECTOR KEY VALUE, or KEY VALUE with --id, --path, or --title.
     Set {
         #[command(flatten)]
-        selector: NoteSelector,
-        key: String,
-        value: String,
+        arguments: PropertyMutationArgs,
         #[arg(long)]
         if_revision: Option<String>,
     },
+    /// Unset SELECTOR KEY, or KEY with --id, --path, or --title.
     Unset {
         #[command(flatten)]
-        selector: NoteSelector,
-        key: String,
+        arguments: PropertyMutationArgs,
         #[arg(long)]
         if_revision: Option<String>,
     },
@@ -388,7 +389,11 @@ struct SearchArgs {
 
 #[derive(Subcommand)]
 enum TaskCommand {
+    /// Discover task lists, including the built-in General list.
+    Lists,
     List {
+        #[arg(long, value_name = "ID_OR_NAME")]
+        list: Option<String>,
         #[arg(long)]
         completed: bool,
         #[arg(long)]
@@ -401,6 +406,8 @@ enum TaskCommand {
     },
     Create {
         title: String,
+        #[arg(long, value_name = "ID_OR_NAME")]
+        list: Option<String>,
         #[arg(long)]
         category: Option<String>,
         #[arg(long, default_value = "none")]
@@ -414,6 +421,10 @@ enum TaskCommand {
     },
     Update {
         selector: String,
+        #[arg(long, value_name = "ID_OR_NAME", conflicts_with = "clear_list")]
+        list: Option<String>,
+        #[arg(long)]
+        clear_list: bool,
         #[arg(long)]
         title: Option<String>,
         #[arg(long)]
@@ -544,6 +555,43 @@ struct NoteSelector {
     title: Option<String>,
 }
 
+// Collect these positionals together because clap cannot skip an optional
+// selector in front of two required property arguments when --path is used.
+#[derive(Args)]
+struct PropertyMutationArgs {
+    #[arg(value_name = "SELECTOR/KEY/VALUE", num_args = 1..=3, required = true)]
+    values: Vec<String>,
+    #[arg(long, conflicts_with_all = ["path", "title"])]
+    id: Option<String>,
+    #[arg(long, conflicts_with = "title")]
+    path: Option<String>,
+    #[arg(long)]
+    title: Option<String>,
+}
+
+impl PropertyMutationArgs {
+    fn split(&self, count: usize) -> Result<(NoteSelector, &[String]), CliError> {
+        let named = self.id.is_some() || self.path.is_some() || self.title.is_some();
+        let offset = usize::from(!named);
+        if self.values.len() != count + offset {
+            return Err(CliError::new(
+                "invalid_arguments",
+                "Use SELECTOR KEY [VALUE], or KEY [VALUE] with --id, --path, or --title",
+                2,
+            ));
+        }
+        Ok((
+            NoteSelector {
+                target: (!named).then(|| self.values[0].clone()),
+                id: self.id.clone(),
+                path: self.path.clone(),
+                title: self.title.clone(),
+            },
+            &self.values[offset..],
+        ))
+    }
+}
+
 #[derive(Debug)]
 struct CliError {
     code: &'static str,
@@ -592,11 +640,21 @@ struct HistoryEntry {
     content_before: Option<String>,
     content_after: Option<String>,
     created_at_ms: u128,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    changes: Vec<relations::Change>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pending: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TaskRecord {
+    #[serde(default)]
+    list_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    updated_at: Option<String>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
     id: String,
     title: String,
     #[serde(default)]
@@ -624,6 +682,12 @@ fn default_task_priority() -> String {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TaskDocument {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    general_list_name: Option<String>,
+    #[serde(default)]
+    lists: Vec<Value>,
+    #[serde(flatten)]
+    extra: BTreeMap<String, Value>,
     #[serde(default)]
     tasks: Vec<TaskRecord>,
     #[serde(default)]
@@ -845,7 +909,7 @@ fn task_document(root: &Path) -> Result<TaskDocument, CliError> {
             .map_err(|error| CliError::new("tasks_invalid", error.to_string(), 3))?;
         TaskDocument {
             tasks,
-            category_options: Vec::new(),
+            ..TaskDocument::default()
         }
     } else {
         serde_json::from_value(value)
@@ -880,6 +944,53 @@ fn task_document(root: &Path) -> Result<TaskDocument, CliError> {
 
 fn save_tasks(root: &Path, document: &TaskDocument) -> Result<(), CliError> {
     write_json(&root.join(TASKS_PATH), document)
+}
+
+fn resolve_task_list(document: &TaskDocument, selector: &str) -> Result<Option<String>, CliError> {
+    // Exact identities take precedence over names. General's stable selector
+    // remains usable after the user renames it.
+    if selector == "general" {
+        return Ok(None);
+    }
+    if let Some(list) = document
+        .lists
+        .iter()
+        .find(|list| list["id"].as_str() == Some(selector))
+    {
+        return Ok(list["id"].as_str().map(ToString::to_string));
+    }
+    let mut matches = Vec::new();
+    if document
+        .general_list_name
+        .as_deref()
+        .unwrap_or("General")
+        .eq_ignore_ascii_case(selector)
+    {
+        matches.push(None);
+    }
+    for list in &document.lists {
+        if list["name"]
+            .as_str()
+            .is_some_and(|name| name.eq_ignore_ascii_case(selector))
+        {
+            if let Some(id) = list["id"].as_str() {
+                matches.push(Some(id.to_string()));
+            }
+        }
+    }
+    match matches.as_slice() {
+        [id] => Ok(id.clone()),
+        [] => Err(CliError::new(
+            "task_list_not_found",
+            "No task list matches; inspect task lists",
+            3,
+        )),
+        _ => Err(CliError::new(
+            "ambiguous_selector",
+            "Multiple task lists match; use an exact list ID",
+            4,
+        )),
+    }
 }
 
 fn choose_task_index(tasks: &[TaskRecord], selector: &str) -> Result<usize, CliError> {
@@ -1175,14 +1286,23 @@ fn update_type_keyed_document(
 /// Explicit IDs never fall back to a label when their target is missing.
 fn note_reference_matches(reference: &str, note: &ScannedNote) -> bool {
     let unescaped = reference.replace("\\|", "|");
-    let reference = unescaped.trim().trim_start_matches("[[").trim_end_matches("]]");
+    let reference = unescaped
+        .trim()
+        .trim_start_matches("[[")
+        .trim_end_matches("]]");
     let target = reference.split('|').next().unwrap_or(reference).trim();
     if let Some(id) = target.strip_prefix("zerus:") {
-        return note.id.map(|value| value.to_string() == id).unwrap_or(false);
+        return note
+            .id
+            .map(|value| value.to_string() == id)
+            .unwrap_or(false);
     }
     target.eq_ignore_ascii_case(&note.title)
         || target == note.path
-        || note.id.map(|value| value.to_string() == target).unwrap_or(false)
+        || note
+            .id
+            .map(|value| value.to_string() == target)
+            .unwrap_or(false)
 }
 
 fn relation_titles(note: &ScannedNote, schemas: &serde_json::Map<String, Value>) -> Vec<String> {
@@ -1305,6 +1425,8 @@ fn save_history(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis(),
+        changes: Vec::new(),
+        pending: false,
     };
     let directory = history_dir(root);
     fs::create_dir_all(&directory)
@@ -1321,6 +1443,14 @@ fn save_history(
     files.sort_by_key(|(_, metadata)| std::cmp::Reverse(metadata.modified().ok()));
     let mut retained_bytes = 0_u64;
     for (path, metadata) in files {
+        // Never discard the only recovery record for an interrupted write.
+        if fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .is_some_and(|entry| entry["pending"] == true)
+        {
+            continue;
+        }
         let old = metadata
             .modified()
             .ok()
@@ -1882,9 +2012,11 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         values
                             .iter()
                             .map(|vault| {
-                                let marker = (Some(vault.id) == registry.default_vault_id)
-                                    .then_some(" *")
-                                    .unwrap_or("");
+                                let marker = if Some(vault.id) == registry.default_vault_id {
+                                    " *"
+                                } else {
+                                    ""
+                                };
                                 format!(
                                     "{}{}\t{}\t{}",
                                     vault.name,
@@ -2220,16 +2352,21 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         })
                     }
                     PropertyCommand::Set {
-                        selector,
-                        key,
-                        value,
+                        arguments,
                         if_revision,
                     } => {
-                        let note = choose_note(cli, &notes, selector)?;
-                        let next = set_property(&note.content, key, Some(value))
-                            .map_err(|e| CliError::new("property_invalid", e.to_string(), 3))?;
-                        let entry =
-                            write_note(&root, note, "property.set", &next, if_revision.as_deref())?;
+                        let (selector, values) = arguments.split(2)?;
+                        let key = &values[0];
+                        let value = &values[1];
+                        let note = choose_note(cli, &notes, &selector)?;
+                        let entry = relations::mutate(
+                            &root,
+                            &notes,
+                            note,
+                            key,
+                            Some(value),
+                            if_revision.as_deref(),
+                        )?;
                         success(
                             cli,
                             json!({"path": note.path, "key": key, "transactionId": entry.transaction_id}),
@@ -2237,18 +2374,18 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         )
                     }
                     PropertyCommand::Unset {
-                        selector,
-                        key,
+                        arguments,
                         if_revision,
                     } => {
-                        let note = choose_note(cli, &notes, selector)?;
-                        let next = set_property(&note.content, key, None)
-                            .map_err(|e| CliError::new("property_invalid", e.to_string(), 3))?;
-                        let entry = write_note(
+                        let (selector, values) = arguments.split(1)?;
+                        let key = &values[0];
+                        let note = choose_note(cli, &notes, &selector)?;
+                        let entry = relations::mutate(
                             &root,
+                            &notes,
                             note,
-                            "property.unset",
-                            &next,
+                            key,
+                            None,
                             if_revision.as_deref(),
                         )?;
                         success(
@@ -2459,12 +2596,28 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     .next()
                     .ok_or_else(|| CliError::new("history_not_found", "history is empty", 3))?
             };
+            if entry.pending {
+                let undo = relations::undo(&root, &entry)?;
+                return success(
+                    cli,
+                    json!({"undoneTransactionId": entry.transaction_id, "transactionId": undo.transaction_id}),
+                    || format!("Recovered {}", entry.transaction_id),
+                );
+            }
             if entry.operation == "undo" {
                 return Err(CliError::new(
                     "undo_invalid",
                     "an undo record cannot be undone directly",
                     3,
                 ));
+            }
+            if !entry.changes.is_empty() {
+                let undo = relations::undo(&root, &entry)?;
+                return success(
+                    cli,
+                    json!({"undoneTransactionId": entry.transaction_id, "transactionId": undo.transaction_id}),
+                    || format!("Undid {}", entry.transaction_id),
+                );
             }
             if let Some(after_path) = &entry.path_after {
                 let current = root.join(after_path);
@@ -2749,6 +2902,32 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         ));
                     }
                     let to = normalize_type_path(to)?;
+                    let schemas = load_schemas(&root)?;
+                    if effective_schema_definitions(&schemas, &note_type_key(&note.path))
+                        .iter()
+                        .any(|definition| {
+                            definition["type"] == "relation"
+                                && definition["relationPairId"]
+                                    .as_str()
+                                    .is_some_and(|id| !id.is_empty())
+                                && definition["name"].as_str().is_some_and(|name| {
+                                    note.properties.iter().any(|(key, value)| {
+                                        key.eq_ignore_ascii_case(name)
+                                            && match value {
+                                                zerus_core::PropertyValue::String(value) => {
+                                                    !value.trim().is_empty()
+                                                }
+                                                zerus_core::PropertyValue::List(values) => {
+                                                    !values.is_empty()
+                                                }
+                                                _ => true,
+                                            }
+                                    })
+                                })
+                        })
+                    {
+                        return Err(CliError::new("relation_move_requires_app", "Move notes with populated paired relations in Zerus so relation definitions and allowed types stay synchronized", 3));
+                    }
                     let name = Path::new(&note.path)
                         .file_name()
                         .and_then(|v| v.to_str())
@@ -2918,7 +3097,8 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     candidate.path != note.path && !is_trashed_path(&candidate.path)
                 })
                 .filter_map(|candidate| {
-                    let body = wiki.captures_iter(&candidate.content)
+                    let body = wiki
+                        .captures_iter(&candidate.content)
                         .any(|capture| note_reference_matches(&capture[1], note));
                     let relation = relation_titles(candidate, &schemas)
                         .iter()
@@ -3000,6 +3180,21 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                             || note.content.to_lowercase().contains(&lowered))
                 })
                 .collect();
+            if let BulkCommand::PropertySet { key, .. } = command {
+                let schemas = load_schemas(&root)?;
+                if matches.iter().any(|note| {
+                    effective_schema_definitions(&schemas, &note_type_key(&note.path))
+                        .iter()
+                        .any(|definition| {
+                            definition["type"] == "relation"
+                                && definition["name"]
+                                    .as_str()
+                                    .is_some_and(|name| name.eq_ignore_ascii_case(key))
+                        })
+                }) {
+                    return Err(CliError::new("relation_bulk_unsupported", "Edit relation properties individually with note property set so each pair is conflict-checked and undoable", 3));
+                }
+            }
             if !yes {
                 return success(
                     cli,
@@ -3157,6 +3352,23 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     purge_values,
                     yes,
                 } => {
+                    let owner = normalize_schema_type_path(type_path)?;
+                    if schemas
+                        .get(&owner)
+                        .and_then(Value::as_array)
+                        .is_some_and(|definitions| {
+                            definitions.iter().any(|definition| {
+                                definition["name"]
+                                    .as_str()
+                                    .is_some_and(|value| value.eq_ignore_ascii_case(name))
+                                    && definition["relationPairId"]
+                                        .as_str()
+                                        .is_some_and(|id| !id.is_empty())
+                            })
+                        })
+                    {
+                        return Err(CliError::new("relation_schema_requires_app", "Remove paired relation definitions in Zerus so both definitions and their values stay synchronized", 3));
+                    }
                     if *purge_values && !yes {
                         return Err(CliError::new("approval_required", "purging note values is a data-loss action; preview without --purge-values or re-run with --yes", 6));
                     }
@@ -3238,11 +3450,25 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                 .map_err(|error| CliError::new("vault_unavailable", error.to_string(), 2))?;
             let mut document = task_document(&root)?;
             match command {
+                TaskCommand::Lists => {
+                    let mut lists = vec![
+                        json!({"id": null, "name": document.general_list_name.as_deref().unwrap_or("General")}),
+                    ];
+                    lists.extend(document.lists.clone());
+                    output_collection(cli, &lists, || {
+                        serde_json::to_string_pretty(&lists).unwrap()
+                    })
+                }
                 TaskCommand::List {
+                    list,
                     completed,
                     open,
                     today,
                 } => {
+                    let selected_list = list
+                        .as_deref()
+                        .map(|selector| resolve_task_list(&document, selector))
+                        .transpose()?;
                     let today_value = chrono::Local::now()
                         .date_naive()
                         .format("%Y-%m-%d")
@@ -3251,7 +3477,10 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                         .tasks
                         .iter()
                         .filter(|task| {
-                            (!*completed || task.completed)
+                            selected_list
+                                .as_ref()
+                                .map_or(true, |id| &task.list_id == id)
+                                && (!*completed || task.completed)
                                 && (!*open || !task.completed)
                                 && (!*today || task.date == today_value)
                         })
@@ -3279,6 +3508,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     })
                 }
                 TaskCommand::Create {
+                    list,
                     title,
                     category,
                     priority,
@@ -3299,6 +3529,13 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     }
                     let now = chrono::Utc::now();
                     let task = TaskRecord {
+                        list_id: list
+                            .as_deref()
+                            .map(|selector| resolve_task_list(&document, selector))
+                            .transpose()?
+                            .flatten(),
+                        updated_at: Some(now.to_rfc3339()),
+                        extra: BTreeMap::new(),
                         id: Uuid::now_v7().to_string(),
                         title: title.into(),
                         completed: false,
@@ -3335,6 +3572,8 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                 }
                 TaskCommand::Update {
                     selector,
+                    list,
+                    clear_list,
                     title,
                     category,
                     clear_category,
@@ -3360,7 +3599,17 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                     } else {
                         Some(resolve_note_ids(cli, &notes, linked_notes)?)
                     };
+                    let selected_list = list
+                        .as_deref()
+                        .map(|selector| resolve_task_list(&document, selector))
+                        .transpose()?;
                     let task = &mut document.tasks[index];
+                    if *clear_list {
+                        task.list_id = None;
+                    } else if let Some(id) = selected_list {
+                        task.list_id = id;
+                    }
+                    task.updated_at = Some(chrono::Utc::now().to_rfc3339());
                     if let Some(title) = title {
                         if title.trim().is_empty() {
                             return Err(CliError::new("invalid_task", "title cannot be empty", 3));
@@ -3407,9 +3656,16 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                 TaskCommand::Complete { selector } | TaskCommand::Reopen { selector } => {
                     let complete = matches!(command, TaskCommand::Complete { .. });
                     let index = choose_task_index(&document.tasks, selector)?;
+                    document.tasks[index].updated_at = Some(chrono::Utc::now().to_rfc3339());
                     document.tasks[index].completed = complete;
-                    document.tasks[index].completed_at =
-                        complete.then(|| chrono::Utc::now().to_rfc3339());
+                    document.tasks[index].completed_at = if complete {
+                        document.tasks[index]
+                            .completed_at
+                            .clone()
+                            .or_else(|| Some(chrono::Utc::now().to_rfc3339()))
+                    } else {
+                        None
+                    };
                     let updated = document.tasks[index].clone();
                     save_tasks(&root, &document)?;
                     success(cli, serde_json::to_value(&updated).unwrap(), || {
@@ -3495,6 +3751,7 @@ fn execute(cli: &Cli) -> Result<(), CliError> {
                                 .is_some_and(|value| value.eq_ignore_ascii_case(name))
                             {
                                 task.category = None;
+                                task.updated_at = Some(chrono::Utc::now().to_rfc3339());
                             }
                         }
                         save_tasks(&root, &document)?;

@@ -76,8 +76,13 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   combine property filters with all/any matching, select multiple accepted
   values, and compare date properties with presets or exact ranges;
   progressively render large All Notes lists; select multiple notes to pin,
-  unpin, archive, unarchive, or update properties in one action; reorder types;
-  and use a recoverable vault-local trash. Recent bulk actions can be undone.
+  unpin, archive, unarchive, move to a folder, or update properties in one action;
+  reorder types; and use a recoverable vault-local trash. Pin, archive, and
+  property actions have undo history. Moving from the editor’s folder picker
+  lets you choose the open note or all selected notes in one dialog, including
+  external notes. Managed files move with their notes; attachments and external
+  file connections stay accessible. External Markdown moves copy local images
+  into the vault while keeping the original images for other notes.
   Note-list titles and snippets show readable text without Markdown formatting
   markers or image sources, while preserving the underlying note content.
 - **Warm note startup** — desktop and mobile keep a device-local copy of loaded
@@ -138,6 +143,13 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   Markdown images into the vault assets folder and update their references;
   attach files; associate notes with PDFs and common office documents; preview
   HTML; and export rendered notes as HTML, PDF, or DOCX.
+  Creating a file note asks whether to **Copy into Vault**, **Keep External
+  Connection**, or **Keep External Connection + Backup**. The backup option
+  keeps the original as the linked file and adds a snapshot copy as an attachment
+  in the note; later edits to the original do not update that backup. **Copy into
+  Vault** on an existing external file note asks for confirmation before changing
+  the link to the vault copy. All choices leave the original file in place.
+  The browser supports vault copies; external connections require the native app.
 - **Portable cloud file references** — map each shared file location to its local
   folder on every device. File hubs resolve the saved relative path beneath that
   root, including Windows extended paths such as `\\?\G:\My Drive`.
@@ -372,6 +384,11 @@ actions, and retention behavior, see [`docs/ai-chat.md`](docs/ai-chat.md).
 The desktop app can install the `zerus` CLI and optional agent skills from
 **Settings → CLI**. The CLI reads and updates local vaults using explicit
 selectors, revision checks, atomic writes, and guarded destructive operations.
+CLI **0.3.0** and agent skill **3** add task-list selection and preserve task
+metadata during writes. Edits to existing paired relation properties synchronize
+both notes with a shared, conflict-checked undo transaction. Upgrade older CLI
+installations before changing tasks or relations. Deliberate revision management
+and relation-schema configuration remain in the app.
 See [`docs/CLI.md`](docs/CLI.md) for commands and automation guidance.
 
 - [`docs/tables.md`](docs/tables.md) — table editing, large tables, recovery,

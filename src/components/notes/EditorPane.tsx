@@ -1,3 +1,5 @@
+import { FileStorageDialog } from "@/components/notes/FileStorageDialog";
+import { useFileStorageChoice } from "@/hooks/use-file-storage-choice";
 import { parseNoteReference } from "@/lib/wikilinks";
 import { usePdfSearch } from "@/lib/pdf-search";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
@@ -122,7 +124,6 @@ import {
   resolveNoteConflict,
   revealNoteInDesktop,
   revealNoteAttachment,
-  setNoteType,
   toggleNotePinned,
   toggleNoteArchived,
   duplicateNote,
@@ -169,6 +170,7 @@ interface EditorPaneProps {
   onCopyExternalToVault: (id: string, typePath: string[]) => void;
   onMoveExternalToVault: (id: string, typePath: string[]) => void;
   onMoveSavedLinkToVault: (id: string, typePath: string[]) => void;
+  onMoveNote: (id: string, typePath: string[]) => void;
   isBusy: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -293,6 +295,7 @@ export function EditorPane({
   onCopyExternalToVault,
   onMoveExternalToVault,
   onMoveSavedLinkToVault,
+  onMoveNote,
   isBusy,
   isLoading,
   isRefreshing,
@@ -327,7 +330,7 @@ export function EditorPane({
   const [overwriteDiskConfirmOpen, setOverwriteDiskConfirmOpen] =
     useState(false);
   const [detachConfirmOpen, setDetachConfirmOpen] = useState(false);
-  const [pendingAttachPath, setPendingAttachPath] = useState<string | null>(null);
+  const { chooseStorage, storageDialogProps } = useFileStorageChoice();
   const [pendingNoteAttachments, setPendingNoteAttachments] = useState<{
     paths: string[];
     at?: number;
@@ -590,13 +593,19 @@ export function EditorPane({
     if (!path) return;
     const result = await attachFileToNote(note.id, path, "auto");
     if (result.status === "duplicate") onOpenNote(result.noteId);
-    if (result.status === "needs-choice") setPendingAttachPath(result.path);
+    if (result.status === "needs-choice") {
+      const mode = await chooseStorage(result.path.split(/[\\/]/).pop() ?? result.path, true, "attach");
+      if (!mode) return;
+      const attached = await attachFileToNote(note.id, result.path, mode);
+      if (attached.status === "duplicate") onOpenNote(attached.noteId);
+    }
   };
 
   const copyFileHubIntoVault = async () => {
     const status = await getFileHubStatus(note.id);
     const path = status?.resolved.absolutePath;
-    if (!path) return;
+    if (!path || !status.exists) return;
+    if (await chooseStorage(status.resolved.reference.name, false, "copy") !== "copy") return;
     await attachFileToNote(note.id, path, "copy");
   };
 
@@ -930,7 +939,8 @@ export function EditorPane({
               value={noteTypePath(note)}
               existingTypePaths={getAllTypePaths(allNotes, extraTypes)}
               typeIcons={typeIcons}
-              onChange={(typePath) => void setNoteType(note.id, typePath)}
+              onChange={(typePath) => onMoveNote(note.id, typePath)}
+              disabled={isBusy || trashed || revisions.historical || revisions.busy}
             />
             <div className="flex-1" />
             <DropdownMenu>
@@ -1321,46 +1331,7 @@ export function EditorPane({
         open={exportDialogOpen}
         onOpenChange={setExportDialogOpen}
       />
-      <Dialog
-        open={pendingAttachPath !== null}
-        onOpenChange={(open) => !open && setPendingAttachPath(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>How should this file be attached?</DialogTitle>
-          </DialogHeader>
-          <p className="break-all text-sm text-muted-foreground">
-            {pendingAttachPath}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            A local link stays on this device. A vault copy is portable and
-            will move and trash together with this hub.
-          </p>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (pendingAttachPath) {
-                  void attachFileToNote(note.id, pendingAttachPath, "local");
-                }
-                setPendingAttachPath(null);
-              }}
-            >
-              Link Locally
-            </Button>
-            <Button
-              onClick={() => {
-                if (pendingAttachPath) {
-                  void attachFileToNote(note.id, pendingAttachPath, "copy");
-                }
-                setPendingAttachPath(null);
-              }}
-            >
-              Copy into Vault
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FileStorageDialog {...storageDialogProps} />
       <Dialog
         open={pendingNoteAttachments !== null}
         onOpenChange={(open) => !open && setPendingNoteAttachments(null)}
