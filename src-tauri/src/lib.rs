@@ -3213,9 +3213,7 @@ mod tests {
         let expected = root.join("zerus-skill.md");
         assert_eq!(PathBuf::from(saved), expected);
         let contents = fs::read_to_string(&expected).expect("read exported skill");
-        assert!(contents.contains("name: zerus"));
-        assert!(contents.contains("metadata:\n  version: \"2\""));
-        assert!(contents.contains("Pass `--vault NAME_OR_PATH --json --no-input`"));
+        assert_eq!(contents, skill_markdown());
 
         fs::remove_dir_all(root).expect("remove export folder");
     }

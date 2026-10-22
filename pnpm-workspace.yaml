@@ -5,3 +5,12 @@ allowBuilds:
   esbuild: true
 
 minimumReleaseAge: 1440
+
+# Reviewed 2026-10-22: braces 3.0.3 has no patched release. It is used by
+# Tailwind's build-time file globbing with repository-controlled patterns,
+# not by the shipped app to process vault or network input. Keep the high
+# severity audit gate; remove this exception when a fixed release is available.
+# https://github.com/advisories/GHSA-vfj7-8cjw-p6xm
+auditConfig:
+  ignoreGhsas:
+    - GHSA-vfj7-8cjw-p6xm

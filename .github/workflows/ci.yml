@@ -37,9 +37,6 @@ jobs:
       - name: Verify platform boundaries
         run: pnpm platform:verify
 
-      - name: Audit dependencies
-        run: pnpm audit --audit-level high
-
       - name: Typecheck
         run: pnpm typecheck
 
@@ -51,6 +48,29 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high
 
   rust:
     name: Rust workspace
