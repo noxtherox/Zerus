@@ -378,7 +378,7 @@ function RelationChip({
   title: string;
   note: Note | undefined;
   expanded?: boolean;
-  onOpenNote: (id: string) => void;
+  onOpenNote?: (id: string) => void;
   onOpenNoteInNewTab?: (id: string) => void;
   onRemove: () => void;
 }) {
@@ -398,7 +398,7 @@ function RelationChip({
         aria-label="Synced relation"
         title="Synced relation"
       />
-      {note ? (
+      {note && onOpenNote ? (
         <button
           type="button"
           className="min-w-0 flex-1 truncate text-left font-medium"
@@ -413,8 +413,8 @@ function RelationChip({
         </button>
       ) : (
         <span
-          className="min-w-0 flex-1 truncate italic"
-          title="No note matches this title"
+          className={cn("min-w-0 flex-1 truncate", !note && "italic")}
+          title={note ? title : "No note matches this title"}
         >
           {title}
         </span>
@@ -431,7 +431,7 @@ function RelationChip({
   );
 }
 
-function RelationValueEditor({
+export function RelationValueEditor({
   def,
   value,
   allNotes,
@@ -441,16 +441,20 @@ function RelationValueEditor({
   onCommit,
   expanded,
   showArchived,
+  inlinePicker = false,
+  excludedNoteIds,
 }: {
   def: PropertyDef;
   value: PropertyValue | undefined;
   allNotes: Note[];
   currentNote: Note;
-  onOpenNote: (id: string) => void;
+  onOpenNote?: (id: string) => void;
   onOpenNoteInNewTab?: (id: string) => void;
   onCommit: (value: PropertyValue | null) => void;
   expanded?: boolean;
   showArchived?: boolean;
+  inlinePicker?: boolean;
+  excludedNoteIds?: ReadonlySet<string>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -468,12 +472,14 @@ function RelationValueEditor({
 
   const relatedNotes = getRelationPickerNotes(
     allNotes,
-    currentNote.id,
+    inlinePicker ? "" : currentNote.id,
     def.relationTypeKey,
     showArchived,
   );
+  const search = query.trim().toLocaleLowerCase();
   const candidates = relatedNotes.filter(
-    (note) => !selectedIds.has(note.id),
+    (note) => !selectedIds.has(note.id) && !excludedNoteIds?.has(note.id) &&
+      (!search || `${noteTitle(note)} ${note.path}`.toLocaleLowerCase().includes(search)),
   );
 
   const pick = (note: Note) => {
@@ -497,7 +503,7 @@ function RelationValueEditor({
         noteTitle(note).trim().toLocaleLowerCase() === normalizedCreateTitle,
     );
   const showCreateAction =
-    normalizedCreateTitle.length >= 2 && !hasExactTitleMatch;
+    onOpenNote && normalizedCreateTitle.length >= 2 && !hasExactTitleMatch;
 
   const createRelatedNote = async () => {
     if (creating) return;
@@ -510,7 +516,7 @@ function RelationValueEditor({
       if (!created) return;
 
       pick(created);
-      onOpenNote(created.id);
+      onOpenNote?.(created.id);
     } finally {
       setCreating(false);
     }
@@ -532,10 +538,14 @@ function RelationValueEditor({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  className="absolute right-0 -top-7 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  className={cn(
+                    "flex items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                    inlinePicker ? "min-h-9 gap-2 px-2 text-sm" : "absolute right-0 -top-7 h-6 w-6",
+                  )}
                   aria-label={`Add a link to ${def.name}`}
                 >
                   <Plus size={13} />
+                  {inlinePicker && (titles.length ? "Add another" : "Select notes")}
                 </button>
               </PopoverTrigger>
             </TooltipTrigger>
@@ -560,7 +570,7 @@ function RelationValueEditor({
                   {candidates.slice(0, 100).map((note) => (
                     <CommandItem
                       key={note.id}
-                      value={noteTitle(note)}
+                      value={`${noteTitle(note)} ${note.path} ${note.id}`}
                       onSelect={() => pick(note)}
                     >
                       {isArchived(note) && (
@@ -573,7 +583,10 @@ function RelationValueEditor({
                           <span className="sr-only">Archived: </span>
                         </>
                       )}
-                      <span className="truncate">{noteTitle(note)}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate">{noteTitle(note)}</span>
+                        <span className="block truncate text-xs text-muted-foreground">{noteTypePath(note).join(" / ") || "Unfiled"}</span>
+                      </span>
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -626,7 +639,7 @@ function RelationValueEditor({
       </div>
       {titles.length === 0 && (
         <p className="py-1 text-xs text-muted-foreground">
-          No {def.name} linked
+          {inlinePicker ? "No notes selected" : `No ${def.name} linked`}
         </p>
       )}
     </div>

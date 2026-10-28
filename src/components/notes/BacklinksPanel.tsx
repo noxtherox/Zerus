@@ -93,11 +93,14 @@ export function BacklinksPanel({
       )}
     >
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
-        <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
+        <label
+          className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"
+          title="Keep properties open across notes until you close them"
+        >
           <Checkbox
             checked={keepOpen}
             onCheckedChange={(checked) => onKeepOpenChange(checked === true)}
-            aria-label="Keep properties panel open when changing notes"
+            aria-label="Keep properties open across notes until closed"
             className="h-3.5 w-3.5"
           />
           <span>Keep open</span>

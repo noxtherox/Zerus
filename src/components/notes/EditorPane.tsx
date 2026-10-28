@@ -140,9 +140,11 @@ import {
   loadHtmlPreviewPreference,
   loadHtmlPreviewMode,
   loadPropertiesPanelKeepOpen,
+  loadPropertiesPanelOpen,
   saveFileHubExpandedSection,
   saveHtmlPreviewMode,
   savePropertiesPanelKeepOpen,
+  savePropertiesPanelOpen,
   type FileHubExpandedSection,
   type HtmlPreviewMode,
 } from "@/lib/note-preferences";
@@ -314,7 +316,9 @@ export function EditorPane({
   const [keepPropertiesOpen, setKeepPropertiesOpen] = useState(
     loadPropertiesPanelKeepOpen,
   );
-  const [showBacklinks, setShowBacklinks] = useState(keepPropertiesOpen);
+  const [showBacklinks, setShowBacklinks] = useState(
+    () => keepPropertiesOpen && loadPropertiesPanelOpen(),
+  );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [externalImportMode, setExternalImportMode] =
     useState<ExternalImportMode>("copy");
@@ -365,11 +369,15 @@ export function EditorPane({
   const [editorReadyNoteId, setEditorReadyNoteId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (previousNoteIdRef.current !== activeNoteId) {
-      setShowBacklinks(keepPropertiesOpen);
+    if (previousNoteIdRef.current !== activeNoteId && !keepPropertiesOpen) {
+      setShowBacklinks(false);
     }
     previousNoteIdRef.current = activeNoteId;
   }, [activeNoteId, keepPropertiesOpen]);
+
+  useEffect(() => {
+    savePropertiesPanelOpen(showBacklinks);
+  }, [showBacklinks]);
 
   useEffect(() => {
     if (!activeNoteId || isLoading) {

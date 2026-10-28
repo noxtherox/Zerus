@@ -1,3 +1,5 @@
+import type { AiAgentEngine } from "./ai-agent-engine";
+import type { ZerusLoopStep } from "./ai-pi-agent";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { zodSchema } from "@ai-sdk/provider-utils";
 import { ToolLoopAgent, stepCountIs, tool } from "ai";
@@ -34,6 +36,7 @@ export interface ZerusAgentToolEvent {
   result?: AiToolResult;
 }
 export interface RunZerusAgentOptions {
+  engine?: AiAgentEngine;
   providerConfig: AiProviderConfig;
   streamId: string;
   systemPrompt: string;
@@ -56,6 +59,7 @@ export interface ZerusAgentResult {
   text: string;
   reasoning: string | null;
   diagnostics: {
+    engine: AiAgentEngine;
     promptVersion: string;
     provider: string;
     model: string;
@@ -234,110 +238,137 @@ export async function runZerusAgent(
     }
     throw new Error(message);
   }
-  const agent = new ToolLoopAgent({
-    model: new ZerusNativeLanguageModel(
-      options.providerConfig.model,
-      transport,
-      (options.providerConfig.provider === "codex" && !options.nativeTools) ||
-        options.textFallback === true,
-      options.onStepStart,
-      settings?.effort,
-    ),
-    instructions,
-    maxOutputTokens: settings?.maxOutputTokens ?? config.maxOutputTokens,
-    ...(config.temperature === undefined
-      ? {}
-      : { temperature: config.temperature }),
-    tools,
-    stopWhen: [
-      stepCountIs(maxSteps),
-      () =>
-        failedRepeated >= 3 ||
-        Boolean(runtime?.run.question) ||
-        steps >= maxSteps ||
-        spent() >= (settings?.maxTotalTokens ?? 160000),
-    ],
-    prepareStep: async ({ messages }) => {
-      signal.throwIfAborted();
-      if ((settings?.maxTotalTokens ?? 160000) - spent() < 1000)
-        throw new Error(
-          "The run reached its token budget. Saved work can be resumed.",
-        );
-      const steering = options.takeSteering?.() ?? [];
-      for (const text of steering) {
-        messages = [...messages, { role: "user", content: text }];
-        await runtime?.event("steering", text);
-      }
-      const compacted = runtime
-        ? await compactAgentContext(
-            messages,
-            limit,
-            runtime.run,
-            transport,
-            signal,
-          )
-        : { messages, compacted: false };
-      const remaining = (settings?.maxTotalTokens ?? 160000) - spent();
-      preparedInput =
-        count(
-          instructions +
-            JSON.stringify(toolSchemas) +
-            agentContextText(compacted.messages),
-        ) +
-        compacted.messages.reduce(
-          (sum, message) =>
-            sum +
-            (Array.isArray(message.content)
-              ? message.content.filter((part) => part.type === "file").length *
-                4096
-              : 0),
-          0,
-        );
-      if (preparedInput + 1000 > remaining)
-        throw new Error(
-          "The remaining run token budget cannot fit the next step. Resume with a larger budget or a narrower context.",
-        );
-      if (runtime) {
-        runtime.run.messages = compacted.messages;
-        if (compacted.compacted)
-          await runtime.event(
-            "compacted",
-            "Archived older context; retained objective, permissions, plan and saved changes.",
-            { archivedMessages: messages },
-          );
-        else await runtime.save();
-      }
-      return {
-        messages: compacted.messages,
-        maxOutputTokens: Math.min(
-          settings?.maxOutputTokens ?? config.maxOutputTokens,
-          remaining - preparedInput,
-        ),
-      };
-    },
-    onStepEnd: async (step) => {
-      steps++;
-      totalCalls += step.toolCalls.length;
-      if (step.usage.inputTokens !== undefined)
-        inputTokens = (inputTokens ?? 0) + step.usage.inputTokens;
-      if (step.usage.outputTokens !== undefined)
-        outputTokens = (outputTokens ?? 0) + step.usage.outputTokens;
-      if (runtime) {
-        runtime.run.usage.steps++;
-        runtime.run.usage.elapsedMs = previousElapsed + Date.now() - started;
-        runtime.run.messages = [
-          ...(runtime.run.messages as ModelMessage[]),
-          ...step.response.messages,
-        ];
+  const shouldStop = () =>
+    failedRepeated >= 3 ||
+    Boolean(runtime?.run.question) ||
+    steps >= maxSteps ||
+    spent() >= (settings?.maxTotalTokens ?? 160000);
+  const prepareStep = async ({ messages }: { messages: ModelMessage[] }) => {
+    signal.throwIfAborted();
+    if ((settings?.maxTotalTokens ?? 160000) - spent() < 1000)
+      throw new Error(
+        "The run reached its token budget. Saved work can be resumed.",
+      );
+    const steering = options.takeSteering?.() ?? [];
+    for (const text of steering) {
+      messages = [...messages, { role: "user", content: text }];
+      await runtime?.event("steering", text);
+    }
+    const compacted = runtime
+      ? await compactAgentContext(
+          messages,
+          limit,
+          runtime.run,
+          transport,
+          signal,
+        )
+      : { messages, compacted: false };
+    const remaining = (settings?.maxTotalTokens ?? 160000) - spent();
+    preparedInput =
+      count(
+        instructions +
+          JSON.stringify(toolSchemas) +
+          agentContextText(compacted.messages),
+      ) +
+      compacted.messages.reduce(
+        (sum, message) =>
+          sum +
+          (Array.isArray(message.content)
+            ? message.content.filter((part) => part.type === "file").length *
+              4096
+            : 0),
+        0,
+      );
+    if (preparedInput + 1000 > remaining)
+      throw new Error(
+        "The remaining run token budget cannot fit the next step. Resume with a larger budget or a narrower context.",
+      );
+    if (runtime) {
+      runtime.run.messages = compacted.messages;
+      if (compacted.compacted)
         await runtime.event(
-          "activity",
-          `Step ${steps}: ${step.toolCalls.length ? step.toolCalls.map((call) => call.toolName).join(", ") : "answer"}`,
-          { finishReason: step.finishReason, usage: step.usage },
+          "compacted",
+          "Archived older context; retained objective, permissions, plan and saved changes.",
+          { archivedMessages: messages },
         );
-      }
-    },
-  });
+      else await runtime.save();
+    }
+    return {
+      messages: compacted.messages,
+      maxOutputTokens: Math.min(
+        settings?.maxOutputTokens ?? config.maxOutputTokens,
+        remaining - preparedInput,
+      ),
+    };
+  };
+  const onStepEnd = async (step: ZerusLoopStep) => {
+    steps++;
+    totalCalls += step.toolCalls.length;
+    if (step.usage.inputTokens !== undefined)
+      inputTokens = (inputTokens ?? 0) + step.usage.inputTokens;
+    if (step.usage.outputTokens !== undefined)
+      outputTokens = (outputTokens ?? 0) + step.usage.outputTokens;
+    if (runtime) {
+      runtime.run.usage.steps++;
+      runtime.run.usage.elapsedMs = previousElapsed + Date.now() - started;
+      runtime.run.messages = [
+        ...(runtime.run.messages as ModelMessage[]),
+        ...step.response.messages,
+      ];
+      await runtime.event(
+        "activity",
+        `Step ${steps}: ${step.toolCalls.length ? step.toolCalls.map((call) => ("toolName" in call ? call.toolName : call.name)).join(", ") : "answer"}`,
+        {
+          engine: options.engine ?? "ai-sdk",
+          finishReason: step.finishReason,
+          usage: step.usage,
+        },
+      );
+    }
+  };
   try {
+    const agent =
+      options.engine === "pi"
+        ? (await import("./ai-pi-agent")).createPiAgent({
+            modelId: options.providerConfig.model,
+            instructions,
+            maxOutputTokens:
+              settings?.maxOutputTokens ?? config.maxOutputTokens,
+            temperature: config.temperature,
+            effort: settings?.effort,
+            fallback:
+              (options.providerConfig.provider === "codex" &&
+                !options.nativeTools) ||
+              options.textFallback === true,
+            transport,
+            tools: toolSchemas,
+            execute: (name, input) => execute(validateAiToolCall(name, input)),
+            shouldStop,
+            prepareStep,
+            onStepEnd,
+            onStepStart: options.onStepStart,
+          })
+        : new ToolLoopAgent({
+            model: new ZerusNativeLanguageModel(
+              options.providerConfig.model,
+              transport,
+              (options.providerConfig.provider === "codex" &&
+                !options.nativeTools) ||
+                options.textFallback === true,
+              options.onStepStart,
+              settings?.effort,
+            ),
+            instructions,
+            maxOutputTokens:
+              settings?.maxOutputTokens ?? config.maxOutputTokens,
+            ...(config.temperature === undefined
+              ? {}
+              : { temperature: config.temperature }),
+            tools,
+            stopWhen: [stepCountIs(maxSteps), shouldStop],
+            prepareStep,
+            onStepEnd,
+          });
     let messages = options.messages;
     let result = await agent.generate({ messages, abortSignal: signal });
     // A final answer with unfinished plan items triggers a bounded continuation.
@@ -377,6 +408,15 @@ export async function runZerusAgent(
             runtime?.run.plan.some((item) => item.status !== "complete")
           ? "partial"
           : "complete";
+    if (
+      status === "complete" &&
+      !result.text.trim() &&
+      !runtime?.run.receipts.some((receipt) => !receipt.undoneAt)
+    ) {
+      throw new Error(
+        "The model did not return an answer. Retry the request or choose another model.",
+      );
+    }
     if (runtime) {
       runtime.run.status = status;
       await runtime.event(
@@ -401,6 +441,7 @@ export async function runZerusAgent(
       text,
       reasoning: result.finalStep.reasoningText ?? null,
       diagnostics: {
+        engine: options.engine ?? "ai-sdk",
         promptVersion: ZERUS_AGENT_PROMPT_VERSION,
         provider: options.providerConfig.provider,
         model: options.providerConfig.model,

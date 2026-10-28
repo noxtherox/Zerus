@@ -7,6 +7,7 @@ const HIDE_SUBTYPE_NOTES_STORAGE_PREFIX = "zerus.hideSubtypeNotes.";
 const NOTE_WIDTH_STORAGE_KEY = "zerus.noteWidth";
 const NOTE_ALIGNMENT_STORAGE_KEY = "zerus.noteAlignment";
 const PROPERTIES_PANEL_KEEP_OPEN_STORAGE_KEY = "zerus.propertiesPanelKeepOpen";
+const PROPERTIES_PANEL_OPEN_STORAGE_KEY = "zerus.propertiesPanelOpen";
 const FILE_HUB_EXPANSION_STORAGE_KEY = "zerus.fileHubExpansion.v1";
 const HTML_PREVIEW_MODE_STORAGE_KEY = "zerus.htmlPreviewMode.v1";
 
@@ -197,7 +198,7 @@ export function initNoteAlignment(): void {
   applyNoteAlignment(loadNoteAlignment());
 }
 
-/** Loads whether the properties panel should stay open when changing notes. */
+/** Loads whether to preserve the properties panel's visibility across notes. */
 export function loadPropertiesPanelKeepOpen(): boolean {
   try {
     return localStorage.getItem(PROPERTIES_PANEL_KEEP_OPEN_STORAGE_KEY) === "true";
@@ -215,6 +216,23 @@ export function savePropertiesPanelKeepOpen(keepOpen: boolean): void {
     );
   } catch {
     // Persistence is best-effort; the selected behavior still applies this session.
+  }
+}
+
+/** Loads the last open/closed choice independently of the keep-open setting. */
+export function loadPropertiesPanelOpen(): boolean {
+  try {
+    return localStorage.getItem(PROPERTIES_PANEL_OPEN_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function savePropertiesPanelOpen(open: boolean): void {
+  try {
+    localStorage.setItem(PROPERTIES_PANEL_OPEN_STORAGE_KEY, String(open));
+  } catch {
+    // Persistence is best-effort; visibility still applies this session.
   }
 }
 

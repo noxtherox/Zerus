@@ -10,6 +10,16 @@ Answers support Markdown, note links, Copy, Save as note, Append to note, and Re
 
 ## Notes agent
 
+On desktop, open the chat's settings button and toggle **Use Pi agent** to choose
+Pi core or the current AI SDK engine (the default). The toggle saves immediately
+on that desktop, including in Simple mode, and is disabled during a run. It does
+not change iOS's engine. Both engines use Zerus's native provider connections,
+streaming events, scoped note tools, review and undo, budgets, context management,
+and shared conversation/run history. You can continue a conversation or resume a
+saved run using either engine. The full Pi coding agent, shell tools, and Pi's
+own credential/session stores are not included. Optional independent read-only
+analysis continues to use Zerus's existing worker transport with either engine.
+
 Choose a mode beside the composer:
 
 - **Ask** reads and analyzes notes without changing them.
@@ -19,6 +29,8 @@ Choose a mode beside the composer:
 The selected Context determines reading. **Edit current note only** permits broad reading while restricting changes to the current note; it cannot create notes. With no current note, it permits no writes. **Edit selected context** allows changes throughout the context. Creating or moving notes requires a vault or type context with an allowed destination. External notes and managed saved-link notes remain protected.
 
 Tools support ranked lexical search, filters and pagination; complete or ranged reads with headings and continuation offsets; unique exact-text patches; creation; frontmatter properties; paired relation updates; links/backlinks; type schemas; pinning, archiving, type moves and recoverable Trash. Whole-body replacement requires complete read coverage at the current revision. Relation editing requires configured reciprocal definitions and every affected note in the edit scope. A move that would lose a populated relation definition is refused until the destination schema is compatible. A rename stages legacy backlink stabilization together with the renamed note and requires those sources to be editable.
+
+Link inspection includes both body wikilinks and the property-based relations shown in the Relations panel, including incoming connections from permitted notes. It does not expand the selected read context: targets outside that context remain unresolved references, and backlinks outside it cannot be inspected.
 
 The run panel shows plans, proposals, verified receipts, questions and activity. **Undo** restores exact snapshots and refuses to overwrite newer work. A multi-note proposal is undone as a change set; **Undo all run changes** reverses saved operations in order. Undoing creation moves the new note to Trash. Multi-note saves are recoverable operations rather than filesystem transactions: an interruption can leave a partially saved set, recorded for recovery.
 

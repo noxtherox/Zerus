@@ -6,6 +6,7 @@ import {
   ChevronDown,
   FolderInput,
   History,
+  Link,
   Loader2,
   Pin,
   RotateCcw,
@@ -57,9 +58,10 @@ import {
   type PropertyDef,
   type PropertySchemas,
 } from "@/lib/properties";
-import { noteTitle, noteTypePath, type Note } from "@/lib/note-utils";
+import { noteReferenceLabel, noteTitle, noteTypePath, type Note } from "@/lib/note-utils";
 import { cn } from "@/lib/utils";
-import { ListValueEditor } from "@/components/notes/PropertiesSection";
+import { useVaultSelector } from "@/store/notes-store";
+import { ListValueEditor, RelationValueEditor } from "@/components/notes/PropertiesSection";
 
 export interface BulkMutationRequest {
   id: number;
@@ -98,7 +100,8 @@ function noteTitleSnapshot(noteIds: string[], notes: Note[]): Record<string, str
 function sameDefinition(left: PropertyDef, right: PropertyDef): boolean {
   return left.type === right.type &&
     left.listMultiple === right.listMultiple &&
-    left.relationMultiple === right.relationMultiple;
+    left.relationMultiple === right.relationMultiple &&
+    (left.type !== "relation" || left.relationTypeKey === right.relationTypeKey);
 }
 
 function commonProperties(notes: Note[], schemas: PropertySchemas): PropertyDef[] {
@@ -112,7 +115,7 @@ function commonProperties(notes: Note[], schemas: PropertySchemas): PropertyDef[
         (property) => property.name.toLowerCase() === candidate.name.toLowerCase(),
       ),
     );
-    if (matches.some((match) => !match || !sameDefinition(candidate, match))) return [];
+    if (matches.some((match) => !match || match.relationHidden || !sameDefinition(candidate, match))) return [];
     if (candidate.type !== "list") return [candidate];
 
     const definitions = [candidate, ...matches] as PropertyDef[];
@@ -135,36 +138,44 @@ function propertyValue(note: Note, name: string): PropertyValue | undefined {
   return key ? properties[key] : undefined;
 }
 
-function propertyStateLabel(notes: Note[], name: string): string {
+function propertyStateLabel(notes: Note[], definition: PropertyDef, allNotes: Note[]): string {
+  const { name } = definition;
   const values = notes.map((note) => propertyValue(note, name));
   const serialized = values.map((value) => JSON.stringify(value));
   if (serialized.some((value) => value !== serialized[0])) return "Mixed";
   const value = values[0];
-  if (value === undefined || value === "") return "Empty";
+  if (value === undefined || value === "" || (Array.isArray(value) && !value.length)) return "Empty";
+  if (definition.type === "relation") {
+    return (Array.isArray(value) ? value : [String(value)]).map((reference) => noteReferenceLabel(reference, allNotes)).join(", ");
+  }
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
 function valueForDefinition(definition: PropertyDef, raw: string): PropertyValue {
   if (definition.type === "checkbox") return raw === "true";
   if (definition.type === "number") return Number(raw);
-  if ((definition.type === "list" && definition.listMultiple) ||
-      (definition.type === "relation" && definition.relationMultiple)) {
-    return raw.split(",").map((value) => value.trim()).filter(Boolean);
-  }
   return raw;
 }
 
 function PropertyChangeComposer({
   notes,
+  allNotes,
   properties,
+  kind,
   changes,
   onChanges,
 }: {
   notes: Note[];
+  allNotes: Note[];
   properties: PropertyDef[];
+  kind: "property" | "relation";
   changes: BulkPropertyChange[];
   onChanges: (changes: BulkPropertyChange[]) => void;
 }) {
+  const isRelations = kind === "relation";
+  const sectionChanges = changes.filter((change) =>
+    properties.some((property) => property.name.toLowerCase() === change.name.toLowerCase()),
+  );
   const [propertyName, setPropertyName] = useState(properties[0]?.name ?? "");
   const definition = properties.find((property) => property.name === propertyName);
   const supportsListOperations = definition && (
@@ -173,14 +184,17 @@ function PropertyChangeComposer({
   );
   const [operation, setOperation] = useState<BulkPropertyOperation>("set");
   const [rawValue, setRawValue] = useState("");
-  const [selectedListValues, setSelectedListValues] = useState<string[]>([]);
+  const [selectedValues, setSelectedValues] = useState<string[]>([]);
+
+  const excludedNoteIds = useMemo(() => new Set(notes.map((note) => note.id)), [notes]);
+  const usesPicker = definition?.type === "list" || definition?.type === "relation";
 
   const addChange = () => {
     if (!definition) return;
-    const value = definition.type === "list"
-      ? definition.listMultiple
-        ? selectedListValues
-        : selectedListValues[0] ?? ""
+    const value = usesPicker
+      ? (definition.type === "list" ? definition.listMultiple : definition.relationMultiple)
+        ? selectedValues
+        : selectedValues[0] ?? ""
       : valueForDefinition(definition, rawValue);
     const change: BulkPropertyChange = {
       name: definition.name,
@@ -192,27 +206,27 @@ function PropertyChangeComposer({
       change,
     ]);
     setRawValue("");
-    setSelectedListValues([]);
+    setSelectedValues([]);
   };
 
   if (!properties.length) {
-    return <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">The selected note types do not share any compatible properties.</p>;
+    return <p className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{isRelations ? "The selected notes do not share any editable relations." : "The selected notes do not share any editable properties."}</p>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 rounded-md border border-border/70 p-3 sm:grid-cols-[1fr_130px]">
+      <div className="grid gap-2 rounded-md border border-border/70 p-3 sm:grid-cols-[1fr_130px]">
         <Select value={propertyName} onValueChange={(value) => {
           setPropertyName(value);
           setOperation("set");
           setRawValue("");
-          setSelectedListValues([]);
+          setSelectedValues([]);
         }}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={isRelations ? "Relation" : "Property"}><SelectValue placeholder={isRelations ? "Choose a relation" : "Choose a property"} /></SelectTrigger>
           <SelectContent>
             {properties.map((property) => (
               <SelectItem key={property.name} value={property.name}>
-                {property.name} · {propertyStateLabel(notes, property.name)}
+                {property.name} · {propertyStateLabel(notes, property, allNotes)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -220,9 +234,9 @@ function PropertyChangeComposer({
         <Select value={operation} onValueChange={(value) => {
           setOperation(value as BulkPropertyOperation);
           setRawValue("");
-          setSelectedListValues([]);
+          setSelectedValues([]);
         }}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={isRelations ? "Relation operation" : "Property operation"}><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="set">Set</SelectItem>
             <SelectItem value="clear">Clear</SelectItem>
@@ -234,14 +248,28 @@ function PropertyChangeComposer({
           <div className="min-h-10 rounded-md border border-input bg-background px-2 py-1.5 sm:col-span-2">
             <ListValueEditor
               def={definition}
-              value={selectedListValues}
+              value={selectedValues}
               onCommit={(value) => {
-                if (Array.isArray(value)) setSelectedListValues(value);
-                else setSelectedListValues(value === null ? [] : [String(value)]);
+                if (Array.isArray(value)) setSelectedValues(value);
+                else setSelectedValues(value === null ? [] : [String(value)]);
               }}
               emptyPickerLabel="Select options"
               selectedPickerLabel="Add another"
               searchPlaceholder="Search available options…"
+            />
+          </div>
+        ) : operation !== "clear" && definition?.type === "relation" && notes[0] ? (
+          <div className="min-h-10 rounded-md border border-input bg-background px-2 py-1.5 sm:col-span-2">
+            <RelationValueEditor
+              key={`${definition.name}:${operation}`}
+              def={definition}
+              value={selectedValues}
+              allNotes={allNotes}
+              currentNote={notes[0]}
+              excludedNoteIds={operation === "remove" ? undefined : excludedNoteIds}
+              inlinePicker
+              showArchived={operation === "remove"}
+              onCommit={(value) => setSelectedValues(Array.isArray(value) ? value : value == null || value === "" ? [] : [String(value)])}
             />
           </div>
         ) : operation !== "clear" && definition?.type === "checkbox" ? (
@@ -258,22 +286,22 @@ function PropertyChangeComposer({
             type={definition?.type === "number" ? "number" : definition?.type === "date" ? "date" : "text"}
             value={rawValue}
             onChange={(event) => setRawValue(event.target.value)}
-            placeholder={supportsListOperations ? "Comma-separated values" : "New value"}
+            placeholder="New value"
           />
         ) : null}
         <Button
           type="button"
           variant="secondary"
           className="sm:col-span-2"
-          disabled={operation !== "clear" && definition?.type === "list" && selectedListValues.length === 0}
+          disabled={operation !== "clear" && usesPicker && selectedValues.length === 0}
           onClick={addChange}
         >
-          Add change
+          {isRelations ? "Add relation change" : "Add property change"}
         </Button>
       </div>
-      {changes.length > 0 && (
+      {sectionChanges.length > 0 && (
         <div className="space-y-2">
-          {changes.map((change) => (
+          {sectionChanges.map((change) => (
             <div key={change.name} className="flex items-center gap-2 rounded-md bg-muted/60 px-3 py-2 text-sm">
               <span className="min-w-0 flex-1 truncate">{mutationSummary({ properties: [change] })[0]}</span>
               <Button type="button" variant="ghost" size="icon" className="h-7 w-7" aria-label={`Remove ${change.name} change`} onClick={() => onChanges(changes.filter((candidate) => candidate !== change))}>
@@ -301,6 +329,7 @@ export function BulkActionsToolbar({
   className,
   presentation = "standalone",
 }: BulkActionsToolbarProps) {
+  const allNotes = useVaultSelector((state) => state.notes);
   const [propertyNoteIds, setPropertyNoteIds] = useState<string[]>([]);
   const propertyNotes = useMemo(
     () => notes.filter((note) => propertyNoteIds.includes(note.id)),
@@ -429,7 +458,7 @@ export function BulkActionsToolbar({
               setPropertyChanges([]);
               setPropertyDialogOpen(true);
             }}>
-              <SlidersHorizontal size={14} className="mr-2" /> Properties
+              <SlidersHorizontal size={14} className="mr-2" /> Properties and relations
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => setHistoryOpen(true)}>
@@ -441,13 +470,42 @@ export function BulkActionsToolbar({
       </div>
 
       <Dialog open={propertyDialogOpen} onOpenChange={setPropertyDialogOpen}>
-        <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+        <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle>Edit properties for {propertyNoteIds.length} {propertyNoteIds.length === 1 ? "note" : "notes"}</DialogTitle>
-            <DialogDescription>Only compatible properties shared by every selected note are available. Clear keeps the key with an explicit empty value.</DialogDescription>
+            <DialogTitle>Edit {propertyNoteIds.length} {propertyNoteIds.length === 1 ? "note" : "notes"}</DialogTitle>
+            <DialogDescription>Only compatible properties and relations shared by every selected note are available.</DialogDescription>
           </DialogHeader>
-          <PropertyChangeComposer notes={propertyNotes} properties={properties} changes={propertyChanges} onChanges={setPropertyChanges} />
-          <DialogFooter>
+          <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+            <section aria-label="Properties" className="space-y-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <SlidersHorizontal size={15} className="text-muted-foreground" aria-hidden="true" />
+                Properties
+              </h3>
+              <PropertyChangeComposer
+                kind="property"
+                notes={propertyNotes}
+                allNotes={allNotes}
+                properties={properties.filter((property) => property.type !== "relation")}
+                changes={propertyChanges}
+                onChanges={setPropertyChanges}
+              />
+            </section>
+            <section aria-label="Relations" className="space-y-2 border-t border-border/70 pt-4">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <Link size={15} className="text-muted-foreground" aria-hidden="true" />
+                Relations
+              </h3>
+              <PropertyChangeComposer
+                kind="relation"
+                notes={propertyNotes}
+                allNotes={allNotes}
+                properties={properties.filter((property) => property.type === "relation")}
+                changes={propertyChanges}
+                onChanges={setPropertyChanges}
+              />
+            </section>
+          </div>
+          <DialogFooter className="shrink-0">
             <Button variant="ghost" onClick={() => setPropertyDialogOpen(false)}>Cancel</Button>
             <Button disabled={!propertyChanges.length} onClick={() => {
               setPropertyDialogOpen(false);

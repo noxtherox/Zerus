@@ -133,7 +133,7 @@ export const AI_TOOL_DESCRIPTIONS: Record<AiToolName, string> = {
   note_organize:
     "Move a note to typePath, archive/unarchive, pin/unpin or move it to recoverable Trash at an expected revision. Trash and multiple-note operations require a concrete approval.",
   note_links:
-    "Inspect outgoing stable note links and backlinks inside the permitted read context.",
+    "Inspect outgoing body links, relation-property connections, and backlinks from both kinds of link inside the permitted read context. Unresolved references may point outside that context; empty results do not establish that no links exist elsewhere.",
   note_schema:
     "Read property definitions and type folders inside the permitted context.",
   update_plan:

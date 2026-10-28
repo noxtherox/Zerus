@@ -5,6 +5,7 @@ import {
 } from "./NotesAgentControls";
 import { useNotesAgent } from "./useNotesAgent";
 import { useAiChatPreferences } from "./useAiChatPreferences";
+import { readDesktopAgentEngine, saveDesktopAgentEngine } from "@/lib/ai-agent-engine";
 import { notesAgentPort } from "@/lib/ai-harness-store";
 import { notesAgentPrompt } from "@/lib/ai-harness-prompt";
 import { enableNotesWorkers } from "@/lib/ai-harness-workers";
@@ -321,6 +322,7 @@ export function AiPanel({
   const [sending, setSending] = useState(false);
   const [width, setWidth] = useState(storedWidth);
   const [providerConfig, setProviderConfig] = useState(readAiProviderConfig);
+  const [agentEngine, setAgentEngine] = useState(readDesktopAgentEngine);
   const [providerDialogOpen, setProviderDialogOpen] = useState(false);
   const [cloudModels, setCloudModels] = useState<CloudAiModel[]>([]);
   const [cloudModelsSource, setCloudModelsSource] = useState("");
@@ -1112,6 +1114,7 @@ export function AiPanel({
         return;
       }
       const agentResult = await runZerusAgent({
+        engine: agentEngine,
         providerConfig,
         streamId,
         abortSignal: controller.signal,
@@ -1578,7 +1581,7 @@ export function AiPanel({
                       compatible: "Cloud API",
                     }[providerConfig.provider]
                   }{" "}
-                  · web search off · provider defaults
+                  · {agentEngine === "pi" ? "Pi agent" : "AI SDK agent"} · web search off
                 </div>
                 </>}
               </div>
@@ -2151,6 +2154,16 @@ export function AiPanel({
         )}
       </div>
       <AiProviderDialog
+        agentEngine={agentEngine}
+        agentBusy={sending}
+        onAgentEngineChange={(engine) => {
+          try {
+            saveDesktopAgentEngine(engine);
+            setAgentEngine(engine);
+          } catch {
+            setInlineError("Could not save the agent engine preference. Try again.");
+          }
+        }}
         simpleMode={simpleMode}
         savingAppearance={appearance.saving}
         appearanceError={appearance.error}

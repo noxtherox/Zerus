@@ -146,11 +146,13 @@ import {
   updateNoteBody,
   updateTypeView,
 } from "./notes-store";
-import { isExternalNote, noteTypePath, noteTitle } from "@/lib/note-utils";
+import { isExternalNote, noteReference, noteReferenceMatches, noteTypePath, noteTitle } from "@/lib/note-utils";
 import { getNoteAttachments } from "@/lib/note-attachments";
 import { getFileHubReference } from "@/lib/file-hubs";
 import { getLinkHubReference, setLinkHubReference } from "@/lib/link-hubs";
 import { setZerusState } from "@/lib/zerus-metadata";
+
+import { executeBulkAction, previewBulkAction, transitionBulkAction } from "@/lib/bulk-note-actions";
 
 const storage = new Map<string, string>();
 vi.stubGlobal("localStorage", {
@@ -1006,6 +1008,76 @@ describe("external note store workflow", () => {
         relationInverseHidden: false,
       });
       expect(getPropertySchemas().epics[0].relationHidden).toBe(false);
+    } finally {
+      await switchDesktopVault(vault);
+    }
+  });
+
+  it("bulk edits relations by note identity and persists synchronized links through undo and redo", async () => {
+    const relationVault = join(root, "bulk-relations-vault");
+    await Promise.all([
+      mkdir(join(relationVault, "tasks"), { recursive: true }),
+      mkdir(join(relationVault, "epics"), { recursive: true }),
+      mkdir(join(relationVault, ".zerus"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(relationVault, "tasks", "First.md"), "---\nEpics: [Epic]\n---\n# First\n"),
+      writeFile(join(relationVault, "tasks", "Second.md"), "# Second\n"),
+      writeFile(join(relationVault, "epics", "Epic.md"), "# Epic\n"),
+      writeFile(join(relationVault, "epics", "Other.md"), "# Other\n"),
+      writeFile(join(relationVault, ".zerus", "properties.json"), JSON.stringify({
+        tasks: [{ name: "Epics", type: "relation", relationMultiple: true, relationTypeKey: "epics" }],
+      })),
+    ]);
+    try {
+      await switchDesktopVault(relationVault);
+      const first = getNotes().find((note) => noteTitle(note) === "First")!;
+      const second = getNotes().find((note) => noteTitle(note) === "Second")!;
+      const epic = getNotes().find((note) => noteTitle(note) === "Epic")!;
+      const other = getNotes().find((note) => noteTitle(note) === "Other")!;
+      const noteIds = [first.id, second.id];
+      const add = { properties: [{ name: "Epics", operation: "add" as const, value: [noteReference(epic, "Earlier epic title")] }] };
+      // A renamed note remains the same target even when a stored label is stale.
+      expect(previewBulkAction(noteIds, add).eligibleIds).toEqual([second.id]);
+      const added = await executeBulkAction({ location: relationVault, noteIds, mutation: add });
+      expect(added.failed).toEqual([]);
+      expect(added.successfulIds).toEqual([second.id]);
+
+      const removed = await executeBulkAction({
+        location: relationVault, noteIds,
+        mutation: { properties: [{ name: "Epics", operation: "remove", value: [noteReference(epic)] }] },
+      });
+      expect(removed.successfulIds).toEqual(noteIds);
+      await flushPendingWrites();
+      for (const name of ["First", "Second"]) {
+        expect(getNoteProperties(await readFile(join(relationVault, "tasks", `${name}.md`), "utf8")).Epics).toEqual([]);
+      }
+      const inverseName = getPropertySchemas().epics.find((def) => def.relationPairId === getPropertySchemas().tasks[0].relationPairId)!.name;
+      expect(getNoteProperties(await readFile(join(relationVault, "epics", "Epic.md"), "utf8"))[inverseName]).toBeUndefined();
+
+      expect((await transitionBulkAction(relationVault, removed.record!.id, "undo")).conflicts).toEqual([]);
+      await flushPendingWrites();
+      const restored = getNoteProperties(await readFile(join(relationVault, "tasks", "First.md"), "utf8")).Epics as string[];
+      expect(restored).toHaveLength(1);
+      expect(noteReferenceMatches(restored[0], epic)).toBe(true);
+      expect(getNoteProperties(await readFile(join(relationVault, "epics", "Epic.md"), "utf8"))[inverseName]).toEqual(expect.arrayContaining([noteReference(first), noteReference(second)]));
+      expect((await transitionBulkAction(relationVault, removed.record!.id, "redo")).conflicts).toEqual([]);
+
+      const replaced = await executeBulkAction({
+        location: relationVault, noteIds,
+        mutation: { properties: [{ name: "Epics", operation: "set", value: [noteReference(other)] }] },
+      });
+      expect(replaced.successfulIds).toEqual(noteIds);
+      const cleared = await executeBulkAction({
+        location: relationVault, noteIds,
+        mutation: { properties: [{ name: "Epics", operation: "clear" }] },
+      });
+      expect(cleared.successfulIds).toEqual(noteIds);
+      await flushPendingWrites();
+      for (const name of ["First", "Second"]) {
+        expect(getNoteProperties(await readFile(join(relationVault, "tasks", `${name}.md`), "utf8")).Epics).toBe("");
+      }
+      expect(getNoteProperties(await readFile(join(relationVault, "epics", "Other.md"), "utf8"))[inverseName]).toBeUndefined();
     } finally {
       await switchDesktopVault(vault);
     }

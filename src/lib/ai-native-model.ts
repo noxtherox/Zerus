@@ -6,7 +6,7 @@ import type {
   LanguageModelV4GenerateResult,
 } from "@ai-sdk/provider";
 import type { AiProviderConfig } from "./ai-provider-config";
-import { parseAiToolResponse } from "./ai-tools";
+import { parseAiToolResponse, type AiToolCall } from "./ai-tools";
 
 export interface NativeAiMessage {
   role: "user" | "assistant" | "tool";
@@ -35,6 +35,23 @@ export type NativeAiTransport = (
   request: NativeAiRequest,
   signal?: AbortSignal,
 ) => Promise<NativeAiResponse>;
+
+/** Native serializers include [] even when a text-only endpoint requests a tool. */
+export function nativeAgentToolCalls(
+  response: NativeAiResponse,
+  textToolCall: AiToolCall | null,
+): NonNullable<NativeAiResponse["toolCalls"]> {
+  if (response.toolCalls?.length) return response.toolCalls;
+  return textToolCall
+    ? [
+        {
+          id: crypto.randomUUID(),
+          name: textToolCall.name,
+          arguments: JSON.stringify(textToolCall.arguments),
+        },
+      ]
+    : [];
+}
 const emptyUsage: LanguageModelV4GenerateResult["usage"] = {
   inputTokens: {
     total: undefined,
@@ -50,9 +67,10 @@ export function agentBase64(bytes: Uint8Array) {
     value += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(value);
 }
-function imageData(data: unknown): string | null {
+export function nativeImageData(data: unknown): string | null {
   if (typeof data === "string") return data;
   if (data instanceof Uint8Array) return agentBase64(data);
+  if (data instanceof ArrayBuffer) return agentBase64(new Uint8Array(data));
   if (
     data &&
     typeof data === "object" &&
@@ -60,7 +78,7 @@ function imageData(data: unknown): string | null {
     data.type === "data" &&
     "data" in data
   )
-    return imageData(data.data);
+    return nativeImageData(data.data);
   return null;
 }
 function outputText(output: unknown): string {
@@ -87,7 +105,7 @@ export function nativeAgentRequest(
       for (const part of message.content) {
         if (part.type === "text") text.push(part.text);
         if (part.type === "file" && part.mediaType.startsWith("image/")) {
-          const data = imageData(part.data);
+          const data = nativeImageData(part.data);
           if (data) images.push({ mediaType: part.mediaType, data });
         }
       }
@@ -217,17 +235,7 @@ export class ZerusNativeLanguageModel implements LanguageModelV4 {
       : { content: response.content, toolCall: null, toolError: null };
     if (parsed.toolError) throw new Error(parsed.toolError);
     if (parsed.content) content.push({ type: "text", text: parsed.content });
-    const calls =
-      response.toolCalls ??
-      (parsed.toolCall
-        ? [
-            {
-              id: crypto.randomUUID(),
-              name: parsed.toolCall.name,
-              arguments: JSON.stringify(parsed.toolCall.arguments),
-            },
-          ]
-        : []);
+    const calls = nativeAgentToolCalls(response, parsed.toolCall);
     for (const call of calls)
       content.push({
         type: "tool-call",

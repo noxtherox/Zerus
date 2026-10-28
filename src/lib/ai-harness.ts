@@ -6,7 +6,6 @@ import {
 } from "./frontmatter";
 import {
   createNoteResolver,
-  getOutgoingLinkTitles,
   isExternalNote,
   isManagedSavedLinkNote,
   isTrashed,
@@ -38,6 +37,7 @@ import type { PropertySchemas } from "./properties";
 import { effectivePropertyDefinitions } from "./properties";
 import { stabilizeNoteLinks } from "./stable-note-links";
 import { getFileHubReference } from "./file-hubs";
+import { getOutgoingTitles } from "./links";
 
 /** Production adapter shared by desktop and mobile; all mutations return durable evidence. */
 export interface NotesAgentPort {
@@ -945,21 +945,26 @@ export class NotesAgentRuntime {
     }
     if (call.name === "note_links") {
       const note = this.resolve(call.arguments.selector);
-      const resolve = createNoteResolver(this.available());
+      const available = this.available();
+      const resolve = createNoteResolver(available);
+      const schemas = this.port.schemas();
       return {
         ok: true,
         result: {
-          outgoing: getOutgoingLinkTitles(note.content).map((link) => {
+          scope: "permitted_read_context",
+          outgoing: getOutgoingTitles(note, schemas).map((link) => {
             const target = resolve(link);
             return target
               ? summary(target)
               : { reference: link, unresolved: true };
           }),
-          backlinks: this.available()
-            .filter((candidate) =>
-              getOutgoingLinkTitles(candidate.content).some(
-                (link) => resolve(link)?.id === note.id,
-              ),
+          backlinks: available
+            .filter(
+              (candidate) =>
+                candidate.id !== note.id &&
+                getOutgoingTitles(candidate, schemas).some(
+                  (link) => resolve(link)?.id === note.id,
+                ),
             )
             .map(summary),
         },

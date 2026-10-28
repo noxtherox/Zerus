@@ -2,14 +2,16 @@ import { useSyncExternalStore } from "react";
 import {
   flushNoteWrites,
   getNotes,
+  getPropertySchemas,
   noteBulkBlockReason,
   setNoteArchived,
   setNotePinned,
   setNoteProperty,
 } from "@/store/notes-store";
 import { getNoteProperties, type PropertyValue } from "@/lib/frontmatter";
-import { isArchived, noteTitle, type Note } from "@/lib/note-utils";
-import { normalizeListOptions } from "@/lib/properties";
+import { createNoteResolver, isArchived, noteReferenceLabel, noteTitle, noteTypePath, type Note } from "@/lib/note-utils";
+import { effectiveProperties, normalizeListOptions } from "@/lib/properties";
+import { parseNoteReference } from "@/lib/wikilinks";
 
 export type BulkPropertyOperation = "set" | "clear" | "add" | "remove";
 
@@ -167,23 +169,36 @@ function stringValues(value: PropertyValue | undefined): string[] {
   return [String(value)];
 }
 
+function propertyValueKey(note: Note, name: string): (value: string) => string {
+  const definition = effectiveProperties(noteTypePath(note), getPropertySchemas()).find(
+    (property) => property.name.toLowerCase() === name.toLowerCase(),
+  );
+  if (definition?.type !== "relation") return (value) => value.toLowerCase();
+  const resolve = createNoteResolver(getNotes());
+  return (value) => {
+    const target = resolve(value);
+    return target ? `id:${target.id}` : `text:${value.toLowerCase()}`;
+  };
+}
+
 function nextPropertyValue(
   current: PropertyValue | undefined,
   change: BulkPropertyChange,
+  valueKey: (value: string) => string,
 ): { value: PropertyValue; values?: string[] } {
   if (change.operation === "clear") return { value: "" };
   if (change.operation === "set") return { value: change.value ?? "" };
   const requested = stringValues(change.value);
   const existing = stringValues(current);
   if (change.operation === "add") {
-    const existingKeys = new Set(existing.map((value) => value.toLowerCase()));
-    const added = requested.filter((value) => !existingKeys.has(value.toLowerCase()));
+    const existingKeys = new Set(existing.map(valueKey));
+    const added = requested.filter((value) => !existingKeys.has(valueKey(value)));
     return { value: normalizeListOptions([...existing, ...added]), values: added };
   }
-  const removedKeys = new Set(requested.map((value) => value.toLowerCase()));
-  const removed = existing.filter((value) => removedKeys.has(value.toLowerCase()));
+  const removedKeys = new Set(requested.map(valueKey));
+  const removed = existing.filter((value) => removedKeys.has(valueKey(value)));
   return {
-    value: existing.filter((value) => !removedKeys.has(value.toLowerCase())),
+    value: existing.filter((value) => !removedKeys.has(valueKey(value))),
     values: removed,
   };
 }
@@ -198,7 +213,7 @@ function buildDeltas(note: Note, mutation: BulkNoteMutation): BulkFieldDelta[] {
   }
   for (const change of mutation.properties ?? []) {
     const before = propertyEntry(note, change.name);
-    const next = nextPropertyValue(before.value, change);
+    const next = nextPropertyValue(before.value, change, propertyValueKey(note, change.name));
     if (before.exists && equalValue(before.value, next.value)) continue;
     fields.push({
       kind: "property",
@@ -261,7 +276,8 @@ export function mutationSummary(mutation: BulkNoteMutation): string[] {
   if (mutation.archived !== undefined) return [mutation.archived ? "Archive" : "Unarchive"];
   if (mutation.pinned !== undefined) return [mutation.pinned ? "Pin" : "Unpin"];
   return (mutation.properties ?? []).map((change) => {
-    const value = Array.isArray(change.value) ? change.value.join(", ") : String(change.value ?? "");
+    const displayValue = (value: string) => parseNoteReference(value).id !== null ? noteReferenceLabel(value, getNotes()) : value;
+    const value = Array.isArray(change.value) ? change.value.map(displayValue).join(", ") : displayValue(String(change.value ?? ""));
     if (change.operation === "clear") return `Clear ${change.name}`;
     return `${change.operation[0].toUpperCase()}${change.operation.slice(1)} ${change.name}${value ? `: ${value}` : ""}`;
   });
@@ -359,11 +375,12 @@ function applyHistoryField(
   const current = currentField(note, field);
   if ((field.operation === "add" || field.operation === "remove") && field.values?.length) {
     const values = stringValues(current.value as PropertyValue | undefined);
-    const keys = new Set(field.values.map((value) => value.toLowerCase()));
+    const valueKey = propertyValueKey(note, field.name);
+    const keys = new Set(field.values.map(valueKey));
     const shouldAdd = (field.operation === "add") === (direction === "redo");
     const next = shouldAdd
-      ? normalizeListOptions([...values, ...field.values.filter((value) => !values.some((existing) => existing.toLowerCase() === value.toLowerCase()))])
-      : values.filter((value) => !keys.has(value.toLowerCase()));
+      ? normalizeListOptions([...values, ...field.values.filter((value) => !values.some((existing) => valueKey(existing) === valueKey(value)))])
+      : values.filter((value) => !keys.has(valueKey(value)));
     setNoteProperty(noteId, field.name, next);
     return true;
   }

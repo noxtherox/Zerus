@@ -77,6 +77,8 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   values, and compare date properties with presets or exact ranges;
   progressively render large All Notes lists; select multiple notes to pin,
   unpin, archive, unarchive, move to a folder, or update properties in one action;
+  bulk-edit shared relations with note pickers and set, clear, add, or remove
+  operations while keeping reciprocal relations synchronized;
   reorder types; and use a recoverable vault-local trash. Pin, archive, and
   property actions have undo history. Moving from the editor’s folder picker
   lets you choose the open note or all selected notes in one dialog, including
@@ -121,7 +123,9 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   **Settings → General → Properties pane**. The layout applies to all notes in
   the vault and is stored in `.zerus/properties-pane.json`, so it travels with
   the vault. Mobile uses the saved order and collapsed state for its available
-  sections.
+  sections. On desktop, **Keep open** preserves the pane's last open or closed
+  state across notes and app restarts. Closing it keeps it closed until you
+  open it again. With the option off, changing notes closes the pane.
 - **Deliberate revisions** — use the Revisions section in note properties on
   desktop, iOS, or the web to keep versions you choose to preserve. **New revision**
   copies the current content and vault files into a new editable version; older
@@ -169,6 +173,12 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   desktop, OpenAI, Anthropic,
   OpenRouter, or another compatible API. Choose the notes used as context,
   stream or cancel answers, save answers as notes, and undo supported AI edits.
+  On desktop, toggle **Use Pi agent** in AI settings to switch between Pi core
+  and the current AI SDK engine. AI SDK remains the default; the choice saves
+  on that desktop and applies to the next message. Both engines use the same
+  models, note tools, approvals, budgets, and saved history.
+  AI link inspection includes body links and relation properties, with incoming
+  connections limited to notes in the permitted read context.
   Toggle **Simple mode** in AI settings for a cleaner desktop or mobile chat
   with messages and file uploads; mobile keeps on-device voice dictation.
   The preference follows the vault, and required reviews and undo stay available.
@@ -256,7 +266,7 @@ vault-wide property definitions and display metadata live under `.zerus/`.
 
 ### Prerequisites
 
-- [Node.js 22.13 or newer](https://nodejs.org/) and [pnpm](https://pnpm.io/)
+- [Node.js 22.19 or newer](https://nodejs.org/) and [pnpm](https://pnpm.io/)
 - [Rust](https://www.rust-lang.org/tools/install) and the
   [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for desktop
   development

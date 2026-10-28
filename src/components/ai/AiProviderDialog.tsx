@@ -27,12 +27,17 @@ import {
 } from "@/lib/ai-provider-config";
 import { openExternalUrl } from "@/lib/external-links";
 import { ChatAppearanceSettings } from "./ChatAppearanceSettings";
+import { Switch } from "@/components/ui/switch";
+import type { AiAgentEngine } from "@/lib/ai-agent-engine";
 
 const API_KEY_CREATION_URLS: Partial<Record<AiProvider, string>> = {
   anthropic: "https://platform.claude.com/settings/keys",
 };
 
 interface AiProviderDialogProps {
+  agentEngine: AiAgentEngine;
+  agentBusy: boolean;
+  onAgentEngineChange: (engine: AiAgentEngine) => void;
   simpleMode: boolean;
   savingAppearance: boolean;
   appearanceError: string;
@@ -55,6 +60,9 @@ interface AiProviderDialogProps {
 }
 
 export function AiProviderDialog({
+  agentEngine,
+  agentBusy,
+  onAgentEngineChange,
   simpleMode,
   savingAppearance,
   appearanceError,
@@ -169,6 +177,25 @@ export function AiProviderDialog({
             disabled={savingAppearance}
             error={appearanceError}
           />
+          <div className="rounded-xl border border-border/70 bg-muted/25 p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <Label htmlFor="desktop-pi-agent">Use Pi agent</Label>
+                <p id="desktop-pi-agent-description" className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {agentEngine === "pi" ? "Pi agent is active." : "Current AI SDK agent is active."}{" "}
+                  Switch engines for the next message. Your model, notes, and edit permissions stay the same.
+                </p>
+              </div>
+              <Switch
+                id="desktop-pi-agent"
+                checked={agentEngine === "pi"}
+                disabled={agentBusy}
+                onCheckedChange={(enabled) => onAgentEngineChange(enabled ? "pi" : "ai-sdk")}
+                aria-describedby="desktop-pi-agent-description"
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Saved automatically on this desktop.</p>
+          </div>
           <div className="space-y-2">
             <Label>Provider</Label>
             <Select value={provider} onValueChange={(value) => selectProvider(value as AiProvider)}>

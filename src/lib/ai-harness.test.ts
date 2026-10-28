@@ -28,6 +28,58 @@ async function fixture(
 const revision = (f: Awaited<ReturnType<typeof fixture>>) =>
   chatContentRevision(f.port.notes()[0].content);
 describe("notes harness outcomes", () => {
+  it("discovers body and property links in both directions without reading outside the permitted context", async () => {
+    const f = await fixture("ask", [
+      '---\nEpics: ["zerus:note-2|Linked epic"]\n---\n# Initiative\n\nSee [[Body reference]].',
+      "# Linked epic",
+      "# Body reference",
+      '---\nEpics: ["zerus:note-1|Initiative"]\n---\n# Related initiative',
+      "# Body backlink\n\n[[Initiative]]",
+      '---\nEpics: ["zerus:note-1|Initiative"]\n---\n# PRIVATE RELATION',
+    ]);
+    f.port.schemas = () => ({
+      inbox: [{ name: "Epics", type: "relation", relationMultiple: true }],
+    });
+    f.run.readIds = ["note-1", "note-2", "note-3", "note-4", "note-5"];
+    const links = await f.runtime.execute({ name: "note_links", arguments: {} });
+    expect(links.ok).toBe(true);
+    const result = links.result as {
+      outgoing: Array<{ id: string }>;
+      backlinks: Array<{ id: string }>;
+    };
+    expect(result.outgoing.map((note) => note.id).sort()).toEqual([
+      "note-2", "note-3",
+    ]);
+    expect(result.backlinks.map((note) => note.id).sort()).toEqual([
+      "note-4", "note-5",
+    ]);
+    expect(JSON.stringify(links)).not.toContain("PRIVATE RELATION");
+    f.port.permitsRead = (note) => note.id !== "note-2" && note.id !== "note-4";
+    const restricted = await f.runtime.execute({
+      name: "note_links", arguments: {},
+    });
+    expect(restricted.result).toMatchObject({
+      outgoing: expect.arrayContaining([
+        { reference: "zerus:note-2|Linked epic", unresolved: true },
+      ]),
+      backlinks: [expect.objectContaining({ id: "note-5" })],
+    });
+    expect(JSON.stringify(restricted)).not.toContain('"id":"note-2"');
+    expect(JSON.stringify(restricted)).not.toContain("Related initiative");
+  });
+  it.each(["ai-sdk", "pi"] as const)("does not report a reasoning-only response as a completed answer (%s)", async (engine) => {
+    const f = await fixture("ask");
+    await expect(runZerusAgent({
+      engine, providerConfig: { provider: "codex", model: "evaluation", baseUrl: "codex://chatgpt", favoriteModels: [] },
+      streamId: "missing-answer", runtime: f.runtime, settings: DEFAULT_AGENT_SETTINGS,
+      systemPrompt: "Answer using the supplied notes.", messages: [{ role: "user", content: "Who owns this project?" }],
+      mutationAuthorized: false, executeTool: (call) => f.runtime.execute(call),
+      transport: async () => ({ content: "", reasoning: "Deciding on tool usage", toolCalls: [] }),
+    })).rejects.toThrow("did not return an answer");
+    const [saved] = await loadAgentRuns(f.backend, "eval-chat");
+    expect(saved.status).toBe("interrupted");
+    expect(saved.events.some((event) => event.text === "Run finished")).toBe(false);
+  });
   it("reads a long note completely in ranges and preserves its unseen tail on a precise edit", async () => {
     const f = await fixture("edit", [
       "# Long note\n\n" +
@@ -223,7 +275,7 @@ describe("notes harness outcomes", () => {
     );
     expect(f.run.receipts).toHaveLength(0);
   });
-  it("uses native tool results to continue, checkpoints plans, and labels a step-limited run partial", async () => {
+  it.each(["ai-sdk", "pi"] as const)("uses native tool results to checkpoint plans and label a limited run partial (%s)", async (engine) => {
     const f = await fixture("ask");
     let turn = 0;
     const transport: NativeAiTransport = async (request) => {
@@ -257,6 +309,7 @@ describe("notes harness outcomes", () => {
           };
     };
     const result = await runZerusAgent({
+      engine,
       providerConfig: {
         provider: "compatible",
         model: "evaluation",
@@ -278,6 +331,61 @@ describe("notes harness outcomes", () => {
     expect((await loadAgentRuns(f.backend, "eval-chat"))[0].status).toBe(
       "partial",
     );
+  });
+  it.each(["ai-sdk", "pi"] as const)("reviews, saves, and undoes a change after switching away from %s", async (engine) => {
+    const f = await fixture("review");
+    const providerConfig = { provider: "compatible" as const, model: "evaluation", baseUrl: "https://example.test", favoriteModels: [] };
+    let turn = 0;
+    await runZerusAgent({
+      engine, providerConfig, streamId: "switch-engine", runtime: f.runtime,
+      settings: DEFAULT_AGENT_SETTINGS, systemPrompt: notesAgentPrompt(f.run, { instructions: "", memory: "" }),
+      messages: [{ role: "user", content: "Append Owner: Ana. to the meeting note." }],
+      mutationAuthorized: true, executeTool: (call) => f.runtime.execute(call),
+      transport: async () => {
+        turn++;
+        return turn <= 2 ? { content: "", toolCalls: [{
+          id: `switch-${turn}`, name: turn === 1 ? "note_get" : "note_append",
+          arguments: turn === 1 ? "{}" : JSON.stringify({ text: "Owner: Ana.", revision: revision(f) }),
+        }] } : { content: "Prepared for review." };
+      },
+    });
+    expect(f.body()).not.toContain("Owner: Ana.");
+    const [saved] = await loadAgentRuns(f.backend, "eval-chat");
+    expect(saved.status).toBe("waiting");
+    const reopened = new NotesAgentRuntime(saved, f.port);
+    await reopened.approve([saved.proposals[0].id]);
+    expect(f.body()).toContain("Owner: Ana.");
+    const result = await runZerusAgent({
+      engine: engine === "pi" ? "ai-sdk" : "pi", providerConfig, streamId: "continued", runtime: reopened,
+      settings: DEFAULT_AGENT_SETTINGS, systemPrompt: notesAgentPrompt(saved, { instructions: "", memory: "" }),
+      messages: [...saved.messages as import("@ai-sdk/provider-utils").ModelMessage[], { role: "user", content: "Who owns it?" }],
+      mutationAuthorized: false, executeTool: (call) => reopened.execute(call),
+      transport: async (request) => {
+        expect(request.messages.find((message) => message.role === "tool" && message.toolCallId === "switch-1")?.content).toContain("ship Friday");
+        expect(request.messages.find((message) => message.role === "assistant" && message.toolCalls?.[0]?.id === "switch-2")).toBeDefined();
+        return { content: "Ana owns it." };
+      },
+    });
+    expect(result.text).toBe("Ana owns it.");
+    await reopened.undo(saved.receipts[0].id);
+    expect(f.body()).toBe("# Meeting\n\nDecision: ship Friday.");
+  });
+  it.each(["ai-sdk", "pi"] as const)("reports a context preparation failure after a completed tool step (%s)", async (engine) => {
+    const f = await fixture("ask");
+    await expect(runZerusAgent({
+      engine, providerConfig: { provider: "compatible", model: "evaluation", baseUrl: "https://example.test", favoriteModels: [] },
+      streamId: "compaction-failure", runtime: f.runtime, settings: DEFAULT_AGENT_SETTINGS,
+      systemPrompt: "Use the note tools.", messages: [{ role: "user", content: "Read the evidence." }],
+      mutationAuthorized: false,
+      executeTool: async () => ({ ok: true, result: { body: "evidence ".repeat(60000) } }),
+      transport: async (request) => {
+        if (request.systemPrompt.startsWith("Summarize")) throw new Error("Summary provider unavailable");
+        return { content: "", toolCalls: [{ id: "large-read", name: "note_get", arguments: "{}" }] };
+      },
+    })).rejects.toThrow("Summary provider unavailable");
+    const [saved] = await loadAgentRuns(f.backend, "eval-chat");
+    expect(saved.status).toBe("interrupted");
+    expect(saved.usage.steps).toBe(1);
   });
   it("keeps the selected current note as the default target while reading other notes and restricting edits", async () => {
     const f = await fixture("edit", [
