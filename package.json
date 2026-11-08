@@ -56,7 +56,14 @@
     "windows:build": "tauri build --bundles nsis",
     "release": "node scripts/release.mjs",
     "windows:msix": "node scripts/windows-msix.mjs",
-    "windows:msix:test": "node --test scripts/windows-msix.test.mjs"
+    "windows:msix:test": "node --test scripts/windows-msix.test.mjs",
+    "ios:native:build": "node scripts/native-ios.mjs build",
+    "ios:native:test": "node scripts/native-ios.mjs test",
+    "ios:native:install": "node scripts/native-ios.mjs install",
+    "ios:tauri:new-build": "node scripts/ios-new-build.mjs",
+    "ios:tauri:testflight": "node scripts/testflight.mjs",
+    "ios:native:verify": "node scripts/verify-native-ios-config.mjs",
+    "ios:shared:test": "swift test --package-path packages/apple/ChatGPTCore"
   },
   "dependencies": {
     "@ai-sdk/provider": "^4.0.7",

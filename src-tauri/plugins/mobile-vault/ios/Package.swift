@@ -18,7 +18,7 @@ let package = Package(
     ],
     dependencies: [
         .package(name: "Tauri", path: "../.tauri/tauri-api"),
-        .package(path: "ChatGPTCore")
+        .package(path: "../../../../packages/apple/IOSServices")
     ],
     targets: [
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
@@ -27,7 +27,7 @@ let package = Package(
             name: "tauri-plugin-mobile-vault",
             dependencies: [
                 .byName(name: "Tauri"),
-                .product(name: "ZerusChatGPTCore", package: "ChatGPTCore")
+                .product(name: "ZerusIOSServices", package: "IOSServices")
             ],
             path: "Sources")
     ]

@@ -1,0 +1,67 @@
+name: Native iOS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'native-ios/**'
+      - 'packages/apple/**'
+      - 'scripts/native-ios.mjs'
+      - 'scripts/verify-native-ios-config.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/native-ios.yml'
+  pull_request:
+    paths:
+      - 'native-ios/**'
+      - 'packages/apple/**'
+      - 'scripts/native-ios.mjs'
+      - 'scripts/verify-native-ios-config.mjs'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/native-ios.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Shared Swift core tests and native Simulator build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Verify native app boundaries
+        run: pnpm ios:native:verify
+      - name: Test shared ChatGPT core
+        run: pnpm ios:shared:test
+      - name: Select an available iOS 26 or newer iPhone Simulator
+        run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync } from 'node:fs';
+          const { devices } = JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], { encoding: 'utf8' }));
+          const device = Object.entries(devices)
+            .filter(([runtime]) => Number(runtime.match(/iOS-(\d+)/)?.[1]) >= 26)
+            .flatMap(([, values]) => values)
+            .find((entry) => entry.isAvailable && entry.name.startsWith('iPhone'));
+          if (!device) throw new Error('The selected Xcode needs an iOS 26 or newer iPhone Simulator runtime.');
+          appendFileSync(process.env.GITHUB_ENV, `NATIVE_IOS_SIMULATOR=${device.udid}\n`);
+          JS
+      - name: Build native Simulator app
+        run: pnpm ios:native:build --simulator "$NATIVE_IOS_SIMULATOR"

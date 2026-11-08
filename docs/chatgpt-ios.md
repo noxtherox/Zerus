@@ -43,7 +43,8 @@ This integration does not add hosted file search, image generation or audio APIs
 
 ## Native implementation
 
-The mobile-vault plugin owns authorization and HTTPS inference. Its authentication
+The shared Apple packages in `packages/apple/` own authorization and HTTPS
+inference for both the Tauri mobile-vault bridge and the SwiftUI app. The authentication
 browser returns to an ephemeral `http://127.0.0.1:<port>/auth/callback` listener
 bound only to loopback. State, nonce, PKCE, the exact callback URI, issued client
 ID, ID-token signature, issuer, audience, expiry and inference scopes are verified
@@ -75,7 +76,7 @@ cache and is cleared on account changes and sign-out.
 ## Verification
 
 ```sh
-swift test --package-path src-tauri/plugins/mobile-vault/ios/ChatGPTCore
+pnpm ios:shared:test
 pnpm test
 pnpm typecheck
 pnpm build

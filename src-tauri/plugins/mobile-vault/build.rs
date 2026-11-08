@@ -25,6 +25,13 @@ const COMMANDS: &[&str] = &[
 
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("ios") {
+        // These Swift dependencies now live outside the plugin directory.
+        // Rebuild the native bridge when either shared package changes.
+        for package in ["ChatGPTCore", "IOSServices"] {
+            for input in ["Package.swift", "Sources"] {
+                println!("cargo:rerun-if-changed=../../../packages/apple/{package}/{input}");
+            }
+        }
         println!("cargo:rustc-link-lib=framework=Metal");
         println!("cargo:rustc-link-lib=framework=Accelerate");
         println!("cargo:rustc-link-lib=framework=Security");

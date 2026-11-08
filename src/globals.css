@@ -146,6 +146,12 @@
     color: rgb(var(--zerus-text));
   }
 
+  html.mobile-zerus-page {
+    /* WKWebView can report zero during startup. Keep this live so navigation
+       clears the status bar after layout, rotation, and app resume. */
+    --mobile-safe-area-top: env(safe-area-inset-top, 0px);
+  }
+
   html.mobile-zerus-page,
   html.mobile-zerus-page body,
   html.mobile-zerus-page #root {

@@ -57,6 +57,17 @@
 
 ## iOS terminology
 
+- Keep both the Tauri iOS app and SwiftUI preview until the user explicitly
+  accepts SwiftUI as the replacement. `native-ios/` owns the SwiftUI application;
+  `packages/apple/` owns Swift services shared by both iOS implementations.
+  Native app sources and resources must not depend on `src-tauri/` paths.
+- `pnpm ios:native:build`, `pnpm ios:native:test`, and
+  `pnpm ios:native:install` target the separate SwiftUI preview. Its identity
+  remains `com.zerus.notes.native`; do not switch it to the production identity
+  or change default release commands as part of routine native work.
+- `pnpm ios:tauri:new-build` and `pnpm ios:tauri:testflight` are explicit aliases
+  for the existing Tauri iOS release commands below.
+
 - **New iOS build** or **new App Store build** means run `pnpm ios:new-build`.
   This advances the canonical iOS build number, creates the signed Xcode archive,
   verifies it, and exports its IPA. The command computes the next number from
@@ -88,6 +99,9 @@
   `UISceneDelegateClassName = TaoSceneDelegate` in both the canonical iOS plist
   and generated Xcode project. `pnpm platform:verify` must fail if any part is
   missing.
+- The `TaoSceneDelegate` requirements apply to Tauri iOS. The standalone SwiftUI
+  app owns its lifecycle through `App`/`WindowGroup`; do not add TaoSceneDelegate
+  to that target. Verify its own boundaries with `pnpm ios:native:verify`.
 - While Tauri 2.11 resolves tao `0.35.x`, retain the pinned upstream tao scene
   ownership fix in `src-tauri/Cargo.toml` and `Cargo.lock`. Do not remove the
   pin until the resolved Tauri runtime accepts tao `>= 0.36.0`; a scene

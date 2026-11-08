@@ -1,3 +1,4 @@
+import ZerusIOSServices
 import SwiftRs
 import Tauri
 import QuickLook
@@ -601,9 +602,9 @@ final class MobileVaultPlugin: Plugin, UIDocumentPickerDelegate, QLPreviewContro
   @objc public func cancelSpeechRecognition(_ invoke: Invoke) {
     Task { @MainActor in
       if #available(iOS 26.0, *) {
-        modernSpeechRecognizer().cancel()
+        await modernSpeechRecognizer().cancel()
       } else {
-        speechRecognizer.cancel()
+        await speechRecognizer.cancel()
       }
       invoke.resolve()
     }

@@ -34,3 +34,10 @@ zerus/
 
 # Generated SwiftPM/Xcode artifacts for the desktop MLX helper
 /src-mlx/
+
+# Generated native SwiftUI project (regenerate with XcodeGen)
+/native-ios/*.xcodeproj/
+
+# Generated Python fixture caches
+__pycache__/
+*.py[cod]

@@ -107,3 +107,79 @@ References: [Google native-app OAuth](https://developers.google.com/identity/pro
 [Drive scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth),
 [Drive uploads](https://developers.google.com/workspace/drive/api/guides/manage-uploads),
 [pre-generated file IDs](https://developers.google.com/workspace/drive/api/guides/create-file).
+
+
+## Standalone SwiftUI preview
+
+The native preview uses the separate bundle identifier `com.zerus.notes.native`
+so it can be tested alongside the existing app. Its direct Drive integration
+needs an additional **iOS OAuth client** registered for that identifier, in the
+same Google Cloud project if desired. The public client ID is sufficient; no
+client secret is needed.
+
+Configure the standalone target explicitly:
+
+```sh
+node scripts/configure-google-drive-ios.mjs --native YOUR_NATIVE_IOS_CLIENT_ID.apps.googleusercontent.com
+```
+
+This changes only `native-ios/project.yml` and `native-ios/Info.plist`, retaining
+other callback schemes and the SwiftUI scene manifest. The configuration
+survives XcodeGen. Omitting `--native` continues to configure only the Tauri
+app. Never reuse an iOS client registered for the other bundle identifier.
+Build and install the native preview with the commands in
+[the native guide](native-ios.md).
+
+The native preview now has an account/folder browser at **Settings → File
+locations → Google Drive**, and each shared file location offers **Choose
+Google Drive folder**. A mapping is stored privately on this device; shared
+notes keep their original location ID and relative document path. Existing
+connected documents can then download for native Quick Look/sharing or be
+copied into the vault. Downloads resolve the path freshly, reject duplicate
+names and shortcuts, and check the file and its ancestors again before
+exposing the bytes. Ordinary files up to 50 MB are supported. Downloaded
+previews are temporary snapshots; they cannot become a connection to the
+temporary local file. Disconnecting keeps shared notes, mappings and original
+Drive files.
+
+Preview 0.3.56 also offers **Open Google Drive vault** from the welcome screen
+and Settings → Vaults. It materializes an ordinary-file working copy in private
+app storage, with a separate sync ledger outside the vault. A completed cache
+reopens offline; native edits save locally before syncing. The saved-vault list
+retains the account/folder association. Cancel leaves the current vault selected.
+
+Sync compares local bytes and observed Drive versions, stages incoming changes
+through the native file transaction, preserves foreign file bytes, and presents
+conflicting local/Drive versions for explicit review. Uploads and trash use
+conditional version locks. Renames retain Drive file IDs, and interrupted creates
+retain their preallocated IDs for retry. Preview 0.3.57 also persists the sent
+identity and content hash before each upload. If the response is lost, matching
+Drive bytes become the acknowledged baseline even if local writing continued or
+the local file was removed; newer writing or deletion then syncs separately.
+An identity match with different remote bytes still requires review. Records
+from earlier previews without sent hashes remain readable. Preview 0.3.58 applies
+reviewed note/history resources as one exact-byte transaction instead of deriving
+history a second time. Supported local saves already captured their drafts;
+unchanged history remains available. Chosen Drive files retain server modified
+and creation dates across offline reopening. Drive dates are also applied to
+ordinary downloaded changes. Remote writes are per file: Drive does not provide a multi-file atomic
+transaction, so interruption can leave a partially synchronized remote tree.
+
+The standalone backend limits uploads to 25 MB, individual downloads to 50 MB,
+incoming changed bytes to 256 MB per sync, and enumeration to 100,000 entries
+and 64 levels. Duplicate/equivalent paths stop opening; rename duplicates in
+Drive before retrying. Google-native documents and shortcuts are not materialized.
+Preview 0.3.59 recovers a completed private working copy’s Drive association from
+its validated sync record when the saved-vault list is missing, unreadable, or
+has an older row without Drive metadata. Unknown list bytes stay intact. Cache
+records must match this app’s private account/folder directory; ordinary Files
+folders do not acquire Drive authority from a copied record. Damaged, incomplete,
+misbound or redirected private caches refuse activation and keep their files.
+Queued-create recovery after later remote relocation/replacement,
+unsupported-item collisions, and large-vault behavior need further work.
+
+The separate client is still absent in the installed preview. Live OAuth,
+consent/reconnect/expiry and actual Drive version-lock behavior remain unverified.
+Automated native transport/file-owner checks do not establish those live results.
+An unconfigured build explains setup and disables sign-in. Files-based native
+vaults remain usable; the full native migration remains in progress.

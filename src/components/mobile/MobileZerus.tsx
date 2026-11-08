@@ -19,6 +19,7 @@ import {
   ArrowUp,
   Check,
   CheckSquare,
+  ChevronDown,
   ChevronRight,
   Cloud,
   Copy,
@@ -373,6 +374,8 @@ function MobileNavigation({ tasksActive, onNotes, onTasks, onChat, onCreate, cre
 interface LibraryDrawerProps {
   counts: { all: number; external: number; files: number; links: number; tasks: number; trash: number };
   typeTree: TypeNode[];
+  expandedFolders: ReadonlySet<string>;
+  onToggleFolder: (key: string) => void;
   typeIcons: Record<string, string>;
   onClose: () => void;
   onSelect: (scope: NoteFilter) => void;
@@ -409,7 +412,7 @@ function flattenTypeKeys(nodes: TypeNode[]): string[] {
   ]);
 }
 
-function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreateType, onOpenTypeActions }: LibraryDrawerProps) {
+function LibraryDrawer({ counts, typeTree, expandedFolders, onToggleFolder, typeIcons, onClose, onSelect, onCreateType, onOpenTypeActions }: LibraryDrawerProps) {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
@@ -558,20 +561,27 @@ function LibraryDrawer({ counts, typeTree, typeIcons, onClose, onSelect, onCreat
           {scopeRow("Files", counts.files, <File className="h-[18px] w-[18px]" />, { kind: "files" })}
         </div>
         <div className="mb-2 mt-7 flex items-center justify-between px-1">
-          <p className="text-[13px] font-semibold text-zerus-sidebar-fg/55">Types</p>
-          <button type="button" onClick={onCreateType} className="flex h-8 w-8 items-center justify-center rounded-full bg-zerus-sidebar-fg/[0.07] text-zerus-sidebar-fg active:bg-zerus-sidebar-fg/[0.12]" aria-label="Add type"><Plus className="h-4 w-4" /></button>
+          <p className="text-[13px] font-semibold text-zerus-sidebar-fg/55">Folders</p>
+          <button type="button" onClick={onCreateType} className="flex h-8 w-8 items-center justify-center rounded-full bg-zerus-sidebar-fg/[0.07] text-zerus-sidebar-fg active:bg-zerus-sidebar-fg/[0.12]" aria-label="Add folder"><Plus className="h-4 w-4" /></button>
         </div>
         {typeTree.length > 0 ? <div className="rounded-[18px] bg-zerus-surface p-1">
-          {flattenTypes(typeTree).map((target) => (
+          {flattenTypes(typeTree).filter(({ node }) =>
+            node.path.slice(0, -1).every((_, index) => expandedFolders.has(typeKey(node.path.slice(0, index + 1)))),
+          ).map((target) => (
             <div key={typeKey(target.node.path)} className="flex min-h-[62px] items-center border-b border-zerus-sidebar-fg/[0.08] last:border-b-0" style={{ paddingLeft: `${12 + target.depth * 18}px` }}>
+              {target.node.children.length > 0 ? (
+                <button type="button" onClick={() => onToggleFolder(typeKey(target.node.path))} aria-expanded={expandedFolders.has(typeKey(target.node.path))} aria-label={`${expandedFolders.has(typeKey(target.node.path)) ? "Collapse" : "Expand"} ${target.node.name}`} className="flex h-11 w-9 shrink-0 items-center justify-center rounded-lg text-zerus-sidebar-fg/55 active:bg-zerus-sidebar-fg/[0.08]">
+                  {expandedFolders.has(typeKey(target.node.path)) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                </button>
+              ) : <span aria-hidden="true" className="w-9 shrink-0" />}
               <button type="button" onClick={() => onSelect({ kind: "type", path: target.node.path })} className="flex min-w-0 flex-1 items-center gap-3 self-stretch rounded-[13px] text-left active:bg-zerus-sidebar-fg/[0.05]">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-zerus-accent text-white"><TypeIcon icon={typeIcons[typeKey(target.node.path)]} size={20} /></span>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-zerus-accent text-white"><TypeIcon icon={typeIcons[typeKey(target.node.path)]} open={expandedFolders.has(typeKey(target.node.path)) && target.node.children.length > 0} size={20} /></span>
                 <span className="min-w-0 flex-1 truncate text-[16px] font-medium">{target.node.name}</span>
               </button>
               <button type="button" onClick={() => onOpenTypeActions(target)} className="mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-zerus-sidebar-fg/55 active:bg-zerus-sidebar-fg/[0.08]" aria-label={`Actions for ${target.node.name}`}><MoreHorizontal className="h-5 w-5" /></button>
             </div>
           ))}
-        </div> : <p className="rounded-[14px] bg-zerus-surface px-4 py-4 text-sm text-zerus-sidebar-fg/55">No note types yet.</p>}
+        </div> : <p className="rounded-[14px] bg-zerus-surface px-4 py-4 text-sm text-zerus-sidebar-fg/55">No folders yet.</p>}
         <div className="mt-7 rounded-[18px] bg-zerus-surface p-1">
           {scopeRow("Recently Deleted", counts.trash, <Trash2 className="h-[18px] w-[18px]" />, { kind: "trash" }, "bg-zerus-sidebar-fg/35")}
         </div>
@@ -2121,6 +2131,12 @@ export function MobileZerus() {
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [composerOpen, setComposerOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [expandedLibraryFolders, setExpandedLibraryFolders] = useState<Set<string>>(() => new Set());
+  const toggleLibraryFolder = (key: string) => setExpandedLibraryFolders((current) => {
+    const next = new Set(current);
+    if (!next.delete(key)) next.add(key);
+    return next;
+  });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [searchRequest, setSearchRequest] = useState<SearchChatRequest | null>(null);
@@ -2202,30 +2218,6 @@ export function MobileZerus() {
   const [deleteTarget, setDeleteTarget] = useState<TypeNode | null>(null);
   const notesSwipeStart = useRef<{ x: number; y: number; axis: "horizontal" | "vertical" | null } | null>(null);
 
-  useLayoutEffect(() => {
-    if (!isNativeApp) return;
-
-    const safeAreaProbe = document.createElement("div");
-    safeAreaProbe.style.cssText = [
-      "position:fixed",
-      "visibility:hidden",
-      "pointer-events:none",
-      "padding-top:env(safe-area-inset-top)",
-    ].join(";");
-    document.body.appendChild(safeAreaProbe);
-
-    const safeAreaTop = getComputedStyle(safeAreaProbe).paddingTop;
-    safeAreaProbe.remove();
-    document.documentElement.style.setProperty(
-      "--mobile-safe-area-top",
-      safeAreaTop,
-    );
-
-    return () => {
-      document.documentElement.style.removeProperty("--mobile-safe-area-top");
-    };
-  }, [isNativeApp]);
-
   useEffect(() => {
     document.documentElement.classList.add("mobile-zerus-page");
     return () => document.documentElement.classList.remove("mobile-zerus-page");
@@ -2278,6 +2270,7 @@ export function MobileZerus() {
   useEffect(() => {
     setTypeOrder(loadNoteTypeOrder(vault.location));
     setDefaultNoteTypeState(loadDefaultNoteType(vault.location));
+    setExpandedLibraryFolders(new Set());
   }, [vault.location]);
 
   useEffect(() => {
@@ -2458,6 +2451,11 @@ export function MobileZerus() {
     const existingKeys = new Set(flattenTypeKeys(typeTree));
     const created = await createType(path);
     if (!created) return;
+    setExpandedLibraryFolders((current) => {
+      const next = new Set(current);
+      for (let depth = 1; depth < path.length; depth += 1) next.add(typeKey(path.slice(0, depth)));
+      return next;
+    });
     const newKeys: string[] = [];
     for (let depth = 1; depth <= path.length; depth += 1) {
       const key = typeKey(path.slice(0, depth));
@@ -2711,7 +2709,7 @@ export function MobileZerus() {
         )}
         {vault.status === "ready" && !chatOpen && !selectedNote && !settingsOpen && !composerOpen && !libraryOpen && <MobileNavigation tasksActive={tasksOpen} onNotes={() => { if (tasksOpen) { setTasksOpen(false); setSearchTaskId(null); pushNavigation({ view: "notes" }); } }} onTasks={() => { if (!tasksOpen) openTasks(); }} onChat={() => openChat(scope.kind === "type" ? { kind: "type", path: scope.path } : { kind: "vault" })} onCreate={tasksOpen || scope.kind === "trash" ? undefined : () => void createForScope()} createLabel={scope.kind === "links" ? "Add a saved link" : scope.kind === "external" ? "Open an external note" : scope.kind === "files" ? "Add a linked file" : "Create a new note"} />}
         <AddLinkDialog open={addLinkOpen} onOpenChange={setAddLinkOpen} onAdd={async url => { const note = await createLinkNote(url); if (note) openNote(note.id); }} />
-        {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
+        {libraryOpen && <LibraryDrawer counts={libraryCounts} typeTree={typeTree} expandedFolders={expandedLibraryFolders} onToggleFolder={toggleLibraryFolder} typeIcons={vault.typeIcons} onClose={() => setLibraryOpen(false)} onSelect={selectScope} onCreateType={() => startTypeCreation()} onOpenTypeActions={setTypeActionTarget} />}
         {libraryOpen && typeActionTarget && (
           <TypeActionSheet
             target={typeActionTarget}

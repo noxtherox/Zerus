@@ -242,6 +242,105 @@ Download the current macOS DMG or Windows installer from
 build is produced and distributed separately through the App Store/TestFlight
 workflow. Windows users can also install [Zerus from Microsoft Store](https://apps.microsoft.com/detail/9P019ZG6HD8Q).
 
+A separate **SwiftUI native preview** for iOS 26+ is available in
+`native-ios/`. It uses Apple's TextKit 2 editor and installs alongside Zerus as
+**Zerus Native**. The current native migration goal excludes AI and Google Drive
+integration; their existing preview implementations are retained separately from
+the remaining completion criteria. The preview includes native rich editing, formatted HTML/RTFD
+paste with portable images and an adaptive paste sheet that dismisses the active keyboard,
+a visible keyboard-dismiss button in the iOS 27 formatting toolbar,
+stable formatting across newly typed text runs, and table-cell composition,
+local image loading with automatic retries, visible progress and manual retry,
+bounded provider-image reads for vault notes and external project files,
+metadata-aware external image refresh that retains previews, selection and Undo,
+foreground refresh of loaded vault/revision images and a direct Refresh images action,
+reviewed image removal with Undo, native previews, shared-file protection and image Trash restore/deletion,
+code/table/image previews that follow appearance, text size and available width without clearing Undo,
+with table footers that wrap at accessibility text sizes and full-size native
+collection/task choices at accessibility sizes,
+properties/relations with reviewed conversion between ordinary fields and reciprocal links,
+note-link insertion at the cursor or selection with mixed label formatting,
+`@`/`[[` suggestions and an optional shortcut setting,
+native back/forward note navigation with saved open-note/history/reading-position restoration, a note outline with local/cross-note heading jumps, reviewed title/file renaming and moves, revisions with independent file snapshots, reviewed permanent note/revision cleanup,
+automatic history with image recovery, external-edit capture and reviewed vault-wide
+cleanup, foreground file refresh, saved vault switching with bookmark-based folder identity
+and explicit selection between duplicate registrations, per-vault default note folders,
+device date formats, note-link and code-block creation preferences, undoable conversion
+of existing code blocks to literal text, readable Markdown/link excerpts, native collection sorting with
+date/folder/typed-property filters, reviewed bulk pin/archive/property/relation changes
+with durable undo/redo and repeatable change reviews, saved links with editable addresses and folder
+filing, task planning with lists, categories and supporting notes, private task drafts
+that survive closing and restarting, unified search
+across notes/external Markdown/tasks/files/links/conversations, document notes with portable copies,
+original-file connections, frozen backups and device folder mappings (including native
+Google Drive file locations and offline vault working copies with interrupted-upload
+recovery and reviewed sync conflicts
+when its separate iOS OAuth client is configured), editable external
+Markdown files with private recovery drafts, explicitly selected project attachments,
+reviewed copy/move into a vault and interrupted-move recovery, read-only external
+references in Ask’s context picker, inline image retries and refreshed local previews
+when Files reports resource changes, without closing the editor, native PDF/Word/HTML
+exports with system previews and direct Save to Files, local AI chat history bound to saved
+vault identities across folder moves and app-container updates, native editors for
+shared vault instructions and editable AI memory, per-vault AI limits and reasoning
+effort with native token estimation and timed cancellation, built-in and custom
+Markdown workflows with native creation/editing and saved per-run instructions,
+ordered AI plans with saved Pending, In progress and Complete states,
+device-private ChatGPT continuation for native runs across app restarts,
+conversations that reopen at the latest reply with an explicit return from older messages,
+dedicated on-device dictation into unsent prompts, Files/Photos attachments with native previews,
+private drafts, PDF/text extraction and actual image inputs, and native
+Ask/Review/Edit body and typed-property tools with explicit scope, native before/after
+review, inherited-schema reads, coordinated edits to configured reciprocal links,
+durable journals, verified receipts and conflict-aware undo. Linked changes wait
+for review when they affect multiple notes, including in Edit mode; every linked
+note must be in the writable context and freshly read. Configure missing relation
+pairs and legacy note identities in the native property editor first.
+Notes use compact spacing, and bulk-selection controls stack at accessibility
+text sizes so their labels stay readable. Bulk actions have larger touch targets,
+and secondary text in Notes, Tasks and Library uses stronger adaptive contrast. The user accepts the current accessibility options for this native-testing goal.
+See the [native iOS guide](docs/native-ios.md) for build,
+installation, storage safeguards, and the remaining feature-parity limitations.
+The [completion review](docs/native-ios-completion-review.md) records current
+acceptance evidence and remaining work. **AI and Google Drive integration work
+are excluded from the native migration goal.** Existing integrations remain.
+
+Signed native preview **0.3.107/1** is installed and launch-verified on
+**iPhone 18 Pro Max**, running iOS 27.2. It includes the new Library/Notes
+navigation, the Notes/Tasks/Ask/Search/New note bottom bar, and collection actions
+grouped in Settings. The existing 483-note workspace reopens after the update.
+It retains the accumulated native folder catalogue,
+reviewed folder rename and recoverable folder Trash/restore, independent custom
+light/dark palettes with 11 presets and saved themes, and Find within vault/external
+notes. Find searches full code/table text, shows contextual results and reveals a
+temporary highlight without editing the note.
+
+The earlier 0.3.106 iPhone 11 verification confirmed that the reported Collapse
+chart legend note renders its heading, bold prose and original image correctly. Find returns 10 legend matches and reveals
+the selected occurrence. Appearance and folder actions are inspected without
+changing phone settings or folders. The original 483-note workspace is restored;
+all backed-up local Documents and private support files remain byte exact, and
+all 59 diagnostic entries are unchanged. The agreed native testing goal is complete,
+with AI/Drive work excluded, current accessibility accepted and the composing-
+keyboard check explicitly deferred. See the completion review for supported limits.
+
+Previous preview105 delivered large-text saved-vault/Recent/details layouts and
+external-file retry/recovery; its physical layout and Quick Look proof remain.
+
+Physical local-file unavailability/retry/return recovery now passes with source
+bytes preserved. Physical prewrite interruption/cold recovery also passes, with
+the QA note restored afterward. Cloud-provider disconnection remains unverified;
+the composing-keyboard check is explicitly deferred. The unfiltered
+four-screen journey completes but its Apple audit still fails with 36 findings, with all findings
+retained. The completion review distinguishes current device proof, local recovery
+checks and remaining limits. Related fixes are batched before device updates;
+repeated typing benchmarks have stopped.
+The previously verified scoped UIKit search-placeholder adjustment is included
+in106. No further accessibility work or new audit accompanies this batch.
+
+The browser preview and existing App Store pipeline continue to use the
+established mobile interface.
+
 ## How the vault works
 
 ```text
@@ -259,7 +358,9 @@ My Vault/
 
 Each `.md` file is a note. Zerus derives its type from its containing folders,
 up to eight levels deep. Moving a note to another type moves the file; changing
-the title line renames it. Property values stay in the note's frontmatter, while
+the title line renames it in the established interface. The SwiftUI preview
+keeps the current filename during heading edits and offers reviewed Rename note.
+Property values stay in the note's frontmatter, while
 vault-wide property definitions and display metadata live under `.zerus/`.
 
 ## Getting started
@@ -294,6 +395,9 @@ pnpm lint            # check ESLint rules
 pnpm typecheck       # check the TypeScript projects
 pnpm build           # build the web app
 pnpm platform:verify # validate platform-specific packaging boundaries
+pnpm ios:native:verify # validate the independent SwiftUI app configuration
+pnpm ios:shared:test # test the shared Apple ChatGPT core
+pnpm ios:native:build # build the separate SwiftUI device preview
 pnpm desktop:build   # build and verify the macOS DMG
 pnpm windows:build   # build the unsigned Windows NSIS EXE (run on Windows)
 pnpm windows:msix    # build an unsigned Store MSIX (Windows + Store identity)
@@ -306,8 +410,13 @@ notarization. Both commands require the updater signing key described below.
 
 Windows-specific prerequisites and commands are in
 [`docs/WINDOWS.md`](docs/WINDOWS.md). To create a new signed iOS archive and
-export its IPA, use `pnpm ios:new-build`; see
+export its IPA for the existing Tauri iOS app, use `pnpm ios:new-build`
+(also available as `pnpm ios:tauri:new-build`); see
 [`docs/testflight-cli.md`](docs/testflight-cli.md) before uploading it.
+`pnpm testflight` and `pnpm ios:tauri:testflight` upload that existing Tauri IPA.
+The SwiftUI app remains a separate preview with its own identity and build
+commands; both iOS implementations stay available. See
+[`docs/ios-apps.md`](docs/ios-apps.md) for ownership and release boundaries.
 The iOS build phase selects SwiftPM's native engine for compatibility with the
 current Rust-to-Swift bridge on Xcode 27, and checks the archived app's scene
 lifecycle and signature before export.
@@ -364,7 +473,9 @@ src/                  React application and browser vault
 src/components/       editor, notes, AI chat, and shared UI
 src/lib/              Markdown, filtering, properties, links, and vault helpers
 src/store/            note, vault, and task state
-src-tauri/            Rust desktop shell, permissions, and packaging
+src-tauri/            Tauri desktop/mobile runtime, permissions, and packaging
+native-ios/           independent SwiftUI iOS preview, resources, and tests
+packages/apple/       shared iOS services and ChatGPT protocol packages
 ```
 
 ## AI and privacy
