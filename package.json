@@ -22,7 +22,8 @@
       "source-map-js": "1.2.2"
     },
     "patchedDependencies": {
-      "@mdxeditor/editor@4.2.1": "patches/@mdxeditor__editor@4.2.1.patch"
+      "@mdxeditor/editor@4.2.1": "patches/@mdxeditor__editor@4.2.1.patch",
+      "mdast-util-to-markdown@2.1.2": "patches/mdast-util-to-markdown@2.1.2.patch"
     }
   },
   "type": "module",

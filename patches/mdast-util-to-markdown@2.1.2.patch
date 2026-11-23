@@ -1,0 +1,64 @@
+diff --git a/lib/util/container-phrasing.js b/lib/util/container-phrasing.js
+index 3b4dc46bcab677d1a86c0ca3cc0d11e876e7e81b..e25d0f0c6099e3563196915523f8929310991595 100644
+--- a/lib/util/container-phrasing.js
++++ b/lib/util/container-phrasing.js
+@@ -89,8 +89,12 @@ export function containerPhrasing(parent, state, info) {
+     // still the same character,
+     // encode it.
+     if (encodeAfter && encodeAfter === value.slice(0, 1)) {
++      // Encode the whole code point: encoding only the high surrogate of an
++      // astral character (such as an emoji) would corrupt it.
++      const head = firstCharacter(value)
+       value =
+-        encodeCharacterReference(encodeAfter.charCodeAt(0)) + value.slice(1)
++        encodeCharacterReference(head.codePointAt(0)) +
++        value.slice(head.length)
+     }
+ 
+     const encodingInfo = state.attentionEncodeSurroundingInfo
+@@ -106,9 +110,11 @@ export function containerPhrasing(parent, state, info) {
+         encodingInfo.before &&
+         before === results[results.length - 1].slice(-1)
+       ) {
++        const previous = results[results.length - 1]
++        const tail = lastCharacter(previous)
+         results[results.length - 1] =
+-          results[results.length - 1].slice(0, -1) +
+-          encodeCharacterReference(before.charCodeAt(0))
++          previous.slice(0, -tail.length) +
++          encodeCharacterReference(tail.codePointAt(0))
+       }
+ 
+       if (encodingInfo.after) encodeAfter = after
+@@ -123,3 +129,31 @@ export function containerPhrasing(parent, state, info) {
+ 
+   return results.join('')
+ }
++
++/**
++ * First character of `value`, keeping a surrogate pair together.
++ *
++ * @param {string} value
++ * @returns {string}
++ */
++function firstCharacter(value) {
++  const code = value.codePointAt(0)
++  return code === undefined ? '' : String.fromCodePoint(code)
++}
++
++/**
++ * Last character of `value`, keeping a surrogate pair together.
++ *
++ * @param {string} value
++ * @returns {string}
++ */
++function lastCharacter(value) {
++  const tail = value.charCodeAt(value.length - 1)
++  const previous = value.charCodeAt(value.length - 2)
++  return tail >= 0xdc00 &&
++    tail <= 0xdfff &&
++    previous >= 0xd800 &&
++    previous <= 0xdbff
++    ? value.slice(-2)
++    : value.slice(-1)
++}

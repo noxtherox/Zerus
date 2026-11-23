@@ -65,7 +65,8 @@ function safeFileStem(value: string): string {
     .replace(/\s+/g, " ")
     .replace(/[. ]+$/g, "")
     .trim();
-  return (cleaned || "Untitled note").slice(0, 120);
+  // Count code points so an emoji at the cut is never split into a lone surrogate.
+  return Array.from(cleaned || "Untitled note").slice(0, 120).join("");
 }
 
 function displayProperty(value: PropertyValue): string {
