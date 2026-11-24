@@ -1,3 +1,4 @@
+import ZerusMarkdown
 import Foundation
 import Markdown
 
@@ -35,7 +36,16 @@ struct NativeInlineImage: Identifiable, Sendable {
         }
         var result: [Self] = []
         func visit(_ node: any Markup, offset: Int = 0, enclosing: NSRange? = nil) {
-            if node is CodeBlock || node is InlineCode || node is HTMLBlock || node is InlineHTML { return }
+            if node is CodeBlock || node is InlineCode { return }
+            if node is HTMLBlock || node is InlineHTML {
+                guard let nodeRange = range(node.range, offset: offset) else { return }
+                let raw = text.substring(with: nodeRange)
+                for tag in NativeImageMarkup.htmlImages(in: raw) {
+                    let imageRange = NSRange(location: nodeRange.location + tag.range.location, length: tag.range.length), selected = enclosing ?? imageRange
+                    result.append(.init(range: selected, imageRange: imageRange, markdown: text.substring(with: selected), reference: tag.value.reference, caption: tag.value.caption, title: tag.value.title.isEmpty ? nil : tag.value.title))
+                }
+                return
+            }
             if let image = node as? Markdown.Image, let imageRange = range(node.range, offset: offset), let reference = image.source {
                 let selected = enclosing ?? imageRange, spelling = text.substring(with: selected)
                 guard text.substring(with: imageRange).hasPrefix("!["), spelling.hasPrefix("![") || spelling.hasPrefix("[![") else { return }
@@ -43,7 +53,9 @@ struct NativeInlineImage: Identifiable, Sendable {
             }
             var childOffset = offset
             if node is Paragraph, let end = node.range?.upperBound.line, let inlineEnd = node.children.compactMap({ $0.range?.upperBound.line }).max() { childOffset += max(0, end - inlineEnd) }
-            let outer = node is Markdown.Link && node.childCount == 1 && node.child(at: 0) is Markdown.Image ? range(node.range, offset: offset) : nil
+            let only = node.childCount == 1 ? node.child(at: 0) : nil
+            let linkedImage = only is Markdown.Image || (only as? InlineHTML).flatMap { NativeImageMarkup(html: $0.rawHTML) } != nil
+            let outer = node is Markdown.Link && linkedImage ? range(node.range, offset: offset) : nil
             for child in node.children { visit(child, offset: childOffset, enclosing: outer) }
         }
         visit(Document(parsing: source))
@@ -126,16 +138,26 @@ extension VaultFiles {
         }
         return (paths, linked)
     }
+    /// The deleted-image list alone, for display. Changes still use a full
+    /// `imageSnapshot()`, which re-checks references across the vault.
+    func imageTrashIndex() throws -> NativeImageTrashIndex {
+        let location = try url(for: NativeImageTrashIndex.path)
+        return try NativeImageTrashIndex(FileManager.default.fileExists(atPath: location.path) ? read(NativeImageTrashIndex.path) : nil)
+    }
     func imageSnapshot() throws -> NativeImageSnapshot {
         let history = try historyMaintenanceSnapshot()
         let inventory = try Self.imageMarkdownInventory(root: root)
         var markdown: [String: Data] = [:]
         var total = 0
+        // The history snapshot's inventory already read every visible note
+        // (decoding is lossless). Reuse those bytes; read only hidden Markdown.
+        var scanned: [Data: Data] = [:]
+        for note in history.notes { scanned[Data(note.path.utf8)] = Data(note.content.utf8) }
         for path in inventory.paths {
             try Task.checkCancellation()
             let location = try url(for: path), size = try location.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
             guard size <= 10 * 1024 * 1024, total + size <= 128 * 1024 * 1024 else { throw VaultFailure(message: "This vault has large saved Markdown files. Image file changes are unavailable until those files can be checked safely.") }
-            let bytes = try read(path); total += bytes.count
+            let bytes = try scanned[Data(path.utf8)] ?? read(path); total += bytes.count
             guard bytes.count <= 10 * 1024 * 1024, total <= 128 * 1024 * 1024 else { throw VaultFailure(message: "Saved Markdown changed size. Reload Images.") }
             markdown[path] = bytes
         }
@@ -170,7 +192,7 @@ extension VaultFiles {
         if !snapshot.linkedPaths.isEmpty || !snapshot.history.problems.isEmpty { return true }
         let wanted = try url(for: path).resolvingSymlinksInPath().standardizedFileURL
         for (notePath, bytes) in snapshot.markdown.merging(replacing, uniquingKeysWith: { _, new in new }) {
-            guard let text = String(data: bytes, encoding: .utf8) else { return true }
+            guard let text = NoteDocument.decodeUTF8(bytes) else { return true }
             let parts = NoteDocument.split(text)
             for link in try MarkdownMoveLinks.links(in: parts.body) {
                 if case .wiki = link.kind { continue }
@@ -223,7 +245,7 @@ extension VaultFiles {
         func change(_ path: String, _ before: Data?, _ after: Data?) { changes.append(.init(path: path, before: before, after: after)) }
         switch action {
         case .remove(let notePath, let occurrence):
-            guard let bytes = snapshot.markdown[notePath], let text = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "The note is unavailable. Reopen it before removing an image.") }
+            guard let bytes = snapshot.markdown[notePath], let text = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "The note is unavailable. Reopen it before removing an image.") }
             var note = NoteDocument(path: notePath, content: text, modified: Date())
             guard let actual = NativeInlineImage.occurrences(in: note.parts.body).first(where: { $0.id == occurrence.id }), actual.markdown == occurrence.markdown, actual.reference == occurrence.reference else { throw VaultFailure(message: "The image or note changed. Choose the image again.") }
             let body = NSMutableString(string: note.parts.body); body.replaceCharacters(in: actual.range, with: "")

@@ -6,13 +6,13 @@ import ImageIO
 
 @main
 struct ZerusNativeApp: App {
-    @StateObject private var vault = VaultStore()
+    @State private var vault = VaultStore()
     @StateObject private var external = NativeExternalNotesModel()
     @Environment(\.scenePhase) private var phase
     @StateObject private var appearance = NativeAppearanceStore.shared
     var body: some Scene {
         WindowGroup("Zerus", id: "workspace") {
-            WorkspaceView().environmentObject(vault).environmentObject(external).environmentObject(appearance)
+            WorkspaceView().environment(vault).environmentObject(external).environmentObject(appearance)
                 .modifier(NativeAppearancePresentation(appearance: appearance))
                 .task { await vault.restore(); await external.restore(); if phase == .active { vault.startForegroundRefresh(); external.startRefresh() } }
                 .onChange(of: phase) { _, value in
@@ -102,17 +102,19 @@ private struct NativeNavigationLabelStyle: LabelStyle {
 }
 
 struct WorkspaceView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     @State private var externalPicker = false
     @State private var openingExternal = false
     @State private var externalJob: Task<Void, Never>?
     @State private var pendingExternal: NativeExternalNoteSession?
     @State private var tab = 0
-    @State private var notesPath: [NativeNotesRoute] = [.allNotes]
+    @State private var notesPath: [NativeNotesRoute] = []
+    @State private var libraryOpen = false
+    @State private var navigationVisible = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @State private var picker = false
-    @State private var drivePicker = false
-    @State private var driveDetails = false
     @State private var settings = false
     @State private var vaults = false
     @State private var newNote = false
@@ -125,10 +127,16 @@ struct WorkspaceView: View {
                 VaultRecoveryScreen(review: recovery, switchVault: { picker = true }).id(recovery.id)
             } else if vault.root == nil { welcome }
             else if let root = vault.root {
+                NativeWorkspaceDrawer(isOpen: $libraryOpen) {
+                    NavigationStack {
+                        LibraryView(workspaceID: vault.workspaceID, chooseVault: { vaults = true }, settings: { settings = true }, selectRoute: selectLibraryRoute, close: { libraryOpen = false })
+                    }
+                } content: {
                 TabView(selection: $tab) {
                     Tab("Notes", systemImage: "square.stack", value: 0) {
                         NavigationStack(path: $notesPath) {
-                            LibraryView(workspaceID: vault.workspaceID, chooseVault: { vaults = true }, settings: { settings = true })
+                            NotesView(vault: vault, open: open, compose: { newNote = true })
+                                .toolbar { ToolbarItem(placement: .topBarLeading) { NativeLibraryButton(action: showLibrary) } }
                                 .navigationDestination(for: NativeNotesRoute.self) { route in
                                     Group {
                                     switch route {
@@ -142,8 +150,10 @@ struct WorkspaceView: View {
                                     case .trash: NativeRecentlyDeletedView(workspaceID: vault.workspaceID)
                                     }
                                     }
-                                    .environmentObject(vault)
+                                    .environment(vault)
                                     .environmentObject(external)
+                                    .navigationBarBackButtonHidden()
+                                    .toolbar { ToolbarItem(placement: .topBarLeading) { NativeLibraryButton(action: showLibrary) } }
                                 }
                         }.toolbar(.hidden, for: .tabBar)
                     }
@@ -160,7 +170,23 @@ struct WorkspaceView: View {
                 .tabViewStyle(.tabBarOnly)
                 .toolbar(.hidden, for: .tabBar)
                 .safeAreaInset(edge: .bottom, spacing: 0) {
+                    // Preserve the scroll viewport throughout the animation. Removing
+                    // the inset makes UIKit relayout visible rows during deceleration.
                     NativeWorkspaceNavigation(tab: $tab, compose: { newNote = true })
+                        .offset(y: navigationVisible || voiceOver ? 0 : 120)
+                        .opacity(navigationVisible || voiceOver ? 1 : 0)
+                        .allowsHitTesting(navigationVisible || voiceOver)
+                        .accessibilityHidden(!navigationVisible && !voiceOver)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: navigationVisible)
+                }
+                .environment(\.nativeWorkspaceChromeVisible, navigationVisible || voiceOver)
+                .environment(\.nativeWorkspaceNavigationVisible, { visible in
+                    guard !libraryOpen, navigationVisible != visible else { return }
+                    navigationVisible = visible
+                })
+                .onChange(of: tab) { _, _ in navigationVisible = true }
+                .onChange(of: notesPath) { _, _ in navigationVisible = true }
+                .onChange(of: libraryOpen) { _, _ in navigationVisible = true }
                 }
                 .id(vault.workspaceID)
             }
@@ -179,15 +205,6 @@ struct WorkspaceView: View {
         }
         .sheet(isPresented: $settings) { SettingsView() }
         .sheet(isPresented: $vaults) { NativeVaultsSheet() }
-        .sheet(isPresented: $drivePicker) { NativeDriveFolderBrowser(vaultPurpose: true) { selection in
-            let opened = await vault.openDrive(selection); try Task.checkCancellation(); guard opened else { let message = vault.error ?? "The Drive vault could not be opened."; vault.error = nil; throw VaultFailure(message: message) }
-        } }
-        .sheet(isPresented: $driveDetails) { NativeDriveSyncSheet() }
-        .safeAreaInset(edge: .top) {
-            if let status = vault.driveStatus {
-                Button { driveDetails = true } label: { HStack { Image(systemName: vault.driveSyncing ? "arrow.triangle.2.circlepath" : "externaldrive.badge.icloud"); Text(status).font(.caption).lineLimit(2); Spacer(); Image(systemName: "chevron.right") }.padding(.horizontal, 18).padding(.vertical, 8) }.accessibilityIdentifier("drive.sync.open").background(.regularMaterial)
-            }
-        }
         .sheet(isPresented: $newNote) { NewNoteView(workspaceID: vault.workspaceID, folder: compositionFolder, open: open) }
         .fullScreenCover(item: $opened) { request in
             Group {
@@ -202,7 +219,7 @@ struct WorkspaceView: View {
         }
         .onOpenURL { url in if url.isFileURL { openExternal(url) } }
         .overlay { externalProgress }
-        .onChange(of: settings || vaults || drivePicker || driveDetails || newNote || picker || externalPicker) { _, busy in
+        .onChange(of: settings || vaults || newNote || picker || externalPicker) { _, busy in
             if !busy, let pendingExternal { self.pendingExternal = nil; presentExternal(pendingExternal) }
             else if !busy { restoreNoteView() }
         }
@@ -220,14 +237,20 @@ struct WorkspaceView: View {
             // External files have device-wide sessions. Restoring or switching
             // a vault invalidates its editor, not an independent file handoff.
             if let opened, case .vault = opened.content { self.opened = nil }
-            settings = false; vaults = false; drivePicker = false; driveDetails = false; newNote = false; askRequest = nil; tab = 0; notesPath = [.allNotes]
+            settings = false; vaults = false; newNote = false; askRequest = nil; tab = 0; notesPath = []; libraryOpen = false; navigationVisible = true
         }
     }
     private var compositionFolder: String {
         if tab == 0, case .folder(let folder) = notesPath.last { return folder }
         return NativeNoteDefaults.load(vault.activeVaultID)
     }
-    private func showLibrary() { notesPath = []; tab = 0 }
+    private func showLibrary() { libraryOpen = true }
+    private func selectLibraryRoute(_ route: NativeNotesRoute) {
+        notesPath = route == .allNotes ? [] : [route]
+        tab = 0
+        libraryOpen = false
+        navigationVisible = true
+    }
     @ViewBuilder private var externalProgress: some View {
         if openingExternal {
             VStack(spacing: 12) {
@@ -246,7 +269,7 @@ struct WorkspaceView: View {
                 let canonical = url.resolvingSymlinksInPath().standardizedFileURL
                 if let root = vault.root, let note = vault.notes.first(where: { root.appendingPathComponent($0.path).resolvingSymlinksInPath().standardizedFileURL == canonical }) { open(note); return }
                 let session = try await external.open(url); try Task.checkCancellation()
-                if settings || vaults || drivePicker || newNote || picker || externalPicker { pendingExternal = session }
+                if settings || vaults || newNote || picker || externalPicker { pendingExternal = session }
                 else { presentExternal(session) }
             } catch is CancellationError {} catch { vault.error = error.localizedDescription }
         }
@@ -257,7 +280,7 @@ struct WorkspaceView: View {
             if restoredWorkspace != vault.workspaceID { supersedeSavedVaultView() }
             return
         }
-        guard opened == nil, !openingExternal, pendingExternal == nil, !settings, !vaults, !newNote, !picker, !externalPicker, !drivePicker, !driveDetails, restoredWorkspace != vault.workspaceID else { return }
+        guard opened == nil, !openingExternal, pendingExternal == nil, !settings, !vaults, !newNote, !picker, !externalPicker, restoredWorkspace != vault.workspaceID else { return }
         restoredWorkspace = vault.workspaceID
         do {
             if let navigation = try NativeNoteNavigation.restore(vault: vault) {
@@ -308,13 +331,12 @@ struct WorkspaceView: View {
                                     Button("Try again") { Task { await vault.restore() } }.fixedSize(horizontal: false, vertical: true).disabled(vault.restoringVault || vault.loading)
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
                             }
-                            if !vault.savedVaults.isEmpty {
+                            if vault.savedVaults.contains(where: { $0.drive == nil }) {
                                 Button { vaults = true } label: {
                                     Label("Saved vaults", systemImage: "books.vertical").fixedSize(horizontal: false, vertical: true)
                                 }.accessibilityIdentifier("vaults.saved")
                             }
                             Button { picker = true } label: { Label("Open a vault in Files", systemImage: "folder").fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity).padding(.vertical, 9) }.buttonStyle(.borderedProminent).accessibilityIdentifier("vault.open")
-                            Button("Open a Google Drive vault", systemImage: "externaldrive.badge.icloud") { drivePicker = true }.accessibilityIdentifier("vault.drive")
                             Button { Task { await vault.createLocal() } } label: { Text("Start on this iPhone").fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity).padding(.vertical, 9) }.buttonStyle(.bordered).accessibilityIdentifier("vault.create")
                             Text("Open an existing folder of Markdown notes, or create a private library on this device.").font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         }
@@ -333,7 +355,7 @@ struct WorkspaceView: View {
 
 struct NotesView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ObservedObject var vault: VaultStore
+    var vault: VaultStore
     let open: (NoteDocument) -> Void
     let compose: () -> Void
     @State private var settings = false
@@ -353,6 +375,8 @@ struct NotesView: View {
         let collection = candidates
         let visible = filters.apply(collection, query: query, archiveOnly: filter == "Archive")
         return List {
+
+
             Section {
                 Group {
                     if dynamicTypeSize.isAccessibilitySize { collectionPicker.pickerStyle(.inline) }
@@ -375,11 +399,11 @@ struct NotesView: View {
                 }
             }
         }
+        .nativeWorkspaceScroll()
+        .nativeCollectionSearch(query: $query, prompt: "Search notes", collection: .init(filters: $filters, notes: candidates, archiveOnly: filter == "Archive"))
         .listStyle(.insetGrouped).listSectionSpacing(.compact).scrollContentBackground(.hidden).background(Accent.paper)
-        .navigationTitle("Notes")
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search notes")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
-        .nativeSearchContrast("Search notes")
+        .navigationTitle("Notes").navigationBarTitleDisplayMode(.inline)
+
         .refreshable { await vault.refresh() }
         .onChange(of: query) { _, _ in selection.clear() }
         .onChange(of: filters) { _, _ in selection.clear() }
@@ -449,7 +473,7 @@ struct NoteRow: View {
 }
 
 struct NoteActions: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let note: NoteDocument
     var body: some View {
         if note.trashed {
@@ -465,7 +489,7 @@ struct NoteActions: View {
 
 struct NewNoteView: View {
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var folder: String
@@ -496,7 +520,7 @@ struct NewNoteView: View {
 }
 
 struct NoteEditorScreen: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
@@ -513,6 +537,7 @@ struct NoteEditorScreen: View {
         self.closeNote = closeNote; self.openNote = openNote; self._source = State(initialValue: initialPosition?.source ?? false)
     }
     @State private var source = false
+    @State private var closingNote = false
     @State private var inspector = false
     @State private var finding: NativeNoteFindSnapshot?
     @State private var revealFound: (() -> Bool)?
@@ -602,6 +627,15 @@ struct NoteEditorScreen: View {
             }
         }
     }
+    private func finishAndCloseNote() {
+        guard !closingNote, !navigation.opening else { return }
+        closingNote = true
+        editorActions.finishEditing()
+        Task {
+            await session.save()
+            closeNote()
+        }
+    }
     private var complex: Bool { markdownAnalysis.requiresSource(session.document.parts.body) }
     private var editableBody: String {
         guard !source, !complex, let saved = session.document.savedLink else { return session.document.parts.body }
@@ -624,7 +658,7 @@ struct NoteEditorScreen: View {
             }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color.orange.opacity(0.12))
         }
         NativeSavedLinkCard(session: session)
-        if session.document.fileHub != nil || NativeFrontmatter(session.document.content).entries.contains(where: { NativeFileHub.keys.contains($0.key.lowercased()) }) || !NativeFileAttachment.all(in: session.document.content).isEmpty {
+        if session.document.fileHub != nil || NativeFrontmatterCache.read(session.document.content).entries.contains(where: { NativeFileHub.keys.contains($0.key.lowercased()) }) || !NativeFileAttachment.all(in: session.document.content).isEmpty {
             NativeFileHubCard(session: session)
         }
         if complex {
@@ -652,7 +686,7 @@ struct NoteEditorScreen: View {
                 }.font(.caption).foregroundStyle(Accent.secondaryText).padding(.horizontal, 24).padding(.vertical, 10)
                 connectionDetails
             }
-            NativeTextEditor(markdown: editableBody, source: source || complex, images: images, onChange: updateEditableBody, onImage: { bytes in
+            NativeTextEditor(markdown: editableBody, source: source, automaticSource: complex, images: images, onChange: updateEditableBody, onImage: { bytes in
                 Task { if let path = await vault.importImage(bytes, workspace: session.document.workspaceID) { appendAttachment(path, image: true) } }
             }, onLink: handleLink, onCode: { codeEditor = $0 }, onTable: { tableEditor = $0 },
                 copyFragment: vault.clipboardProvider(notePath: session.document.path),
@@ -668,6 +702,17 @@ struct NoteEditorScreen: View {
             NativeNoteLinkSuggestions(actions: editorActions)
         }
         .background(Accent.editor).foregroundStyle(Accent.text)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 20, coordinateSpace: .local)
+                .onEnded { value in
+                    // Linked notes retain NavigationStack's native back gesture.
+                    guard visitID == navigation.root.id,
+                          value.startLocation.x <= 32,
+                          value.translation.width >= 90,
+                          value.translation.width > abs(value.translation.height) * 2 else { return }
+                    finishAndCloseNote()
+                }
+        )
         .onChange(of: session.document.path) { _, _ in clipboardBusy = false }
         .alert("Clipboard", isPresented: Binding(get: { clipboardError != nil }, set: { if !$0 { clipboardError = nil } })) {
             Button("OK") { clipboardError = nil }
@@ -678,7 +723,7 @@ struct NoteEditorScreen: View {
         .navigationTitle(session.document.title).navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: visitID == navigation.root.id ? .topBarLeading : .topBarTrailing) {
-                Button { editorActions.finishEditing(); Task { await session.save(); closeNote() } } label: { Image(systemName: "chevron.down") }.accessibilityLabel("Close note")
+                Button { finishAndCloseNote() } label: { Image(systemName: "arrow.left") }.disabled(closingNote).accessibilityLabel("Close note")
             }
             ToolbarItem(placement: .topBarTrailing) { Button { inspector = true } label: { Image(systemName: "sidebar.right") }.accessibilityLabel("Note information") }
             ToolbarItem(placement: .topBarTrailing) {
@@ -912,7 +957,7 @@ struct NoteEditorScreen: View {
 }
 
 struct NoteInspector<Details: View>: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var session: NoteSession
@@ -972,7 +1017,7 @@ struct NoteInspector<Details: View>: View {
 }
 
 struct NotePicker: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let title: String
     let multiple: Bool

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeAgentLimitsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     private enum Field: String, CaseIterable {

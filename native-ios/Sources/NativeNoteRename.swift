@@ -61,7 +61,7 @@ extension VaultFiles {
         }
         let base = try prepareMove(snapshot, source: source, destination: destination, renaming: true)
         var changes = base.changes
-        guard let index = changes.firstIndex(where: { $0.path == destination }), let bytes = changes[index].after, let text = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "The note changed. Reload Rename.") }
+        guard let index = changes.firstIndex(where: { $0.path == destination }), let bytes = changes[index].after, let text = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "The note changed. Reload Rename.") }
         var renamed = NoteDocument(path: destination, content: text, modified: Date())
         let resulting = snapshot.notes.filter { $0.path != source } + [renamed]
         renamed = try NativeRelationSnapshot.stableReference(renamed, notes: resulting).0

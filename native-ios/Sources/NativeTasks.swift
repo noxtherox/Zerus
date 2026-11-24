@@ -172,10 +172,10 @@ extension VaultFiles {
 enum NativeTaskSort: String, CaseIterable {
     case created = "Recently created", completed = "Recently completed", title = "Title A–Z", reverseTitle = "Title Z–A"
 }
-enum NativeTaskView: String, CaseIterable { case today = "Today", all = "All", completed = "Completed" }
+enum NativeTaskView: String, CaseIterable { case all = "All", today = "Today", completed = "Completed" }
 
 struct NativeTaskQuery {
-    var view = NativeTaskView.today
+    var view = NativeTaskView.all
     var sort = NativeTaskSort.created
     var list: String? = nil
     var category: String? = nil
@@ -185,22 +185,40 @@ struct NativeTaskQuery {
     func results(_ tasks: [NativeTask], now: Date = Date(), calendar: Calendar = .current) -> [NativeTask] {
         let today = NativeTask.day(now, calendar: calendar), cutoff = calendar.date(byAdding: .day, value: -7, to: calendar.startOfDay(for: now)) ?? now
         let search = search.trimmingCharacters(in: .whitespacesAndNewlines)
-        return tasks.filter {
-            (list == nil || $0.listID == list) && (category == nil || $0.category.caseInsensitiveCompare(category!) == .orderedSame) && (priority == nil || $0.priority == priority) &&
-            (search.isEmpty || $0.title.localizedStandardContains(search)) &&
-            (view != .today || $0.date == today) && (view != .completed || $0.completed) &&
-            (!$0.completed || showOlderCompleted || $0.completedAt.map { $0 >= cutoff } == true)
-        }.enumerated().sorted { left, right in
+        // Parse each task's sort keys once. Constructing date formatters inside
+        // the comparator repeats that work for every comparison on every redraw.
+        #if os(macOS)
+        func timestamp(_ value: Any?) -> Date? {
+            (value as? String).flatMap(NativeRevisionIndex.date)
+        }
+        #else
+        let fractional = ISO8601DateFormatter(), standard = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        func timestamp(_ value: Any?) -> Date? {
+            guard let value = value as? String else { return nil }
+            return fractional.date(from: value) ?? standard.date(from: value)
+        }
+        #endif
+        typealias Row = (element: NativeTask, offset: Int, createdAt: Date, completedAt: Date?)
+        return tasks.enumerated().compactMap { offset, task -> Row? in
+            guard (list == nil || task.listID == list) && (category == nil || task.category.caseInsensitiveCompare(category!) == .orderedSame) && (priority == nil || task.priority == priority) &&
+                  (search.isEmpty || task.title.localizedStandardContains(search)) &&
+                  (view != .today || task.date == today) && (view != .completed || task.completed) else { return nil }
+            let completedAt = timestamp(task.raw["completedAt"])
+            guard !task.completed || showOlderCompleted || completedAt.map({ $0 >= cutoff }) == true else { return nil }
+            return (task, offset, timestamp(task.raw["createdAt"]) ?? Date(timeIntervalSince1970: 0), completedAt)
+        }.sorted { left, right in
             let a = left.element, b = right.element
             if a.completed != b.completed { return !a.completed }
             if sort == .title || sort == .reverseTitle {
                 let order = a.title.localizedCaseInsensitiveCompare(b.title)
                 if order != .orderedSame { return sort == .title ? order == .orderedAscending : order == .orderedDescending }
             } else {
-                let left = sort == .completed ? a.completedAt ?? a.createdAt : a.createdAt, right = sort == .completed ? b.completedAt ?? b.createdAt : b.createdAt
-                if left != right { return left > right }
+                let leftDate = sort == .completed ? left.completedAt ?? left.createdAt : left.createdAt
+                let rightDate = sort == .completed ? right.completedAt ?? right.createdAt : right.createdAt
+                if leftDate != rightDate { return leftDate > rightDate }
             }
-            return a.createdAt != b.createdAt ? a.createdAt > b.createdAt : left.offset < right.offset
+            return left.createdAt != right.createdAt ? left.createdAt > right.createdAt : left.offset < right.offset
         }.map(\.element)
     }
 }

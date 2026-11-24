@@ -46,7 +46,7 @@ final class NativeDictationController: ObservableObject {
         Self.activeOwner = self
         phase = .preparing; issue = nil; needsSettings = false; stopRequested = false
         let engine = ModernOnDeviceSpeechRecognizer(); recognizer = engine
-        watches = [vault.$workspaceID.dropFirst().sink { [weak self] value in if value != workspace { self?.cancel() } }]
+        watches = [vault.workspaceIDPublisher.dropFirst().sink { [weak self] value in if value != workspace { self?.cancel() } }]
         for name in [UIApplication.didEnterBackgroundNotification, AVAudioSession.mediaServicesWereLostNotification, AVAudioSession.mediaServicesWereResetNotification] {
             watches.append(NotificationCenter.default.publisher(for: name).receive(on: DispatchQueue.main).sink { [weak self] _ in self?.cancel() })
         }

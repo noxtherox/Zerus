@@ -1,5 +1,8 @@
 import Foundation
 import SwiftSoup
+#if os(macOS)
+import Markdown
+#endif
 import ImageIO
 import UniformTypeIdentifiers
 
@@ -84,6 +87,13 @@ enum NativeHTMLClipboard {
         var visited = 0
         let ignored: Set<String> = ["head", "script", "style", "link", "meta", "base", "iframe", "object", "embed", "template", "noscript", "svg", "canvas"]
         let blocks: Set<String> = ["p", "div", "section", "article", "main", "header", "footer", "nav", "aside", "figure", "figcaption", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "blockquote", "pre", "table", "hr", "dl", "dt", "dd"]
+        func trimmedContent(_ value: String) -> String {
+            #if os(macOS)
+            return value.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.subtracting(CharacterSet(charactersIn: "\u{200B}")))
+            #else
+            return value.trimmingCharacters(in: .whitespacesAndNewlines)
+            #endif
+        }
         func check(_ depth: Int) throws {
             try Task.checkCancellation(); visited += 1
             guard depth <= 128, visited <= 50_000 else { throw VaultFailure(message: "This HTML selection is too complex. Copy a smaller passage or use Paste plain text.") }
@@ -101,21 +111,44 @@ enum NativeHTMLClipboard {
             }
             let document = try SwiftSoup.parseHTML(source, base)
             guard let body = document.body() else { throw VaultFailure(message: "The clipboard HTML could not be read. Use Paste plain text.") }
-            let markdown = try content(body.getChildNodes(), depth: 0).trimmingCharacters(in: .whitespacesAndNewlines)
+            let markdown = trimmedContent(try content(body.getChildNodes(), depth: 0))
             guard !markdown.isEmpty else { throw VaultFailure(message: "This HTML selection has no supported writing. Use Paste plain text or copy the image separately.") }
             return Plan(markdown: markdown + "\n", images: images)
         }
         func content(_ nodes: [SwiftSoup.Node], depth: Int) throws -> String {
             var output: [String] = [], pending = ""
-            func flush() {
-                let value = pending.trimmingCharacters(in: .whitespacesAndNewlines)
+            func flush(nextBlock: Bool = false) {
+                let rawValue = trimmedContent(pending)
+                #if os(macOS)
+                var value = breakWhitespace(rawValue)
+                if let count = breakOnlyCount(value), nextBlock || !output.isEmpty {
+                    value = emptyParagraphs(count)
+                }
+                #else
+                let value = rawValue
+                #endif
                 if !value.isEmpty { output.append(MarkdownText.escapeLiteralBlockStart(value)) }
                 pending = ""
             }
             for node in nodes {
                 if let element = node as? SwiftSoup.Element, blocks.contains(element.tagNameNormal()) {
-                    flush(); let value = try block(element, depth: depth + 1)
-                    if !value.isEmpty { output.append(value) }
+                    flush(nextBlock: true); let value = try block(element, depth: depth + 1)
+                    if !value.isEmpty {
+                        #if os(macOS)
+                        // Child lists stay compact unless CommonMark would
+                        // absorb a non-one ordered marker into preceding prose.
+                        if let parent = element.parent(), parent.tagNameNormal() == "li", ["ul", "ol"].contains(element.tagNameNormal()) {
+                            let separator = try childListSeparator(value, after: output, in: parent)
+                            if output.isEmpty {
+                                // Keep an empty item's child list on its own
+                                // physical line, rather than inside the marker.
+                                output.append(separator + value)
+                            } else { output[output.count - 1] += separator + value }
+                        } else { output.append(value) }
+                        #else
+                        output.append(value)
+                        #endif
+                    }
                 } else { pending += try inline(node, depth: depth + 1) }
             }
             flush(); return output.joined(separator: "\n\n")
@@ -126,17 +159,48 @@ enum NativeHTMLClipboard {
             if try hidden(element) { return "" }
             switch tag {
             case "h1", "h2", "h3", "h4", "h5", "h6":
-                return String(repeating: "#", count: Int(tag.dropFirst())!) + " " + (try inlineChildren(element, depth: depth)).trimmingCharacters(in: .whitespacesAndNewlines)
+                return String(repeating: "#", count: Int(tag.dropFirst())!) + " " + trimmedContent(try inlineChildren(element, depth: depth))
             case "ul", "ol":
-                var number = Int(try element.attr("start")) ?? 1, lines: [String] = []
+                #if os(macOS)
+                var number = tag == "ol" ? try listOrdinal(element.attr("start"), fallback: 1) : 1
+                #else
+                var number = Int(try element.attr("start")) ?? 1
                 guard (1...999_999_999).contains(number) else { throw VaultFailure(message: "This copied list uses unsupported numbering. Use Paste plain text.") }
+                #endif
+                var lines: [String] = []
                 for item in element.children() where item.tagNameNormal() == "li" {
+                    #if os(macOS)
+                    if tag == "ol" { number = try listOrdinal(item.attr("value"), fallback: number) }
+                    // Overrides and implicit continuation share the start bound;
+                    // check before emitting or incrementing an untrusted value.
+                    guard (0...999_999_999).contains(number) else { throw VaultFailure(message: "This copied list uses unsupported numbering. Use Paste plain text.") }
+                    let checked = try listCheckboxState(item)
+                    let marker = checked.map { $0 ? "- [x] " : "- [ ] " } ?? (tag == "ol" ? "\(number). " : "- ")
+                    // GFM task syntax is body text after the two-column bullet,
+                    // not extra indentation for the item's child blocks.
+                    let padding = checked == nil ? marker.count : 2
+                    #else
                     if let explicit = Int(try item.attr("value")) { number = explicit }
                     let checkbox = try item.select("input[type=checkbox]").first()
                     let marker = checkbox.map { $0.hasAttr("checked") ? "- [x] " : "- [ ] " } ?? (tag == "ol" ? "\(number). " : "- ")
-                    let value = try content(item.getChildNodes(), depth: depth + 1)
+                    let padding = marker.count
+                    #endif
+                    let rawValue = try content(item.getChildNodes(), depth: depth + 1)
+                    #if os(macOS)
+                    let value = blockBreaks(rawValue, in: item)
+                    #else
+                    let value = rawValue
+                    #endif
                     let parts = value.components(separatedBy: "\n")
-                    lines.append(marker + (parts.first ?? "") + parts.dropFirst().map { $0.isEmpty ? "\n" : "\n" + String(repeating: " ", count: marker.count) + $0 }.joined())
+                    #if os(macOS)
+                    // An empty task needs a body for GFM to retain its state.
+                    // Empty leaves also need a body so trimming cannot remove
+                    // the marker's required space and force source editing.
+                    let head = (checked != nil || parts.count == 1) && (parts.first ?? "").isEmpty ? emptyParagraphs(1) : parts.first ?? ""
+                    #else
+                    let head = parts.first ?? ""
+                    #endif
+                    lines.append(marker + head + parts.dropFirst().map { $0.isEmpty ? "\n" : "\n" + String(repeating: " ", count: padding) + $0 }.joined())
                     number += 1
                 }
                 return lines.joined(separator: "\n")
@@ -151,11 +215,22 @@ enum NativeHTMLClipboard {
                 return fence + safe + "\n" + text + (text.hasSuffix("\n") ? "" : "\n") + fence
             case "table": return try table(element, depth: depth)
             case "hr": return "---"
-            default: return try content(element.getChildNodes(), depth: depth + 1)
+            default:
+                let value = try content(element.getChildNodes(), depth: depth + 1)
+                #if os(macOS)
+                return blockBreaks(value, in: element)
+                #else
+                return value
+                #endif
             }
         }
         func inlineChildren(_ element: SwiftSoup.Element, depth: Int) throws -> String {
-            try element.getChildNodes().map { try inline($0, depth: depth + 1) }.joined()
+            let value = try element.getChildNodes().map { try inline($0, depth: depth + 1) }.joined()
+            #if os(macOS)
+            return breakWhitespace(value)
+            #else
+            return value
+            #endif
         }
         func inline(_ node: SwiftSoup.Node, depth: Int) throws -> String {
             try check(depth)
@@ -167,7 +242,15 @@ enum NativeHTMLClipboard {
             let tag = element.tagNameNormal()
             if ignored.contains(tag) { return "" }
             if try hidden(element) { return "" }
-            if tag == "br" { return "\n" }
+            if tag == "br" {
+                #if os(macOS)
+                // Keep explicit breaks through paragraph and document trimming.
+                // The Mac editor understands this portable inline HTML spelling.
+                return "<br>"
+                #else
+                return "\n"
+                #endif
+            }
             if tag == "input" { return "" }
             if tag == "img" { return try image(element) }
             if tag == "code" {
@@ -184,19 +267,105 @@ enum NativeHTMLClipboard {
             if style["display"] == "none" || style["visibility"] == "hidden" { return "" }
             let bold = ["strong", "b"].contains(tag) || style["font-weight"].map { $0 == "bold" || (Int($0) ?? 0) >= 600 } == true
             let italic = ["em", "i"].contains(tag) || style["font-style"].map { $0.hasPrefix("italic") || $0.hasPrefix("oblique") } == true
+            #if os(macOS)
+            let underline = tag == "u" || style["text-decoration"]?.contains("underline") == true || style["text-decoration-line"]?.contains("underline") == true
+            #endif
             let strike = ["s", "strike", "del"].contains(tag) || style["text-decoration"]?.contains("line-through") == true || style["text-decoration-line"]?.contains("line-through") == true
-            if value.allSatisfy(\.isWhitespace) { return value }
+            if value.allSatisfy(\.isWhitespace) {
+                #if os(macOS)
+                if underline, !value.isEmpty {
+                    let literal = value.map { $0 == " " ? "&#32;" : $0 == "\t" ? "&#9;" : String($0) }.joined()
+                    return "<u>" + literal + "</u>"
+                }
+                #endif
+                return value
+            }
             let leading = String(value.prefix(while: \.isWhitespace)), trailing = String(value.reversed().prefix(while: \.isWhitespace).reversed())
-            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            value = trimmedContent(value)
+            #if os(macOS)
+            var bodyStart = value.startIndex, bodyEnd = value.endIndex, leadingCount = 0, trailingCount = 0
+            while value[bodyStart..<bodyEnd].hasPrefix("<br>") { leadingCount += 1; bodyStart = value.index(bodyStart, offsetBy: 4) }
+            while value[bodyStart..<bodyEnd].hasSuffix("<br>") { trailingCount += 1; bodyEnd = value.index(bodyEnd, offsetBy: -4) }
+            let leadingBreaks = String(repeating: "<br>", count: leadingCount), trailingBreaks = String(repeating: "<br>", count: trailingCount)
+            value = String(value[bodyStart..<bodyEnd])
+            #endif
             if !value.isEmpty {
                 if bold { value = "**" + value + "**" }; if italic { value = "*" + value + "*" }; if strike { value = "~~" + value + "~~" }
+                #if os(macOS)
+                if underline { value = "<u>" + value + "</u>" }
+                #endif
                 if tag == "a", let address = try address(element, attribute: "href", image: false) {
                     let escaped = address.absoluteString.replacingOccurrences(of: "(", with: "%28").replacingOccurrences(of: ")", with: "%29").replacingOccurrences(of: "<", with: "%3C").replacingOccurrences(of: ">", with: "%3E")
                     value = "[" + value + "](" + escaped + ")"
                 }
             }
+            #if os(macOS)
+            return leading + leadingBreaks + value + trailingBreaks + trailing
+            #else
             return leading + value + trailing
+            #endif
         }
+        #if os(macOS)
+        func listOrdinal(_ raw: String, fallback: Int) throws -> Int {
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let ordinal = Int(value) {
+                guard (0...999_999_999).contains(ordinal) else { throw VaultFailure(message: "This copied list uses unsupported numbering. Use Paste plain text.") }
+                return ordinal
+            }
+            // Keep the existing default for a missing/noninteger attribute,
+            // but do not disguise an overflowing integer as the default one.
+            guard value.range(of: #"^[+-]?[0-9]+$"#, options: .regularExpression) == nil else { throw VaultFailure(message: "This copied list uses unsupported numbering. Use Paste plain text.") }
+            return fallback
+        }
+        func listCheckboxState(_ item: SwiftSoup.Element) throws -> Bool? {
+            // Wrapped controls belong to the nearest li, not its ancestors.
+            let checkbox = try item.select("input[type=checkbox]").first { candidate in
+                guard let owner = candidate.parents().first(where: { $0.tagNameNormal() == "li" }) else { return false }
+                return owner === item
+            }
+            let aria = try item.attr("aria-checked").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return aria == "true" ? true : aria == "false" ? false : checkbox.map { $0.hasAttr("checked") }
+        }
+        func childListSeparator(_ value: String, after output: [String], in item: SwiftSoup.Element) throws -> String {
+            let digits = value.prefix(while: \.isNumber)
+            guard let ordinal = Int(digits), ordinal != 1, value.dropFirst(digits.count).hasPrefix(". ") else { return "\n" }
+            var prefix = output.joined(separator: "\n\n")
+            if prefix.isEmpty, try listCheckboxState(item) != nil {
+                // Empty tasks acquire the shared blank body when their marker
+                // is emitted; account for that paragraph before deciding here.
+                prefix = emptyParagraphs(1)
+            }
+            let line = prefix.isEmpty ? 1 : prefix.utf8.filter { $0 == 10 }.count + 2
+            let source = prefix.isEmpty ? value : prefix + "\n" + value
+            var recognized = false
+            func visit(_ node: any Markup) {
+                if let listItem = node as? ListItem, listItem.range?.lowerBound.line == line, listItem.parent is OrderedList { recognized = true }
+                for child in node.children { visit(child) }
+            }
+            visit(Markdown.Document(parsing: source))
+            return recognized ? "\n" : "\n\n"
+        }
+        func breakWhitespace(_ value: String) -> String {
+            value.replacingOccurrences(of: #"[ \t\r\n\f]*<br>[ \t\r\n\f]*"#, with: "<br>", options: .regularExpression)
+        }
+        func breakOnlyCount(_ value: String) -> Int? {
+            let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty, clean.replacingOccurrences(of: "<br>", with: "").isEmpty else { return nil }
+            return clean.components(separatedBy: "<br>").count - 1
+        }
+        func emptyParagraphs(_ count: Int) -> String {
+            // Existing Zerus web format for an intentional blank paragraph.
+            Array(repeating: "\u{200B}", count: count).joined(separator: "\n\n")
+        }
+        func blockBreaks(_ value: String, in element: SwiftSoup.Element) -> String {
+            // Child blocks already removed their own browser layout break.
+            guard !element.children().contains(where: { blocks.contains($0.tagNameNormal()) }) else { return value }
+            if let count = breakOnlyCount(value) { return "\u{200B}" + String(repeating: "<br>", count: max(0, count - 1)) }
+            // A block's last br is a browser layout placeholder. A second br
+            // remains as the actual visible empty line after its text.
+            return value.hasSuffix("<br>") ? String(value.dropLast(4)) : value
+        }
+        #endif
         func address(_ element: SwiftSoup.Element, attribute: String, image: Bool) throws -> URL? {
             let raw = try element.attr(attribute).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !raw.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeSavedLinksView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     let open: (NoteDocument) -> Void
     @State private var query = ""
@@ -14,6 +14,8 @@ struct NativeSavedLinksView: View {
     private var visible: [NoteDocument] { filters.apply(candidates, query: query) }
     var body: some View {
         List {
+
+
             Section { Button("Add a saved link", systemImage: "plus") { adding = true }.accessibilityIdentifier("savedlink.add") }
             if query.isEmpty {
                 Section {
@@ -45,8 +47,10 @@ struct NativeSavedLinksView: View {
                     }
             }
         }
-        .navigationTitle("Saved links").searchable(text: $query, prompt: "Search saved links")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
+        .navigationTitle("Saved links").navigationBarTitleDisplayMode(.inline)
+
+        .nativeWorkspaceScroll()
+        .nativeCollectionSearch(query: $query, prompt: "Search saved links", collection: .init(filters: $filters, notes: candidates))
         .scrollContentBackground(.hidden).background(Accent.paper)
         .refreshable { await vault.refresh() }
         .toolbar {
@@ -83,7 +87,7 @@ private struct NativeSavedLinkRow: View {
 }
 
 struct NativeSavedLinkCard: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var session: NoteSession
     @State private var editing = false
     var body: some View {
@@ -109,7 +113,7 @@ struct NativeSavedLinkCard: View {
 }
 
 struct NativeSavedLinkForm: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     let session: NoteSession?

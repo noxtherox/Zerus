@@ -51,7 +51,7 @@ private struct NativeQuickLook: UIViewControllerRepresentable {
 struct NativeFileNoteRequest: Identifiable { let id = UUID(); let source: NativeFileLease? }
 
 struct NativeFilesView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     let open: (NoteDocument) -> Void
     @StateObject private var bulkSelection = NativeBulkSelection()
@@ -70,6 +70,8 @@ struct NativeFilesView: View {
     }
     var body: some View {
         List {
+
+
             Section {
                 HStack {
                     Button("Add document", systemImage: "plus") { selected = nil; adding = .init(source: nil) }.accessibilityIdentifier("files.add")
@@ -111,11 +113,11 @@ struct NativeFilesView: View {
                     }
                 } header: { Text("Other files in the vault") } footer: { Text("Preview a file or add a note that keeps its document connection. Files already used as a document are listed above.") }
             }
-        }.navigationTitle("Files")
+        }.nativeWorkspaceScroll()
+        .nativeCollectionSearch(query: $query, prompt: "Search files and their notes", collection: .init(filters: $filters, notes: candidates, fileTypes: true, otherFiles: vault.files)).navigationTitle("Files").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { settings = true } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Settings") } }
         .sheet(isPresented: $settings) { SettingsView(collection: .init(filters: $filters, notes: candidates, selection: bulkSelection, fileTypes: true, otherFiles: vault.files)) }
-        .searchable(text: $query, prompt: "Search files and their notes")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
+
             .scrollContentBackground(.hidden).background(Accent.paper)
             .refreshable { await vault.refresh(); await vault.refreshFileLocations() }
             .onChange(of: query) { _, _ in bulkSelection.clear() }
@@ -142,7 +144,7 @@ struct NativeFilesView: View {
 }
 
 struct NativeFileNoteForm: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     let session: NoteSession?
@@ -215,7 +217,7 @@ struct NativeFileNoteForm: View {
 }
 
 private struct NativeVaultFilePicker: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     let selected: (URL) -> Void

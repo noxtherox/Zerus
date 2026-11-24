@@ -51,7 +51,7 @@ enum NativeNoteDefaults {
 }
 
 struct NativeGeneralSettingsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @AppStorage(NativeDateFormat.key) private var dateFormat = NativeDateFormat.dayFirst.rawValue
     @AppStorage("zerus.native.noteLinkShortcuts") private var noteLinkShortcuts = true
     @AppStorage("zerus.native.codeBlocks") private var codeBlocks = false

@@ -6,7 +6,7 @@ enum NativeAgentScopeChoice: String, CaseIterable, Identifiable {
 }
 
 struct NativeAgentPermissionsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @Binding var scope: NativeAgentScopeChoice
     @Binding var folder: String
@@ -48,7 +48,7 @@ struct NativeAgentPermissionsView: View {
 }
 
 struct NativeAgentRunsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var controller: NativeAgentController
     @ObservedObject var chat: NativeChat
@@ -90,7 +90,7 @@ struct NativeAgentRunsView: View {
 }
 
 private struct NativeAgentRunView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var controller: NativeAgentController
     @ObservedObject var chat: NativeChat
     @State var record: NativeAgentRecord
@@ -223,7 +223,7 @@ private struct NativeAgentRunView: View {
 }
 
 private struct NativeAgentReviewView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var controller: NativeAgentController
     let plan: NativeAgentReview
     let completed: (NativeAgentRecord) -> Void
@@ -237,7 +237,7 @@ private struct NativeAgentReviewView: View {
                 Section { Text(plan.label).font(.headline); Text("Only the changes below are approved. Zerus will reject changed files or a newer run journal.").font(.caption).foregroundStyle(.secondary) }
                 ForEach(plan.changedNotes, id: \.path) { change in
                     Section {
-                        let current = change.before.flatMap { String(data: $0, encoding: .utf8) }, proposed = change.after.flatMap { String(data: $0, encoding: .utf8) }
+                        let current = change.before.flatMap { NoteDocument.decodeUTF8($0) }, proposed = change.after.flatMap { NoteDocument.decodeUTF8($0) }
                         let propertiesChanged = current != nil && proposed != nil && NoteDocument.split(current!).header != NoteDocument.split(proposed!).header
                         if propertiesChanged, let current, let proposed {
                             let schemaBytes = plan.changes.first(where:{$0.path == ".zerus/properties.json"})?.before
@@ -321,7 +321,7 @@ private struct NativeAgentPropertyComparison: View {
 }
 
 private struct NativeAgentJournalShare: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let path: String
     let workspaceID: UUID
     @State private var copy: URL?

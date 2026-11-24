@@ -16,10 +16,14 @@ struct NativeRevisionIndex: Sendable {
     let currentID: String
     let nextNumber: Int
     let revisions: [NativeNoteRevision]
-    var object: [String: Any] { (try! JSONSerialization.jsonObject(with: bytes)) as! [String: Any] }
+    var object: [String: Any] { (try! NativeJSON.object(with: bytes)) as! [String: Any] }
     static func date(_ value: String) -> Date? {
+        #if os(macOS)
+        return MacRevisionDateParser.shared.date(value)
+        #else
         let format = ISO8601DateFormatter(); format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return format.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        #endif
     }
     static func timestamp(_ date: Date = Date()) -> String {
         let format = ISO8601DateFormatter(); format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -27,7 +31,7 @@ struct NativeRevisionIndex: Sendable {
     }
     init(_ bytes: Data, noteID: String) throws {
         func invalid() -> VaultFailure { VaultFailure(message: "This note’s revision data is incomplete or unsupported. Its original files are preserved.") }
-        guard let value = try JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+        guard let value = try NativeJSON.object(with: bytes) as? [String: Any],
               let schema = value["schema"] as? NSNumber, CFGetTypeID(schema) != CFBooleanGetTypeID(), schema.intValue == 1, schema.doubleValue == 1,
               value["noteId"] as? String == noteID,
               let current = value["currentId"] as? String,
@@ -122,7 +126,7 @@ extension VaultFiles {
         let directory = ".zerus/revisions/notes/" + noteID
         let pendingPath = directory + "/pending.json", indexPath = directory + "/index.json"
         guard let pendingBytes = try revisionData(pendingPath) else { return }
-        guard let pending = try JSONSerialization.jsonObject(with: pendingBytes) as? [String: Any],
+        guard let pending = try NativeJSON.object(with: pendingBytes) as? [String: Any],
               let token = pending["token"] as? String, !token.isEmpty,
               let before = pending["before"] as? String, let after = pending["after"] as? String,
               let previous = pending["previous"] as? [String: Any], let next = pending["next"] as? [String: Any] else {
@@ -148,7 +152,7 @@ extension VaultFiles {
     func revisionSnapshot(notePath: String) throws -> NativeRevisionSnapshot {
         try recoverTransactions()
         let bytes = try read(notePath)
-        guard let content = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "The note is not UTF-8 Markdown.") }
+        guard let content = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "The note is not UTF-8 Markdown.") }
         let location = try url(for: notePath)
         let note = NoteDocument(path: notePath, content: content, modified: (try? location.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date())
         let id = note.stableID ?? UUID().uuidString.lowercased()
@@ -185,7 +189,7 @@ extension VaultFiles {
         if snapshot.note.property("zerus-file-kind") == "vault", NativeFrontmatter(snapshot.note.content).entry("zerus-file-managed")?.value == .checkbox(true), let path = snapshot.note.property("zerus-file-path"), NativeRevisionIndex.validPath(path) { owned.insert(path) }
         if case .list(let values) = NativeFrontmatter(snapshot.note.content).entry("zerus-attachments")?.value {
             for value in values {
-                if let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any], object["kind"] as? String == "vault", NativeRevisions.boolean(object["managed"]) == true, let path = object["path"] as? String, NativeRevisionIndex.validPath(path) { owned.insert(path) }
+                if let object = try? NativeJSON.object(with: Data(value.utf8)) as? [String: Any], object["kind"] as? String == "vault", NativeRevisions.boolean(object["managed"]) == true, let path = object["path"] as? String, NativeRevisionIndex.validPath(path) { owned.insert(path) }
             }
         }
         func freeze(_ original: String) throws -> String {
@@ -225,7 +229,7 @@ extension VaultFiles {
                 guard case .list(let values) = entry.value else { throw VaultFailure(message: "The attachment metadata is unsupported. Its original data is preserved.") }
                 var saved: [String] = []
                 for value in values {
-                    guard let data = value.data(using: .utf8), var item = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    guard let data = value.data(using: .utf8), var item = try NativeJSON.object(with: data) as? [String: Any],
                           item["kind"] as? String == "vault", let path = item["path"] as? String,
                           item["id"] is String, item["name"] is String, NativeRevisions.boolean(item["managed"]) != nil else { throw VaultFailure(message: "The attachment metadata is unsupported or refers to an external file. Copy external files into the vault before creating a revision.") }
                     if NativeRevisions.boolean(item["managed"]) == true { owned.insert(path) }
@@ -303,3 +307,33 @@ extension VaultFiles {
         return try scan()
     }
 }
+
+#if os(macOS)
+/// Both the UI and vault actors parse timestamps. Reuse the same Foundation
+/// formats without sharing mutable formatter state across concurrent calls.
+private final class MacRevisionDateParser: @unchecked Sendable {
+    static let shared = MacRevisionDateParser()
+    private let lock = NSLock()
+    private let fractional: ISO8601DateFormatter
+    private let standard = ISO8601DateFormatter()
+    private struct Parsed { let value: Date? }
+    private var cached: [Data: Parsed] = [:]
+    private init() {
+        fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    }
+    func date(_ value: String) -> Date? {
+        lock.lock(); defer { lock.unlock() }
+        // Exact UTF-8 keys avoid Unicode-equivalent string aliases. Retain only
+        // short inputs, with a hard entry limit, including invalid timestamps.
+        let key = value.utf8.count <= 128 ? Data(value.utf8) : nil
+        if let key, let result = cached[key] { return result.value }
+        let result = fractional.date(from: value) ?? standard.date(from: value)
+        if let key {
+            if cached.count >= 4096 { cached.removeAll(keepingCapacity: true) }
+            cached[key] = Parsed(value: result)
+        }
+        return result
+    }
+}
+#endif

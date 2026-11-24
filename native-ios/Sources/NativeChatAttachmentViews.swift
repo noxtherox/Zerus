@@ -55,7 +55,7 @@ struct NativeChatMessageAttachments: View {
 }
 
 struct NativeChatAttachmentComposer: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var chat: NativeChat
     let workspaceID: UUID
     @State private var files = false

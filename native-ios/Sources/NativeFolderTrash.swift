@@ -45,13 +45,23 @@ extension VaultFiles {
     private nonisolated static func folderJSON(_ object: [String: Any]) throws -> Data { try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) }
     private func checkedFolderTrash(_ bytes: Data, path: String) throws -> NativeFolderTrashRecord {
         let value = try JSONDecoder().decode(NativeFolderTrashRecord.self, from: bytes)
-        guard value.version == 1, value.path == path, try NativeFolderPath.clean(value.folder) == value.folder,
+        #if os(macOS)
+        let supportedVersion = value.version == 1 || value.version == 2
+        #else
+        let supportedVersion = value.version == 1
+        #endif
+        guard supportedVersion, value.path == path, try NativeFolderPath.clean(value.folder) == value.folder,
               value.tree.directories.contains(""), value.tree.files.values.allSatisfy({ $0.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil }),
               value.deletedAt.timeIntervalSince1970.isFinite, Set(value.metadata.map(\.path)).count == value.metadata.count,
               value.metadata.allSatisfy({ Self.folderMetadataPaths.contains($0.path) && $0.before != nil && $0.after != nil }) else { throw VaultFailure(message: "A folder Trash record uses an unsupported format. Its files and settings are preserved.") }
         for change in value.metadata {
+            #if os(macOS)
+            let removed = try MacFolderMetadata(change.before!).removing(value.folder)
+            guard try MacFolderMetadata(removed).equivalent(to: MacFolderMetadata(change.after!)) else { throw VaultFailure(message: "A folder Trash record contains unsupported settings changes and is preserved.") }
+            #else
             let original = try Self.folderMetadata(change.before!), removed = original.filter { !Self.folderOwns($0.key, folder: value.folder) }
             guard NSDictionary(dictionary: removed).isEqual(to: try Self.folderMetadata(change.after!)) else { throw VaultFailure(message: "A folder Trash record contains unsupported settings changes and is preserved.") }
+            #endif
         }
         return value
     }
@@ -143,13 +153,22 @@ extension VaultFiles {
             let before = try historyData(path)
             var after = before
             if let before {
+                #if os(macOS)
+                after = try MacFolderMetadata(before).removing(folder)
+                #else
                 let object = try Self.folderMetadata(before), next = object.filter { !Self.folderOwns($0.key, folder: folder) }
                 if next.count != object.count { after = try Self.folderJSON(next) }
+                #endif
             }
             let change = VaultFileChange(path: path, before: before, after: after)
             changes.append(change); if before != after { metadata.append(change) }
         }
-        let record = NativeFolderTrashRecord(version: 1, id: UUID(), folder: folder, deletedAt: Date(), tree: tree, notes: snapshot.notes.filter { $0.path.hasPrefix(folder + "/") }.map { String($0.path.dropFirst(folder.count + 1)) }.sorted(), metadata: metadata, phase: .movingToTrash)
+        #if os(macOS)
+        let version = try metadata.contains { try MacFolderMetadata($0.before!).requiresNewReceipt } ? 2 : 1
+        #else
+        let version = 1
+        #endif
+        let record = NativeFolderTrashRecord(version: version, id: UUID(), folder: folder, deletedAt: Date(), tree: tree, notes: snapshot.notes.filter { $0.path.hasPrefix(folder + "/") }.map { String($0.path.dropFirst(folder.count + 1)) }.sorted(), metadata: metadata, phase: .movingToTrash)
         let bytes = try Self.folderTrashBytes(record)
         changes.append(.init(path: record.pendingPath, before: nil, after: bytes))
         return .init(root: root, action: .trash, entry: .init(record: record, bytes: bytes), changes: changes)
@@ -165,6 +184,11 @@ extension VaultFiles {
             guard !FileManager.default.fileExists(atPath: original.path) else { throw VaultFailure(message: "A file or folder already exists at \(record.folder). Rename it or move it in Files before restoring; neither copy has been changed.") }
             for saved in record.metadata {
                 let current = try historyData(saved.path)
+                #if os(macOS)
+                let original = try MacFolderMetadata(saved.before!)
+                let merged = try MacFolderMetadata(current ?? Data("{}".utf8)).restoring(from: original, folder: record.folder)
+                let after = current == saved.after ? saved.before : merged
+                #else
                 let before = try Self.folderMetadata(saved.before!), owned = before.filter { Self.folderOwns($0.key, folder: record.folder) }
                 var object = try current.map(Self.folderMetadata) ?? [:]
                 for (key, value) in owned {
@@ -172,6 +196,7 @@ extension VaultFiles {
                     object[key] = value
                 }
                 let after = current == saved.after ? saved.before : try Self.folderJSON(object)
+                #endif
                 changes.append(.init(path: saved.path, before: current, after: after))
             }
         }

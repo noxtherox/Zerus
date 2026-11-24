@@ -1,10 +1,17 @@
 # Native SwiftUI iOS app
 
-Repository layout: SwiftUI and Tauri iOS coexist while the native app is evaluated.
-The native app owns its sources, icons, configuration and tests; shared iOS
-services live in `packages/apple/`. Native builds do not read Tauri configuration
-or generated assets. Existing iOS archive/TestFlight commands continue to target
-Tauri. See [iOS app coexistence](ios-apps.md) and the
+Current vault choices are Files/iCloud Drive and on-device storage. Google Drive
+vault options were removed from welcome, saved-vault menus and vault-specific
+settings on 2026-11-11. Existing records and recovery copies remain intact.
+The Drive delivery notes below describe historical previews. Features489 also
+removes direct Drive linked-file mapping, sign-in and sync controls; existing
+records, credentials and cached files are retained without reconnecting.
+
+SwiftUI is the accepted production replacement for Tauri mobile. It owns its
+sources, icons, configuration and tests; shared services live in `packages/apple/`.
+`pnpm ios:new-build` archives/exports SwiftUI and `pnpm testflight` uploads it.
+Native release numbering uses the previous Tauri build as a migration floor;
+app build inputs remain independent. See [iOS ownership](ios-apps.md) and the
 [native development entry point](../native-ios/README.md).
 
 Menu update delivered in **0.3.107/1 on iPhone 18 Pro Max**: Notes now sits above
@@ -65,12 +72,11 @@ keyboard dictation, Undo/Redo, Dynamic Type, and native formatting controls.
 AppKit's macOS `NSTextView` is not an iOS framework; this uses the corresponding
 Apple text technology available on iOS.
 
-This is a native testing preview, installed as **Zerus Native** with the bundle
-identifier `com.zerus.notes.native`. It coexists with the established Zerus app,
-and has its own sandbox, Keychain credentials, and local settings. Choose an
-existing folder through Files to work with it; the old app's sandbox is not
-implicitly accessible. Both apps can edit a folder that the user explicitly
-chooses. Use a copy of a vault when evaluating unfinished parity features.
+The app now installs as **Zerus**, with production bundle identifier
+`com.zerus.notes`, updating the old Tauri app. The previous native preview
+(`com.zerus.notes.native`) remains separate. Production reuses the legacy vault
+bookmark; choose the folder again in Files if permission needs renewal.
+Historical preview deliveries below retain their original identity and evidence.
 
 ## Current testing scope
 
@@ -301,9 +307,9 @@ and SwiftUI scene manifest. Output:
 `artifacts/native-ios/device/Build/Products/Release-iphoneos/ZerusNative.app`.
 The install command installs that exact app, then launches it. Enable Developer
 Mode on the phone and trust this Mac first. It does not upload to TestFlight,
-create an archive, advance the canonical App Store build number, or replace the
-existing app. `pnpm ios:new-build` and `pnpm testflight` still refer to the
-established Tauri distribution pipeline.
+create an archive, advance the canonical App Store build number, or create a TestFlight release. Development installation now uses the production
+identity and can update the existing app. `pnpm ios:new-build` and
+`pnpm testflight` use the SwiftUI production distribution pipeline.
 
 The native app owns its scene lifecycle through SwiftUI `App`/`WindowGroup`.
 The existing Tauri app must retain its `TaoSceneDelegate` manifest and runtime
@@ -355,9 +361,8 @@ pin. Adding that delegate to the standalone SwiftUI target would be incorrect.
   into the vault and detaching without deleting the note, original or snapshots.
   Settings → File locations shares location names while keeping security-scoped
   folder mappings private to this device and vault. Copy/backup reads are limited
-  to 50 MB; previews depend on system format support. Native Google Drive file-location mapping, account/folder browsing and bounded
-  document downloads are implemented, with live verification pending the separate
-  iOS OAuth client. Direct Drive-vault editing/sync remains pending.
+  to 50 MB; previews depend on system format support. Direct Google Drive
+  integration has been removed; folder/document access uses Files.
 - Library → External notes opens `.md`/`.markdown` files in place or creates a new
   Markdown file through Save to Files. Rich writing, full raw source (including
   YAML), native code/table editing, reload review and private recovery drafts
@@ -5611,3 +5616,54 @@ in the editor without changing the note. A code/table result selects its block;
 open the block for full editing. Source mode searches its literal displayed source.
 External Markdown files use the same Find control. No OCR or attached-file content
 search is implied. These additions are included in106 on iPhone 11.
+
+## features488 — stable iOS Source editing and local Apple handoff
+
+An installed iOS handoff probe exposed a mode-change defect: clearing a note
+whose advanced Markdown automatically selected Source made the next typed
+replacement become Rich text. Literal Markdown was then escaped on save.
+NativeTextEditor now distinguishes explicit Source selection from automatic
+fallback, retaining the current Source presentation during active replacement.
+Explicit mode changes and different documents still take effect. Both vault
+and external-note screens use this distinction; no macOS implementation changes.
+
+The hosted real navigation/editor regression fails on the old mode and saved
+bytes. All 12 affected presentation, clipboard and navigation checks pass after
+the repair. The updated 0.3.107/build57 simulator app saves a chunked literal
+replacement exactly, retaining its BOM/CRLF header, foreign metadata, sized HTML
+image attributes and original image bytes. LF body newlines are explicitly
+entered because the device tool synthesizes CRLF as two return keys; no unchanged
+body-line-ending claim is made for a full replacement.
+
+A separate owned fixture is copied locally from the actual iOS-saved vault to
+the notarized Mac app. Mac Rich readback, edit, Save, Undo and Redo pass; Undo
+restores the exact iOS-saved note bytes. The saved Mac file is returned to the
+closed iOS fixture, then the actual app relaunches and opens both edits. Returned
+note bytes, image and both control notes remain exact. The updated simulator is
+left on the affected Source screen. This is local installed interoperability,
+not cloud/provider transport, a physical iPhone check, or complete parity.
+No version increment, release publication, new Mac build or DMG.
+
+Evidence: `artifacts/native-macos/features488/verification.json`,
+`source-baseline.log`, `source-fixed.log`, `reproduction.json`,
+`ios-return-preview.png`, and the saved before/after note files.
+
+## features489 — remove remaining direct Google Drive controls
+
+The user confirms direct Google Drive integration is unwanted. Native iOS File
+locations no longer offers a Drive account entry or a per-location Drive folder
+picker. The unused OAuth/folder browser and Drive conflict/sync presentation are
+removed. The legacy account bridge refuses new requests locally without
+constructing an OAuth or HTTP client. Retained records, credentials, cached
+working copies and recovery drafts are not deleted. Files/iCloud Drive and
+on-device storage remain available; Google OAuth and live Drive verification
+are removed from the completion scope.
+
+All 16 affected file-hub, vault-registry, navigation and presentation checks pass.
+The updated 0.3.107/build57 simulator app creates a synthetic shared location,
+shows only Files-based folder controls, opens the standard folder picker and
+returns unchanged after Cancel. The earlier Apple handoff note, image and
+control remain exact. The simulator is left on the changed File locations
+screen. No macOS code, version increment, release publication or DMG.
+Evidence: `artifacts/native-macos/features489/verification.json`,
+`files-workflows.log` and `files-only-preview.png`.

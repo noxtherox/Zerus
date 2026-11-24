@@ -2,28 +2,27 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativeVaultsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var picking = false
-    @State private var drivePicking = false
     @State private var renaming: NativeSavedVault?
     @State private var removing: NativeSavedVault?
     @State private var name = ""
     @State private var creating = false
     @State private var newName = ""
+    private var availableVaults: [NativeSavedVault] { vault.savedVaults.filter { $0.drive == nil } }
     var body: some View {
         List {
             Section {
                 Button("Open a vault in Files", systemImage: "folder.badge.plus") { picking = true }.accessibilityIdentifier("vaults.open")
-                Button("Open a Google Drive vault", systemImage: "externaldrive.badge.icloud") { drivePicking = true }.accessibilityIdentifier("vaults.drive")
                 Button("Create a vault on this iPhone", systemImage: "plus") { newName = ""; creating = true }.accessibilityIdentifier("vaults.create")
             }
             if let issue = vault.savedVaultIssue {
                 Section { Label(issue, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary).font(.callout) }
             }
             Section {
-                if vault.savedVaults.isEmpty { ContentUnavailableView("Your vaults, together", systemImage: "books.vertical", description: Text("Open a folder in Files or Google Drive, or create a vault on this iPhone.")) }
-                ForEach(vault.savedVaults) { record in
+                if availableVaults.isEmpty { ContentUnavailableView("Your vaults, together", systemImage: "books.vertical", description: Text("Open a folder in Files, or create a vault on this iPhone.")) }
+                ForEach(availableVaults) { record in
                     vaultRow(record).padding(.vertical, 3)
                 }
             } header: { Text("Saved vaults") } footer: {
@@ -32,9 +31,6 @@ struct NativeVaultsView: View {
         }
         .navigationTitle("Vaults").navigationBarTitleDisplayMode(.inline)
         .disabled(vault.switchingVault)
-        .sheet(isPresented: $drivePicking) { NativeDriveFolderBrowser(vaultPurpose: true) { selection in
-            let opened = await vault.openDrive(selection); try Task.checkCancellation(); guard opened else { let message = vault.error ?? "The Drive vault could not be opened."; vault.error = nil; throw VaultFailure(message: message) }
-        } }
         .overlay { if vault.switchingVault { ProgressView("Opening your vault…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18)) } }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.folder]) { result in
             switch result {
@@ -50,7 +46,7 @@ struct NativeVaultsView: View {
         .alert("Remove \(removing?.title ?? "vault") from this list?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Remove from list", role: .destructive) { if let record = removing { vault.removeSavedVault(record.id) }; removing = nil }
             Button("Cancel", role: .cancel) { removing = nil }
-        } message: { Text(removing?.drive == nil ? "The folder, notes and local history are kept. An open vault stays open until you switch or close the app. You can add it again from Files." : "The Drive folder, working copy, notes and local history are kept. An open vault stays open until you switch or close the app. Choose the same Google Drive folder to add it again.") }
+        } message: { Text("The folder, notes and local history are kept. An open vault stays open until you switch or close the app. You can add it again from Files.") }
         .alert("New vault on this iPhone", isPresented: $creating) {
             TextField("Vault name", text: $newName).accessibilityIdentifier("vaults.newName")
             Button("Cancel", role: .cancel) { }

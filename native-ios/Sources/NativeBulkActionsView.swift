@@ -18,7 +18,7 @@ struct NativeBulkRequest: Identifiable {
     let mutation: NativeBulkMutation
 }
 struct NativeBulkControls: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var selection: NativeBulkSelection
     let visible: [NoteDocument]
@@ -65,7 +65,7 @@ struct NativeBulkControls: View {
 /// Present from the collection screen, not a reusable scrolling controls row.
 /// Keyboard layout and background scans must not retire an in-progress review.
 struct NativeBulkPresentation: ViewModifier {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var selection: NativeBulkSelection
     func body(content: Content) -> some View {
         content
@@ -93,7 +93,7 @@ struct NativeBulkNoteRow: View {
 }
 
 struct NativeBulkActionView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let request: NativeBulkRequest
     let applied: () -> Void
@@ -197,7 +197,7 @@ private struct NativeBulkReviewRoute: Hashable {
 }
 
 struct NativeBulkHistoryView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     @State private var snapshot: NativeBulkSnapshot?

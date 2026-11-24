@@ -24,7 +24,7 @@ final class NativeImageLoadingTests: XCTestCase {
         defer { if observing { NSFileCoordinator.removeFilePresenter(observer) } }
         let previous = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene))
-        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, ScenePhase.active))
+        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, ScenePhase.active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { session.deactivate(); window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
         await fulfillment(of: [observer.firstRead], timeout: 5)
@@ -103,7 +103,7 @@ final class NativeImageLoadingTests: XCTestCase {
         let revisionSelection = (editor.text as NSString).range(of: "Before")
         editor.selectedRange = revisionSelection
         XCTAssertTrue(editor.becomeFirstResponder())
-        host.rootView = NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, .inactive)
+        host.rootView = NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, .inactive)
         let backgrounded = ContinuousClock.now + .seconds(5)
         while editor.isFirstResponder, ContinuousClock.now < backgrounded { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(editor.isFirstResponder, "The production editor must actually observe the inactive scene before testing its return")
@@ -116,7 +116,7 @@ final class NativeImageLoadingTests: XCTestCase {
         NSFileCoordinator.addFilePresenter(foregroundRead)
         var holdingForeground = true
         defer { if holdingForeground { foregroundRead.release(); NSFileCoordinator.removeFilePresenter(foregroundRead) } }
-        host.rootView = NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, .active)
+        host.rootView = NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, .active)
         await fulfillment(of: [foregroundRead.requested], timeout: 5)
         XCTAssertTrue(containsLoadedChart(host.view, width: 320, height: 640), "Keep the previous current-revision preview while foreground refresh waits for its provider")
         XCTAssertEqual(editor.selectedRange, revisionSelection)
@@ -160,7 +160,7 @@ final class NativeImageLoadingTests: XCTestCase {
         defer { pendingRead.release(); NSFileCoordinator.removeFilePresenter(pendingRead) }
         let previous = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene))
-        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, ScenePhase.active))
+        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, ScenePhase.active))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { session.deactivate(); window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
         await fulfillment(of: [pendingRead.requested], timeout: 5)
@@ -171,7 +171,7 @@ final class NativeImageLoadingTests: XCTestCase {
         XCTAssertTrue(containsLoadedChart(host.view), "The first image must become visible while the second real provider read is held")
         let view = try XCTUnwrap(editor(in: host.view))
         XCTAssertTrue(view.becomeFirstResponder())
-        host.rootView = NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, .inactive)
+        host.rootView = NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, .inactive)
         let inactive = ContinuousClock.now + .seconds(5)
         while view.isFirstResponder, ContinuousClock.now < inactive { try await Task.sleep(for: .milliseconds(50)) }
         XCTAssertFalse(view.isFirstResponder)
@@ -180,7 +180,7 @@ final class NativeImageLoadingTests: XCTestCase {
         let foregroundRead = NativeProviderReadGate(url: chart)
         NSFileCoordinator.addFilePresenter(foregroundRead)
         defer { foregroundRead.release(); NSFileCoordinator.removeFilePresenter(foregroundRead) }
-        host.rootView = NativeNoteNavigationView(navigation: navigation).environmentObject(store).environment(\.scenePhase, .active)
+        host.rootView = NativeNoteNavigationView(navigation: navigation).environment(store).environment(\.scenePhase, .active)
         await fulfillment(of: [foregroundRead.requested], timeout: 5)
         foregroundRead.release(); pendingRead.release()
         let refreshed = ContinuousClock.now + .seconds(5)
@@ -214,7 +214,7 @@ final class NativeImageLoadingTests: XCTestCase {
         let store = VaultStore()
         let previous = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene))
-        let host = UIHostingController(rootView: NativeExternalEditorScreen(session: session).environmentObject(model).environmentObject(store))
+        let host = UIHostingController(rootView: NativeExternalEditorScreen(session: session).environmentObject(model).environment(store))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { session.deactivate(); window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
         let loaded = ContinuousClock.now + .seconds(5)

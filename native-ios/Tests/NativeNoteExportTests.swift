@@ -56,6 +56,8 @@ final class NativeNoteExportTests: XCTestCase {
 
         ![Orange diagram](images/chart%20space.png)
 
+        <img src="images/chart%20space.png" alt="Small diagram" title="Sized review" width="96" height="24" />
+
         ```swift
         let comparison = "<not markup>"
         ```
@@ -93,7 +95,7 @@ final class NativeNoteExportTests: XCTestCase {
                 XCTAssertTrue(document.allText.contains("Current unsaved draft.")); XCTAssertTrue(document.allText.contains("Tiago & team")); XCTAssertFalse(document.allText.contains("DO-NOT-EXPORT"))
                 XCTAssertFalse(document.allText.contains("zerus-table-widths")); XCTAssertFalse(document.allText.contains("hidden-inline"))
                 XCTAssertTrue(document.nodes("w:pStyle").contains { $0.attributes["w:val"] == "Heading1" }); XCTAssertFalse(document.nodes("w:numPr").isEmpty)
-                XCTAssertEqual(document.nodes("w:tbl").count, 2); XCTAssertEqual(document.nodes("wp:inline").count, 1)
+                XCTAssertEqual(document.nodes("w:tbl").count, 2); XCTAssertEqual(document.nodes("wp:inline").count, 2); XCTAssertTrue(document.nodes("wp:extent").contains { $0.attributes["cx"] == "877824" && $0.attributes["cy"] == "219456" })
                 XCTAssertTrue(document.nodes("w:t").contains { $0.text.contains("☑") }); XCTAssertTrue(document.nodes("w:b").count >= 2)
                 for (text, style) in [("Native cell", "w:b"), ("adjacent", "w:i"), ("strike", "w:strike")] {
                     XCTAssertTrue(document.nodes("w:r").contains { $0.text == text && $0.children.first(where: { $0.name == "w:rPr" })?.children.contains(where: { $0.name == style }) == true }, text)

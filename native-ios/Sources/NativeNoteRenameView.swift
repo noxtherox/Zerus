@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeNoteRenameView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NoteSession
     @State private var title = ""

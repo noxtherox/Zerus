@@ -2,69 +2,80 @@ import SwiftUI
 import Combine
 import CryptoKit
 
-@MainActor
-final class VaultStore: ObservableObject {
-    @Published var notes: [NoteDocument] = []
-    @Published var files: [String] = []
-    @Published private(set) var fileDates: [String: NativeFileDates] = [:]
-    @Published private(set) var folderPaths: [String] = []
-    @Published private(set) var folderIcons: [String: String] = [:]
-    @Published private(set) var folderIssue: String?
-    @Published private(set) var folderOrder: [String] = []
-    @Published private(set) var resourceRevision = 0
-    @Published private(set) var root: URL?
-    @Published private(set) var savedVaults: [NativeSavedVault] = []
-    @Published private(set) var savedVaultIssue: String?
-    @Published private(set) var activeVaultID: UUID?
-    @Published private(set) var chatStorageReady = false
-    @Published private(set) var chatStorageIssue: String?
-    private(set) var previousVaultRoots: [URL] = []
-    @Published private(set) var workspaceID = UUID()
-    @Published private(set) var switchingVault = false
-    @Published var loading = false
-    @Published private(set) var restoringVault = false
-    @Published private(set) var restorationIssue: String?
-    @Published private(set) var driveSelection: NativeDriveFolder?
-    @Published private(set) var driveStatus: String?
-    @Published private(set) var driveSyncing = false
-    @Published private(set) var driveConflict: NativeDriveConflictReview?
-    private var driveConnections: [URL: NativeDriveVault] = [:]
-    private var activeDrive: NativeDriveVault?
-    private var driveSyncTask: Task<Void, Never>?
-    private var driveRetryAfterSave = false
-    @Published var error: String?
-    @Published private(set) var historyWarning: String?
-    @Published var tasks: [NativeTask] = []
-    @Published var taskLists: [NativeTaskList] = []
-    @Published private(set) var generalTaskListName = "General"
-    @Published private(set) var taskIssue: String?
-    @Published private(set) var taskDraftStore: NativeTaskDraftStore?
-    @Published private(set) var taskDraftIssue: String?
-    @Published var taskCategories: [String] = []
-    @Published private(set) var fileLocations: [NativeFileLocation] = []
-    @Published private(set) var fileLocationIssue: String?
-    private var fileMappingWorkers: [URL: NativeFileMappings] = [:]
-    @Published private(set) var searchRevision = 0 { didSet { scheduleDriveSync() } }
-    @Published private(set) var schemaRevision = 0
-    @Published private(set) var schemaSaving = false
-    @Published private(set) var recovery: VaultRecoveryReview?
-    @Published private(set) var recoverySaving = false
-    @Published private(set) var recoveryError: String?
-    @Published private(set) var recoveryDrafts: [VaultRecoveryDraft] = []
-    private var recoveryIO: VaultFiles?
-    private var recoveryRoot: URL?
-    private var recoveryScope: URL?
-    private var recoveryRegistrationID: UUID?
-    private var io: VaultFiles?
-    private var scopedURL: URL?
-    private var taskRevision = 0
-    private var pendingTaskChanges = 0
-    private var taskWriteInFlight = false
-    private var taskPipeline: Task<Bool, Never>?
-    private var sessions: [String: NoteSession] = [:]
-    private let bookmarkKey = "zerus.native.vault.bookmark"
-    private var openGeneration = UUID()
-    private var foregroundRefresh: Task<Void, Never>?
+/// Observation tracks each property separately, so typing, autosave and sync
+/// status re-render only the views that read the changed values.
+@MainActor @Observable
+final class VaultStore {
+    var notes: [NoteDocument] = [] { didSet { notesSubject.send(notes) } }
+    /// Every change of `notes`, delivered synchronously (as `$notes` was).
+    var notesPublisher: AnyPublisher<[NoteDocument], Never> { notesSubject.eraseToAnyPublisher() }
+    @ObservationIgnored private lazy var notesSubject = CurrentValueSubject<[NoteDocument], Never>(notes)
+    var files: [String] = []
+    private(set) var fileDates: [String: NativeFileDates] = [:]
+    private(set) var folderPaths: [String] = []
+    private(set) var folderIcons: [String: String] = [:]
+    private(set) var folderIssue: String?
+    private(set) var folderOrder: [String] = []
+    private(set) var resourceRevision = 0
+    private(set) var root: URL?
+    private(set) var savedVaults: [NativeSavedVault] = []
+    private(set) var savedVaultIssue: String?
+    private(set) var activeVaultID: UUID?
+    private(set) var chatStorageReady = false
+    private(set) var chatStorageIssue: String?
+    @ObservationIgnored private(set) var previousVaultRoots: [URL] = []
+    private(set) var workspaceID = UUID() { didSet { workspaceIDSubject.send(workspaceID) } }
+    /// Every change of `workspaceID`, delivered synchronously (as `$workspaceID` was).
+    var workspaceIDPublisher: AnyPublisher<UUID, Never> { workspaceIDSubject.eraseToAnyPublisher() }
+    @ObservationIgnored private lazy var workspaceIDSubject = CurrentValueSubject<UUID, Never>(workspaceID)
+    private(set) var switchingVault = false
+    var loading = false { didSet { loadingSubject.send(loading) } }
+    /// Every change of `loading`, delivered synchronously (as `$loading` was).
+    var loadingPublisher: AnyPublisher<Bool, Never> { loadingSubject.eraseToAnyPublisher() }
+    @ObservationIgnored private lazy var loadingSubject = CurrentValueSubject<Bool, Never>(loading)
+    private(set) var restoringVault = false
+    private(set) var restorationIssue: String?
+    private(set) var driveSelection: NativeDriveFolder?
+    private(set) var driveStatus: String?
+    private(set) var driveSyncing = false
+    private(set) var driveConflict: NativeDriveConflictReview?
+    @ObservationIgnored private var driveConnections: [URL: NativeDriveVault] = [:]
+    @ObservationIgnored private var activeDrive: NativeDriveVault?
+    @ObservationIgnored private var driveSyncTask: Task<Void, Never>?
+    @ObservationIgnored private var driveRetryAfterSave = false
+    var error: String?
+    private(set) var historyWarning: String?
+    var tasks: [NativeTask] = []
+    var taskLists: [NativeTaskList] = []
+    private(set) var generalTaskListName = "General"
+    private(set) var taskIssue: String?
+    private(set) var taskDraftStore: NativeTaskDraftStore?
+    private(set) var taskDraftIssue: String?
+    var taskCategories: [String] = []
+    private(set) var fileLocations: [NativeFileLocation] = []
+    private(set) var fileLocationIssue: String?
+    @ObservationIgnored private var fileMappingWorkers: [URL: NativeFileMappings] = [:]
+    private(set) var searchRevision = 0 { didSet { scheduleDriveSync() } }
+    private(set) var schemaRevision = 0
+    private(set) var schemaSaving = false
+    private(set) var recovery: VaultRecoveryReview?
+    private(set) var recoverySaving = false
+    private(set) var recoveryError: String?
+    private(set) var recoveryDrafts: [VaultRecoveryDraft] = []
+    @ObservationIgnored private var recoveryIO: VaultFiles?
+    @ObservationIgnored private var recoveryRoot: URL?
+    @ObservationIgnored private var recoveryScope: URL?
+    @ObservationIgnored private var recoveryRegistrationID: UUID?
+    @ObservationIgnored private var io: VaultFiles?
+    @ObservationIgnored private var scopedURL: URL?
+    @ObservationIgnored private var taskRevision = 0
+    @ObservationIgnored private var pendingTaskChanges = 0
+    @ObservationIgnored private var taskWriteInFlight = false
+    @ObservationIgnored private var taskPipeline: Task<Bool, Never>?
+    @ObservationIgnored private var sessions: [String: NoteSession] = [:]
+    @ObservationIgnored private let bookmarkKey = "zerus.native.vault.bookmark"
+    @ObservationIgnored private var openGeneration = UUID()
+    @ObservationIgnored private var foregroundRefresh: Task<Void, Never>?
     var folders: [String] { NativeFolderOrder.sorted(Set(folderPaths).union(notes.filter { $0.regularCollectionNote }.map(\.folder)), order: folderOrder) }
     var searchableNotes: [NoteDocument] {
         notes.map { note in sessions.values.first(where: { $0.dirty && $0.document.workspaceID == workspaceID && $0.document.path == note.path })?.document ?? note }
@@ -144,7 +155,7 @@ final class VaultStore: ObservableObject {
 
     func restore() async {
         guard root == nil, !restoringVault, recovery == nil else { return }
-        guard let bookmark = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
+        guard let bookmark = (UserDefaults.standard.data(forKey: bookmarkKey) ?? UserDefaults.standard.data(forKey: "zerus.mobileVaultBookmark.v1")) else { return }
         let generation = openGeneration
         restoringVault = true; restorationIssue = nil
         defer { restoringVault = false }
@@ -382,7 +393,10 @@ final class VaultStore: ObservableObject {
         guard foregroundRefresh == nil else { return }
         foregroundRefresh = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(20)) } catch { break }
+                // Returning to the foreground refreshes at once; while open,
+                // a slow check is enough because each scan re-reads only
+                // notes whose file stamps changed.
+                do { try await Task.sleep(for: .seconds(120)) } catch { break }
                 guard !Task.isCancelled, let self else { break }
                 await self.refresh()
             }
@@ -1049,15 +1063,15 @@ final class VaultStore: ObservableObject {
         guard expected == workspaceID, let io, !switchingVault, !recoverySaving, recovery == nil else { throw VaultFailure(message: "The vault changed. Reopen the AI run in its original vault.") }
         // A model response can arrive during an ordinary foreground scan or
         // another coordinated save. Wait for admission instead of losing it.
-        for await _ in Publishers.CombineLatest3($loading, $schemaSaving, $switchingVault).values {
+        while true {
             try Task.checkCancellation()
             guard expected == workspaceID, !switchingVault, !recoverySaving, recovery == nil else { throw CancellationError() }
             if !loading && !schemaSaving {
                 schemaSaving = true
                 return io
             }
+            try await Task.sleep(for: .milliseconds(30))
         }
-        throw CancellationError()
     }
     private func agentOperation<T: Sendable>(workspace expected: UUID, flushDrafts: Bool = true, _ operation: @Sendable (VaultFiles) async throws -> T) async throws -> T {
         let io = try await acquireAgentFiles(workspace: expected)
@@ -1223,6 +1237,13 @@ final class NoteSession: ObservableObject {
     private var mutationHeld = false
     private var saveOperation: (id: UUID, task: Task<Void, Never>)?
     private let onSave: (NoteDocument) -> Void
+    /// Typing writes the recovery draft off the main thread, at most once a
+    /// second (the first edit after a pause is written at once). Any reader,
+    /// remover or synchronous writer of the draft file flushes it first.
+    private static let draftQueue = DispatchQueue(label: "com.zerus.notes.recovery-drafts", qos: .utility)
+    private var draftWrite: DispatchWorkItem?
+    private var draftDeadline: Date?
+    private var lastDraftWrite = Date.distantPast
 
     init(note: NoteDocument, root: URL, io: VaultFiles, vaultID: UUID? = nil, onSave: @escaping (NoteDocument) -> Void) {
         document = note; baseline = note.content; self.io = io; self.onSave = onSave; self.root = root
@@ -1261,6 +1282,7 @@ final class NoteSession: ObservableObject {
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("NativeDrafts/\(key).json")
     }
     private func retireDrafts() {
+        flushDraftWrites()
         try? FileManager.default.removeItem(at: draftURL)
         for source in retainedDrafts where (try? Data(contentsOf: source.url)) == source.bytes {
             try? FileManager.default.removeItem(at: source.url)
@@ -1268,6 +1290,7 @@ final class NoteSession: ObservableObject {
         retainedDrafts.removeAll()
     }
     private func locateDraft(for note: NoteDocument) {
+        flushDraftWrites()
         let next = Self.draftLocation(root: root, path: note.path, vaultID: vaultID, noteID: note.stableID)
         if next != draftURL, let bytes = try? Data(contentsOf: draftURL) { retainedDrafts.append((draftURL, bytes)) }
         draftURL = next; draftNoteID = note.stableID
@@ -1306,7 +1329,7 @@ final class NoteSession: ObservableObject {
         do {
             let bytes = try await io.read(document.path)
             guard active else { return }
-            guard let content = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "This file is not UTF-8 Markdown.") }
+            guard let content = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "This file is not UTF-8 Markdown.") }
             pending?.cancel(); pausedForRecovery = false; requiresDraftReview = false
             baseline = content; document.content = content; dirty = false; failure = nil
             retireDrafts(); locateDraft(for: document)
@@ -1319,7 +1342,36 @@ final class NoteSession: ObservableObject {
         let vaultID: UUID?
         let noteID: String?
     }
+    /// Cancel a draft write that has not started and wait for one in progress.
+    private func flushDraftWrites() {
+        draftWrite?.cancel(); draftWrite = nil; draftDeadline = nil
+        Self.draftQueue.sync {}
+    }
+    private func scheduleDraft() {
+        draftWrite?.cancel()
+        let payload = Draft(content: document.content, baseline: baseline, vaultID: vaultID, noteID: draftNoteID), url = draftURL
+        let item = DispatchWorkItem { [weak self] in
+            do {
+                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try JSONEncoder().encode(payload).write(to: url, options: .atomic)
+            } catch {
+                let message = error.localizedDescription
+                Task { @MainActor [weak self] in self?.failure = "Could not keep a recovery draft: \(message)" }
+            }
+        }
+        let now = Date(), deadline = draftDeadline ?? max(now, lastDraftWrite.addingTimeInterval(1))
+        draftWrite = item; draftDeadline = deadline
+        Self.draftQueue.asyncAfter(deadline: .now() + max(0, deadline.timeIntervalSince(now))) { [weak self] in
+            guard !item.isCancelled else { return }
+            item.perform()
+            Task { @MainActor [weak self] in
+                guard let self, self.draftWrite === item else { return }
+                self.draftWrite = nil; self.draftDeadline = nil; self.lastDraftWrite = Date()
+            }
+        }
+    }
     @discardableResult private func keepDraft() -> Bool {
+        flushDraftWrites()
         do {
             try FileManager.default.createDirectory(at: draftURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONEncoder().encode(Draft(content: document.content, baseline: baseline, vaultID: vaultID, noteID: draftNoteID)).write(to: draftURL, options: .atomic)
@@ -1336,7 +1388,7 @@ final class NoteSession: ObservableObject {
     func updateContent(_ text: String) {
         guard active, !mutationHeld else { return }
         document.content = text; dirty = text != baseline; requiresDraftReview = false
-        keepDraft()
+        scheduleDraft()
         scheduleSave()
     }
     private func scheduleSave() {
@@ -1500,6 +1552,12 @@ extension VaultStore {
         guard expected == workspaceID else { throw CancellationError() }
         snapshot.workspaceID = expected
         return snapshot
+    }
+    func imageTrashIndex(workspace expected: UUID) async throws -> NativeImageTrashIndex {
+        guard expected == workspaceID, let io, !switchingVault else { throw VaultFailure(message: "The vault changed. Reopen Images.") }
+        let index = try await io.imageTrashIndex()
+        guard expected == workspaceID else { throw CancellationError() }
+        return index
     }
     func prepareImageChange(_ snapshot: NativeImageSnapshot, action: NativeImageChange) async throws -> NativeImagePlan {
         guard snapshot.workspaceID == workspaceID, snapshot.root == root, let io, !switchingVault, !schemaSaving, recovery == nil else { throw VaultFailure(message: "The vault changed. Reload Images.") }

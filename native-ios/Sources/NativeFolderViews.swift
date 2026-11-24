@@ -41,7 +41,7 @@ struct NativeFolderGlyph: View {
 struct NativeNewFolderView: View {
     let parent: String
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var busy = false
@@ -78,7 +78,7 @@ struct NativeNewFolderView: View {
 struct NativeFolderIconView: View {
     let folder: String
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var snapshot: NativeFolderIconSnapshot?
     @State private var emoji = ""

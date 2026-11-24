@@ -16,7 +16,7 @@ final class NativeEditorPresentationTests: XCTestCase {
         window.traitOverrides.preferredContentSizeCategory = .extraSmall
         let host = UIHostingController(rootView: List {
             NativeBulkControls(selection: selection, visible: notes)
-        }.listStyle(.insetGrouped).environmentObject(store).tint(Accent.color))
+        }.listStyle(.insetGrouped).environment(store).tint(Accent.color))
         window.rootViewController = container; container.addChild(host); container.view.addSubview(host.view)
         host.view.frame = CGRect(x: 0, y: 0, width: 414, height: 896); host.didMove(toParent: container)
         window.makeKeyAndVisible()
@@ -129,7 +129,7 @@ final class NativeEditorPresentationTests: XCTestCase {
         let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene)), container = UIViewController()
         window.overrideUserInterfaceStyle = .light
         window.traitOverrides.preferredContentSizeCategory = .accessibilityExtraExtraExtraLarge
-        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environmentObject(store))
+        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environment(store))
         window.rootViewController = container; container.addChild(host); container.view.addSubview(host.view)
         host.view.frame = CGRect(x: 0, y: 0, width: 414, height: 896); host.didMove(toParent: container)
         window.makeKeyAndVisible()
@@ -164,6 +164,53 @@ final class NativeEditorPresentationTests: XCTestCase {
         await session.save()
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), Data(original.utf8))
         text.resignFirstResponder()
+    }
+
+    @MainActor
+    func testAutomaticSourceEditingSurvivesClearingAndReplacementWithoutEscapingMarkdown() async throws {
+        let preferences = NativeVaultPreferencesBackup(); defer { preferences.restore() }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let header = "---\nzerus-id: source-replacement\nforeign: keep\n---\n"
+        let io = VaultFiles(root: root)
+        try await io.write("Source.md", data: Data((header + "# Before\n\n<img src=\"chart.png\" width=\"240\" />").utf8), expected: nil)
+        try await io.write("Control.md", data: Data("# Control\n\nPlain writing.".utf8), expected: nil)
+        let store = VaultStore(); await store.open(root)
+        let session = try XCTUnwrap(store.session(for: XCTUnwrap(store.notes.first { $0.path == "Source.md" })))
+        let navigation = NativeNoteNavigation(vault: store, session: session)
+        navigation.root.allowsInitialFocus = false
+        defer { navigation.close(); session.deactivate() }
+        let previous = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene))
+        let host = UIHostingController(rootView: NativeNoteNavigationView(navigation: navigation).environment(store))
+        window.rootViewController = host; window.makeKeyAndVisible()
+        defer { window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
+        func editor(_ root: UIView) -> UITextView? {
+            if let text = root as? UITextView, text.accessibilityIdentifier == "note.editor" { return text }
+            return root.subviews.lazy.compactMap { editor($0) }.first
+        }
+        await waitUntil { editor(host.view)?.window != nil }
+        let text = try XCTUnwrap(editor(host.view))
+        XCTAssertFalse(text.allowsEditingTextAttributes)
+        XCTAssertTrue(text.becomeFirstResponder())
+        text.selectedRange = NSRange(location: 0, length: text.attributedText.length)
+        text.deleteBackward()
+        await waitUntil { session.document.parts.body.isEmpty }
+        // Allow the actual screen's content-derived mode update to run.
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(text.allowsEditingTextAttributes, "Clearing Source must not reinterpret subsequent typing as rich text")
+        text.insertText("# Replaced\n\n")
+        await waitUntil { session.document.parts.body.contains("Replaced") }
+        try await Task.sleep(for: .milliseconds(100))
+        text.insertText("**Literal source markers**")
+        await session.save()
+        XCTAssertEqual(text.text, "# Replaced\n\n**Literal source markers**")
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Source.md")), Data((header + "# Replaced\n\n**Literal source markers**").utf8))
+        text.resignFirstResponder()
+        await navigation.open(try XCTUnwrap(store.notes.first { $0.path == "Control.md" }), from: navigation.current.id)
+        await waitUntil { editor(host.view)?.text.contains("Plain writing.") == true }
+        XCTAssertTrue(try XCTUnwrap(editor(host.view)).allowsEditingTextAttributes, "A different supported note must still open in Rich mode")
     }
 
     @MainActor

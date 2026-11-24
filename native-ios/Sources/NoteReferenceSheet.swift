@@ -2,7 +2,7 @@ import SwiftUI
 
 struct NoteReferenceSheet: View {
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let reference: NoteReference
     let open: (NoteDocument) -> Void

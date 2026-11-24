@@ -42,105 +42,16 @@ enum MarkdownResources {
     }
 
     private static func transform(_ source: String, replacement: (URL, Bool) -> String?) -> String {
-        let codes = FencedCode.blocks(in: source)
-        let tables = MarkdownTable.blocks(in: source, excluding: codes.map(\.range))
-        var blocks = codes.map { ($0.range, $0.code.markdown) }
-        for block in tables {
-            var table = block.table
-            for row in table.rows.indices {
-                for column in table.rows[row].indices { table.rows[row][column] = inline(table.rows[row][column], replacement: replacement) }
+        guard let links = try? MarkdownMoveLinks.links(in: source) else { return source }
+        let edits: [(MarkdownMoveLinks.Link, String)] = links.compactMap { link in
+            switch link.kind {
+            case .wiki: return nil
+            case .html: guard link.image else { return nil }
+            case .destination: break
             }
-            blocks.append((block.range, table.markdown))
+            guard let url = MarkdownMoveLinks.destinationURL(link.value), let value = replacement(url, link.image) else { return nil }
+            return (link, value)
         }
-        let text = source as NSString
-        var output = "", cursor = 0
-        for (range, value) in blocks.sorted(by: { $0.0.location < $1.0.location }) {
-            output += inline(text.substring(with: NSRange(location: cursor, length: range.location - cursor)), replacement: replacement) + value
-            cursor = NSMaxRange(range)
-        }
-        return output + inline(text.substring(from: cursor), replacement: replacement)
-    }
-
-    private static func inline(_ source: String, depth: Int = 0, replacement: (URL, Bool) -> String?) -> String {
-        guard depth < 32 else { return source }
-        let text = source as NSString, output = NSMutableString(string: source)
-        var edits: [(NSRange, String)] = [], cursor = 0
-        func escaped(_ index: Int) -> Bool {
-            var position = index - 1, count = 0
-            while position >= 0 && text.character(at: position) == 92 { count += 1; position -= 1 }
-            return count % 2 == 1
-        }
-        while cursor < text.length {
-            let character = text.character(at: cursor)
-            if character == 92 { cursor += 2; continue }
-            if character == 96 {
-                var end = cursor + 1
-                while end < text.length && text.character(at: end) == 96 { end += 1 }
-                let delimiter = text.substring(with: NSRange(location: cursor, length: end - cursor))
-                let closing = text.range(of: delimiter, range: NSRange(location: end, length: text.length - end))
-                cursor = closing.location == NSNotFound ? end : NSMaxRange(closing)
-                continue
-            }
-            guard character == 91 else { cursor += 1; continue }
-            let image = cursor > 0 && text.character(at: cursor - 1) == 33 && !escaped(cursor - 1)
-            let beginning = image ? cursor - 1 : cursor
-            var labelEnd = cursor + 1, brackets = 1
-            while labelEnd < text.length && brackets > 0 {
-                let next = text.character(at: labelEnd)
-                if next == 92 { labelEnd += 2; continue }
-                if next == 91 { brackets += 1 }
-                if next == 93 { brackets -= 1 }
-                labelEnd += 1
-            }
-            guard brackets == 0, labelEnd < text.length, text.character(at: labelEnd) == 40 else { cursor += 1; continue }
-            let labelRange = NSRange(location: cursor + 1, length: labelEnd - cursor - 2)
-            let label = text.substring(with: labelRange)
-            var start = labelEnd + 1
-            while start < text.length && [9, 10, 13, 32].contains(text.character(at: start)) { start += 1 }
-            let angled = start < text.length && text.character(at: start) == 60
-            if angled { start += 1 }
-            var end = start, parentheses = 0
-            while end < text.length {
-                let next = text.character(at: end)
-                if next == 92 { end += 2; continue }
-                if angled { if next == 62 { break } }
-                else {
-                    if next == 40 { parentheses += 1 }
-                    if next == 41 { if parentheses == 0 { break }; parentheses -= 1 }
-                    if [9, 10, 13, 32].contains(next) { break }
-                }
-                end += 1
-            }
-            guard end > start && end < text.length else { cursor = labelEnd; continue }
-            var close = angled ? end + 1 : end
-            var quote: unichar?, depth = 0
-            while close < text.length {
-                let next = text.character(at: close)
-                if next == 92 { close += 2; continue }
-                if let active = quote { if next == active { quote = nil } }
-                else if next == 34 || next == 39 { quote = next }
-                else if next == 40 { depth += 1 }
-                else if next == 41 { if depth == 0 { break }; depth -= 1 }
-                close += 1
-            }
-            guard close < text.length else { cursor = labelEnd; continue }
-            let markup = text.substring(with: NSRange(location: beginning, length: close + 1 - beginning))
-            let destination = "[Resource]" + text.substring(with: NSRange(location: labelEnd, length: close + 1 - labelEnd))
-            let expected = (try? AttributedString(markdown: destination, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))?.runs.compactMap(\.link).first
-            let parsed = try? AttributedString(markdown: markup, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
-            let url = parsed?.runs.compactMap({ image ? $0.imageURL : $0.link }).first(where: { $0 == expected })
-            // An image's alt text is descriptive text. A Markdown-looking link
-            // inside that label must not copy an unrelated local file.
-            if !image || url == nil {
-                let nested = inline(label, depth: depth + 1, replacement: replacement)
-                if nested != label { edits.append((labelRange, nested)) }
-            }
-            if let url, let value = replacement(url, image) {
-                edits.append((NSRange(location: start, length: end - start), value))
-            }
-            cursor = close + 1
-        }
-        for (range, value) in edits.reversed() { output.replaceCharacters(in: range, with: value) }
-        return output as String
+        return MarkdownMoveLinks.replacing(source, edits: edits)
     }
 }

@@ -1,7 +1,61 @@
 import Foundation
 
+/// JSONSerialization trims a leading U+FEFF from string values. Persisted note
+/// text and patches must retain those scalars when converted to Foundation trees.
+enum NativeJSON {
+    private enum Value: Decodable {
+        case object([String: Value]), array([Value]), text(String), bool(Bool), integer(Int64), unsigned(UInt64), number(Double), null
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() { self = .null }
+            else if let value = try? container.decode([String: Value].self) { self = .object(value) }
+            else if let value = try? container.decode([Value].self) { self = .array(value) }
+            else if let value = try? container.decode(String.self) { self = .text(value) }
+            else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+            else if let value = try? container.decode(Int64.self) { self = .integer(value) }
+            else if let value = try? container.decode(UInt64.self) { self = .unsigned(value) }
+            else { self = .number(try container.decode(Double.self)) }
+        }
+        var object: Any {
+            switch self {
+            case .object(let value): value.mapValues(\.object)
+            case .array(let value): value.map(\.object)
+            case .text(let value): value
+            case .bool(let value): NSNumber(value: value)
+            case .integer(let value): NSNumber(value: value)
+            case .unsigned(let value): NSNumber(value: value)
+            case .number(let value): NSNumber(value: value)
+            case .null: NSNull()
+            }
+        }
+    }
+    static func object(with bytes: Data) throws -> Any {
+        // Bound recursion before entering Decodable on an actor's small stack.
+        // Brackets inside strings (including escaped quotes) are ordinary text.
+        var depth = 0, quoted = false, escaped = false
+        for byte in bytes {
+            if quoted {
+                if escaped { escaped = false }
+                else if byte == 92 { escaped = true }
+                else if byte == 34 { quoted = false }
+            } else if byte == 34 { quoted = true }
+            else if byte == 123 || byte == 91 {
+                depth += 1
+                guard depth <= 64 else { throw VaultFailure(message: "JSON nesting exceeds the supported limit of 64 levels. The original file is preserved.") }
+            } else if byte == 125 || byte == 93 { depth -= 1 }
+        }
+        return try JSONDecoder().decode(Value.self, from: bytes).object
+    }
+}
+
 /// Keeps foreign YAML and Markdown bytes intact until the user changes them.
 struct NoteDocument: Identifiable, Hashable, Sendable {
+    /// Strict UTF-8 decoding that retains the original encoding prefix. Foundation
+    /// removes a leading BOM, which would make byte comparisons and saves lossy.
+    static func decodeUTF8(_ bytes: Data) -> String? {
+        guard let text = String(data: bytes, encoding: .utf8) else { return nil }
+        return bytes.starts(with: [0xef, 0xbb, 0xbf]) ? String(decoding: bytes, as: UTF8.self) : text
+    }
     var path: String
     var content: String
     var modified: Date
@@ -33,8 +87,8 @@ struct NoteDocument: Identifiable, Hashable, Sendable {
         let parent = (logical as NSString).deletingLastPathComponent
         return parent.isEmpty ? "Inbox" : parent
     }
-    var pinned: Bool { property("zerus-pinned") == "true" }
-    var archived: Bool { property("zerus-archived") == "true" }
+    var pinned: Bool { property("zerus-pinned")?.lowercased() == "true" }
+    var archived: Bool { property("zerus-archived")?.lowercased() == "true" }
     var trashed: Bool { path.hasPrefix(".trash/") }
     var stableID: String? { property("zerus-id") }
     var snippet: String {
@@ -42,7 +96,7 @@ struct NoteDocument: Identifiable, Hashable, Sendable {
     }
 
     func property(_ key: String) -> String? {
-        guard let entry = NativeFrontmatter(content).entry(key), let value = entry.value else { return nil }
+        guard let entry = Self.readFrontmatter(content).entry(key), let value = entry.value else { return nil }
         // Preserve the legacy accessor's raw list spelling. Typed editors use
         // NativeFrontmatter directly, while flags and stable IDs are scalars.
         if case .list = value {
@@ -56,10 +110,10 @@ struct NoteDocument: Identifiable, Hashable, Sendable {
         let typed: NativePropertyValue = value == "true" || value == "false" ? .checkbox(value == "true") : .text(value)
         return try NativeFrontmatter(content).setting(key, value: typed)
     }
-    static func split(_ text: String) -> (header: String, body: String) {
-        let parsed = NativeFrontmatter(text)
-        return (parsed.header, parsed.body)
-    }
+    // Titles, flags, identities and bodies are read many times per render;
+    // parse each exact note text once (see NativeFrontmatterCache).
+    private static func readFrontmatter(_ text: String) -> NativeFrontmatter { NativeFrontmatterCache.read(text) }
+    static func split(_ text: String) -> (header: String, body: String) { NativeFrontmatterCache.parts(text) }
 }
 
 struct NativeFileDates: Sendable, Equatable { let modified: Date; let created: Date? }
@@ -71,6 +125,9 @@ struct VaultSnapshot: Sendable {
     var folders: [String] = []
     var folderIcons: [String: String] = [:]
     var folderIssue: String?
+    #if os(macOS)
+    var macFolderIconBytes: Data?
+    #endif
 }
 
 struct VaultFailure: LocalizedError {
@@ -256,7 +313,7 @@ actor VaultFiles {
 
     func write(_ path: String, data: Data, expected: Data?) throws {
         guard !writesSuspendedForRecovery else { throw VaultFailure(message: "Review the interrupted change before saving. Your draft is kept on this device.") }
-        if expected != nil || path.hasPrefix(".zerus/links/"), (path as NSString).pathExtension.lowercased() == "md", let text = String(data: data, encoding: .utf8), NoteDocument(path: path, content: text, modified: Date()).stableID != nil {
+        if expected != nil || path.hasPrefix(".zerus/links/"), (path as NSString).pathExtension.lowercased() == "md", let text = NoteDocument.decodeUTF8(data), NoteDocument(path: path, content: text, modified: Date()).stableID != nil {
             try applyTransaction([.init(path: path, before: expected, after: data)])
             return
         }
@@ -271,7 +328,11 @@ actor VaultFiles {
                 guard current == expected else {
                     throw VaultFailure(message: "This file changed outside Zerus. Your draft is kept here. Share it to keep a separate copy, then reopen the note to load the latest version.")
                 }
+                #if os(macOS)
+                try MacAtomicFileWrite.write(data, to: url)
+                #else
                 try data.write(to: url, options: .atomic)
+                #endif
             }
         }
         if let coordinationError { throw coordinationError }
@@ -302,10 +363,33 @@ actor VaultFiles {
     nonisolated static func visibleHiddenDirectory(_ path: String) -> Bool {
         [".trash", ".zerus", ".zerus/links", ".zerus/files", ".trash/.zerus", ".trash/.zerus/links", ".trash/.zerus/files"].contains(path)
     }
+    #if !os(macOS)
+    /// Read each note that changed since the last inventory (every note on a
+    /// full read) with a coordinated read; reuse unchanged text. See
+    /// `NativeInventoryCache` for the reuse rule and its safety boundary.
+    func readInventory(_ entries: [NativeInventoryEntry]) throws -> [NoteDocument] {
+        let cache = NativeInventoryCache.shared, key = root.standardizedFileURL.path, now = Date()
+        let full = cache.needsFullRead(root: key, now: now)
+        var notes: [NoteDocument] = []
+        notes.reserveCapacity(entries.count)
+        for entry in entries {
+            if !full, let content = cache.content(root: key, entry: entry, now: now) {
+                notes.append(NoteDocument(path: entry.path, content: content, modified: entry.modified, created: entry.created)); continue
+            }
+            let bytes = try read(entry.path)
+            guard let text = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "\(entry.path) is not a UTF-8 Markdown file.") }
+            notes.append(NoteDocument(path: entry.path, content: text, modified: entry.modified, created: entry.created))
+        }
+        cache.store(root: key, entries: entries, notes: notes, full: full, now: now)
+        return notes
+    }
+    #endif
     func scan() throws -> VaultSnapshot {
         try recoverTransactions()
         var notes: [NoteDocument] = [], files: [String] = [], fileDates: [String: NativeFileDates] = [:], folders: [String] = []
-        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey, .creationDateKey]
+        // Change time and size let the inventory reuse unchanged note text.
+        let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .contentModificationDateKey, .creationDateKey, .attributeModificationDateKey, .fileSizeKey]
+        var inventory: [NativeInventoryEntry] = []
         var directories = [""]
         while let directory = directories.popLast() {
             let parent = directory.isEmpty ? root : try url(for: directory)
@@ -328,17 +412,27 @@ actor VaultFiles {
                 }
                 if name.hasPrefix(".") { continue }
                 if location.pathExtension.lowercased() == "md" {
-                    let bytes = try read(path)
-                    guard let text = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "\(path) is not a UTF-8 Markdown file.") }
-                    notes.append(NoteDocument(path: path, content: text, modified: values.contentModificationDate ?? .distantPast, created: values.creationDate))
+                    inventory.append(.init(path: path, modified: values.contentModificationDate ?? .distantPast, created: values.creationDate, changed: values.attributeModificationDate, size: values.fileSize))
                 } else if !path.hasPrefix(".zerus/") && !path.hasPrefix(".trash/") {
                     files.append(path); fileDates[path] = .init(modified: values.contentModificationDate ?? .distantPast, created: values.creationDate)
                 }
             }
         }
+        #if os(macOS)
+        notes = try macReadInventory(inventory)
+        #else
+        notes = try readInventory(inventory)
+        #endif
+        #if os(macOS)
+        var icons: [String: String] = [:], folderIssue: String?, iconBytes: Data?
+        do { let snapshot = try folderIconSnapshot(); icons = snapshot.icons; iconBytes = snapshot.bytes }
+        catch { folderIssue = "Folder icons could not be read. Their original file is preserved. " + error.localizedDescription }
+        return VaultSnapshot(notes: notes.sorted { $0.modified > $1.modified }, files: files.sorted(), fileDates: fileDates, folders: folders.sorted(), folderIcons: icons, folderIssue: folderIssue, macFolderIconBytes: iconBytes)
+        #else
         var icons: [String: String] = [:], folderIssue: String?
         do { icons = try folderIconSnapshot().icons }
         catch { folderIssue = "Folder icons could not be read. Their original file is preserved. " + error.localizedDescription }
         return VaultSnapshot(notes: notes.sorted { $0.modified > $1.modified }, files: files.sorted(), fileDates: fileDates, folders: folders.sorted(), folderIcons: icons, folderIssue: folderIssue)
+        #endif
     }
 }

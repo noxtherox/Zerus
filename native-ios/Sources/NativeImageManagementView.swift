@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeImageManagementView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NoteSession
     @State private var selected: NativeInlineImage?
@@ -10,8 +10,9 @@ struct NativeImageManagementView: View {
     @State private var preview: NativeFileLease?
     @State private var issue: String?
     @State private var busy = false
-    private var occurrences: [NativeInlineImage] { NativeInlineImage.occurrences(in: session.document.parts.body) }
     var body: some View {
+        // Parse the note's images once per render.
+        let occurrences = NativeInlineImage.occurrences(in: session.document.parts.body)
         NavigationStack {
             List {
                 if let selected {
@@ -72,19 +73,21 @@ struct NativeImageManagementView: View {
 }
 
 struct NativeImageTrashSection: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     let reviewImage: (NativeImagePlan) -> Void
     let previewImage: (NativeFileLease) -> Void
-    @State private var snapshot: NativeImageSnapshot?
+    /// Only the deleted-image list is loaded for display; a change loads the
+    /// full vault reference check when it is reviewed.
+    @State private var snapshot: NativeImageTrashIndex?
     @State private var issue: String?
     @State private var busy = false
     @State private var reattach = true
     var body: some View {
         Section {
             if let snapshot {
-                if snapshot.index.entries.isEmpty { Text("No deleted images").foregroundStyle(.secondary) }
-                ForEach(snapshot.index.entries.sorted(by: { $0.deletedAt > $1.deletedAt })) { entry in
+                if snapshot.entries.isEmpty { Text("No deleted images").foregroundStyle(.secondary) }
+                ForEach(snapshot.entries.sorted(by: { $0.deletedAt > $1.deletedAt })) { entry in
                     VStack(alignment: .leading, spacing: 9) {
                         Label(entry.name, systemImage: "photo").font(.headline)
                         Text(entry.originalPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -100,9 +103,9 @@ struct NativeImageTrashSection: View {
                         }.buttonStyle(.borderless).font(.subheadline)
                     }.padding(.vertical, 5)
                 }
-                if !snapshot.index.entries.isEmpty {
+                if !snapshot.entries.isEmpty {
                     Toggle("Reattach restored images to their notes", isOn: $reattach)
-                    Button("Review all deleted images", systemImage: "trash.slash", role: .destructive) { prepare(.purge(ids: Set(snapshot.index.entries.map(\.id)))) }.accessibilityIdentifier("trash.images.review")
+                    Button("Review all deleted images", systemImage: "trash.slash", role: .destructive) { prepare(.purge(ids: Set(snapshot.entries.map(\.id)))) }.accessibilityIdentifier("trash.images.review")
                 }
             } else if issue == nil { ProgressView("Loading deleted images…") }
             if let issue { Text(issue).font(.callout).foregroundStyle(.red); Button("Reload images") { Task { await reload() } } }
@@ -112,11 +115,11 @@ struct NativeImageTrashSection: View {
         .task(id: vault.schemaRevision) { await reload() }
     }
     private func reload() async {
-        do { snapshot = try await vault.imageSnapshot(workspace: workspaceID); issue = nil } catch is CancellationError {} catch { issue = error.localizedDescription }
+        do { snapshot = try await vault.imageTrashIndex(workspace: workspaceID); issue = nil } catch is CancellationError {} catch { issue = error.localizedDescription }
     }
     private func prepare(_ action: NativeImageChange) {
-        guard let snapshot else { return }; busy = true; issue = nil
-        Task { defer { busy = false }; do { reviewImage(try await vault.prepareImageChange(snapshot, action: action)) } catch is CancellationError {} catch { issue = error.localizedDescription } }
+        guard snapshot != nil else { return }; busy = true; issue = nil
+        Task { defer { busy = false }; do { reviewImage(try await vault.prepareImageChange(try await vault.imageSnapshot(workspace: workspaceID), action: action)) } catch is CancellationError {} catch { issue = error.localizedDescription } }
     }
 }
 

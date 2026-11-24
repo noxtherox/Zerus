@@ -7,7 +7,7 @@ private struct DefinitionEdit: Identifiable {
 }
 
 struct NativeSchemaManager: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let notePath: String
     @State private var snapshot: NativeSchemaSnapshot?

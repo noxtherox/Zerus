@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativeFileHubCard: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ObservedObject var session: NoteSession
     @State private var accessible: NativeFileLease?

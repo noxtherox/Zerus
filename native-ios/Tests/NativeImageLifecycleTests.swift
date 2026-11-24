@@ -95,7 +95,14 @@ final class NativeImageLifecycleTests: XCTestCase {
             ("[pic]: assets/plot.png \"Saved title\"\n\nBefore ![Caption][pic]\n", ["![Caption][pic]"]),
             ("| Image |\n| --- |\n| ![Cell](a.png) |\n\n```md\n![Code](x.png)\n```", ["![Cell](a.png)"])
         ]
-        for (source, expected) in cases {
+        let html = "<img src=\"assets/plot.png\" alt=\"Café &amp; notes\" width=\"240\" />"
+        let htmlCases: [(String, [String])] = [
+            ("😀 Before.\r\n\r\n" + html + "\r\n" + html + "\r\n", [html, html]),
+            ("[" + html + "](https://example.com)", ["[" + html + "](https://example.com)"]),
+            ("```html\n" + html + "\n```\n\n`" + html + "`\n\n<!-- " + html + " -->", []),
+            ("<script>const x = '" + html + "';</script>", [])
+        ]
+        for (source, expected) in cases + htmlCases {
             let images = NativeInlineImage.occurrences(in: source)
             XCTAssertEqual(images.map(\.markdown), expected, source)
             for image in images { XCTAssertEqual((source as NSString).substring(with: image.range), image.markdown) }

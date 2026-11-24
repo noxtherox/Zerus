@@ -7,7 +7,7 @@ struct NativeRelationEdit: Identifiable {
 }
 
 struct NativeRelationEditor: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let edit: NativeRelationEdit
     @State private var snapshot: NativeRelationSnapshot?

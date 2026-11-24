@@ -42,6 +42,9 @@ struct NativeFrontmatter {
     let content: String
     let headerLength: Int
     let closingOffset: Int
+    let byteOrderMarkLength: Int
+    var byteOrderPrefix: String { (content as NSString).substring(to: byteOrderMarkLength) }
+    var hasHeader: Bool { headerLength > byteOrderMarkLength }
     let newline: String
     private(set) var entries: [Entry] = []
     var header: String { (content as NSString).substring(to: headerLength) }
@@ -49,11 +52,21 @@ struct NativeFrontmatter {
 
     init(_ content: String) {
         self.content = content
-        newline = content.hasPrefix("---\r\n") ? "\r\n" : "\n"
         let text = content as NSString
+        var prefix = 0
+        while prefix < text.length && text.character(at: prefix) == 0xfeff { prefix += 1 }
+        byteOrderMarkLength = prefix
+        let logical = text.substring(from: prefix)
+        #if os(macOS)
+        // CR/LF are control scalars: a literal UTF-16 search has the same
+        // result without a Swift character walk through a headerless body.
+        newline = logical.hasPrefix("---\r\n") || !logical.hasPrefix("---\n") && text.range(of: "\r\n", options: .literal, range: NSRange(location: prefix, length: text.length - prefix)).location != NSNotFound ? "\r\n" : "\n"
+        #else
+        newline = logical.hasPrefix("---\r\n") || !logical.hasPrefix("---\n") && logical.contains("\r\n") ? "\r\n" : "\n"
+        #endif
         let opening = "---" + newline
-        guard content.hasPrefix(opening) else { headerLength = 0; closingOffset = 0; return }
-        var lines: [(String, NSRange)] = [], offset = (opening as NSString).length
+        guard logical.hasPrefix(opening) else { headerLength = prefix; closingOffset = prefix; return }
+        var lines: [(String, NSRange)] = [], offset = prefix + (opening as NSString).length
         var closing: NSRange?
         while offset < text.length {
             let end = text.range(of: "\n", range: NSRange(location: offset, length: text.length - offset))
@@ -63,7 +76,7 @@ struct NativeFrontmatter {
             if ["---", "..."].contains(raw.trimmingCharacters(in: .whitespaces)) && !raw.hasPrefix(" ") && !raw.hasPrefix("\t") { closing = range; break }
             lines.append((raw, range)); offset += length
         }
-        guard let closing else { headerLength = 0; closingOffset = 0; return }
+        guard let closing else { headerLength = prefix; closingOffset = prefix; return }
         closingOffset = closing.location; headerLength = NSMaxRange(closing)
         var index = 0
         while index < lines.count {
@@ -119,13 +132,24 @@ struct NativeFrontmatter {
         if let existing = entry(key) {
             guard existing.value != nil else { throw VaultFailure(message: "This field uses complex or duplicate YAML. Its original contents are preserved; edit it with your desktop YAML editor.") }
             if existing.value == value { return content }
-            let replacement = value.map { existing.key + ": " + $0.yaml + existing.comment + newline } ?? (existing.comment.isEmpty ? "" : existing.comment.trimmingCharacters(in: .whitespaces) + newline)
+            let replacement = value.map { propertyLine(existing.key, value: $0, comment: existing.comment) } ?? (existing.comment.isEmpty ? "" : existing.comment.trimmingCharacters(in: .whitespaces) + newline)
             return (content as NSString).replacingCharacters(in: existing.range, with: replacement)
         }
         guard let value else { return content }
-        let line = key + ": " + value.yaml + newline
-        if headerLength == 0 { return "---" + newline + line + "---" + newline + content }
+        let line = propertyLine(key, value: value, comment: "")
+        if !hasHeader { return byteOrderPrefix + "---" + newline + line + "---" + newline + body }
         return (content as NSString).replacingCharacters(in: NSRange(location: closingOffset, length: 0), with: line)
+    }
+
+    /// Older desktop readers split flow lists on commas. Use their block-list
+    /// wire format when a string itself contains commas (notably attachment JSON).
+    private func propertyLine(_ key: String, value: NativePropertyValue, comment: String) -> String {
+        if case .list(let values) = value, values.contains(where: { $0.contains(",") }) {
+            let annotation = comment.trimmingCharacters(in: .whitespaces)
+            let prefix = annotation.isEmpty ? "" : annotation + newline
+            return prefix + key + ":" + newline + values.map { "  - " + NativePropertyValue.text($0).yaml }.joined(separator: newline) + newline
+        }
+        return key + ": " + value.yaml + comment + newline
     }
 
     func renaming(_ key: String, to name: String) throws -> String {

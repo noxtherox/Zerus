@@ -16,7 +16,7 @@ struct NativeHistoryVersion: Identifiable, Sendable {
     var content: String?
     var alternate = false
     var incomplete = false
-    var object: [String: Any] { (try! JSONSerialization.jsonObject(with: bytes)) as! [String: Any] }
+    var object: [String: Any] { (try! NativeJSON.object(with: bytes)) as! [String: Any] }
 }
 
 struct NativeHistoryObservation: Sendable {
@@ -57,7 +57,8 @@ enum NativeHistory {
         for entry in parsed.entries.filter({ $0.key.lowercased().hasPrefix("zerus-") }).sorted(by: { $0.range.location > $1.range.location }) { result.replaceCharacters(in: entry.range, with: "") }
         // Empty frontmatter has no user-visible meaning.
         let next = result as String, front = NativeFrontmatter(next)
-        return front.header.trimmingCharacters(in: CharacterSet(charactersIn: "-. \r\n")).isEmpty ? front.body : next
+        let header = (front.header as NSString).substring(from: front.byteOrderMarkLength)
+        return header.trimmingCharacters(in: CharacterSet(charactersIn: "-. \r\n")).isEmpty ? front.byteOrderPrefix + front.body : next
     }
     static func preservingMetadata(_ historical: String, current: String) throws -> String {
         let old = NativeFrontmatter(historical), live = NativeFrontmatter(current)
@@ -68,7 +69,7 @@ enum NativeHistory {
         let metadata = live.entries.filter { $0.key.lowercased().hasPrefix("zerus-") }.map { (current as NSString).substring(with: $0.range) }.joined()
         if !metadata.isEmpty {
             let target = NativeFrontmatter(content)
-            if target.headerLength == 0 { content = "---" + live.newline + metadata + "---" + live.newline + content }
+            if !target.hasHeader { content = target.byteOrderPrefix + "---" + live.newline + metadata + "---" + live.newline + target.body }
             else { content = (content as NSString).replacingCharacters(in: NSRange(location: target.closingOffset, length: 0), with: metadata) }
         }
         return content
@@ -140,7 +141,7 @@ extension VaultFiles {
         }.map { prefix + "/" + $0.lastPathComponent })
     }
     func historySnapshot(notePath: String, identity: String? = nil) throws -> NativeHistorySnapshot {
-        guard let text = String(data: try read(notePath), encoding: .utf8) else { throw VaultFailure(message: "The note is not UTF-8.") }
+        guard let text = NoteDocument.decodeUTF8(try read(notePath)) else { throw VaultFailure(message: "The note is not UTF-8.") }
         let note = NoteDocument(path: notePath, content: text, modified: Date())
         let configuration = try historyConfiguration()
         let settings = configuration.bytes, enabled = configuration.enabled, limit = configuration.limit
@@ -154,7 +155,7 @@ extension VaultFiles {
     func historyVersions(noteID: String, records: [String: Data]) throws -> (versions: [NativeHistoryVersion], problems: [String]) {
         var versions: [NativeHistoryVersion] = [], problems: [String] = []
         for (path, data) in records.sorted(by: { $0.key < $1.key }) {
-            guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], NativeHistory.integer(object["schema"]) == 1, object["noteId"] as? String == noteID,
+            guard let object = try? NativeJSON.object(with: data) as? [String: Any], NativeHistory.integer(object["schema"]) == 1, object["noteId"] as? String == noteID,
                   let id = object["id"] as? String, NativeHistory.identity(id),
                   let time = object["timestamp"] as? String, NativeRevisionIndex.date(time) != nil,
                   let source = object["source"] as? String, let depth = NativeHistory.integer(object["depth"]),
@@ -215,7 +216,7 @@ extension VaultFiles {
     func includingAutomaticHistory(_ original: [VaultFileChange], source: String, observations: [String: NativeHistoryObservation] = [:]) throws -> [VaultFileChange] {
         var result = original, known = Set(original.map(\.path))
         for change in original where (change.before != change.after || observations[change.path] != nil) && (change.path as NSString).pathExtension.lowercased() == "md" && !change.path.hasPrefix(".zerus/history/") {
-            guard let beforeData = change.before, let afterData = change.after, let expected = String(data: beforeData, encoding: .utf8), let after = String(data: afterData, encoding: .utf8), let noteID = NoteDocument(path: change.path, content: after, modified: Date()).stableID, NativeHistory.identity(noteID) else { continue }
+            guard let beforeData = change.before, let afterData = change.after, let expected = NoteDocument.decodeUTF8(beforeData), let after = NoteDocument.decodeUTF8(afterData), let noteID = NoteDocument(path: change.path, content: after, modified: Date()).stableID, NativeHistory.identity(noteID) else { continue }
             let observation = observations[change.path], before = observation?.before.content ?? expected
             guard NativeHistory.stripped(before) != NativeHistory.stripped(after) else { continue }
             let snapshot = try historySnapshot(notePath: change.path, identity: noteID)

@@ -230,7 +230,7 @@ verifySignedArchive(completedArchive, targetBuild);
 
 copyToXcodeOrganizer(completedArchive, archiveVersion(completedArchive), targetBuild);
 
-run("pnpm", ["testflight", "--", "--export-only"]);
+run("pnpm", ["ios:tauri:testflight", "--", "--export-only"]);
 console.log(
   `Build ${targetBuild} is archived and exported. Run pnpm testflight to upload it.`,
 );

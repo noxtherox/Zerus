@@ -71,7 +71,12 @@ struct NativeSearchTaskSource: Sendable {
     let completed: Bool
     let modified: Date
 }
-struct NativeSearchFile: Sendable { let path: String; let modified: Date }
+struct NativeSearchFile: Sendable {
+    let path: String
+    let modified: Date
+    var content = ""
+    var issue: String?
+}
 struct NativeSearchSources: Sendable {
     let workspaceID: UUID
     let notes: [NoteDocument]
@@ -160,6 +165,17 @@ enum NativeSearch {
             return item
         }
     }
+    static func fileItems(_ files: [NativeSearchFile]) -> [NativeSearchItem] {
+        files.map { file in
+            let folder = (file.path as NSString).deletingLastPathComponent
+            var item = NativeSearchItem(id: "file:" + file.path, collection: .files, title: (file.path as NSString).lastPathComponent,
+                text: file.content.isEmpty ? file.path : file.path + "\n\n" + file.content,
+                location: folder.isEmpty ? "Inbox" : folder, folder: folder.isEmpty ? "Inbox" : folder,
+                modified: file.modified, target: .file(file.path), preview: file.content.isEmpty ? file.path : file.content)
+            item.issue = file.issue
+            return item
+        }
+    }
     static func items(_ source: NativeSearchSources, supplement: NativeSearchSupplement) throws -> [NativeSearchItem] {
         let identities = Dictionary(grouping: source.notes.compactMap { $0.stableID }, by: { $0 })
         var items: [NativeSearchItem] = []
@@ -179,10 +195,7 @@ enum NativeSearch {
             let preview = [task.completed ? "Completed" : "Open", task.priority == "none" ? "" : task.priority.capitalized + " priority", task.scheduled.isEmpty ? "" : "Scheduled " + task.scheduled, task.due.isEmpty ? "" : "Due " + task.due].filter { !$0.isEmpty }.joined(separator: " · ")
             items.append(.init(id: "task:" + task.id, collection: .tasks, title: task.title, text: text, location: location, modified: task.modified, completed: task.completed, priority: task.priority, target: .task(task.id), preview: preview))
         }
-        for file in supplement.files {
-            let folder = (file.path as NSString).deletingLastPathComponent
-            items.append(.init(id: "file:" + file.path, collection: .files, title: (file.path as NSString).lastPathComponent, text: file.path, location: folder.isEmpty ? "Inbox" : folder, folder: folder.isEmpty ? "Inbox" : folder, modified: file.modified, target: .file(file.path)))
-        }
+        items += fileItems(supplement.files)
         for chat in supplement.conversations {
             items.append(.init(id: "chat:" + chat.id, collection: .chats, title: chat.title, text: chat.text, location: "AI conversations", modified: chat.modified, archived: chat.archived, target: .conversation(chat)))
         }
@@ -198,6 +211,12 @@ actor NativeSearchEngine {
         let next = try NativeSearch.items(sources, supplement: supplement)
         try Task.checkCancellation()
         workspaceID = sources.workspaceID; items = next; problems = supplement.problems
+    }
+    func replaceFiles(_ files: [NativeSearchFile], workspace expected: UUID) throws {
+        guard workspaceID == expected else { throw CancellationError() }
+        let next = NativeSearch.fileItems(files)
+        try Task.checkCancellation()
+        items = items.filter { if case .file = $0.target { return false }; return true } + next
     }
     func replaceExternal(_ records: [NativeExternalSearchRecord], workspace expected: UUID) throws {
         guard workspaceID == expected else { throw CancellationError() }

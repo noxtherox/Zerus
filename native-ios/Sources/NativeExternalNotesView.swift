@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativeExternalNotesView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     let openVaultNote: (NoteDocument) -> Void
     @State private var query = ""
@@ -52,6 +52,7 @@ struct NativeExternalNotesView: View {
         }
         .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { settings = true } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Settings") } }
         .sheet(isPresented: $settings) { SettingsView() }
+        .nativeWorkspaceScroll()
         .navigationTitle("External notes").searchable(text: $query, prompt: "Search filenames")
         .searchPresentationToolbarBehavior(.avoidHidingContent)
         .disabled(busy).overlay { if busy { ProgressView("Opening file…").padding().background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)) } }
@@ -100,7 +101,7 @@ struct NativeExternalEditorScreen: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject private var external: NativeExternalNotesModel
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var session: NativeExternalNoteSession
     @StateObject private var actions = NativeEditorActions()
     @State private var finding: NativeNoteFindSnapshot?
@@ -178,7 +179,7 @@ struct NativeExternalEditorScreen: View {
                     }
                 }
                 if sourceOnly { Label("Source editing preserves this file’s advanced Markdown.", systemImage: "doc.text").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 22).padding(.vertical, 6) }
-                NativeTextEditor(markdown: source ? session.document.content : session.document.parts.body, source: source || sourceOnly, images: images,
+                NativeTextEditor(markdown: source ? session.document.content : session.document.parts.body, source: source, automaticSource: sourceOnly, images: images,
                     onChange: { if source { session.updateContent($0) } else { session.updateBody($0) } },
                     onImage: { data in
                         let attachment = NSTextAttachment(data: data, ofType: UTType.png.identifier)

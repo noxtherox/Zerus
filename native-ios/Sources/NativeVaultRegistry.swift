@@ -42,7 +42,7 @@ struct NativeVaultRegistry {
         guard let bytes = UserDefaults.standard.data(forKey: Self.key) else {
             object = ["version": 1]; rows = []; return
         }
-        let problem = VaultFailure(message: "The saved vault list uses an unreadable or newer format. Its original data is preserved. You can still open a vault in Files or Google Drive.")
+        let problem = VaultFailure(message: "The saved vault list uses an unreadable or newer format. Its original data is preserved. You can still open a vault in Files.")
         guard let value = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
               NativeHistory.integer(value["version"]) == 1, let records = value["entries"] as? [[String: Any]] else { throw problem }
         var ids = Set<UUID>()

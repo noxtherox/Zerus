@@ -114,6 +114,9 @@ extension VaultFiles {
                 } else if !sourceExists, destinationExists {
                     guard try NativeFolderTree.inspect(record.destination, root: originalRoot) == record.tree else { throw VaultFailure(message: "The renamed folder changed before its rename record was cleared. Both the folder and record are preserved for recovery.") }
                 } else { throw VaultFailure(message: "The confirmed folder rename is waiting for its original or destination folder. Keep both locations in Files and reconnect this vault to retry; the rename record is preserved.") }
+                #if os(macOS)
+                try MacFolderRenameRecovery.finish(root: originalRoot, source: record.source, destination: record.destination)
+                #endif
                 try FileManager.default.removeItem(at: urls[2])
             }
         }
@@ -236,6 +239,9 @@ extension VaultFiles {
             let before = try metadata == ".zerus/properties.json" ? snapshot.schema.bytes : historyData(metadata)
             var after = before
             if let before {
+                #if os(macOS)
+                after = try MacFolderMetadata(before).renaming(source, to: destination, relations: metadata == ".zerus/properties.json")
+                #else
                 guard let object = try JSONSerialization.jsonObject(with: before) as? [String: Any] else { throw VaultFailure(message: "\(metadata) uses an unsupported format. Its bytes are preserved; resolve it before renaming.") }
                 var next: [String: Any] = [:]
                 for (key, raw) in object {
@@ -251,6 +257,7 @@ extension VaultFiles {
                     next[newKey] = value
                 }
                 if !NSDictionary(dictionary: object).isEqual(to: next) { after = try JSONSerialization.data(withJSONObject: next, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) }
+                #endif
             }
             changes.append(.init(path: metadata, before: before, after: after))
         }

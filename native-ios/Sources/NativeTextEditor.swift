@@ -671,6 +671,7 @@ final class NativeEditorActions: ObservableObject {
 struct NativeTextEditor: UIViewRepresentable {
     let markdown: String
     let source: Bool
+    var automaticSource = false
     var images: [String: UIImage] = [:]
     let onChange: (String) -> Void
     let onImage: (Data) -> Void
@@ -697,6 +698,7 @@ struct NativeTextEditor: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeUIView(context: Context) -> UITextView {
+        let source = self.source || automaticSource
         // The designated initializer initializes Swift subclass storage.
         // A nil container selects TextKit 2 without using UIKit's class factory.
         let view = ZerusTextView(frame: .zero, textContainer: nil)
@@ -763,6 +765,12 @@ struct NativeTextEditor: UIViewRepresentable {
         if readOnly && view.isFirstResponder { view.resignFirstResponder() }
         let becameReadOnly = readOnly && !context.coordinator.parent.readOnly
         let documentChanged = context.coordinator.parent.documentID != documentID
+        let explicitModeChanged = context.coordinator.parent.source != self.source
+        // A temporary empty body is representable as rich text, but switching
+        // there would reinterpret the rest of an active Source replacement.
+        // Explicit mode choices and different documents still take effect.
+        let source = self.source || automaticSource ||
+            (!documentChanged && !explicitModeChanged && view.isFirstResponder && context.coordinator.source)
         if documentChanged {
             context.coordinator.cancelHeadingRequest(); context.coordinator.prepareReadingPosition(nil)
             context.coordinator.publishNoteLink(nil)
@@ -1350,34 +1358,42 @@ struct NativeTextEditor: UIViewRepresentable {
             return saved
         }
         func accessory() -> UIView {
-            let toolbar = UIToolbar()
-            toolbar.sizeToFit()
-            let heading = UIBarButtonItem(title: "H", style: .plain, target: self, action: #selector(heading))
-            heading.accessibilityLabel = "Heading"
-            let bold = UIBarButtonItem(image: UIImage(systemName: "bold"), style: .plain, target: self, action: #selector(bold))
-            bold.accessibilityLabel = "Bold"
-            let italic = UIBarButtonItem(image: UIImage(systemName: "italic"), style: .plain, target: self, action: #selector(italic))
-            italic.accessibilityLabel = "Italic"
-            let list = UIBarButtonItem(image: UIImage(systemName: "list.bullet"), menu: UIMenu(children: [
+            // One full-width glass bar for formatting and history, with the
+            // keyboard dismissal in its own button so it stays easy to reach.
+            let symbol = UIImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+            func button(_ label: String, image: String? = nil, title: String? = nil, action: Selector? = nil, menu: UIMenu? = nil) -> UIButton {
+                var configuration = UIButton.Configuration.plain()
+                configuration.baseForegroundColor = .label
+                configuration.contentInsets = .init(top: 6, leading: 4, bottom: 6, trailing: 4)
+                if let image { configuration.image = UIImage(systemName: image, withConfiguration: symbol) }
+                if let title {
+                    configuration.attributedTitle = AttributedString(title, attributes: AttributeContainer([.font: UIFont.systemFont(ofSize: 17, weight: .semibold)]))
+                }
+                let control = UIButton(configuration: configuration)
+                if let action { control.addTarget(self, action: action, for: .touchUpInside) }
+                if let menu { control.menu = menu; control.showsMenuAsPrimaryAction = true }
+                control.accessibilityLabel = label
+                return control
+            }
+            let list = UIMenu(children: [
                 UIAction(title: "Bulleted list", image: UIImage(systemName: "list.bullet")) { [weak self] _ in self?.block("- ") },
                 UIAction(title: "Numbered list", image: UIImage(systemName: "list.number")) { [weak self] _ in self?.block("1. ") },
                 UIAction(title: "Checklist", image: UIImage(systemName: "checklist")) { [weak self] _ in self?.block("- [ ] ") },
                 UIAction(title: "Table", image: UIImage(systemName: "tablecells")) { [weak self] _ in self?.insertTable() },
                 ] + (parent.codeBlocksEnabled ? [UIAction(title: "Code block", image: UIImage(systemName: "chevron.left.forwardslash.chevron.right")) { [weak self] _ in self?.insertCode() }] : []) + [
                 UIAction(title: "Quote", image: UIImage(systemName: "text.quote")) { [weak self] _ in self?.block("> ") }
-            ]))
-            list.accessibilityLabel = "Paragraph style"
-            let undo = UIBarButtonItem(image: UIImage(systemName: "arrow.uturn.backward"), style: .plain, target: self, action: #selector(undo))
-            undo.accessibilityLabel = "Undo"
-            let redo = UIBarButtonItem(image: UIImage(systemName: "arrow.uturn.forward"), style: .plain, target: self, action: #selector(redo))
-            redo.accessibilityLabel = "Redo"
-            let dismiss = UIBarButtonItem(image: UIImage(systemName: "keyboard.chevron.compact.down"), style: .plain, target: self, action: #selector(dismissKeyboard))
-            dismiss.accessibilityLabel = "Dismiss keyboard"
-            if #available(iOS 27.0, *) {
-                dismiss.visibilityPriority = .high
-            }
-            toolbar.items = [heading, .flexibleSpace(), bold, italic, list, .flexibleSpace(), undo, redo, .flexibleSpace(), dismiss]
-            return toolbar
+            ])
+            let tools = UIStackView(arrangedSubviews: [
+                button("Heading", title: "H", action: #selector(heading)),
+                button("Bold", image: "bold", action: #selector(bold)),
+                button("Italic", image: "italic", action: #selector(italic)),
+                button("Paragraph style", image: "list.bullet", menu: list),
+                button("Undo", image: "arrow.uturn.backward", action: #selector(undo)),
+                button("Redo", image: "arrow.uturn.forward", action: #selector(redo)),
+            ])
+            tools.axis = .horizontal; tools.distribution = .fillEqually; tools.alignment = .fill
+            let dismiss = button("Dismiss keyboard", image: "keyboard.chevron.compact.down", action: #selector(dismissKeyboard))
+            return NativeEditorAccessoryBar(tools: tools, trailing: dismiss)
         }
         @objc func bold() { if source { wrap("**") } else { view?.toggleBoldface(nil); if let view { textViewDidChange(view) } } }
         @objc func italic() { if source { wrap("*") } else { view?.toggleItalics(nil); if let view { textViewDidChange(view) } } }
@@ -1519,4 +1535,41 @@ struct NativeTextEditor: UIViewRepresentable {
             textViewDidChange(view)
         }
     }
+}
+
+/// The editor's keyboard accessory: a capsule holding the formatting and
+/// history buttons across the available width, and a round dismiss button.
+final class NativeEditorAccessoryBar: UIView {
+    private static let height: CGFloat = 44
+    init(tools: UIStackView, trailing: UIButton) {
+        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: Self.height + 8))
+        autoresizingMask = .flexibleWidth
+        let capsule = UIVisualEffectView(effect: UIGlassEffect())
+        capsule.cornerConfiguration = .capsule()
+        let circle = UIVisualEffectView(effect: UIGlassEffect())
+        circle.cornerConfiguration = .capsule()
+        for view in [capsule, circle, tools, trailing] as [UIView] { view.translatesAutoresizingMaskIntoConstraints = false }
+        capsule.contentView.addSubview(tools); circle.contentView.addSubview(trailing)
+        addSubview(capsule); addSubview(circle)
+        NSLayoutConstraint.activate([
+            capsule.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+            capsule.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            capsule.heightAnchor.constraint(equalToConstant: Self.height),
+            circle.leadingAnchor.constraint(equalTo: capsule.trailingAnchor, constant: 8),
+            circle.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+            circle.centerYAnchor.constraint(equalTo: capsule.centerYAnchor),
+            circle.heightAnchor.constraint(equalToConstant: Self.height),
+            circle.widthAnchor.constraint(equalToConstant: Self.height),
+            tools.leadingAnchor.constraint(equalTo: capsule.contentView.leadingAnchor, constant: 8),
+            tools.trailingAnchor.constraint(equalTo: capsule.contentView.trailingAnchor, constant: -8),
+            tools.topAnchor.constraint(equalTo: capsule.contentView.topAnchor),
+            tools.bottomAnchor.constraint(equalTo: capsule.contentView.bottomAnchor),
+            trailing.centerXAnchor.constraint(equalTo: circle.contentView.centerXAnchor),
+            trailing.centerYAnchor.constraint(equalTo: circle.contentView.centerYAnchor),
+            trailing.widthAnchor.constraint(equalTo: circle.contentView.widthAnchor),
+            trailing.heightAnchor.constraint(equalTo: circle.contentView.heightAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override var intrinsicContentSize: CGSize { CGSize(width: UIView.noIntrinsicMetric, height: Self.height + 8) }
 }

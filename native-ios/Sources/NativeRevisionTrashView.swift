@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeRecentlyDeletedView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     @State private var snapshot: NativeRevisionTrashSnapshot?
     @State private var issue: String?
@@ -82,6 +82,7 @@ struct NativeRecentlyDeletedView: View {
             }
             if let issue { Section { Text(issue).foregroundStyle(.red); Button("Try again") { Task { await reload() } } } }
         }
+        .nativeWorkspaceScroll()
         .navigationTitle("Recently Deleted")
         .disabled(busy)
         .overlay {

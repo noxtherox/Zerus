@@ -72,10 +72,18 @@ struct NativeCollectionFilters: Equatable, Sendable {
     var matchAnyProperty = false
     var properties: [NativeCollectionPropertyFilter] = []
     var activeCount: Int { (sort == .updatedDescending ? 0 : 1) + (date == .any ? 0 : 1) + (includeArchived ? 1 : 0) + folders.count + extensions.count + properties.count }
+    /// A query without whitespace cannot match across the joining spaces, so
+    /// each part is searched in place instead of building a joined copy of
+    /// every note. A spaced query keeps the joined form and its exact result.
+    private static func matches(_ note: NoteDocument, search: String, spaced: Bool) -> Bool {
+        if spaced { return (note.title + " " + note.content + " " + note.folder).localizedStandardContains(search) }
+        return note.title.localizedStandardContains(search) || note.content.localizedStandardContains(search) || note.folder.localizedStandardContains(search)
+    }
     func apply(_ notes: [NoteDocument], query: String = "", archiveOnly: Bool = false, fileNames: Bool = false, now: Date = Date(), calendar: Calendar = .current) -> [NoteDocument] {
         let threshold = calendar.date(byAdding: .day, value: -(date.days - 1), to: calendar.startOfDay(for: now)) ?? now
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let sortingByTitle = sort == .titleAscending || sort == .titleDescending
+        let spaced = search.unicodeScalars.contains { CharacterSet.whitespacesAndNewlines.contains($0) }
         // Read immutable sort keys once per note, not on every comparison.
         // Frontmatter parsing inside an O(n log n) comparator caused sustained
         // UI-thread CPU use when browsing a real vault on iPhone 11.
@@ -84,9 +92,9 @@ struct NativeCollectionFilters: Equatable, Sendable {
                   folders.isEmpty || folders.contains(note.folder),
                   extensions.isEmpty || note.fileHub.map({ extensions.contains(($0.name as NSString).pathExtension.lowercased()) }) == true,
                   date == .any || note.modified >= threshold,
-                  search.isEmpty || (note.title + " " + note.content + " " + note.folder).localizedStandardContains(search) else { return false }
+                  search.isEmpty || Self.matches(note, search: search, spaced: spaced) else { return false }
             if properties.isEmpty { return true }
-            let fields = NativeFrontmatter(note.content)
+            let fields = NativeFrontmatterCache.read(note.content)
             return matchAnyProperty ? properties.contains { $0.matches(fields) } : properties.allSatisfy { $0.matches(fields) }
         }.map { note in
             (note: note, pinned: note.pinned, title: sortingByTitle ? (fileNames ? (note.fileHub?.name ?? note.title) : note.title) : "")

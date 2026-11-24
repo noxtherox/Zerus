@@ -18,10 +18,24 @@ enum NativeMarkdownPreview {
         let source = saved.map { NativeSavedLink.withoutURL(note.parts.body, address: $0.address) } ?? note.parts.body
         // Source-position recognition excludes code, image captions and HTML.
         // A regex over the whole note would mistake literal examples for links.
+        #if os(macOS)
+        let edits: [(MarkdownMoveLinks.Link, String)]
+        // A wiki reference requires this exact opener. Ordinary Markdown needs
+        // no source-link inventory before the preview's own document parse.
+        if (source as NSString).range(of: "[[", options: .literal).location == NSNotFound {
+            edits = []
+        } else {
+            edits = ((try? MarkdownMoveLinks.links(in: source)) ?? []).compactMap { link -> (MarkdownMoveLinks.Link, String)? in
+                guard case .wiki = link.kind else { return nil }
+                return (link, NoteReference.inlineMarkdown(link.value))
+            }
+        }
+        #else
         let edits = ((try? MarkdownMoveLinks.links(in: source)) ?? []).compactMap { link -> (MarkdownMoveLinks.Link, String)? in
             guard case .wiki = link.kind else { return nil }
             return (link, NoteReference.inlineMarkdown(link.value))
         }
+        #endif
         let document = Document(parsing: MarkdownMoveLinks.replacing(source, edits: edits))
         var output = ""
         func visit(_ node: any Markup) {
@@ -29,7 +43,13 @@ enum NativeMarkdownPreview {
                let text = paragraph.child(at: 0) as? Markdown.Text, let expected = saved?.url?.absoluteString,
                NativeSavedLink.normalizedURL(text.string)?.absoluteString == expected { return }
             if let heading = node as? Heading, heading.level == 1 { return }
-            if node is HTMLBlock || node is InlineHTML { return }
+            if let html = node as? InlineHTML {
+                // The parser already recognized a tag. A real br tag separates
+                // visible words; formatting tags do not, and code stays literal.
+                if html.rawHTML.range(of: #"(?i)^<br(?=[\s/>])"#, options: .regularExpression) != nil { output += " " }
+                return
+            }
+            if node is HTMLBlock { return }
             if let text = node as? Markdown.Text { output += text.string; return }
             if let code = node as? InlineCode { output += code.code; return }
             if let code = node as? CodeBlock { output += code.code; output += " "; return }

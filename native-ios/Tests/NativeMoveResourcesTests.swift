@@ -23,6 +23,7 @@ final class NativeMoveResourcesTests: XCTestCase {
         | :------ | ---------: |
         | [[Projects/Project.md\|Table caption]] | ![Plot](./assets/local%2520.png) |
         <img src="./assets/local%2520.png" alt="Original caption">
+        <img src="./assets/HTML%20&copy;.png" width="192" alt="Entity source">
         <a href="./files/report%20one.pdf?download=1&amp;mode=print">HTML PDF</a>
         `![Literal](./assets/local%2520.png)`
         \[Escaped](./assets/local%2520.png)
@@ -41,7 +42,7 @@ final class NativeMoveResourcesTests: XCTestCase {
         let fixtures = [("Work/Note.MD", original), ("Inbox/Incoming.md", incoming), (".trash/Inbox/Deleted.md", deleted), ("Projects/Project.md", project)]
         for (path, content) in fixtures { try await io.write(path, data: Data(content.utf8), expected: nil) }
         let image = Data([137, 80, 78, 71, 0, 255]), pdf = Data("%PDF-original\n".utf8), shadow = Data("Wrong file".utf8)
-        for (path, data) in [("Work/assets/local%20.png", image), ("Work/files/report one.pdf", pdf), ("assets/local%20.png", shadow)] { try await io.write(path, data: data, expected: nil) }
+        for (path, data) in [("Work/assets/HTML ©.png", image), ("Work/assets/local%20.png", image), ("Work/files/report one.pdf", pdf), ("assets/local%20.png", shadow)] { try await io.write(path, data: data, expected: nil) }
         let snapshot = try await io.relationDefinitionSnapshot()
         let plan = try await io.prepareMove(snapshot, source: "Work/Note.MD", destination: "Archive/Done/Note.MD")
         let unconfirmed = try await io.read("Work/Note.MD"); XCTAssertEqual(unconfirmed, Data(original.utf8))
@@ -55,6 +56,7 @@ final class NativeMoveResourcesTests: XCTestCase {
             .replacingOccurrences(of: "#zerus-note:Projects%2FProject%2Emd%7CProject%20plan", with: "#zerus-note:zerus%3Aproject%7CProject%20plan")
             .replacingOccurrences(of: "[[Projects/Project.md\\|Table caption]]", with: "[[zerus:project\\|Table caption]]")
             .replacingOccurrences(of: "src=\"./assets/local%2520.png\"", with: "src=\"../../Work/assets/local%2520.png\"")
+            .replacingOccurrences(of: "src=\"./assets/HTML%20&copy;.png\"", with: "src=\"../../Work/assets/HTML%20%C2%A9.png\"")
             .replacingOccurrences(of: "href=\"./files/report%20one.pdf?", with: "href=\"../../Work/files/report%20one.pdf?")
         XCTAssertEqual(saved.content, expected)
         let incomingAfter = try await io.read("Inbox/Incoming.md"), deletedAfter = try await io.read(".trash/Inbox/Deleted.md")
@@ -63,6 +65,8 @@ final class NativeMoveResourcesTests: XCTestCase {
         let imageAfter = try await io.resourceData("../../Work/assets/local%2520.png", notePath: saved.path)
         let pdfAfter = try await io.resourceData("../../Work/files/report%20one.pdf?download=1#page=2", notePath: saved.path)
         XCTAssertEqual(imageAfter, image); XCTAssertEqual(pdfAfter, pdf)
+        let entityImage = try await io.resourceData("../../Work/assets/HTML%20%C2%A9.png", notePath: saved.path)
+        XCTAssertEqual(entityImage, image)
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Work/Note.MD").path))
         let projectAfter = try await io.read("Projects/Project.md"), shadowAfter = try await io.read("assets/local%20.png")
         XCTAssertEqual(projectAfter, Data(project.utf8)); XCTAssertEqual(shadowAfter, shadow)

@@ -57,7 +57,7 @@ extension VaultFiles {
             let path = String(canonical.dropFirst(canonicalRoot.count + 1))
             let bytes = try read(path)
             guard bytes.count <= NativeDriveFiles.downloadLimit else { throw VaultFailure(message: "This working-copy file exceeds the 50 MB limit.") }
-            let id = (path as NSString).pathExtension.lowercased() == "md" ? String(data: bytes, encoding: .utf8).flatMap { NoteDocument(path: path, content: $0, modified: .distantPast).stableID } : nil
+            let id = (path as NSString).pathExtension.lowercased() == "md" ? NoteDocument.decodeUTF8(bytes).flatMap { NoteDocument(path: path, content: $0, modified: .distantPast).stableID } : nil
             result[path] = .init(hash: Self.driveHash(bytes), count: bytes.count, stableID: id)
         }
         return result
@@ -189,7 +189,7 @@ final class NativeDriveVault {
         records = NativeDriveVaultRecords(directory: directory); root = directory.appendingPathComponent("Vault", isDirectory: true); io = VaultFiles(root: root)
     }
     private func baseline(_ item: NativeDriveItem, bytes: Data?) -> NativeDriveBaseline {
-        let id = bytes.flatMap { String(data: $0, encoding: .utf8) }.flatMap { NoteDocument(path: item.name, content: $0, modified: .distantPast).stableID }
+        let id = bytes.flatMap { NoteDocument.decodeUTF8($0) }.flatMap { NoteDocument(path: item.name, content: $0, modified: .distantPast).stableID }
         return .init(item: item, hash: bytes.map(VaultFiles.driveHash), stableID: id)
     }
     private func ordinary(_ item: NativeDriveItem) -> Bool { !item.folder && !item.mimeType.hasPrefix("application/vnd.google-apps.") }

@@ -22,7 +22,7 @@ function verifyApp() {
   if (!existsSync(app)) throw new Error(`No native build exists at ${app}. Run pnpm ios:native:build first.`);
   run('codesign', ['--verify', '--deep', '--strict', app]);
   const plist = JSON.parse(run('plutil', ['-convert', 'json', '-o', '-', path.join(app, 'Info.plist')], true));
-  if (plist.CFBundleIdentifier !== 'com.zerus.notes.native' || plist.UIApplicationSceneManifest?.UIApplicationSupportsMultipleScenes !== true) {
+  if (plist.CFBundleIdentifier !== 'com.zerus.notes' || plist.UIApplicationSceneManifest?.UIApplicationSupportsMultipleScenes !== true) {
     throw new Error('The native app has an unexpected identity or missing SwiftUI scene lifecycle.');
   }
   if (device) {
@@ -50,7 +50,7 @@ try {
       throw new Error('Enable Developer Mode on the iPhone in Settings → Privacy & Security, restart, and confirm before installing.');
     }
     run('xcrun', ['devicectl', 'device', 'install', 'app', '--device', device, '--timeout', '60', app]);
-    run('xcrun', ['devicectl', 'device', 'process', 'launch', '--device', device, '--terminate-existing', 'com.zerus.notes.native']);
+    run('xcrun', ['devicectl', 'device', 'process', 'launch', '--device', device, '--terminate-existing', 'com.zerus.notes']);
     console.log('Installed and launched Zerus Native. Physical stability verification is still required.');
   } else {
     if (action === 'test' && !simulator) throw new Error('Tests require --simulator <UDID>; they never run against your physical vault.');

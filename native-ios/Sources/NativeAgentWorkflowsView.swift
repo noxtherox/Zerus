@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeAgentWorkflowsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     @State private var catalog: NativeAgentWorkflowCatalog?
@@ -120,7 +120,7 @@ struct NativeAgentWorkflowsView: View {
 }
 
 private struct NativeAgentWorkflowEditor: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let workspaceID: UUID
     let didSave: (NativeAgentWorkflowDocument) -> Void

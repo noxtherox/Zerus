@@ -2,7 +2,7 @@ import SwiftUI
 
 struct TasksView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @AppStorage(NativeDateFormat.key) private var dateFormat = NativeDateFormat.dayFirst.rawValue
     let open: (NoteDocument) -> Void
     let library: () -> Void
@@ -86,7 +86,7 @@ struct TasksView: View {
                         .font(.footnote).foregroundStyle(Accent.secondaryText).fixedSize(horizontal: false, vertical: true)
                 }
             }
-        }.scrollContentBackground(.hidden).background(Accent.paper)
+        }.nativeWorkspaceScroll().scrollContentBackground(.hidden).background(Accent.paper)
     }
     private func taskRow(_ task: NativeTask, now: Date) -> some View {
         let details = dynamicTypeSize.isAccessibilitySize
@@ -125,7 +125,7 @@ struct TasksView: View {
 }
 
 struct TaskDetailView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let task: NativeTask
     var recovered: NativeTaskDraft? = nil
     @State private var session: NativeTaskDraftSession?
@@ -144,7 +144,7 @@ struct TaskDetailView: View {
 }
 
 private struct NativeTaskDetailForm: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @ObservedObject var session: NativeTaskDraftSession
@@ -316,7 +316,7 @@ private struct TaskCollectionDeletion: Identifiable {
     let change: NativeTaskChange
 }
 struct NativeTaskCollectionsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     @State private var naming: TaskCollectionName?
     @State private var deleting: TaskCollectionDeletion?
@@ -376,7 +376,7 @@ struct NativeTaskCollectionsView: View {
     }
 }
 private struct NativeTaskCollectionNameForm: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let title: String
     let save: (String) async -> Bool
