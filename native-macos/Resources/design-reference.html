@@ -1,0 +1,208 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+#fit{width:100%;overflow:hidden}
+#stage{width:1340px;transform-origin:0 0;font-family:-apple-system,"SF Pro Text",system-ui,sans-serif;color:#1d1d1f;-webkit-font-smoothing:antialiased}
+.win{height:760px;border-radius:14px;overflow:hidden;display:flex;flex-direction:column;
+ background:#fbfbfa;box-shadow:0 0 0 .5px rgba(0,0,0,.18),0 24px 60px rgba(0,0,0,.22);position:relative}
+.body{flex:1;display:flex;min-height:0}
+/* sidebar */
+.side{width:218px;padding:44px 10px 12px;background:linear-gradient(180deg,#eef0f3,#e8eaee);border-right:.5px solid rgba(0,0,0,.08);display:flex;flex-direction:column;gap:2px;font-size:13px}
+.lights{position:absolute;top:16px;left:18px;display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.vault{display:flex;align-items:center;gap:8px;padding:6px 8px 10px;font-weight:600}
+.logo{width:22px;height:22px;border-radius:6px;background:conic-gradient(from 210deg,#5b6cff,#a46bff,#ff7aa8,#5b6cff);box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.search{margin:0 4px 10px;padding:6px 9px;border-radius:8px;background:rgba(0,0,0,.055);color:#86868b;font-size:12.5px;display:flex;justify-content:space-between}
+.sec{font-size:11px;font-weight:600;color:#8a8a90;padding:12px 8px 4px}
+.it{display:flex;align-items:center;gap:9px;padding:5px 8px;border-radius:7px;color:#2b2b2f}
+.it .n{margin-left:auto;color:#9a9aa0;font-size:11.5px}
+.it.on{background:rgba(91,108,255,.14);color:#3a46d6;font-weight:500}
+.ic{width:16px;text-align:center;color:#6c6cf0;font-size:13px}
+.dot{width:8px;height:8px;border-radius:3px;display:inline-block}
+.sync{margin-top:auto;padding:8px;font-size:11.5px;color:#7a7a80;display:flex;gap:6px;align-items:center}
+.sync b{width:7px;height:7px;border-radius:50%;background:#34c759;display:inline-block}
+/* list */
+.list{width:310px;background:#f6f6f4;border-right:.5px solid rgba(0,0,0,.08);display:flex;flex-direction:column}
+.lhead{height:52px;display:flex;align-items:center;padding:0 12px 0 16px;gap:8px;border-bottom:.5px solid rgba(0,0,0,.06)}
+.lhead h2{font-size:15px;margin:0;font-weight:650}
+.seg{margin-left:auto;display:flex;background:rgba(0,0,0,.06);border-radius:7px;padding:2px;font-size:11.5px}
+.seg span{padding:2px 5px;font-size:11px;border-radius:5px;color:#555}
+.seg .a{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12);color:#111}
+.row{padding:11px 16px;border-bottom:.5px solid rgba(0,0,0,.05);font-size:12.5px}
+.row .t{font-weight:600;font-size:13.5px;margin-bottom:3px;display:flex;justify-content:space-between}
+.row .t small{font-weight:400;color:#9a9aa0;font-size:11.5px}
+.row p{margin:0;color:#6e6e73;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.row.on{background:#fff;box-shadow:inset 3px 0 0 #5b6cff}
+.chips{display:flex;gap:5px;margin-top:6px}
+.chip{white-space:nowrap;font-size:10.5px;padding:1px 7px;border-radius:20px;background:rgba(0,0,0,.05);color:#555}
+/* editor */
+.ed{flex:1;background:#fff;display:flex;flex-direction:column;min-width:0;position:relative}
+.tb{height:52px;white-space:nowrap;display:flex;align-items:center;padding:0 18px;gap:14px;color:#6e6e73;font-size:13px;border-bottom:.5px solid rgba(0,0,0,.05)}
+.crumb{color:#8a8a90}.crumb b{color:#1d1d1f;font-weight:500}
+.tb .r{margin-left:auto;display:flex;gap:6px;align-items:center}
+.btn{padding:4px 9px;border-radius:7px;background:rgba(0,0,0,.045);font-size:12px;color:#333}
+.btn.p{background:#5b6cff;color:#fff}
+.page{padding:22px 48px 40px;overflow:hidden;flex:1}
+.page h1{font-size:30px;letter-spacing:-.4px;margin:0 0 12px;font-weight:700}
+.props{display:grid;grid-template-columns:96px 1fr;gap:7px 10px;font-size:12.5px;margin-bottom:22px;padding-bottom:18px;border-bottom:.5px solid rgba(0,0,0,.07)}
+.props .k{color:#8a8a90}
+.pill{display:inline-flex;gap:5px;align-items:center;padding:1px 8px;border-radius:20px;font-size:12px}
+.link{color:#4a55e0;background:rgba(91,108,255,.09);padding:0 5px;border-radius:5px;font-weight:500}
+.page h3{font-size:17px;margin:20px 0 8px;font-weight:650}
+.page p{font-size:14.5px;line-height:1.65;margin:0 0 10px;color:#2a2a2e}
+.task{display:flex;gap:10px;align-items:flex-start;font-size:14.5px;line-height:1.6;margin:3px 0}
+.cb{width:15px;height:15px;border-radius:4px;border:1.5px solid #c4c4ca;margin-top:4px;flex:none}
+.cb.x{background:#5b6cff;border-color:#5b6cff;position:relative}
+.cb.x:after{content:"";position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.done{color:#a0a0a6;text-decoration:line-through}
+blockquote{margin:14px 0;padding:2px 0 2px 14px;border-left:3px solid #d9dcff;color:#55555b;font-size:14.5px;line-height:1.6}
+.caret{display:inline-block;width:1.5px;height:17px;background:#5b6cff;vertical-align:-3px;margin-left:1px}
+.md{color:#c0c0c8;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.fmt{position:absolute;left:120px;top:278px;white-space:nowrap;display:flex;gap:2px;padding:4px;border-radius:11px;
+ background:rgba(255,255,255,.82);backdrop-filter:blur(18px);box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 8px 24px rgba(0,0,0,.14);font-size:12.5px}
+.fmt span{padding:4px 8px;border-radius:7px;color:#333}
+.fmt .a{background:rgba(91,108,255,.13);color:#3a46d6}
+.fmt .sep{width:.5px;background:rgba(0,0,0,.12);padding:0;margin:3px 2px}
+.suggest{position:absolute;left:120px;top:508px;width:250px;border-radius:11px;background:rgba(255,255,255,.92);backdrop-filter:blur(18px);
+ box-shadow:0 0 0 .5px rgba(0,0,0,.12),0 12px 30px rgba(0,0,0,.16);padding:5px;font-size:12.5px}
+.suggest div{padding:6px 8px;border-radius:7px;display:flex;justify-content:space-between}
+.suggest .a{background:#5b6cff;color:#fff}
+.suggest small{opacity:.6}
+.ask{position:absolute;left:50%;transform:translateX(-50%);bottom:18px;width:440px;padding:9px 12px;border-radius:14px;
+ background:rgba(250,250,252,.85);backdrop-filter:blur(20px);box-shadow:0 0 0 .5px rgba(0,0,0,.1),0 10px 30px rgba(0,0,0,.12);
+ display:flex;align-items:center;gap:10px;font-size:13px;color:#8a8a90}
+.ask .spark{color:#a46bff;font-size:15px}
+.ask kbd{margin-left:auto;font-family:inherit;font-size:11px;background:rgba(0,0,0,.06);padding:1px 6px;border-radius:5px}
+/* inspector */
+.ins{width:236px;background:#f9f9f8;border-left:.5px solid rgba(0,0,0,.07);padding:62px 16px 16px;font-size:12.5px}
+.ins h4{font-size:11px;font-weight:600;color:#8a8a90;margin:0 0 8px;text-transform:none}
+.ol div{padding:3px 0;color:#444}.ol .s{padding-left:12px;color:#777}
+.ol .on{color:#3a46d6;font-weight:500}
+.bl{background:#fff;border-radius:9px;padding:9px 10px;margin-bottom:7px;box-shadow:0 0 0 .5px rgba(0,0,0,.07)}
+.bl b{font-weight:600;font-size:12.5px;display:block;margin-bottom:2px}
+.bl span{color:#7a7a80;font-size:11.5px;line-height:1.4}
+.grp{margin-bottom:20px}
+.graph{height:96px;border-radius:9px;background:#fff;box-shadow:0 0 0 .5px rgba(0,0,0,.07);position:relative}
+
+.tabs{height:34px;display:flex;align-items:flex-end;gap:2px;padding:0 10px;background:#f3f3f1;border-bottom:.5px solid rgba(0,0,0,.07);font-size:12px}
+.tab{padding:6px 12px;border-radius:8px 8px 0 0;color:#6e6e73;display:flex;gap:8px;align-items:center}
+.tab.on{background:#fff;color:#1d1d1f;box-shadow:0 -.5px 0 rgba(0,0,0,.08)}
+.tab x{color:#b0b0b6;font-size:11px}
+.ftb{display:flex;overflow:hidden;align-items:center;gap:0;padding:6px 10px;border-bottom:.5px solid rgba(0,0,0,.05);font-size:12.5px;color:#444;white-space:nowrap}
+.ftb span{padding:3px 5px;border-radius:6px}
+.ftb .sel{border:.5px solid rgba(0,0,0,.14);border-radius:6px;padding:2px 8px;margin:0 4px}
+.ftb .sep{width:.5px;height:16px;background:rgba(0,0,0,.12);padding:0;margin:0 5px}
+.ftb .a{background:rgba(91,108,255,.13);color:#3a46d6}
+.ti{width:16px;text-align:center;color:#6b6b72;font-size:12.5px}
+.ph{display:flex;justify-content:space-between;align-items:center;font-size:11px;font-weight:600;color:#8a8a90;margin:0 0 8px}
+.pp{display:grid;grid-template-columns:72px 1fr;gap:7px 8px;font-size:12px;margin-bottom:18px}
+.pp .k{color:#8a8a90}
+.rev{display:flex;justify-content:space-between;font-size:12px;padding:5px 0;color:#444}
+.att{display:flex;gap:8px;align-items:center;font-size:12px;padding:5px 8px;background:#fff;border-radius:8px;box-shadow:0 0 0 .5px rgba(0,0,0,.07)}
+.gb{padding:4px 7px;border-radius:6px;font-size:12px;color:#444;white-space:nowrap}
+.inp{height:28px;border-radius:7px;background:#fff;box-shadow:0 0 0 .5px rgba(0,0,0,.12);display:flex;align-items:center;padding:0 10px;font-size:12.5px;color:#9a9aa0}
+.badge{position:absolute;right:-4px;top:-5px;min-width:16px;height:16px;border-radius:8px;background:#5b6cff;color:#fff;font-size:9.5px;display:flex;align-items:center;justify-content:center}
+</style></head><body>
+<div id="fit"><div id="stage">
+<div class="win">
+ <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+ <div class="body">
+  <aside class="side">
+   <div class="vault"><span class="logo"></span>Zerus Vault <span style="margin-left:auto;color:#9a9aa0;font-weight:400">⌄</span></div>
+   <div class="search"><span>⌕ Search everything</span><span>⌘F</span></div>
+   <div class="it"><span class="ic">▤</span>All Notes</div>
+   <div class="it"><span class="ic">☑︎</span>Tasks</div>
+   <div class="it"><span class="ic">🔗︎</span>Links</div>
+   <div class="it"><span class="ic">▢</span>Files</div>
+   <div class="it"><span class="ic">↗︎</span>External Notes</div>
+   <div class="sec" style="display:flex;justify-content:space-between">Types <span style="font-weight:400">＋</span></div>
+   <div class="it on"><span class="ti" style="color:#3a46d6">⌄</span>Projects<span class="n">18</span></div>
+   <div class="it" style="padding-left:30px"><span class="ti">›</span>Active<span class="n">6</span></div>
+   <div class="it" style="padding-left:30px"><span class="ti">›</span>Archive<span class="n">12</span></div>
+   <div class="it"><span class="ti">›</span>Meetings<span class="n">42</span></div>
+   <div class="it"><span class="ti">›</span>People<span class="n">27</span></div>
+   <div class="it"><span class="ti">›</span>Ideas<span class="n">63</span></div>
+   <div class="it"><span class="ti">›</span>Journal<span class="n">210</span></div>
+   <div style="margin-top:auto"></div>
+   <div class="it"><span class="ic">🗑︎</span>Trash</div>
+   <div class="it"><span class="ic">⚙︎</span>Settings</div>
+  </aside>
+
+  <section class="list">
+   <div class="lhead" style="height:46px;gap:4px">
+    <h2 style="flex:1">Projects</h2>
+    <span class="gb" style="font-weight:500;color:#1d1d1f">☰ List <span style="color:#9a9aa0">⌄</span></span>
+    <span class="gb">☑︎ Select</span>
+    <span class="gb" style="font-size:16px;padding:0 7px">＋</span>
+   </div>
+   <div style="display:grid;gap:7px;padding:8px 12px;border-bottom:.5px solid rgba(0,0,0,.06)">
+    <div class="inp">⌕&nbsp; Search notes…</div>
+    <div class="inp" style="color:#333;justify-content:space-between;position:relative;background:transparent;box-shadow:0 0 0 .5px rgba(0,0,0,.16)">
+     <span>⏷&nbsp; Sort &amp; filter</span><span style="color:#9a9aa0">⌄</span>
+     <b class="badge">1</b></div>
+   </div>
+   <div class="row on"><div class="t">📌 Zerus for Mac <small>10:42</small></div>
+    <p>Move the desktop shell to SwiftUI with a native rich‑text editor that still writes plain Markdown…</p></div>
+   <div class="row"><div class="t">Drive sync v2 <small>Yesterday</small></div>
+    <p>Conflict copies should merge frontmatter before falling back to a duplicate file.</p></div>
+   <div class="row"><div class="t">Agent workflows <small>Fri</small></div>
+    <p>Saved prompts that run over a type: weekly review, meeting digest, stale tasks.</p></div>
+   <div class="row"><div class="t">CLI 1.0 <small>Nov 9</small></div>
+    <p>Stable JSON output, zerus query, and safe writes for agents.</p></div>
+   <div class="row"><div class="t">Website refresh <small>Nov 2</small></div>
+    <p>One hero, three screenshots, a download button. Nothing else.</p></div>
+  </section>
+
+  <main class="ed">
+   <div class="tabs"><span class="tab on">Zerus for Mac <x>✕</x></span><span class="tab">Weekly review — Nov 13 <x>✕</x></span><span class="tab">Meetings</span></div>
+   <div class="tb" style="height:44px">
+    <span>‹ ›</span><span class="crumb">Projects / <b>Active</b></span>
+    <div class="r"><span class="btn" style="color:#8a4fe0">✦ AI chat</span><span class="btn">⤢</span><span class="btn">⋯</span><span class="btn" style="background:rgba(91,108,255,.13);color:#3a46d6">◫</span></div>
+   </div>
+   <div class="ftb"><span>↶</span><span>↷</span><span class="sep"></span><span class="sel">Paragraph ⌄</span><span><b>B</b></span><span><i>I</i></span><span><u>U</u></span><span style="font-family:ui-monospace,Menlo,monospace">&lt;&gt;</span><span>🔗︎</span><span class="sep"></span><span>• ≡</span><span>1.</span><span class="a">☐</span><span>⇥</span><span class="sep"></span><span>⊞</span><span>🖼︎</span><span>―</span><span class="sep"></span><span>📎︎</span><span>⌕</span></div>
+   <div class="page">
+    <h1>Zerus for Mac</h1>
+    <h3>Why native</h3>
+    <p>The editor should feel like <b>Notes</b> and save like a <i>text file</i>. Rich text while writing, plain Markdown on disk — readable by Git, the CLI and any other editor. See <span class="link">Editor decision</span>.</p>
+    <blockquote>If it can't round‑trip to Markdown, it isn't a button.</blockquote>
+    <h3>Milestones</h3>
+    <div class="task"><span class="cb x"></span><span class="done">Shared services build for macOS</span></div>
+    <div class="task"><span class="cb x"></span><span class="done">Sidebar types and note list</span></div>
+    <div class="task"><span class="cb"></span><span>Round‑trip test: open + save real notes, zero diff</span></div>
+    <div class="task"><span class="cb"></span><span>Link to <span class="md">[[</span>dri<span class="caret"></span></span></div>
+   </div>
+   <div class="suggest">
+    <div class="a"><span>Drive sync v2</span><small>Projects</small></div>
+    <div><span>Drive folder layout</span><small>Ideas</small></div>
+    <div style="color:#5b6cff"><span>＋ Create “dri…”</span></div>
+   </div>
+  </main>
+
+  <aside class="ins" style="padding-top:20px">
+   <div class="ph">Properties <span>⌄</span></div>
+   <div class="pp">
+    <span class="k">Status</span><span><span class="pill" style="background:#e8ebff;color:#3a46d6">In progress</span></span>
+    <span class="k">Due</span><span>Dec 15, 2026</span>
+    <span class="k">Owner</span><span><span class="link">Tiago</span></span>
+    <span class="k">Tags</span><span>design, macos</span>
+   </div>
+   <div class="ph">Relations <span>⌄</span></div>
+   <div class="bl"><b>Related · Drive sync v2</b><span>Projects</span></div>
+   <div class="bl"><b>Weekly review — Nov 13</b><span>Backlink · Meetings</span></div>
+   <div class="bl" style="margin-bottom:18px"><b>Editor decision</b><span>Backlink · Ideas</span></div>
+   <div class="ph">Outline <span>⌄</span></div>
+   <div class="ol" style="margin-bottom:18px"><div class="s">Why native</div><div class="s on">Milestones</div></div>
+   <div class="ph">Revisions <span>⌄</span></div>
+   <div class="rev"><span><b>v3</b> · current</span><span style="color:#8a8a90">Nov 16</span></div>
+   <div class="rev" style="margin-bottom:18px"><span>v2</span><span style="color:#8a8a90">Nov 2</span></div>
+   <div class="ph">Attachments <span>⌄</span></div>
+   <div class="att">📄 spec-draft.pdf</div>
+  </aside>
+ </div>
+</div>
+</div></div>
+<script>
+function fit(){var f=document.getElementById('fit'),s=document.getElementById('stage');var k=Math.min(1,f.clientWidth/1340);s.style.transform='scale('+k+')';f.style.height=(762*k+28)+'px';}
+fit();addEventListener('resize',fit);
+</script>
+</body></html>

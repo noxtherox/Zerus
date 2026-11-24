@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "feedURL": "https://github.com/noxtherox/Zerus/releases/download/native-macos/native-macos.xml",
+  "publicKey": "cKybZ68XE5f5X7p2ZDMh3FkBvB6C81TZEeLjnmmOdjQ=",
+  "signingAccount": "zerus-native",
+  "downloadPrefix": "https://github.com/noxtherox/Zerus/releases/download/native-macos/"
+}

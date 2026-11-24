@@ -9,6 +9,12 @@ import {
 } from "./macos-release-utils.mjs";
 import { notarizeNewestMacosDmg } from "./notarize-macos-dmg.mjs";
 
+// A native migration build has its own bundle identity and release artifacts.
+if (process.argv.includes("--native")) {
+  execFileSync("node", ["scripts/native-macos.mjs", "dmg", ...(process.argv.includes("--local") ? ["--local"] : [])], { stdio: "inherit", env: process.env });
+  process.exit(0);
+}
+
 const localBuild = process.argv.includes("--local");
 const tauriArgs = process.argv
   .slice(2)

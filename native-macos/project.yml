@@ -1,0 +1,151 @@
+name: ZerusMac
+options:
+  deploymentTarget:
+    macOS: '26.0'
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    exactVersion: 2.10.1
+  ZerusMarkdown:
+    path: ../packages/apple/Markdown
+  ZerusChatGPTCore:
+    path: ../packages/apple/ChatGPTCore
+  SwiftSoup:
+    url: https://github.com/scinfu/SwiftSoup.git
+    exactVersion: 2.14.3
+  WebURL:
+    url: https://github.com/karwa/swift-url.git
+    exactVersion: 0.4.2
+  SwiftMarkdown:
+    url: https://github.com/swiftlang/swift-markdown.git
+    exactVersion: 0.9.0
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    MACOSX_DEPLOYMENT_TARGET: '26.0'
+    DEVELOPMENT_TEAM: TX9RYY52XR
+    MARKETING_VERSION: 0.3.85
+    CURRENT_PROJECT_VERSION: 126
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: '-'
+    ZERUS_NATIVE_UPDATE_FEED_URL: ''
+    ZERUS_NATIVE_UPDATE_PUBLIC_KEY: ''
+targets:
+  ZerusMac:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+      - path: Resources/ThirdPartyNotices
+        type: folder
+        buildPhase: resources
+      - path: Resources/FolderIcons
+        type: folder
+        buildPhase: resources
+      - path: Resources/CLI
+        type: folder
+        buildPhase: resources
+      - ../packages/apple/IOSServices/Sources/ZerusIOSServices/ChatGPTManager.swift
+      - ../packages/apple/IOSServices/Sources/ZerusIOSServices/AppleKeychainIO.swift
+      - ../packages/apple/IOSServices/Sources/ZerusIOSServices/CloudAIManager.swift
+      - ../native-ios/Sources/NativeNoteExport.swift
+      - ../native-ios/Sources/NativeWordExport.swift
+      - ../native-ios/Sources/MarkdownTable.swift
+      - ../native-ios/Sources/NoteDocument.swift
+      - ../native-ios/Sources/NativeFrontmatterCache.swift
+      - ../native-ios/Sources/NativeInventoryCache.swift
+      - ../native-ios/Sources/NoteProperties.swift
+      - ../native-ios/Sources/NativeMarkdownPreview.swift
+      - ../native-ios/Sources/NativeCoordinatedRead.swift
+      - ../native-ios/Sources/VaultTransaction.swift
+      - ../native-ios/Sources/NativeHistory.swift
+      - ../native-ios/Sources/NativeExternalHistory.swift
+      - ../native-ios/Sources/NativeHistoryMaintenance.swift
+      - ../native-ios/Sources/NativeRevisions.swift
+      - ../native-ios/Sources/NativeRevisionTrash.swift
+      - ../native-ios/Sources/NativeMoveResources.swift
+      - ../native-ios/Sources/MarkdownMoveLinks.swift
+      - ../native-ios/Sources/MarkdownResources.swift
+      - ../native-ios/Sources/NativeRelations.swift
+      - ../native-ios/Sources/NativeRelationDefinitions.swift
+      - ../native-ios/Sources/NativeRelationMaintenance.swift
+      - ../native-ios/Sources/NativeNoteRename.swift
+      - ../native-ios/Sources/NativeBulkActions.swift
+      - ../native-ios/Sources/NativeNoteTrash.swift
+      - ../native-ios/Sources/NativeFolderTrash.swift
+      - ../native-ios/Sources/NativeFolders.swift
+      - ../native-ios/Sources/NativeFolderRename.swift
+      - ../native-ios/Sources/NativeExternalMoveJournal.swift
+      - ../native-ios/Sources/NativeImageLifecycle.swift
+      - ../native-ios/Sources/NativeTasks.swift
+      - ../native-ios/Sources/NativeTaskDrafts.swift
+      - ../native-ios/Sources/NativeSearch.swift
+      - ../native-ios/Sources/NativeExternalSearch.swift
+      - ../native-ios/Sources/NativeHTMLClipboard.swift
+      - ../native-ios/Sources/NativeCollectionFilters.swift
+      - ../native-ios/Sources/NativeSavedLinks.swift
+      - ../native-ios/Sources/NativeFileHubs.swift
+      - ../native-ios/Sources/NativeFileMappings.swift
+      - ../native-ios/Sources/NativeExternalNotes.swift
+      - ../native-ios/Sources/NativeExternalProjectFiles.swift
+      - ../native-ios/Sources/NativeExternalTransfer.swift
+      - ../native-ios/Sources/NoteReference.swift
+      - ../native-ios/Sources/PropertySchema.swift
+      - ../native-ios/Sources/NativeAgent.swift
+      - ../native-ios/Sources/NativeAgentOrganization.swift
+      - ../native-ios/Sources/NativeAgentTools.swift
+      - ../native-ios/Sources/NativeAgentLimits.swift
+      - ../native-ios/Sources/NativeAgentPreferences.swift
+      - ../native-ios/Sources/NativeAgentTokenizer.swift
+      - ../native-ios/Sources/NativeAgentGuidance.swift
+      - ../native-ios/Sources/NativeAgentWorkflows.swift
+      - ../native-ios/Sources/NativeAgentProperties.swift
+      - ../native-ios/Sources/NativeAgentRelationProperties.swift
+      - ../native-ios/Sources/NativeChatAttachment.swift
+      - path: ../native-ios/Resources/NativeO200k.bin
+        buildPhase: resources
+      - path: ../native-ios/Resources/NativeO200k.json
+        buildPhase: resources
+    dependencies:
+      - package: Sparkle
+      - package: ZerusMarkdown
+      - package: ZerusChatGPTCore
+      - package: SwiftSoup
+      - package: WebURL
+        product: WebURL
+      - package: WebURL
+        product: WebURLFoundationExtras
+      - package: SwiftMarkdown
+        product: Markdown
+    settings:
+      base:
+        PRODUCT_NAME: Zerus Native
+        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes.macos.native
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: Zerus Native
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_NSHumanReadableCopyright: Zerus contributors
+        ENABLE_HARDENED_RUNTIME: YES
+        COMBINE_HIDPI_IMAGES: YES
+  ZerusMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests
+      - ../native-ios/Tests/NativeBulkRelationBatchTests.swift
+    dependencies:
+      - target: ZerusMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes.macos.native.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Zerus Native.app/Contents/MacOS/Zerus Native
+        BUNDLE_LOADER: $(TEST_HOST)
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  ZerusMac:
+    build:
+      targets:
+        ZerusMac: all
+    test:
+      targets: [ZerusMacTests]

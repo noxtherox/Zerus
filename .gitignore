@@ -41,3 +41,9 @@ zerus/
 # Generated Python fixture caches
 __pycache__/
 *.py[cod]
+
+# Generated native macOS Xcode project
+/native-macos/*.xcodeproj/
+
+# Generated native CLI resources (staged from the existing Rust CLI and skill)
+/native-macos/Resources/CLI/
