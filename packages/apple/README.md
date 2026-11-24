@@ -1,11 +1,24 @@
 # Shared Apple code
 
-These local Swift packages support both iOS applications. Neither package depends
+These local Swift packages support the Apple applications. None depends
 on React, Rust, Tauri, or the SwiftUI app target.
+The native macOS migration target also links `ChatGPTCore` and compiles the shared
+ChatGPT account manager and cloud request/response types directly from
+`IOSServices`. Its account presentation uses AppKit, while the iOS presentation
+continues to use UIKit. Drive and speech services remain iOS-specific. The Mac
+caller supplies its own Keychain service and HTTP session; iOS defaults retain
+their existing configuration. Mac account and API-key access use the shared
+background Keychain worker; passive status reads are bounded and never create
+a registration or request authorization UI. Explicit connection actions retain
+normal Keychain authorization.
 
 - `ChatGPTCore`: authorization, account protocol, Responses transport, model
   catalog, and private continuation storage. Its existing tests run on macOS with
   `pnpm ios:shared:test`.
+- `ZerusMarkdown` (the `Markdown` package): shared safe image markup parsing,
+  legacy width metadata and per-occurrence dimensions for native Mac and iOS
+  image management and exports. It depends on Swift Markdown and SwiftSoup,
+  without an AppKit or UIKit dependency.
 - `IOSServices`: iOS Drive, cloud AI, ChatGPT account management, and speech
   capture. It depends on `ChatGPTCore` and Apple frameworks. Application-facing
   request/response types and services are public; credential and audio-session
