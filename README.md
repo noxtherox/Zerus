@@ -97,7 +97,7 @@ same vault with a text editor, Git, sync software, or any other Markdown tool.
   list snippets are never treated as complete note content. Older startup indexes
   keep the note list available while bodies reload. If a cloud scan times out,
   the cached list stays open and Zerus retries when storage becomes available;
-  without a usable cache, mobile offers retry and vault selection. Google Drive can open a
+  without a usable cache, mobile offers retry and vault selection. Legacy Google Drive working copies can open a
   known note without waiting for unrelated folders to finish scanning. Recently
   opened full notes are saved immediately in a bounded fallback cache, and slower
   local-cache reads can fill in the list without another cloud download. Drive
@@ -234,7 +234,7 @@ for the verified flows and remaining native-device checks.
 | --- | --- | --- |
 | macOS Apple Silicon | Desktop release with signed automatic updates | Local filesystem |
 | Windows 10/11 | Microsoft Store app; unsigned per-user EXE download | Local filesystem |
-| iOS 17+ | Native mobile app | Files selected through the mobile vault picker |
+| iOS 26+ | SwiftUI mobile app | Files selected through the mobile vault picker |
 | Browser | Development and interface preview | Browser local storage |
 
 Download the current macOS DMG or Windows installer from
@@ -242,9 +242,11 @@ Download the current macOS DMG or Windows installer from
 build is produced and distributed separately through the App Store/TestFlight
 workflow. Windows users can also install [Zerus from Microsoft Store](https://apps.microsoft.com/detail/9P019ZG6HD8Q).
 
-A separate **SwiftUI native preview** for iOS 26+ is available in
-`native-ios/`. It uses Apple's TextKit 2 editor and installs alongside Zerus as
-**Zerus Native**. The current native migration goal excludes AI and Google Drive
+**SwiftUI is the production iOS app** for iOS 26+, owned by
+`native-ios/`. It uses Apple's TextKit 2 editor and replaces Tauri mobile under
+the existing `com.zerus.notes` identity as **Zerus**. The old vault bookmark is
+reused on upgrade; Files can renew folder access if needed. Preview-app data
+under `com.zerus.notes.native` stays separate; select its vault through Files. The current native migration goal excludes AI and Google Drive
 integration; their existing preview implementations are retained separately from
 the remaining completion criteria. The preview includes native rich editing, formatted HTML/RTFD
 paste with portable images and an adaptive paste sheet that dismisses the active keyboard,
@@ -272,10 +274,7 @@ with durable undo/redo and repeatable change reviews, saved links with editable 
 filing, task planning with lists, categories and supporting notes, private task drafts
 that survive closing and restarting, unified search
 across notes/external Markdown/tasks/files/links/conversations, document notes with portable copies,
-original-file connections, frozen backups and device folder mappings (including native
-Google Drive file locations and offline vault working copies with interrupted-upload
-recovery and reviewed sync conflicts
-when its separate iOS OAuth client is configured), editable external
+original-file connections, frozen backups and Files-based device folder mappings, editable external
 Markdown files with private recovery drafts, explicitly selected project attachments,
 reviewed copy/move into a vault and interrupted-move recovery, read-only external
 references in Ask’s context picker, inline image retries and refreshed local previews
@@ -397,7 +396,7 @@ pnpm build           # build the web app
 pnpm platform:verify # validate platform-specific packaging boundaries
 pnpm ios:native:verify # validate the independent SwiftUI app configuration
 pnpm ios:shared:test # test the shared Apple ChatGPT core
-pnpm ios:native:build # build the separate SwiftUI device preview
+pnpm ios:native:build # build the SwiftUI device app
 pnpm desktop:build   # build and verify the macOS DMG
 pnpm windows:build   # build the unsigned Windows NSIS EXE (run on Windows)
 pnpm windows:msix    # build an unsigned Store MSIX (Windows + Store identity)
@@ -406,18 +405,19 @@ pnpm windows:msix    # build an unsigned Store MSIX (Windows + Store identity)
 On macOS, `pnpm desktop:build` creates a distribution-signed, notarized, and
 verified DMG and requires the configured signing and notarization credentials.
 Use `pnpm desktop:build:local` for an explicitly ad-hoc local build that skips
-notarization. Both commands require the updater signing key described below.
+notarization. Both Tauri commands require the updater signing key described below. The
+separate SwiftUI commands and native Sparkle requirements are documented in
+[Native macOS migration preview](#native-macos-migration-preview).
 
 Windows-specific prerequisites and commands are in
 [`docs/WINDOWS.md`](docs/WINDOWS.md). To create a new signed iOS archive and
-export its IPA for the existing Tauri iOS app, use `pnpm ios:new-build`
-(also available as `pnpm ios:tauri:new-build`); see
+export its IPA for the SwiftUI iOS app, use `pnpm ios:new-build`; see
 [`docs/testflight-cli.md`](docs/testflight-cli.md) before uploading it.
-`pnpm testflight` and `pnpm ios:tauri:testflight` upload that existing Tauri IPA.
-The SwiftUI app remains a separate preview with its own identity and build
-commands; both iOS implementations stay available. See
-[`docs/ios-apps.md`](docs/ios-apps.md) for ownership and release boundaries.
-The iOS build phase selects SwiftPM's native engine for compatibility with the
+`pnpm testflight` uploads the native IPA to the existing Zerus TestFlight app.
+Legacy Tauri commands remain explicitly available as `ios:tauri:new-build` and
+`ios:tauri:testflight`. Native release versions live in `native-ios/project.yml`.
+See [`docs/ios-apps.md`](docs/ios-apps.md) for ownership and upgrade details.
+The legacy Tauri iOS build phase selects SwiftPM's native engine for compatibility with the
 current Rust-to-Swift bridge on Xcode 27, and checks the archived app's scene
 lifecycle and signature before export.
 
@@ -461,6 +461,149 @@ The updater private key is stored in the repository's
 `~/.tauri/zerus-updater.key`; losing it prevents existing installations from
 accepting future updates.
 
+## Native macOS migration preview
+
+The separate SwiftUI app in `native-macos/` requires **Apple Silicon and macOS
+26+**. Its **Zerus Native** identity lets it coexist with the current Tauri
+desktop release. It uses the same Markdown vault and shared Apple storage
+services. It is still a migration preview; the current GitHub desktop release
+has not been replaced. Current implementation and acceptance evidence are in
+[the native macOS guide](docs/native-macos.md) and the
+[non-AI acceptance ledger](docs/native-macos-non-ai-acceptance.md).
+
+The native app currently includes:
+
+- **Workspace and navigation:** a fully hideable folders sidebar; persistent
+  note, folder and global-view tabs; pins, back/forward, separate windows,
+  compact layouts and interface zoom. Tabs stay within content panes and never
+  span above the sidebar. Gallery, Kanban, Table and Calendar show
+  either the collection or the opened note. List retains its adjacent editor.
+- **Editing:** AppKit rich text and literal Source mode, inline formatting,
+  all six heading levels and paragraph shortcuts (⌘⌥0–6),
+  web/vault links with a shared dialog (⌘K), edit/remove/copy and retained labels,
+  nested lists/quotes, numbered checklists, Markdown shortcuts, item-aware
+  Return/indent/outdent, checked selection replacement and structured paste,
+  native Undo/Redo, note-link suggestions and heading navigation. Supported
+  list-owned headings, quotes, code and tables edit natively when their
+  ownership maps to the native representation; unsupported containers and HTML
+  retain editable Source mode.
+  A body starting after its empty list marker still edits as one native item.
+  Unchanged syntax and UTF-8 BOM/line endings are preserved. The code-block
+  creation setting does not prevent editing existing blocks.
+- **Code, tables and images:** editable code cards and sheets, basic syntax
+  colours, conversion back to literal text from the vault-editor Paragraph menu, GFM table
+  cells with row/column insertion, removal and movement, alignment and width
+  controls, spreadsheet paste, shared address/local-file image insertion,
+  description/title/size controls, image edit/expand/removal, portable pasted
+  assets and reviewed image management. Visible HTTP(S) images load in the
+  editor with a Reload action; Source does not fetch them. External insertion
+  copies local assets into the chosen project folder. Sized HTML image references
+  carry their local assets through native cross-vault clipboard transfer while
+  preserving dimensions and other attributes. Covers use bounded local
+  thumbnails; they never fetch remote images. Unknown languages and very large code blocks remain editable without
+  syntax colouring.
+- **Organization and collections:** typed/inherited properties, paired
+  relations and backlinks, reviewed schema/legacy-relation repairs, bulk
+  properties and moves, durable reviewed organization Undo/Redo, and shared
+  List/Gallery/Kanban/Table/Calendar layouts, filters and named views. Folder
+  ordering, keep-open state and default new-note destinations are device-local
+  per vault; Tabler/emoji icons and properties-pane layout use shared metadata.
+- **Tasks:** lists/categories, planning and filters, supporting-note links,
+  numeric date preferences with ISO storage, and private task-draft recovery,
+  export, reload and save-as-new. Failed saves keep the draft available.
+- **Files and Finder:** Finder/Open With delivery, including cold launch and
+  multiple files. Vault notes open in place; outside Markdown uses editable
+  original connections with inline code and shared table/code sheets, code-to-text,
+  and Undo/Redo in Rich or full Source. Other documents create/reuse a file note in the
+  receiving vault's default folder. Alternate document-handler declarations
+  preserve existing default applications. File notes support vault copies,
+  original connections and frozen backups, with private local mappings for
+  shared locations. External Markdown copy/move reviews bring local resources
+  into the vault and protect changed originals.
+- **Previews and exports:** native PDF text search/navigation/password unlock,
+  office Quick Look, safe HTML and explicit content-bound Full preview,
+  saved links with opt-in live pages, HTML/PDF/DOCX export and native Print.
+  PDF search requires a text layer; passwords apply only to the current preview
+  and are not persisted. Full HTML/live-page modes may access the network.
+- **Search and recovery:** ranked notes/tasks/saved-links/external-file search,
+  bounded PDF/text extraction, deliberate revisions, automatic history with
+  frozen resources, comparisons, Keep/labels, retention and reviewed cleanup.
+  Per-window note checkpoints and external/task drafts protect unsaved text.
+  Changed or unavailable originals retain drafts instead of being overwritten.
+  Device-local warm snapshots open while a fresh inventory reconciles files;
+  failed refreshes keep the cached workspace available with Retry.
+- **Settings and CLI:** light/dark/system appearance, separate editable palettes
+  and named presets, numeric dates, pane order/collapse and zoom; reviewed
+  companion settings import; bundled CLI/skills with hash checks, reviewed
+  install/export, vault registration and note-metadata preparation. Setup
+  includes hidden and `.markdown` files counted by the CLI and refuses invalid,
+  duplicate or noncanonical note IDs. It never executes an existing CLI just
+  to identify it.
+  Custom colour editing starts with Zerus’s active appearance, including when
+  it differs from macOS. The inspector follows the palette’s surface colour.
+
+AI/chat implementations remain present, but their acceptance is deferred by
+agreement. Performance work has been accepted. Installed Settings, CLI lifecycle,
+relation repair, pane layout, Kanban/folder/tab dragging, minimum-window resizing,
+overflow scrolling and Portuguese dead-key Save/Undo/Redo/reopen are verified.
+The Developer ID candidate, signed update installation and notarized DMG install
+path are also verified. Local iOS/macOS note-and-image interchange is accepted;
+Windows and direct Google Drive are outside this migration's current scope.
+VoiceOver QA and microphone dictation are excluded from this goal by
+agreement. Neither is claimed as verified. The ledger distinguishes verified behavior from broader
+coverage limits. This is not a completed production release.
+
+### Native development and packaging
+
+Use Node/pnpm, Xcode with the selected supported macOS toolchain, XcodeGen, and
+Rust/Cargo for the standalone CLI. Swift package versions and deployment/version
+settings are pinned in `native-macos/project.yml`.
+
+```sh
+pnpm macos:native:build           # optimized app, no DMG or version increment
+pnpm macos:native:test            # native macOS tests
+pnpm macos:native:channel        # inspect production feed/key defaults; no build
+pnpm macos:native:appcast --help  # prepare/verify signed native update artifacts
+pnpm desktop:build --native      # distribution-signed, notarized native DMG
+pnpm desktop:build --native --local # explicitly ad-hoc DMG, no notarization
+```
+
+Intermediate QA uses the built app; another DMG is unnecessary unless a check
+needs packaging or the final handoff is ready. Artifacts are under
+`artifacts/native-macos/`. The canonical native Mac version is in
+`native-macos/project.yml`; the theme-correction build is 0.3.85/build126.
+Presets and saved palettes select their matching Light/Dark appearance, including
+native title bars, controls, sheets and popovers. Its implementation is newer
+than the last delivered Preview125 DMG. A separate
+configured Developer ID candidate has passed Apple notarization, ticket
+validation, Gatekeeper assessment and a controlled launch. It remains private;
+production update delivery remains separate. The corrected native build126 DMG
+is notarized, stapled and checked through its private download endpoint.
+
+Native distribution packaging needs a Developer ID Application identity and
+notarization credentials. Production packaging defaults to the approved separate
+GitHub Sparkle channel in `native-macos/update-channel.json`; its private signing
+key stays in the `zerus-native` Keychain account. The public feed/key can be
+overridden together with `ZERUS_NATIVE_UPDATE_FEED_URL` and
+`ZERUS_NATIVE_UPDATE_PUBLIC_KEY`; a partial override is refused. Internal builds
+still omit the production defaults unless both values are supplied explicitly.
+The current internal app reports that its update channel is unavailable. This
+configuration does not publish a GitHub release or appcast and does not change
+the Tauri updater. Never put private signing keys in the vault or repository. See [native update configuration](docs/native-macos.md#native-update-channel-development).
+
+Packaging signs the CLI and Sparkle helpers before the app, verifies the actual
+bundle identity/version/deployment target/architecture and signing channel,
+then mounts and rechecks the DMG payload. The JSON receipt records checksums and
+signature status. Distribution DMGs must pass notarization, stapling and
+Gatekeeper checks. Installed interaction and production update-channel checks
+remain separate requirements; an artifact receipt does not establish them.
+
+`pnpm macos:native:appcast prepare` creates a signed ZIP/feed in a new directory
+from the already configured app, and `verify` checks signatures, channel metadata,
+and the exact archived app. Keys stay in an explicitly selected native Keychain
+account or a protected CI file. These commands do not publish or create a DMG;
+see [native update artifact preparation](docs/native-macos.md#preparing-native-update-artifacts).
+
 ## Architecture
 
 The project is built with React 19, TypeScript, MDXEditor and Lexical, Tailwind
@@ -474,7 +617,7 @@ src/components/       editor, notes, AI chat, and shared UI
 src/lib/              Markdown, filtering, properties, links, and vault helpers
 src/store/            note, vault, and task state
 src-tauri/            Tauri desktop/mobile runtime, permissions, and packaging
-native-ios/           independent SwiftUI iOS preview, resources, and tests
+native-ios/           production SwiftUI iOS app, resources, and tests
 packages/apple/       shared iOS services and ChatGPT protocol packages
 ```
 
@@ -510,6 +653,9 @@ metadata during writes. Edits to existing paired relation properties synchronize
 both notes with a shared, conflict-checked undo transaction. Upgrade older CLI
 installations before changing tasks or relations. Deliberate revision management
 and relation-schema configuration remain in the app.
+CLI **0.3.1** and skill **4** preserve native BOM-prefixed metadata/body, support
+reserved scalar comments and ignore nested foreign metadata keys. The native preview
+includes reviewed CLI vault registration and note preparation.
 See [`docs/CLI.md`](docs/CLI.md) for commands and automation guidance.
 
 - [`docs/tables.md`](docs/tables.md) — table editing, large tables, recovery,
@@ -550,30 +696,16 @@ app when you want Zerus to work directly with files on disk.
 
 Zerus is available under the [MIT License](LICENSE).
 
-### Google Drive vaults on iOS
+### File locations on iOS
 
-The iOS app includes a direct Google Drive connection in vault setup, bypassing
-Drive's unsupported folder selection in Apple's Files picker. It opens an existing
-My Drive folder and reads/writes its Markdown notes and assets. An iOS Google OAuth
-client must be configured before sign-in works; see [Google Drive setup](docs/google-drive-ios.md).
+Use Files/iCloud Drive or on-device storage. Direct Google Drive vault,
+linked-file mapping, account/folder browsing and sync controls are removed from
+the native app. Existing connection records, cached working copies, recovery
+drafts and credentials are retained; this change does not delete notes or
+remote files. Old direct mappings can be replaced by choosing a folder or
+locating an individual document through Files. No Google OAuth setup or live
+Drive acceptance is required for the native migration.
 
-If the folder contains duplicate names, the Drive picker shows each copy's dates
-and offers text previews and individual renaming. This preserves both copies and
-checks for remaining conflicts before opening the vault. Renames apply to Google
-Drive on all devices; keep the original name on the copy existing links should open.
-
-This initial integration requires connectivity for loading and saving. It keeps
-local recovery copies of note edits, warms previously loaded note bodies for a
-faster launch, checks for conflicting remote changes, and refreshes periodically
-while Zerus is active and whenever it returns to the foreground. It is not an
-offline or iOS system-background sync service.
-On iOS, mapping a synced file location asks whether it uses Files/iCloud Drive or
-Google Drive. The Google Drive option opens the same authenticated folder browser
-instead of Apple's unsupported Files-provider folder mapping.
-Linked files in that location can be checked, previewed, and opened through the
-Drive API using the existing device sign-in. Shared drives, shortcuts, and uploads
-above 25 MB are not supported. Actual Google sign-in and file operations must be
-verified on an iPhone with the configured OAuth client before shipping.
 For files mapped through Apple's Files picker, iOS may require selecting an
 individual file again when access to its folder expires. Zerus offers that
 selection when opening the file and saves an authorized local preview copy.

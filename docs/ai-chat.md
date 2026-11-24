@@ -1,6 +1,6 @@
 # AI chat
 
-Desktop and mobile share the vault's `.zerus/chats` event history. Open **History** on desktop or **Conversation history** on mobile to search titles and messages, rename, archive, delete, restore, or continue on another device. **New chat** preserves the previous conversation. Recently deleted chats follow the same 30-day retention policy on both platforms. Existing desktop conversations are migrated into the shared history.
+Desktop and mobile share the vault's `.zerus/chats` event history. Open **History** on desktop or **Conversation history** on mobile to search titles and messages, rename, archive, delete, restore, or continue on another device. **New chat** preserves the previous conversation. The React/Tauri clients purge recently deleted chats after 30 days on their owning device. The native macOS preview now applies the same owner-only 30-day policy on idle history refresh; unsent private drafts and active work delay cleanup, and unsupported or changed history is preserved with a warning. It honors shared deletion tombstones. Existing desktop conversations are migrated into the shared history.
 
 Enable **Simple mode** in **AI settings** for a cleaner desktop or mobile chat. On desktop, open the chat's settings button; on mobile, open **Chat options → AI settings**. The toggle saves immediately and follows the vault through `.zerus/ai/chat-preferences.json`. It hides model and context details, prompt suggestions, agent controls, answer action menus, reasoning, and activity panels. Messages, file uploads, history, new chat, and Stop remain available. Mobile keeps its on-device dictation button; desktop text input supports system dictation. Selected context and agent behavior stay the same, and questions, required approvals, undo, and interrupted-run recovery remain visible when needed. Turn Simple mode off to restore the full interface.
 
@@ -67,3 +67,10 @@ File context uses the selected model's reported context capacity where available
 When full documents exceed the available budget, a background worker selects query-matched excerpts with source filenames and character offsets. Chat shows **Using file excerpts** instead of **Full file context**, and the model is instructed not to claim exhaustive coverage. Follow-up questions search the original saved document text again. This is lexical retrieval, not an exhaustive multi-pass summary of every page. Browser previews remain subject to browser storage quotas; native vault history stores the extracted source text on disk.
 
 Capacity references: [GPT-5.4](https://developers.openai.com/api/docs/models/gpt-5.4), [GPT-5.4 mini](https://developers.openai.com/api/docs/models/gpt-5.4-mini), [GPT-4.1](https://developers.openai.com/api/docs/models/gpt-4.1), and [Claude context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows). Provider-reported capacity takes precedence over these fallback entries.
+
+Native macOS expiry removes the conversation's shared files and associated web
+and readable native run journals in one recoverable transaction. Private agent
+inputs, immutable payloads and source/context archives remain retained; this is
+not a general unused-file cleanup feature. Native cleanup preserves linked or
+unsupported inventories and histories beyond its automatic cleanup bounds; see
+[the migration notes](native-macos.md) for current limits and acceptance status.

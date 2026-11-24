@@ -30,6 +30,20 @@
   pending, report that status explicitly. Do not claim the full release is
   complete while the Microsoft Store version is blocked or pending.
 
+## iOS preview handoff
+
+- After every iOS implementation or change, build and install the updated app
+  in an iOS Simulator, display the simulator in the user-visible Device panel,
+  and open the affected screen so the user can preview it there without asking.
+- Use the device tools to select and open the simulator, interact with the app,
+  and capture a screenshot. Show the screenshot in the response and leave the
+  simulator available for the user to inspect.
+- Verify the changed interaction in the simulator when applicable. If simulator
+  tooling or the build is blocked, report the exact blocker and mark visual
+  verification as pending; do not substitute a web preview for an iOS preview.
+- Simulator preview builds must not advance the App Store build number or
+  trigger an archive, export, or TestFlight upload.
+
 ## Build target resolution
 
 - In any workspace that does not explicitly establish its target platform,
@@ -37,27 +51,35 @@
   desktop DMG or an iOS App Store build before running a build command.
 - Do not infer the target from recent conversation or the last platform that
   was built.
-- Explicit requests such as **build the DMG**, **new desktop build**, or
+- Explicit requests such as **native DMG**, **Tauri DMG**, or
   **new iOS build** do not require clarification.
 
 ## macOS desktop terminology
 
-- **New desktop build**, **macOS build**, or **build the DMG** means run
-  `pnpm desktop:build`. This creates and verifies the macOS desktop artifacts,
-  including the DMG.
+- During the transition, the SwiftUI app in `native-macos/` is the primary
+  desktop codebase and the Tauri/React app remains supported. Tag
+  `tauri-baseline` marks the last Tauri-only state.
+- **Native macOS build** or **native DMG** means run `pnpm macos:native:dmg`
+  (identity `com.zerus.notes.macos.native`, see `docs/native-macos.md`).
+- **Tauri build**, **Tauri DMG**, or any **release** request means run
+  `pnpm desktop:build`. This creates and verifies the Tauri macOS desktop
+  artifacts, including the DMG, and remains the release pipeline until the user
+  explicitly switches releases to the native app.
+- **New desktop build**, **macOS build**, or **build the DMG** alone is
+  ambiguous while both apps are supported; ask whether the user wants the
+  native or the Tauri DMG.
 
 ## iOS terminology
 
-- Keep both the Tauri iOS app and SwiftUI preview until the user explicitly
-  accepts SwiftUI as the replacement. `native-ios/` owns the SwiftUI application;
-  `packages/apple/` owns Swift services shared by both iOS implementations.
-  Native app sources and resources must not depend on `src-tauri/` paths.
-- `pnpm ios:native:build`, `pnpm ios:native:test`, and
-  `pnpm ios:native:install` target the separate SwiftUI preview. Its identity
-  remains `com.zerus.notes.native`; do not switch it to the production identity
-  or change default release commands as part of routine native work.
-- `pnpm ios:tauri:new-build` and `pnpm ios:tauri:testflight` are explicit aliases
-  for the existing Tauri iOS release commands below.
+- SwiftUI in `native-ios/` is the accepted production iOS replacement, using
+  `com.zerus.notes`. Shared services remain in `packages/apple/`; native inputs
+  must not depend on `src-tauri/` paths.
+- `pnpm ios:new-build` and `pnpm testflight` build/export and upload SwiftUI.
+  The canonical native version/build record is `native-ios/project.yml`.
+- `pnpm ios:native:build`, `ios:native:test`, and `ios:native:install` target
+  the production SwiftUI identity. Preserve user vault data on device updates.
+- Explicit `ios:tauri:new-build` and `ios:tauri:testflight` retain the legacy
+  Tauri release pipeline and its own version configuration for recovery.
 
 - **New iOS build** or **new App Store build** means run `pnpm ios:new-build`.
   This advances the canonical iOS build number, creates the signed Xcode archive,
@@ -75,7 +97,7 @@
   of a newly built binary, run `pnpm platform:verify` and verify the selected
   developer directory and Xcode version with `xcode-select -p` and
   `xcodebuild -version`.
-- Before advancing `bundle.iOS.bundleVersion`, require Apple device tooling to
+- Before advancing an iOS build number, require Apple device tooling to
   initialize successfully. Check `xcrun devicectl list devices --timeout 5`
   and an Xcode build-settings or generic-device command using the selected
   Xcode. Treat any of the following as a hard blocker: a failure to load
@@ -100,7 +122,8 @@
   `EXC_BAD_ACCESS` during scene connection.
 - After creating an archive, inspect the archived app's actual `Info.plist`,
   not only source configuration. Confirm its bundle version matches the
-  canonical configuration and its scene manifest names `TaoSceneDelegate`.
+  canonical configuration and its scene manifest uses the appropriate lifecycle
+  (SwiftUI scenes for native; `TaoSceneDelegate` for legacy Tauri).
   Verify the archive signature before export.
 - Before uploading a build produced with a newly selected Xcode or iOS SDK,
   install the exact exported release binary on a physical iPhone running that
@@ -110,8 +133,9 @@
   claim the iOS release is complete.
 
 Never pass Tauri's `--build-number` option for an absolute App Store build
-number; Tauri treats it as a suffix. The canonical record is
-`bundle.iOS.bundleVersion` in `src-tauri/tauri.conf.json`.
+number; Tauri treats it as a suffix. The legacy Tauri record is
+`bundle.iOS.bundleVersion` in `src-tauri/tauri.conf.json`; native releases use
+`CURRENT_PROJECT_VERSION` in `native-ios/project.yml`.
 
 Uploading requires the one-time App Store Connect API-key setup documented in
 `docs/testflight-cli.md`. Building and exporting do not require that API key.
