@@ -5,7 +5,7 @@ import AppKit
 /// without turning the whole row into an AppKit control.
 struct MacAlternateOpen: NSViewRepresentable {
     let action: () -> Void
-    var handlesTripleClick = false
+    var handlesTripleClick = true
     func makeNSView(context: Context) -> AlternateOpenView {
         let view = AlternateOpenView(); view.action = action; view.handlesTripleClick = handlesTripleClick; return view
     }
@@ -66,7 +66,7 @@ private struct MacGalleryAlternateOpenSurface: NSViewRepresentable {
         var regions: [(CGRect, () -> Void)] = []
         override var isFlipped: Bool { true }
         private func alternate(_ event: NSEvent) -> Bool {
-            event.type == .otherMouseDown && event.buttonNumber == 2
+            event.type == .otherMouseDown && event.buttonNumber == 2 || event.type == .leftMouseDown && event.clickCount == 3
         }
         override func hitTest(_ point: NSPoint) -> NSView? {
             guard super.hitTest(point) != nil, let event = NSApp.currentEvent, alternate(event),

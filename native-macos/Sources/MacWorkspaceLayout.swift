@@ -4,6 +4,9 @@ struct MacWorkspaceArrangement {
     let singleColumn: Bool
     let sidebar: Bool
     let canInlineSidebar: Bool
+    /// The sidebar can shrink to its minimum, but a split view keeps a wider
+    /// remembered width. Cap it to the space the main panes leave.
+    let sidebarMaximum: CGFloat
     let collectionMaximum: CGFloat
     let collection: Bool
     let editor: Bool
@@ -18,6 +21,7 @@ struct MacWorkspaceArrangement {
         editor = !standalone && (splitList || hasNote && !browsing)
         let mainMinimum: CGFloat = standalone ? 680 : collection && editor ? 675 : editor ? 420 : 255
         canInlineSidebar = width >= mainMinimum + 201
+        sidebarMaximum = min(240, max(185, width - mainMinimum - 16))
         self.sidebar = sidebar && canInlineSidebar
         collectionMaximum = list && editor ? 330 : .infinity
         canInlineInspector = !standalone && editor && hasNote && !singleColumn && width >= mainMinimum + (self.sidebar ? 185 : 0) + 256
@@ -41,7 +45,7 @@ struct MacWorkspacePanes<Library: View, Collection: View, Editor: View, Inspecto
     let tabs: Tabs
     var body: some View {
         MacZoomSplitView {
-            pane(library, visible: layout.sidebar, minimum: 185, ideal: 218, maximum: 240)
+            pane(library, visible: layout.sidebar, minimum: 185, ideal: min(218, layout.sidebarMaximum), maximum: layout.sidebarMaximum)
             VStack(spacing: 0) {
                 tabs
                 Divider()
