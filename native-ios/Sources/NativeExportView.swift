@@ -4,7 +4,7 @@ import CoreTransferable
 import UniformTypeIdentifiers
 
 struct NativeExportView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NoteSession
     @State private var format = NativeExportFormat.pdf

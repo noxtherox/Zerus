@@ -1,0 +1,275 @@
+{
+  "provenance": "Created by createAgentRun + NotesAgentRuntime.initialize/execute/save from current web source; ModelMessage fixture uses the SDK persisted contract.",
+  "run": {
+    "version": 1,
+    "id": "migration-web-run",
+    "chatId": "migration-web-chat",
+    "ownerId": "web-device",
+    "objective": "Append verified writing and preserve review history",
+    "mode": "review",
+    "readIds": [
+      "note-1",
+      "note-2"
+    ],
+    "writeIds": [
+      "note-1",
+      "note-2"
+    ],
+    "createTypes": [
+      "inbox"
+    ],
+    "status": "waiting",
+    "plan": [],
+    "proposals": [
+      {
+        "id": "a8b0a38b-db1b-43ec-9927-f3cb7f819985",
+        "call": {
+          "name": "note_append",
+          "arguments": {
+            "selector": "note-1",
+            "revision": "3491466c",
+            "text": "Web staged writing."
+          }
+        },
+        "before": [
+          {
+            "id": "note-1",
+            "title": "Alpha",
+            "path": "inbox/Note-1.md",
+            "content": "---\nzerus-id: note-1\n---\n# Alpha\n\nOriginal writing.",
+            "revision": "3491466c",
+            "pinned": false,
+            "archived": false
+          }
+        ],
+        "after": "---\nzerus-id: note-1\n---\n# Alpha\n\nOriginal writing.\n\nWeb staged writing.",
+        "afterPath": "inbox/Note-1.md",
+        "relatedAfter": [],
+        "label": "note_append: Alpha",
+        "status": "pending"
+      }
+    ],
+    "receipts": [],
+    "events": [
+      {
+        "id": "06c3a222-080b-44b5-a30b-624625a018d3",
+        "at": "2026-11-19T16:21:38.793Z",
+        "kind": "started",
+        "text": "Append verified writing and preserve review history"
+      },
+      {
+        "id": "00329cb8-42c7-480a-9456-b37079123601",
+        "at": "2026-11-19T16:21:38.794Z",
+        "kind": "tool",
+        "text": "note_get",
+        "detail": {
+          "call": {
+            "name": "note_get",
+            "arguments": {
+              "selector": "note-1"
+            }
+          },
+          "result": {
+            "ok": true,
+            "result": {
+              "id": "note-1",
+              "title": "Alpha",
+              "path": "inbox/Note-1.md",
+              "revision": "3491466c",
+              "properties": {
+                "zerus-id": "note-1"
+              },
+              "updatedAt": "2026-11-19T16:21:38.790Z",
+              "archived": false,
+              "body": "# Alpha\n\nOriginal writing.",
+              "totalLength": 26,
+              "start": 0,
+              "end": 26,
+              "complete": true,
+              "nextStart": null,
+              "headings": [
+                {
+                  "title": "Alpha",
+                  "start": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "1d325b17-82a0-4c42-8388-f2745da7e687",
+        "at": "2026-11-19T16:21:38.794Z",
+        "kind": "tool",
+        "text": "note_get",
+        "detail": {
+          "call": {
+            "name": "note_get",
+            "arguments": {
+              "selector": "note-2"
+            }
+          },
+          "result": {
+            "ok": true,
+            "result": {
+              "id": "note-2",
+              "title": "Beta",
+              "path": "inbox/Note-2.md",
+              "revision": "b4eeb92a",
+              "properties": {
+                "zerus-id": "note-2"
+              },
+              "updatedAt": "2026-11-19T16:21:38.792Z",
+              "archived": false,
+              "body": "# Beta\n\nKeep this text.",
+              "totalLength": 23,
+              "start": 0,
+              "end": 23,
+              "complete": true,
+              "nextStart": null,
+              "headings": [
+                {
+                  "title": "Beta",
+                  "start": 0
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": "4c8dbaaa-dde9-4581-9a9f-edd2e1c897ae",
+        "at": "2026-11-19T16:21:38.794Z",
+        "kind": "approval",
+        "text": "note_append: Alpha",
+        "detail": {
+          "proposalId": "a8b0a38b-db1b-43ec-9927-f3cb7f819985"
+        }
+      },
+      {
+        "id": "703c44cc-8a51-4d0b-adb6-aaa6ec7a8e1e",
+        "at": "2026-11-19T16:21:38.794Z",
+        "kind": "tool",
+        "text": "note_append",
+        "detail": {
+          "call": {
+            "name": "note_append",
+            "arguments": {
+              "selector": "note-1",
+              "revision": "3491466c",
+              "text": "Web staged writing."
+            }
+          },
+          "result": {
+            "ok": true,
+            "result": {
+              "status": "pending_review",
+              "proposalId": "a8b0a38b-db1b-43ec-9927-f3cb7f819985",
+              "label": "note_append: Alpha",
+              "before": [
+                {
+                  "id": "note-1",
+                  "title": "Alpha",
+                  "path": "inbox/Note-1.md",
+                  "content": "---\nzerus-id: note-1\n---\n# Alpha\n\nOriginal writing.",
+                  "revision": "3491466c",
+                  "pinned": false,
+                  "archived": false
+                }
+              ],
+              "after": "---\nzerus-id: note-1\n---\n# Alpha\n\nOriginal writing.\n\nWeb staged writing.",
+              "instruction": "The change is staged, not saved. Tell the user to review the proposal. You may stage additional changes."
+            }
+          }
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "Append verified writing."
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "I read the note."
+          },
+          {
+            "type": "tool-call",
+            "toolCallId": "saved-call",
+            "toolName": "note_get",
+            "input": {
+              "selector": "note-1"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": [
+          {
+            "type": "tool-result",
+            "toolCallId": "saved-call",
+            "toolName": "note_get",
+            "output": {
+              "type": "json",
+              "value": {
+                "ok": true,
+                "result": {
+                  "id": "note-1",
+                  "title": "Alpha",
+                  "path": "inbox/Note-1.md",
+                  "revision": "3491466c",
+                  "properties": {
+                    "zerus-id": "note-1"
+                  },
+                  "updatedAt": "2026-11-19T16:21:38.790Z",
+                  "archived": false,
+                  "body": "# Alpha\n\nOriginal writing.",
+                  "totalLength": 26,
+                  "start": 0,
+                  "end": 26,
+                  "complete": true,
+                  "nextStart": null,
+                  "headings": [
+                    {
+                      "title": "Alpha",
+                      "start": 0
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "inputTokens": 120,
+      "outputTokens": 40,
+      "budgetTokens": 200,
+      "steps": 2,
+      "elapsedMs": 1250
+    },
+    "updatedAt": "2026-11-19T16:21:38.794Z",
+    "scopeKey": "{\"kind\":\"type\",\"path\":[\"inbox\"],\"includeSubtypes\":false}"
+  },
+  "notes": [
+    {
+      "id": "note-1",
+      "path": "inbox/Note-1.md",
+      "content": "---\nzerus-id: note-1\n---\n# Alpha\n\nOriginal writing.",
+      "pinned": false,
+      "updatedAt": "2026-11-19T16:21:38.790Z"
+    },
+    {
+      "id": "note-2",
+      "path": "inbox/Note-2.md",
+      "content": "---\nzerus-id: note-2\n---\n# Beta\n\nKeep this text.",
+      "pinned": false,
+      "updatedAt": "2026-11-19T16:21:38.792Z"
+    }
+  ]
+}

@@ -111,7 +111,7 @@ final class NativeTaskPlanningTests: XCTestCase {
         var deadline = task("c", "Deadline only", scheduled: "2026-11-04", created: "2026-11-05T12:00:00Z"); deadline.dueDate = "2026-11-05"
         let tasks = [task("a", "Zulu", created: "2026-11-03T12:00:00Z"), task("b", "Alpha", created: "2026-11-04T12:00:00Z"), deadline,
                      task("d", "Boundary", done: "2026-10-29T07:00:00Z"), task("e", "Old", done: "2026-10-29T06:59:59Z"), task("f", "Unrecognized completion", done: "unsupported")]
-        var query = NativeTaskQuery()
+        var query = NativeTaskQuery(); query.view = .today
         XCTAssertEqual(query.results(tasks, now: now, calendar: calendar).map(\.id), ["b", "a", "d"])
         query.view = .all
         XCTAssertEqual(query.results(tasks, now: now, calendar: calendar).map(\.id), ["c", "b", "a", "d"])

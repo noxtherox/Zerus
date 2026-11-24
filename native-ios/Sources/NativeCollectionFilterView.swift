@@ -17,7 +17,7 @@ struct NativeCollectionFilterButton: View {
 }
 
 struct NativeCollectionFilterView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @Binding var filters: NativeCollectionFilters
     let notes: [NoteDocument]

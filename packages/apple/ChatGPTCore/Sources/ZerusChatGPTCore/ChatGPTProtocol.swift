@@ -7,14 +7,14 @@ public enum ChatGPTError: LocalizedError {
   public var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
 }
 
-public struct ChatGPTRegistration: Codable {
+public struct ChatGPTRegistration: Codable, Sendable {
   public let clientID: String
   public let subject: String
   public let email: String
   public init(clientID: String, subject: String, email: String) { self.clientID = clientID; self.subject = subject; self.email = email }
 }
 
-public struct ChatGPTCredentials: Codable {
+public struct ChatGPTCredentials: Codable, Sendable {
   public let registration: ChatGPTRegistration
   public let accessToken: String
   public let refreshToken: String

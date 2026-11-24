@@ -1,3 +1,4 @@
+import ZerusMarkdown
 import Foundation
 import Markdown
 import ImageIO
@@ -14,12 +15,18 @@ enum NativeExportFormat: String, CaseIterable, Identifiable, Sendable {
     } }
 }
 
-struct NativeExportStyle: OptionSet, Sendable { let rawValue: Int; static let bold = Self(rawValue: 1); static let italic = Self(rawValue: 2); static let strike = Self(rawValue: 4); static let code = Self(rawValue: 8) }
+struct NativeExportStyle: OptionSet, Sendable { let rawValue: Int; static let bold = Self(rawValue: 1); static let italic = Self(rawValue: 2); static let strike = Self(rawValue: 4); static let code = Self(rawValue: 8); static let underline = Self(rawValue: 16) }
 struct NativeExportRun: Sendable {
     var text: String = ""
     var style: NativeExportStyle = []
     var link: String?
     var image: String?
+    var imageWidth: Int?
+    var imageHeight: Int?
+    var imageTitle: String?
+    func imageSize(_ image: NativeExportImage) -> (width: Double, height: Double) {
+        NativeImageMarkup(reference: self.image ?? "", caption: text, width: imageWidth, height: imageHeight).displaySize(naturalWidth: image.width, naturalHeight: image.height)
+    }
 }
 indirect enum NativeExportBlock: Sendable {
     case paragraph([NativeExportRun], heading: Int = 0)
@@ -72,6 +79,8 @@ struct NativeExportParser {
         if let html = node as? HTMLBlock {
             let literal = Self.withoutLeadingComments(html.rawHTML)
             guard !literal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            let images = NativeImageMarkup.htmlImages(in: literal)
+            if !images.isEmpty { return [.paragraph(images.map { imageRun($0.value) })] }
             warnings.append("Embedded HTML is included as text; active content is not run.")
             return [.code(literal, language: "html")]
         }
@@ -85,13 +94,13 @@ struct NativeExportParser {
         if let html = node as? InlineHTML {
             let literal = Self.withoutLeadingComments(html.rawHTML)
             guard !literal.isEmpty else { return [] }
+            let images = NativeImageMarkup.htmlImages(in: literal)
+            if !images.isEmpty { return images.map { imageRun($0.value, style: style, link: link) } }
             warnings.append("Embedded HTML is included as text; active content is not run.")
             return [.init(text: literal, style: style, link: link)]
         }
         if let image = node as? Markdown.Image {
-            let reference = image.source ?? ""
-            imageReferences.insert(reference)
-            return [.init(text: image.plainText.isEmpty ? "Image" : image.plainText, style: style, image: reference)]
+            return [imageRun(NativeImageMarkup(image), style: style, link: link)]
         }
         var nextStyle = style, nextLink = link
         if node is Strong { nextStyle.insert(.bold) }
@@ -111,6 +120,10 @@ struct NativeExportParser {
             } else { output += inlines(child, style: current, link: nextLink) }
         }
         return output
+    }
+    private mutating func imageRun(_ image: NativeImageMarkup, style: NativeExportStyle = [], link: String? = nil) -> NativeExportRun {
+        imageReferences.insert(image.reference)
+        return .init(text: image.caption.isEmpty ? "Image" : image.caption, style: style, link: link, image: image.reference, imageWidth: image.width, imageHeight: image.height, imageTitle: image.title.isEmpty ? nil : image.title)
     }
     private static func withoutLeadingComments(_ raw: String) -> String {
         var value = raw
@@ -168,13 +181,24 @@ extension VaultFiles {
                 let bytes = try resourceData(reference, notePath: note.path)
                 total += bytes.count
                 guard total <= 50 * 1024 * 1024 else { throw VaultFailure(message: "Export images totaling less than 50 MB.") }
-                guard let source = CGImageSourceCreateWithData(bytes as CFData, nil), let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 2400, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { throw VaultFailure(message: "Unsupported image format.") }
+                // A small compressed file can still require a huge decoded
+                // bitmap. Inspect metadata before asking ImageIO to thumbnail it.
+                guard let source = CGImageSourceCreateWithData(bytes as CFData, [kCGImageSourceShouldCache: false] as CFDictionary) else { throw VaultFailure(message: "Unsupported image format.") }
+                guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+                      let width = NativeHistory.integer(properties[kCGImagePropertyPixelWidth]), let height = NativeHistory.integer(properties[kCGImagePropertyPixelHeight]),
+                      width > 0, height > 0, width <= 16_384, height <= 16_384, width * height <= 40_000_000 else {
+                    result.warnings.append("Could not include image ‘\(reference.prefix(120))’; supported dimensions are up to 16,384 pixels per side and 40 megapixels. Its label is kept.")
+                    continue
+                }
+                try Task.checkCancellation()
+                guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 2400, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary) else { throw VaultFailure(message: "Unsupported image format.") }
                 let output = NSMutableData()
                 guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else { throw VaultFailure(message: "Could not prepare the image.") }
                 CGImageDestinationAddImage(destination, image, nil)
                 guard CGImageDestinationFinalize(destination) else { throw VaultFailure(message: "Could not prepare the image.") }
                 result.images[reference] = .init(bytes: output as Data, width: Double(image.width), height: Double(image.height))
-            } catch let error as VaultFailure where error.message.contains("totaling") { throw error }
+            } catch is CancellationError { throw CancellationError() }
+            catch let error as VaultFailure where error.message.contains("totaling") { throw error }
             catch { result.warnings.append("Could not include image ‘\(reference.prefix(120))’; its label is kept.") }
         }
         result.warnings = Array(Set(result.warnings)).sorted()
@@ -222,13 +246,15 @@ enum NativeHTMLExport {
         func inline(_ runs: [NativeExportRun]) -> String { runs.map { run in
             if let key = run.image {
                 guard let image = document.images[key] else { return "<span class=\"missing-image\">[" + e(run.text) + "]</span>" }
-                return "<img src=\"data:image/png;base64," + image.bytes.base64EncodedString() + "\" alt=\"" + e(run.text) + "\" width=\"" + String(Int(min(image.width, 720))) + "\" />"
+                let size = run.imageSize(image), factor = min(1, 720 / max(1, size.width)), width = max(1, Int(size.width * factor)), height = max(1, Int(size.height * factor))
+                return "<img src=\"data:image/png;base64," + image.bytes.base64EncodedString() + "\" alt=\"" + e(run.text) + "\"" + (run.imageTitle.map { " title=\"" + e($0) + "\"" } ?? "") + " width=\"\(width)\" height=\"\(height)\" style=\"width:\(width)px;height:\(height)px;max-width:100%\" />"
             }
             var value = e(run.text).replacingOccurrences(of: "\n", with: "<br />")
             if run.style.contains(.code) { value = "<code>" + value + "</code>" }
             if run.style.contains(.bold) { value = "<strong>" + value + "</strong>" }
             if run.style.contains(.italic) { value = "<em>" + value + "</em>" }
             if run.style.contains(.strike) { value = "<s>" + value + "</s>" }
+            if run.style.contains(.underline) { value = "<u>" + value + "</u>" }
             if let link = run.link { value = "<a href=\"" + e(link) + "\" rel=\"noreferrer\">" + value + "</a>" }
             return value
         }.joined() }
@@ -244,7 +270,7 @@ enum NativeHTMLExport {
         return """
         <!DOCTYPE html>
         <html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" /><title>\(e(document.title))</title><style>
-        :root{color-scheme:light}*{box-sizing:border-box}body{max-width:800px;margin:0 auto;padding:48px 28px 72px;color:#252321;background:#fff;font:16px/1.65 -apple-system,BlinkMacSystemFont,Arial,sans-serif;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.22;break-after:avoid;margin:1.5em 0 .6em}h1{font-size:2.1em}h2{font-size:1.6em}a{color:#9a4526}img{display:block;max-width:100%;height:auto;margin:1em 0}blockquote{margin:1em 0;padding:0 1em;border-left:3px solid #bd6945;color:#555}code{font-family:ui-monospace,monospace;background:#f4f1ef;padding:.1em .25em}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f1ef;padding:1em;border-radius:8px}pre code{padding:0}table{width:100%;border-collapse:collapse;margin:1.2em 0}th,td{border:1px solid #ddd7d2;padding:.5em .65em;vertical-align:top;overflow-wrap:anywhere}th{background:#f6f3f1;text-align:left}.properties{font-size:.88em}.properties th{width:28%}.missing-image{color:#777;font-style:italic}li>p{margin:.3em 0}hr{border:0;border-top:1px solid #ddd;margin:2em 0}@media print{body{max-width:none;padding:0}thead{display:table-header-group}}
+        :root{color-scheme:light}*{box-sizing:border-box}body{max-width:800px;margin:0 auto;padding:48px 28px 72px;color:#252321;background:#fff;font:16px/1.65 -apple-system,BlinkMacSystemFont,Arial,sans-serif;overflow-wrap:anywhere}h1,h2,h3,h4,h5,h6{line-height:1.22;break-after:avoid;margin:1.5em 0 .6em}h1{font-size:2.1em}h2{font-size:1.6em}a{color:#9a4526}u{white-space:pre-wrap}img{display:block;max-width:100%;height:auto;margin:1em 0}blockquote{margin:1em 0;padding:0 1em;border-left:3px solid #bd6945;color:#555}code{font-family:ui-monospace,monospace;background:#f4f1ef;padding:.1em .25em}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f1ef;padding:1em;border-radius:8px}pre code{padding:0}table{width:100%;border-collapse:collapse;margin:1.2em 0}th,td{border:1px solid #ddd7d2;padding:.5em .65em;vertical-align:top;overflow-wrap:anywhere}th{background:#f6f3f1;text-align:left}.properties{font-size:.88em}.properties th{width:28%}.missing-image{color:#777;font-style:italic}li>p{margin:.3em 0}hr{border:0;border-top:1px solid #ddd;margin:2em 0}@media print{body{max-width:none;padding:0}thead{display:table-header-group}}
         </style></head><body>\(properties)\(blocks(document.blocks))</body></html>
         """
     }

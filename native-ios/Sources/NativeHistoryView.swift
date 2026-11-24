@@ -3,7 +3,7 @@ import UIKit
 import QuickLook
 
 struct NativeHistoryView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NoteSession
     @State private var snapshot: NativeHistorySnapshot?
@@ -101,7 +101,7 @@ struct NativeHistoryView: View {
 }
 
 private struct NativeHistoryDetail: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.openURL) private var openURL
     let snapshot: NativeHistorySnapshot
     let version: NativeHistoryVersion

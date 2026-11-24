@@ -107,7 +107,7 @@ final class NativeWorkspaceIsolationTests: XCTestCase {
         defer { gate.release() }
         await fulfillment(of: [gate.acquired], timeout: 5)
         let began = expectation(description: "Refresh began reading the old vault")
-        let observation = store.$loading.filter { $0 }.prefix(1).sink { _ in began.fulfill() }
+        let observation = store.loadingPublisher.filter { $0 }.prefix(1).sink { _ in began.fulfill() }
         defer { observation.cancel() }
         let refresh = Task { @MainActor in await store.refresh() }
         await fulfillment(of: [began], timeout: 5)

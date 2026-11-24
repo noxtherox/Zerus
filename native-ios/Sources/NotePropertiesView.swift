@@ -9,7 +9,7 @@ struct NativePropertyEdit: Identifiable {
 }
 
 struct NativePropertiesSection: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var session: NoteSession
     @Binding var editing: NativePropertyEdit?
     let editRelation: (NativePropertyDefinition) -> Void
@@ -84,7 +84,7 @@ struct NativePropertiesSection: View {
             if session.dirty || session.failure != nil {
                 Text(session.failure ?? "Saving properties…").font(.caption).foregroundStyle(session.failure == nil ? Color.secondary : .orange)
             }
-            if !frontmatter.header.isEmpty {
+            if frontmatter.hasHeader {
                 DisclosureGroup("Original metadata") { Text(frontmatter.header).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
             }
         } header: { Text("Properties") } footer: { Text("Values are saved in this note. Folder definitions are shared with the desktop app.") }

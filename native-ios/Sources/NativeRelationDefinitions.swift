@@ -39,7 +39,7 @@ private final class NativeRelationDefinitionMigration {
     func consume(_ plan: NativeRelationPlan) throws {
         for change in plan.changes {
             if change.path == ".zerus/properties.json" { bytes = change.after }
-            else if let index = notes.firstIndex(where: { $0.path == change.path }), let data = change.after, let text = String(data: data, encoding: .utf8) {
+            else if let index = notes.firstIndex(where: { $0.path == change.path }), let data = change.after, let text = NoteDocument.decodeUTF8(data) {
                 readPaths.insert(change.path); notes[index].content = text
             }
         }

@@ -4,7 +4,11 @@ The `zerus` command automates local Zerus vaults while keeping Markdown
 as the primary document format. Install it and the optional AI-agent skills
 from **Settings → CLI** in the desktop app.
 
-The current CLI is **0.3.0**, paired with agent skill **3**. Check
+The current CLI is **0.3.1**, paired with agent skill **4**. This version preserves
+BOM-prefixed note identity and body through metadata/property changes, and reads
+reserved scalar comments without treating nested foreign fields as note metadata.
+Frontmatter closing delimiters must start at column zero; property writes refuse
+an unterminated header. Check
 `zerus --version` after installing. Older 0.2.0 binaries predate task lists and
 paired relation writes; update them before making task or relation changes.
 
@@ -12,8 +16,16 @@ paired relation writes; update them before making task or relation changes.
 
 Register vaults with `zerus vault add NAME PATH`, inspect them with
 `zerus vault list`, and set a default with `zerus vault default NAME`.
-The desktop app automatically registers each successfully opened vault and
-makes it the CLI default, including updating the path when a vault is moved.
+The existing Tauri desktop app automatically registers each successfully opened
+vault and makes it the CLI default, including updating a moved vault’s path.
+The SwiftUI development app uses **Settings → CLI → Set up this vault for CLI
+use** for reviewed registration and optional default selection. Its separate
+metadata review adds stable IDs and updates legacy reserved keys; invalid or
+duplicate or noncanonical IDs and unresolved drafts block applying the review.
+Setup includes hidden-name Markdown files, `.md`/`.markdown` suffixes and Trash,
+matching the CLI scan. Existing IDs must use lowercase hyphenated UUIDs; setup
+refuses other spellings so existing exact-ID links are not silently changed. These setup
+screens are included in native Preview 67, an intermediate migration build.
 Automation should pass `--vault NAME_OR_PATH --json` explicitly. Use `--jsonl`
 for streams and `--no-input` to guarantee that a script never prompts.
 
@@ -147,12 +159,33 @@ the selected type and its sub-types.
 
 Zerus reserves all `zerus-*` frontmatter. This includes note identity and state,
 file-hub references, saved-link references, and attachment records; these fields
-never appear in the normal Properties UI. False pin/archive values are omitted,
-and archiving always unpins a note.
+never appear in the normal Properties UI. CLI unpin/unarchive commands omit
+false values, and CLI archiving also unpins a note. Other clients can write an
+explicit `false`; that shared value takes precedence over older private desktop
+pin/archive state.
 
 Run `zerus migrate preview` before `zerus migrate apply --yes`. Duplicate
 IDs or malformed reserved metadata block migration for review. Once ready, the
 vault manifest records that IDs are required on every device.
+
+### Companion migration development after native Preview 74
+
+The desktop companion source now includes **Settings → CLI → Review note
+metadata…**, available independently of CLI installation. It reads the current
+vault's older private pin/archive lists, saves pending drafts, and shows the
+changed paths and metadata counts before Apply. Notes-only preparation writes
+shared note metadata and history; it does not install the CLI, register the vault,
+or change the vault manifest. The review is rejected if note content, inventory
+or requested flags change. Unreadable private flag lists are retained and block
+preparation.
+
+This transfers older browser-local flags before using the same vault in the
+SwiftUI app or CLI. The CLI itself cannot read that private browser state. The
+previous desktop UI offered this transfer only during first CLI installation;
+Reinstall CLI did not run it. The new action requires the matching updated desktop
+companion, whose installed UI/IPC acceptance and release are still pending. It is
+not included in the native Preview 74 DMG. Native CLI setup's separate metadata
+review does not read the old companion's private flag lists.
 
 ## Safety
 

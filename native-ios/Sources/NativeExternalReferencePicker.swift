@@ -3,7 +3,7 @@ import SwiftUI
 /// Chooses reference text only. External registrations never enter the vault's
 /// selected paths or grant any agent a capability to write to the original.
 struct NativeExternalReferencePicker: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     @Environment(\.dismiss) private var dismiss
     let choose: (NativeSearchDocument) -> Void

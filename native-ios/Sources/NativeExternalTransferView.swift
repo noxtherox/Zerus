@@ -5,7 +5,7 @@ import UIKit
 extension NativeExternalTransferMode: Identifiable { var id: String { rawValue } }
 
 struct NativeExternalTransferSheet: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NativeExternalNoteSession
@@ -138,7 +138,7 @@ struct NativeExternalTransferSheet: View {
 }
 
 struct NativeExternalMoveRecoveryView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     @Environment(\.dismiss) private var dismiss
     let record: NativeExternalMoveRecord

@@ -42,7 +42,7 @@ final class NativeExternalTransferTests: XCTestCase {
         let f = try await fixture(); defer { try? FileManager.default.removeItem(at: f.root) }
         let previous = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first(where: \.isKeyWindow)
         let window = UIWindow(windowScene: try XCTUnwrap(previous?.windowScene))
-        let host = UIHostingController(rootView: NativeExternalEditorScreen(session: f.session).environmentObject(f.vault).environmentObject(f.external))
+        let host = UIHostingController(rootView: NativeExternalEditorScreen(session: f.session).environment(f.vault).environmentObject(f.external))
         window.rootViewController = host; window.makeKeyAndVisible()
         defer { window.rootViewController = nil; window.isHidden = true; previous?.makeKeyAndVisible() }
         func editor(_ view: UIView) -> UITextView? {

@@ -13,8 +13,8 @@ const inside = (parent, path) => {
   return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 };
 
-if (app?.settings?.base?.PRODUCT_BUNDLE_IDENTIFIER !== 'com.zerus.notes.native') {
-  fail('the SwiftUI preview must keep its separate application identity');
+if (app?.settings?.base?.PRODUCT_BUNDLE_IDENTIFIER !== 'com.zerus.notes') {
+  fail('the SwiftUI app must use the production application identity');
 }
 if (app?.info?.properties?.UIApplicationSceneManifest?.UIApplicationSupportsMultipleScenes !== true) {
   fail('the SwiftUI app must retain its scene lifecycle');

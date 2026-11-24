@@ -2,7 +2,7 @@ import SwiftUI
 import QuickLook
 
 struct VaultRecoveryScreen: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let review: VaultRecoveryReview
     let switchVault: () -> Void
     @State private var choices: [String: VaultRecoveryChoice]
@@ -159,7 +159,7 @@ private struct RecoveryVersionPreview: View {
 }
 
 struct RecoveryCopiesView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @State private var copies: [VaultRecoveryCopy] = []
     @State private var loading = true
     @State private var error: String?
@@ -191,7 +191,7 @@ struct RecoveryCopiesView: View {
 }
 
 private struct RecoveryCopyDetail: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let copy: VaultRecoveryCopy
     @State private var archive: VaultRecoveryArchive?
     @State private var error: String?

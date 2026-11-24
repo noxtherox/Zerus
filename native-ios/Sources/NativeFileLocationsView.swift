@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct NativeFileLocationsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     @State private var labels: [String: String] = [:]
     @State private var naming = false
@@ -10,8 +10,6 @@ struct NativeFileLocationsView: View {
     @State private var name = ""
     @State private var mapping: NativeFileLocation?
     @State private var choosingFolder = false
-    @State private var driveMapping: NativeFileLocation?
-    @State private var driveAccount = false
     @State private var removing: NativeFileLocation?
     @State private var confirmingRemoval = false
     @State private var busy = false
@@ -31,21 +29,15 @@ struct NativeFileLocationsView: View {
                     let usages = vault.notes.filter { $0.property("zerus-file-location") == location.id }
                     Text("\(usages.count) connected \(usages.count == 1 ? "note" : "notes"), including Recently Deleted.").font(.caption).foregroundStyle(.secondary)
                     Button("Choose folder") { mapping = location; choosingFolder = true }.accessibilityIdentifier("filelocation.map." + location.id)
-                    Button("Choose Google Drive folder", systemImage: "externaldrive.badge.icloud") { driveMapping = location }.accessibilityIdentifier("filelocation.drive." + location.id)
                     Button("Rename") { editing = location; name = location.name; naming = true }.accessibilityIdentifier("filelocation.rename." + location.id)
                     if labels[location.id] != nil { Button("Disconnect on this device") { perform { try await vault.mapFileLocation(location.id, folder: nil, workspace: workspaceID) } } }
                     Button("Remove unused location", role: .destructive) { removing = location; confirmingRemoval = true }.disabled(!usages.isEmpty)
                 }
             }
             Section { Button("Add file location", systemImage: "folder.badge.plus") { editing = nil; name = ""; naming = true }.accessibilityIdentifier("filelocation.add") }
-            Section { Button("Google Drive", systemImage: "externaldrive.badge.icloud") { driveAccount = true }.accessibilityIdentifier("filelocation.drive.account") }
         }.navigationTitle("File locations").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .disabled(busy)
-            .sheet(item: $driveMapping, onDismiss: { Task { await reloadLabels() } }) { location in
-                NativeDriveFolderBrowser { selection in try await vault.mapDriveLocation(location.id, selection: selection, workspace: workspaceID) }
-            }
-            .sheet(isPresented: $driveAccount) { NativeDriveFolderBrowser(choose: nil) }
             .task { await vault.refreshFileLocations(); await reloadLabels() }
             .refreshable { await vault.refresh(); await vault.refreshFileLocations(); await reloadLabels() }
             .alert(editing == nil ? "New file location" : "Rename location", isPresented: $naming) {

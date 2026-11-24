@@ -1,6 +1,6 @@
 import Foundation
 
-struct VaultFileChange: Codable, Sendable {
+struct VaultFileChange: Codable, Equatable, Sendable {
     let path: String
     let before: Data?
     let after: Data?
@@ -252,8 +252,13 @@ extension VaultFiles {
         FileManager.default.fileExists(atPath: url.path) ? try Data(contentsOf: url) : nil
     }
     private nonisolated static func replaceFile(_ url: URL, data: Data?) throws {
-        if let data { try data.write(to: url, options: .atomic) }
-        else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+        if let data {
+            #if os(macOS)
+            try MacAtomicFileWrite.write(data, to: url)
+            #else
+            try data.write(to: url, options: .atomic)
+            #endif
+        } else if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
     }
     nonisolated static func coordinateTransaction(locations: [URL], root: URL, reading: Set<Int> = [], selectedReading: [Int: NativeFileLease] = [:], operation: @escaping @Sendable ([URL]) throws -> Void) throws {
         let coordinator = NSFileCoordinator(), queue = OperationQueue(), result = TransactionResult()

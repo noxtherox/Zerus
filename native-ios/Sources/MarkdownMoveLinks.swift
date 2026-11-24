@@ -1,5 +1,6 @@
 import Foundation
 import Markdown
+import SwiftSoup
 
 /// Source ranges, rather than a Markdown serialization, keep a folder move
 /// from changing unrelated prose, table padding, captions, or line endings.
@@ -9,6 +10,10 @@ enum MarkdownMoveLinks {
         let range: NSRange
         let value: String
         let kind: Kind
+        let image: Bool
+        init(range: NSRange, value: String, kind: Kind, image: Bool = false) {
+            self.range = range; self.value = value; self.kind = kind; self.image = image
+        }
         func replacement(_ value: String) -> String {
             switch kind {
             case .destination: return value
@@ -27,7 +32,7 @@ enum MarkdownMoveLinks {
     static func links(in source: String) throws -> [Link] {
         let text = source as NSString, length = text.length
         let parsed = Document(parsing: source)
-        var code = [Bool](repeating: false, count: length), masked = code, rendered = code
+        var code = [Bool](repeating: false, count: length), masked = code, rendered = code, imageLabels = code
         var lines: [NSRange] = [], position = 0
         while position < length { let line = text.lineRange(for: NSRange(location: position, length: 0)); lines.append(line); position = NSMaxRange(line) }
         func mark(_ range: NSRange, in mask: inout [Bool]) {
@@ -57,7 +62,7 @@ enum MarkdownMoveLinks {
         func visit(_ node: any Markup, lineOffset: Int = 0, imageLabel: Bool = false) {
             if let origin = node.range, let range = sourceRange(origin, lineOffset: lineOffset) {
                 if node.childCount == 0 { mark(range, in: &rendered) }
-                if imageLabel { mark(range, in: &masked) }
+                if imageLabel { mark(range, in: &masked); mark(range, in: &imageLabels) }
                 if node is CodeBlock || node is InlineCode { mark(range, in: &code); mark(range, in: &masked) }
                 if node is HTMLBlock || node is InlineHTML { mark(range, in: &masked) }
             }
@@ -80,7 +85,7 @@ enum MarkdownMoveLinks {
 
         var literal: String?
         for match in tag.matches(in: source, range: NSRange(location: 0, length: length)) {
-            guard !code[match.range.location], !escaped(match.range.location) else { continue }
+            guard !code[match.range.location], !imageLabels[match.range.location], !escaped(match.range.location) else { continue }
             let markup = text.substring(with: match.range)
             if markup.hasPrefix("<!--") { mark(match.range, in: &masked); continue }
             let name = text.substring(with: match.range(at: 2)).lowercased(), closing = match.range(at: 1).length > 0
@@ -140,7 +145,7 @@ enum MarkdownMoveLinks {
                             if character == 40 { depth += 1 }; if character == 41 { depth -= 1 }; if character == 44 && depth == 0 { break }
                         }
                     }
-                } else { links.append(Link(range: range, value: htmlDecoded(text.substring(with: range)), kind: .html)) }
+                } else { links.append(Link(range: range, value: htmlDecoded(text.substring(with: range)), kind: .html, image: name == "img" && key == "src")) }
             }
             if ["pre", "code", "script", "style", "textarea"].contains(name) {
                 literal = name
@@ -220,7 +225,7 @@ enum MarkdownMoveLinks {
                 let attributed = try? AttributedString(markdown: markup, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
                 let expected = markdownURL(text.substring(with: range))
                 if let url = attributed?.runs.compactMap({ image ? $0.imageURL : $0.link }).first(where: { $0 == expected }) {
-                    links.append(Link(range: range, value: url.relativeString, kind: .destination))
+                    links.append(Link(range: range, value: url.relativeString, kind: .destination, image: image))
                     if !image { scan(NSRange(location: index + 1, length: labelEnd - index - 2), depth: depth + 1) }
                     index = close + 1
                 } else { index += 1 }
@@ -232,17 +237,19 @@ enum MarkdownMoveLinks {
     private static func markdownURL(_ value: String) -> URL? {
         (try? AttributedString(markdown: "[Resource](<" + value + ">)", options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))?.runs.compactMap(\.link).first
     }
+    static func destinationURL(_ value: String) -> URL? {
+        // HTML entities can leave Unicode next to an already-escaped path.
+        // Escape only URI-invalid characters; Foundation's automatic repair
+        // otherwise turns the existing %20 into a literal %2520.
+        if let exact = URL(string: value, encodingInvalidCharacters: false) { return exact }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#@!$&'()*+,;=%")
+        guard let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
+        let normalized = encoded.replacingOccurrences(of: #"%(?![0-9A-Fa-f]{2})"#, with: "%25", options: .regularExpression)
+        return URL(string: normalized, encodingInvalidCharacters: false)
+    }
+
     private static func htmlDecoded(_ value: String) -> String {
-        let text = value as NSString, output = NSMutableString(string: value)
-        let regex = try! NSRegularExpression(pattern: #"&(#x[0-9a-fA-F]+|#[0-9]+|amp|quot|apos|lt|gt);"#)
-        for match in regex.matches(in: value, range: NSRange(location: 0, length: text.length)).reversed() {
-            let entity = text.substring(with: match.range(at: 1)), decoded: String?
-            if entity.hasPrefix("#") {
-                let hex = entity.hasPrefix("#x"), number = UInt32(entity.dropFirst(hex ? 2 : 1), radix: hex ? 16 : 10)
-                decoded = number.flatMap(UnicodeScalar.init).map(String.init)
-            } else { decoded = ["amp": "&", "quot": "\"", "apos": "'", "lt": "<", "gt": ">"][entity] }
-            if let decoded { output.replaceCharacters(in: match.range, with: decoded) }
-        }
-        return output as String
+        let decoded = (try? SwiftSoup.Parser.unescapeEntities(value, true)) ?? value
+        return destinationURL(decoded)?.relativeString ?? decoded
     }
 }

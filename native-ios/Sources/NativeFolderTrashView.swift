@@ -10,7 +10,7 @@ enum NativeFolderTrashRequest: Identifiable {
 struct NativeFolderTrashReview: View {
     let request: NativeFolderTrashRequest
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var plan: NativeFolderTrashPlan?
     @State private var issue: String?
@@ -87,7 +87,7 @@ private extension NativeFolderTrashRequest {
 
 struct NativeFolderTrashSection: View {
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @State private var snapshot: NativeFolderTrashSnapshot?
     @State private var issue: String?
     @State private var request: NativeFolderTrashRequest?

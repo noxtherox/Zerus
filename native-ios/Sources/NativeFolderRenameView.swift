@@ -3,7 +3,7 @@ import SwiftUI
 struct NativeFolderRenameView: View {
     let folder: String
     let workspaceID: UUID
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var snapshot: NativeRelationDefinitionSnapshot?

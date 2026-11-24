@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeHistorySettingsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     @State private var snapshot: NativeHistoryMaintenanceSnapshot?
     @State private var enabled = true

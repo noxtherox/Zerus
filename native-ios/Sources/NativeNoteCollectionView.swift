@@ -2,7 +2,7 @@ import SwiftUI
 
 struct NativeNoteCollectionView: View {
     enum Scope { case pinned, archive, folder(String) }
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let title: String
     let scope: Scope
@@ -26,6 +26,8 @@ struct NativeNoteCollectionView: View {
     private var visible: [NoteDocument] { filters.apply(candidates, query: query, archiveOnly: archiveOnly) }
     var body: some View {
         List {
+
+
             if selection.active { Section { NativeBulkControls(selection: selection, visible: visible) } }
             if visible.isEmpty {
                 emptyCollection
@@ -36,8 +38,9 @@ struct NativeNoteCollectionView: View {
                     }
                 } header: { Text("\(visible.count) \(visible.count == 1 ? "note" : "notes")") }
             }
-        }.navigationTitle(title).searchable(text: $query, prompt: "Search this collection")
-        .searchPresentationToolbarBehavior(.avoidHidingContent)
+        }.nativeWorkspaceScroll()
+        .nativeCollectionSearch(query: $query, prompt: "Search this collection", collection: .init(filters: $filters, notes: candidates, archiveOnly: archiveOnly)).navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) { Button { settings = true } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Settings") }
             }

@@ -31,6 +31,7 @@ class NativeJourneyTestCase: XCTestCase {
 extension XCTestCase {
     @MainActor
     func openNativeLibrary(_ app: XCUIApplication) {
+        if app.buttons["library.notes"].isHittable { return }
         if app.buttons["navigation.library"].exists { app.buttons["navigation.library"].tap() }
         else {
             app.buttons["navigation.notes"].tap()

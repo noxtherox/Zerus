@@ -18,7 +18,7 @@ struct NativeTaskDraftsEntry: View {
     }
 }
 private struct NativeTaskDraftsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var store: NativeTaskDraftStore
     let workspaceID: UUID

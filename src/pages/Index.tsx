@@ -25,6 +25,7 @@ import { TypeViewWorkspace } from "@/components/notes/TypeViewWorkspace";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { NoteTabs } from "@/components/notes/NoteTabs";
 import { EditorPane } from "@/components/notes/EditorPane";
+import { UnsavedExternalCloseDialog } from "@/components/notes/UnsavedExternalCloseDialog";
 import { NotesMoveDialog, type NotesMoveRequest } from "@/components/notes/NotesMoveDialog";
 import { ZerusLogo } from "@/components/ZerusLogo";
 import { WorkspaceErrorBoundary } from "@/components/WorkspaceErrorBoundary";
@@ -870,6 +871,7 @@ const Index = () => {
     <>
       <AutoUpdater />
       <FileStorageDialog {...storageDialogProps} />
+      <UnsavedExternalCloseDialog />
       {moveRequest && <NotesMoveDialog
         request={moveRequest}
         notes={notes}

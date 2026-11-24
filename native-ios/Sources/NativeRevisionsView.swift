@@ -3,7 +3,7 @@ import UIKit
 import QuickLook
 
 struct NativeRevisionsView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: NoteSession
     var initialRevision: String? = nil
@@ -185,7 +185,7 @@ private struct NativeRevisionReview: View {
 }
 
 private struct NativeRevisionPreview: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.openURL) private var openURL
     let snapshot: NativeRevisionSnapshot
     let content: String

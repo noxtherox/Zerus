@@ -2,7 +2,7 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import type { RootContent, Root } from "mdast";
-import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
+import { markdownNoteReferences, parseNoteReference } from "@/lib/wikilinks";
 import { getNoteProperties, noteBody } from "@/lib/frontmatter";
 import {
   decodeMarkdownEscapes,
@@ -276,12 +276,7 @@ export function firstNoteImagePath(note: Note): string | null {
 }
 
 export function getOutgoingLinkTitles(content: string): string[] {
-  const titles: string[] = [];
-  mapWikilinks(noteBody(content), (reference) => {
-    titles.push(reference);
-    return `[[${reference}]]`;
-  });
-  return titles;
+  return markdownNoteReferences(noteBody(content));
 }
 
 /** Build once per catalogue scan, preserving ambiguous-title resolution. */

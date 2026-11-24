@@ -42,7 +42,7 @@ private struct NativeSearchContrast: UIViewControllerRepresentable {
 }
 
 struct NativeSearchView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @EnvironmentObject private var external: NativeExternalNotesModel
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -124,6 +124,7 @@ struct NativeSearchView: View {
                 }
                 if model.loading { HStack { Spacer(); ProgressView("Searching…"); Spacer() }.listRowBackground(Color.clear) }
             }
+            .nativeWorkspaceScroll()
             .scrollContentBackground(.hidden).background(Accent.paper)
             .navigationTitle("Search")
             .toolbar {

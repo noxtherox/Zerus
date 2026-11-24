@@ -1,10 +1,10 @@
 import XCTest
 
-final class NativeDriveFolderJourneyTests: XCTestCase {
+final class NativeDriveFolderJourneyTests: NativeJourneyTestCase {
     @MainActor
     func testUnconfiguredDriveExplainsSetupAndReturnsToAnUnmappedLocationAcrossRelaunch() throws {
         continueAfterFailure = false
-        let app = XCUIApplication(); app.launch()
+        let app = launchNativeJourney()
         if app.buttons["vault.create"].waitForExistence(timeout: 3) { app.buttons["vault.create"].tap() }
         let name = "Drive location " + String(UUID().uuidString.prefix(6))
         func reveal(_ element: XCUIElement) {
@@ -42,7 +42,9 @@ final class NativeDriveFolderJourneyTests: XCTestCase {
         tap(app.buttons["filelocation.drive.account"]); inspectSetup()
         tap(app.buttons["Done"]); tap(app.buttons["Done"])
         openNativeLibrary(app); tap(app.buttons["library.vaults"])
-        tap(app.buttons["vaults.drive"]); inspectSetup()
+        XCTAssertFalse(app.buttons["vaults.drive"].exists)
+        XCTAssertTrue(app.buttons["vaults.open"].exists)
+        XCTAssertTrue(app.buttons["vaults.create"].exists)
         tap(app.buttons["Done"])
     }
 }

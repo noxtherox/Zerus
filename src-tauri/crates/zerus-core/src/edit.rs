@@ -11,6 +11,8 @@ use uuid::Uuid;
 pub enum EditError {
     #[error("note changed since it was read (expected {expected}, found {actual})")]
     Conflict { expected: String, actual: String },
+    #[error("frontmatter is not terminated; no property changes were made")]
+    UnterminatedFrontmatter,
     #[error("invalid property name")]
     InvalidKey,
     #[error("'{0}' is reserved for Zerus")]
@@ -23,32 +25,36 @@ pub fn is_reserved_key(key: &str) -> bool {
     key.trim().to_ascii_lowercase().starts_with("zerus-")
 }
 
-fn frontmatter_parts(content: &str) -> (Vec<String>, String, &str) {
-    let newline = if content.contains("\r\n") {
+fn frontmatter_parts(content: &str) -> Result<(Vec<String>, String, &str), EditError> {
+    let logical = &content[crate::frontmatter::bom_prefix_len(content)..];
+    let newline = if logical.starts_with("---\r\n")
+        || (!logical.starts_with("---\n") && logical.contains("\r\n"))
+    {
         "\r\n"
     } else {
         "\n"
     };
-    if !(content.starts_with("---\n") || content.starts_with("---\r\n")) {
-        return (Vec::new(), content.to_string(), newline);
+    if !(logical.starts_with("---\n") || logical.starts_with("---\r\n")) {
+        return Ok((Vec::new(), logical.to_string(), newline));
     }
     let opening = if newline == "\r\n" { 5 } else { 4 };
+    let opening = opening + crate::frontmatter::bom_prefix_len(content);
     let mut offset = opening;
     for line in content[opening..].split_inclusive('\n') {
         let clean = line.trim_end_matches(['\r', '\n']);
         offset += line.len();
-        if matches!(clean.trim(), "---" | "...") {
-            return (
+        if matches!(clean.trim_end(), "---" | "...") {
+            return Ok((
                 content[opening..offset - line.len()]
                     .lines()
                     .map(ToString::to_string)
                     .collect(),
                 content[offset..].to_string(),
                 newline,
-            );
+            ));
         }
     }
-    (Vec::new(), content.to_string(), newline)
+    Err(EditError::UnterminatedFrontmatter)
 }
 
 fn replace_key(content: &str, key: &str, value: Option<&str>) -> Result<String, EditError> {
@@ -56,7 +62,7 @@ fn replace_key(content: &str, key: &str, value: Option<&str>) -> Result<String, 
     if key.is_empty() || key.contains([':', '\n', '\r']) {
         return Err(EditError::InvalidKey);
     }
-    let (lines, body, newline) = frontmatter_parts(content);
+    let (lines, body, newline) = frontmatter_parts(content)?;
     let mut next = Vec::new();
     let mut skip_indented = false;
     for line in lines {
@@ -75,11 +81,12 @@ fn replace_key(content: &str, key: &str, value: Option<&str>) -> Result<String, 
     if let Some(value) = value {
         next.push(format!("{key}: {value}"));
     }
+    let prefix = &content[..crate::frontmatter::bom_prefix_len(content)];
     if next.is_empty() {
-        return Ok(body);
+        return Ok(format!("{prefix}{body}"));
     }
     Ok(format!(
-        "---{newline}{}{newline}---{newline}{body}",
+        "{prefix}---{newline}{}{newline}---{newline}{body}",
         next.join(newline)
     ))
 }
@@ -177,6 +184,18 @@ mod tests {
         assert!(note.contains("status: done"));
         assert!(!note.contains(ZERUS_PINNED_KEY));
         assert!(note.contains("zerus-archived: true"));
+    }
+
+    #[test]
+    fn property_edits_refuse_unterminated_frontmatter() {
+        for prefix in ["", "\u{feff}"] {
+            let source = format!("{prefix}---\nForeign: never closed\n");
+            let error = set_property(&source, "Status", Some("ready"))
+                .expect_err("An incomplete header must not be wrapped in a new header");
+            assert!(error.to_string().contains("frontmatter is not terminated"));
+            assert!(set_property(&source, "Status", None).is_err());
+            assert!(ensure_note_id(&source).is_err());
+        }
     }
 
     #[test]

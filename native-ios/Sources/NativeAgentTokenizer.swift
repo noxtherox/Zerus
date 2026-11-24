@@ -7,6 +7,11 @@ actor NativeAgentTokenizer {
     static let shared = NativeAgentTokenizer()
     private var ranks: [Data: Int] = [:]
     private var pattern: NSRegularExpression?
+    // Compaction repeatedly counts identical long escaped spans. Keep only
+    // completed exact counts, bounded to 4 MB of process-local source bytes.
+    private var mergeCache: [Data: Int] = [:]
+    private var mergeOrder: [Data] = []
+    private var mergeBytes = 0
     private struct Metadata: Decodable { let version: Int; let encoding: String; let sha256: String; let count: Int; let pattern: String }
     private static let problem = VaultFailure(message: "The native token counter is unavailable. Its resources must be restored before sending this AI request.")
 
@@ -50,6 +55,8 @@ actor NativeAgentTokenizer {
         func precedes(_ other: Self) -> Bool { rank == other.rank ? left < other.left : rank < other.rank }
     }
     private func mergedCount(_ data: Data) throws -> Int {
+        let cacheable = (4096...262_144).contains(data.count)
+        if cacheable, let count = mergeCache[data] { return count }
         let bytes = [UInt8](data), n = bytes.count
         guard n > 1 else { return n }
         var ends = Array(1...n), next = Array(1...n), previous = Array(-1..<(n - 1)), heap: [Pair] = []
@@ -87,6 +94,12 @@ actor NativeAgentTokenizer {
             if next[right] < n { previous[next[right]] = left }
             next[right] = -1; previous[right] = -1; count -= 1
             offer(previous[left]); offer(left)
+        }
+        if cacheable {
+            while mergeOrder.count >= 64 || mergeBytes + data.count > 4 * 1024 * 1024 {
+                let oldest = mergeOrder.removeFirst(); mergeBytes -= oldest.count; mergeCache[oldest] = nil
+            }
+            mergeCache[data] = count; mergeOrder.append(data); mergeBytes += data.count
         }
         return count
     }

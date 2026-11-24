@@ -30,8 +30,8 @@ struct NativeWordExport {
                     media.append(("word/media/" + name, image.bytes)); binding = (id, index); imageIDs[reference] = binding
                 }
                 drawingID += 1
-                let factor = min(1, imageWidth / max(1, image.width), 750 / max(1, image.height))
-                let width = Int(image.width * factor * 9144), height = Int(image.height * factor * 9144)
+                let size = run.imageSize(image), factor = min(1, imageWidth / max(1, size.width), 750 / max(1, size.height))
+                let width = Int(size.width * factor * 9144), height = Int(size.height * factor * 9144)
                 return """
                 <w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="\(width)" cy="\(height)"/><wp:docPr id="\(drawingID)" name="Image \(drawingID)" descr="\(e(run.text))"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="\(drawingID)" name="Image \(drawingID)"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="\(binding.0)"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="\(width)" cy="\(height)"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>
                 """
@@ -43,7 +43,8 @@ struct NativeWordExport {
             if bold || run.style.contains(.bold) { properties += "<w:b/>" }
             if run.style.contains(.italic) { properties += "<w:i/>" }
             if run.style.contains(.strike) { properties += "<w:strike/>" }
-            if run.link != nil { properties += "<w:color w:val=\"9A4526\"/><w:u w:val=\"single\"/>" }
+            if run.style.contains(.underline) || run.link != nil { properties += "<w:u w:val=\"single\"/>" }
+            if run.link != nil { properties += "<w:color w:val=\"9A4526\"/>" }
             if run.style.contains(.code) { properties += "<w:shd w:fill=\"F4F1EF\"/>" }
             let pieces = text.components(separatedBy: "\n").enumerated().map { index, line in
                 (index > 0 ? "<w:br/>" : "") + line.components(separatedBy: "\t").enumerated().map { index, segment in (index > 0 ? "<w:tab/>" : "") + "<w:t xml:space=\"preserve\">" + e(segment) + "</w:t>" }.joined()

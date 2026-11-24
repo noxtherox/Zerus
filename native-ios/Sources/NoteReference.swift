@@ -102,7 +102,12 @@ struct NoteReference: Equatable, Identifiable {
     }
 
     static func inlineMarkdown(_ source: String) -> String {
-        transform(source) { reference in
+        #if os(macOS)
+        // Rich note loading invokes this for whole documents and individual
+        // paragraphs. Without a wiki opener the transform can only copy text.
+        guard (source as NSString).range(of: "[[", options: .literal).location != NSNotFound else { return source }
+        #endif
+        return transform(source) { reference in
             let escaped = reference.label.replacingOccurrences(of: #"([\\\[\]*_`~<>&])"#, with: #"\\$1"#, options: .regularExpression)
             return "[" + escaped + "](" + reference.url.absoluteString + ")"
         }

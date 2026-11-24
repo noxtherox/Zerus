@@ -1,5 +1,11 @@
 # TestFlight command-line upload
 
+The default release is the SwiftUI app (`com.zerus.notes`), with versions in
+`native-ios/project.yml`. `pnpm ios:new-build` runs toolchain preflight, advances
+the native build above completed legacy/native archives, verifies SwiftUI scene
+lifecycle and signing, then exports the IPA. Tauri-specific notes below apply
+only to the explicit `ios:tauri:*` legacy commands.
+
 The repository can export, validate, and upload a signed iOS archive without
 opening Xcode or using UI automation:
 
@@ -20,7 +26,7 @@ and signature, and exports the IPA without uploading it. Use
 `pnpm ios:new-build -- --dry-run` to inspect the next action without changing
 or building anything.
 
-`pnpm testflight` selects the newest `.xcarchive` in `src-tauri/gen/apple/build`,
+`pnpm testflight` selects the newest `.xcarchive` in `artifacts/native-ios/archives`,
 exports a signed IPA to `artifacts/testflight/<version>-<build>`, validates it,
 then uploads it to App Store Connect. Failed uploads can be retried without
 rebuilding; the exported IPA is reused. Before exporting, it refuses archives
@@ -80,7 +86,7 @@ Tauri's `tauri ios build --build-number` value is appended to the configured
 build number; it does not replace `CFBundleVersion`. Do not use that flag for
 an absolute App Store build number.
 
-The canonical build record is `bundle.iOS.bundleVersion` in
+The legacy Tauri build record is `bundle.iOS.bundleVersion` in
 `src-tauri/tauri.conf.json`. Advance that value before creating a new App Store
 build (build 19 should be followed by 20), then build with `--archive-only` and
 without `--build-number`. The generated `project.yml`, archive metadata,

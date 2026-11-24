@@ -101,7 +101,7 @@ extension NativeExternalTransferFiles {
                   hash(try boundedData(url, limit: NativeClipboardFragment.limit)) == digest else { throw VaultFailure(message: "The vault copy or an imported attachment changed. The original has not been removed; review the current files before continuing.") }
         }
         let bytes = try boundedData(access.root.appendingPathComponent(record.destinationPath), limit: 10 * 1024 * 1024)
-        guard let content = String(data: bytes, encoding: .utf8) else { throw VaultFailure(message: "The imported note is unreadable. The original is kept.") }
+        guard let content = NoteDocument.decodeUTF8(bytes) else { throw VaultFailure(message: "The imported note is unreadable. The original is kept.") }
         let note = NoteDocument(path: record.destinationPath, content: content, modified: .now)
         guard note.stableID == record.noteID else { throw VaultFailure(message: "The vault copy has a different identity. The original is kept.") }
         return note

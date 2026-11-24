@@ -6,9 +6,11 @@ struct LibraryView: View {
     @Environment(\.nativeThemes) private var palettes
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let chooseVault: () -> Void
     let settings: () -> Void
+    var selectRoute: ((NativeNotesRoute) -> Void)? = nil
+    var close: (() -> Void)? = nil
     @State private var expandedFolders: Set<String> = []
     @State private var newFolder: NativeFolderCreation?
     @State private var iconFolder: NativeFolderDestination?
@@ -20,26 +22,17 @@ struct LibraryView: View {
     }
     var body: some View {
         let folderNotes = NativeCollectionFilters().apply(vault.searchableNotes.filter(\.regularCollectionNote))
+        let folderRows = NativeLibraryFolderRow.visible(vault.folders, expanded: expandedFolders)
+        let hasDisclosure = folderRows.contains(where: \.hasChildren)
         return List {
             Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Image(systemName: "books.vertical").font(.title).foregroundStyle(Accent.color).accessibilityHidden(true)
-                    Text(vault.vaultName).font(.system(.title2, design: .serif))
-                    Text("A place for everything you keep.").font(.subheadline).foregroundStyle(Accent.secondaryText)
-                }.padding(.vertical, 12)
-                Button("Vaults", systemImage: "folder.badge.gearshape", action: chooseVault).accessibilityIdentifier("library.vaults")
-            }.listRowBackground(Accent.sidebarCard)
-            Section {
-                NavigationLink(value: NativeNotesRoute.allNotes) { Label("All notes", systemImage: "square.stack") }.accessibilityIdentifier("library.notes")
-                NavigationLink(value: NativeNotesRoute.externalNotes) { Label("External notes", systemImage: "doc.text") }.accessibilityIdentifier("library.external")
-                NavigationLink(value: NativeNotesRoute.files) { Label("Files", systemImage: "doc") }.accessibilityIdentifier("library.files")
-                NavigationLink(value: NativeNotesRoute.savedLinks) { Label("Saved links", systemImage: "link") }.accessibilityIdentifier("library.links")
-                NavigationLink(value: NativeNotesRoute.pinned) { Label("Pinned", systemImage: "pin") }
-                NavigationLink(value: NativeNotesRoute.archive) { Label("Archive", systemImage: "archivebox") }
-                NavigationLink(value: NativeNotesRoute.trash) { Label("Recently Deleted", systemImage: "trash") }.accessibilityIdentifier("library.trash")
+                destination(NativeNotesRoute.allNotes) { Label("All notes", systemImage: "square.stack") }.accessibilityIdentifier("library.notes")
+                destination(NativeNotesRoute.externalNotes) { Label("External notes", systemImage: "doc.text") }.accessibilityIdentifier("library.external")
+                destination(NativeNotesRoute.files) { Label("Files", systemImage: "doc") }.accessibilityIdentifier("library.files")
+                destination(NativeNotesRoute.savedLinks) { Label("Saved links", systemImage: "link") }.accessibilityIdentifier("library.links")
             } header: { Text("Collections").foregroundStyle(Accent.sidebarText.opacity(0.72)) }.listRowBackground(Accent.sidebarCard)
             Section {
-                ForEach(NativeLibraryFolderRow.visible(vault.folders, expanded: expandedFolders)) { row in
+                ForEach(folderRows) { row in
                     let folder = row.path
                     HStack(spacing: 0) {
                     if row.hasChildren {
@@ -56,21 +49,25 @@ struct LibraryView: View {
                         .accessibilityLabel("\(expandedFolders.contains(folder) ? "Collapse" : "Expand") \(folder)")
                         .accessibilityValue(expandedFolders.contains(folder) ? "Expanded" : "Collapsed")
                         .accessibilityIdentifier("library.folder.toggle.\(folder)")
-                    } else {
+                    } else if hasDisclosure {
                         Color.clear.frame(width: 44, height: 1).accessibilityHidden(true)
                     }
-                    NavigationLink(value: NativeNotesRoute.folder(folder)) {
+                    destination(NativeNotesRoute.folder(folder)) {
                         let count = folderNotes.filter { $0.folder == folder || $0.folder.hasPrefix(folder + "/") }.count
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Label { Text(row.name) } icon: { NativeFolderGlyph(value: vault.folderIcons[folder]) }
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text("\(count) \(count == 1 ? "note" : "notes")")
-                                    .font(.caption).foregroundStyle(Accent.secondaryText)
-                            }
-                        } else {
-                            HStack { Label { Text(row.name) } icon: { NativeFolderGlyph(value: vault.folderIcons[folder]) }; Spacer(); Text("\(count)").foregroundStyle(Accent.secondaryText) }
+                        HStack(spacing: 12) {
+                            NativeFolderGlyph(value: vault.folderIcons[folder])
+                                .frame(width: 24).accessibilityHidden(true)
+                            Text(row.name)
+                                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("\(count)")
+                                .font(.subheadline).monospacedDigit()
+                                .foregroundStyle(Accent.sidebarText.opacity(0.65))
+                                .frame(minWidth: 24, alignment: .trailing)
+                                .accessibilityLabel("\(count) \(count == 1 ? "note" : "notes")")
                         }
+                        .frame(minHeight: 44)
                     }
                     Menu {
                         Button("Move up", systemImage: "arrow.up") { vault.reorderFolder(folder, direction: -1, workspace: workspaceID) }
@@ -88,13 +85,30 @@ struct LibraryView: View {
                     }
                     .padding(.leading, CGFloat(row.depth) * 16)
                 }
-                Button("New folder", systemImage: "folder.badge.plus") { newFolder = .init(parent: "") }.accessibilityIdentifier("library.folder.new")
                 if let issue = vault.folderIssue { Text(issue).font(.caption).foregroundStyle(.secondary) }
-            } header: { Text("Folders").foregroundStyle(Accent.sidebarText.opacity(0.72)) }.listRowBackground(Accent.sidebarCard)
+            } header: {
+                HStack(spacing: 8) {
+                    Text("Folders").foregroundStyle(Accent.sidebarText.opacity(0.72))
+                    Spacer()
+                    Button { newFolder = .init(parent: "") } label: {
+                        Image(systemName: "folder.badge.plus").font(.system(size: 18))
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Accent.color)
+                    .accessibilityLabel("New folder").accessibilityIdentifier("library.folder.new")
+                }.textCase(nil)
+            }.listRowBackground(Accent.sidebarCard)
+            Section {
+                destination(NativeNotesRoute.archive) { Label("Archive", systemImage: "archivebox") }
+                destination(NativeNotesRoute.trash) { Label("Recently Deleted", systemImage: "trash") }.accessibilityIdentifier("library.trash")
+                Button("Vaults", systemImage: "folder.badge.gearshape", action: chooseVault).accessibilityIdentifier("library.vaults")
+            }.listRowBackground(Accent.sidebarCard)
         }
         .scrollContentBackground(.hidden).background(Accent.sidebar).foregroundStyle(Accent.sidebarText)
-        .navigationTitle("Library").toolbarColorScheme(libraryChrome, for: .navigationBar)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button(action: settings) { Image(systemName: "ellipsis") }.accessibilityLabel("Settings") } }
+        .navigationTitle("Library").navigationBarTitleDisplayMode(.inline).toolbarColorScheme(libraryChrome, for: .navigationBar)
+        .toolbar {
+            if let close { ToolbarItem(placement: .topBarLeading) { Button("Close folders", systemImage: "xmark", action: close).labelStyle(.iconOnly).accessibilityIdentifier("library.close") } }
+            ToolbarItem(placement: .topBarTrailing) { Button(action: settings) { Image(systemName: "ellipsis") }.accessibilityLabel("Settings") } }
         .refreshable { await vault.refresh() }
         .onChange(of: vault.activeVaultID) { _, _ in expandedFolders.removeAll() }
         .sheet(item: $newFolder) { request in NativeNewFolderView(parent: request.parent, workspaceID: workspaceID) }
@@ -103,6 +117,14 @@ struct LibraryView: View {
         .sheet(item: $trashFolder) { request in NativeFolderTrashReview(request: request, workspaceID: workspaceID) }
     }
 
+    @ViewBuilder private func destination<Label: View>(_ route: NativeNotesRoute, @ViewBuilder label: () -> Label) -> some View {
+        if let selectRoute {
+            Button { selectRoute(route) } label: { label().frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+        } else { NavigationLink(value: route, label: label) }
+    }
 }
 
 private struct NativeLibraryFolderRow: Identifiable {
@@ -143,7 +165,7 @@ struct NativeCollectionSettingsContext {
 }
 
 private struct NativeCollectionSettingsSection: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let context: NativeCollectionSettingsContext
     @State private var history = false
     var body: some View {
@@ -170,8 +192,8 @@ private struct NativeCollectionSelectionButton: View {
 struct NativeLibraryButton: View {
     let action: () -> Void
     var body: some View {
-        Button(action: action) { Image(systemName: "chevron.left") }
-            .accessibilityLabel("Back to Library").accessibilityIdentifier("navigation.library")
+        Button(action: action) { Image(systemName: "line.3.horizontal") }
+            .accessibilityLabel("Open folders").accessibilityIdentifier("navigation.library")
     }
 }
 
@@ -179,7 +201,7 @@ struct SettingsView: View {
     var collection: NativeCollectionSettingsContext? = nil
     @Environment(\.openWindow) private var openWindow
     @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     @State private var aiGuidance = false
     @State private var aiLimits = false
@@ -194,7 +216,6 @@ struct SettingsView: View {
                     if supportsMultipleWindows { Button("Open another window", systemImage: "macwindow.badge.plus") { openWindow(id: "workspace") }.accessibilityIdentifier("workspace.newWindow") }
                     Button("Refresh files", systemImage: "arrow.clockwise") { Task { await vault.refresh() } }
                     NavigationLink { NativeFileLocationsView(workspaceID: vault.workspaceID) } label: { Label("File locations", systemImage: "folder.badge.gearshape") }.accessibilityIdentifier("settings.fileLocations")
-                    if vault.driveSelection != nil { NavigationLink { NativeDriveSyncView() } label: { Label("Google Drive sync", systemImage: "arrow.triangle.2.circlepath") }.accessibilityIdentifier("settings.driveSync") }
                     NavigationLink { NativeHistorySettingsView(workspaceID: vault.workspaceID) } label: { Label("Version history", systemImage: "clock") }.accessibilityIdentifier("settings.history")
                     NavigationLink { RecoveryCopiesView() } label: { Label("Recovery copies", systemImage: "clock.arrow.circlepath") }.accessibilityIdentifier("recovery.copies")
                     NavigationLink { NativeRelationRepairView() } label: { Label("Review legacy relations", systemImage: "point.3.connected.trianglepath.dotted") }.accessibilityIdentifier("relations.repair")
@@ -218,7 +239,7 @@ struct SettingsView: View {
                 Section {
                     LabeledContent("Version", value: (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") + ")")
                     NavigationLink("Open-source licenses") { NativeLicensesView() }.accessibilityIdentifier("settings.licenses")
-                } header: { Text("Zerus Native · Preview") } footer: { Text("This native preview opens Files vaults and includes Ask, reviewed AI edits and on-device dictation. Direct Google Drive sign-in and remaining mobile features are still being ported. The existing Zerus app remains available alongside it.") }
+                } header: { Text("Zerus Native · Preview") } footer: { Text("This native preview opens Files vaults and includes Ask, reviewed AI edits and on-device dictation. Remaining mobile features are still being ported. The existing Zerus app remains available alongside it.") }
             }.navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
                 .sheet(isPresented: $aiGuidance) { NativeAgentGuidanceView(workspaceID: vault.workspaceID) }

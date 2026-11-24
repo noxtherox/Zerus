@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeRelationDefinitionEditor: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let owner: String
     let originalName: String?

@@ -227,6 +227,8 @@ export interface VaultState {
   fileLocations: FileLocationDefinition[];
   /** Notes temporarily locked while a close or move operation commits. */
   busyNoteIds: ReadonlySet<string>;
+  /** External note whose close was blocked by a failed save, awaiting a discard choice. */
+  unsavedExternalCloseId: string | null;
   /** Notes whose real disk content has not arrived during startup refresh. */
   loadingNoteIds: ReadonlySet<string>;
   /** The cached note index is visible while the desktop vault refreshes. */
@@ -280,6 +282,7 @@ let state: VaultState = {
   savedTypeViews: {},
   fileLocations: [],
   busyNoteIds: new Set(),
+  unsavedExternalCloseId: null,
   loadingNoteIds: new Set(),
   isRefreshing: false,
   conflicts: {},
@@ -619,6 +622,20 @@ function saveArchivedPaths() {
     localStorage.setItem(archivedStorageKey(), JSON.stringify(paths));
   } catch {
     // ignore unavailable local storage
+  }
+}
+
+/** Legacy flags for a reviewed transfer into shared note metadata. */
+export function getLegacyNoteFlags(): { pinnedPaths: string[]; archivedPaths: string[] } {
+  try {
+    const read = (key: string): string[] => {
+      const value: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
+      if (!Array.isArray(value) || !value.every((path) => typeof path === "string")) throw new Error("Invalid legacy flag list");
+      return [...new Set(value as string[])];
+    };
+    return { pinnedPaths: read(pinnedStorageKey()), archivedPaths: read(archivedStorageKey()) };
+  } catch {
+    throw new Error("Legacy pin or archive state is unreadable. It was kept unchanged; restore it before preparing shared note metadata.");
   }
 }
 
@@ -1113,13 +1130,13 @@ function noteFromVaultFile(
   archivedPaths: Set<string>,
   existingId?: string,
 ): Note {
-  const metadata = readZerusMetadata(file.content);
+  const metadata = readZerusMetadata(file.content, { pinned: pinnedPaths.has(file.path), archived: archivedPaths.has(file.path) });
   return {
     id: metadata.id ?? existingId ?? crypto.randomUUID(),
     path: file.path,
     content: file.content,
-    pinned: metadata.pinned || pinnedPaths.has(file.path),
-    archived: metadata.archived || archivedPaths.has(file.path),
+    pinned: metadata.pinned,
+    archived: metadata.archived,
     createdAt: file.createdAt ?? file.updatedAt,
     updatedAt: file.updatedAt,
   };
@@ -1221,6 +1238,7 @@ async function loadVault(nextBackend: VaultBackend) {
     savedTypeViews: {},
     fileLocations: [],
     busyNoteIds: new Set(),
+    unsavedExternalCloseId: null,
     loadingNoteIds: new Set(),
     isRefreshing: false,
     conflicts: {},
@@ -2034,14 +2052,13 @@ function externallyChangedNoteState(
   nextContent: string,
 ): Pick<Note, "pinned" | "archived"> {
   const previous = readZerusMetadata(previousContent);
-  const next = readZerusMetadata(nextContent);
-  return {
-    // Keep legacy local-only state when an external edit only changes the body,
-    // but immediately reflect metadata transitions made by the CLI or another
-    // Zerus client. This also lets a CLI unarchive override the local fallback.
-    pinned: previous.pinned === next.pinned ? note.pinned : next.pinned,
-    archived: previous.archived === next.archived ? note.archived : next.archived,
-  };
+  // Missing metadata keeps older private state for body-only edits. Removing a
+  // previously true shared flag clears it; an explicit false always wins.
+  const next = readZerusMetadata(nextContent, {
+    pinned: previous.pinned ? false : note.pinned,
+    archived: previous.archived ? false : note.archived,
+  });
+  return { pinned: next.pinned, archived: next.archived };
 }
 
 function captureDesktopSyncBasis(): DesktopSyncBasisEntry[] {
@@ -2559,6 +2576,9 @@ async function persistNote(
       if (!(await diskStillMatchesSnapshot(note))) return false;
     }
     if (note.externalPath) {
+      // Unchanged external files need no write; this keeps read-only sources
+      // (mounted disk images, locked files) usable for viewing.
+      if (diskSnapshots.get(id) === note.content) return true;
       await writeTextFile(note.externalPath, note.content);
       diskSnapshots.set(id, note.content);
       return true;
@@ -3113,13 +3133,34 @@ async function openExternalPaths(paths: string[]): Promise<string[]> {
   return openedIds;
 }
 
-/** Stops tracking an external note without deleting the source file. */
-export async function closeExternalNote(id: string): Promise<void> {
+/**
+ * Stops tracking an external note without deleting the source file. Pending
+ * edits are saved first; if that save fails (for example on a read-only
+ * volume), the note stays open and `unsavedExternalCloseId` asks the user
+ * whether to close without saving. `discardUnsaved` drops pending edits.
+ */
+export async function closeExternalNote(
+  id: string,
+  options: { discardUnsaved?: boolean } = {},
+): Promise<void> {
   const note = state.notes.find((candidate) => candidate.id === id);
   if (!note || !isExternalNote(note) || state.busyNoteIds.has(id)) return;
   setNoteBusy(id, true);
   try {
-    if (!(await flushUntilIdle(id))) return;
+    if (options.discardUnsaved) {
+      const timer = pendingFlush.get(id);
+      if (timer) clearTimeout(timer);
+      pendingFlush.delete(id);
+      await inFlightFlush.get(id)?.catch(() => false);
+      inFlightFlush.delete(id);
+      startupEditedNoteIds.delete(id);
+    } else if (!(await flushUntilIdle(id))) {
+      setState({ unsavedExternalCloseId: id });
+      return;
+    }
+    if (state.unsavedExternalCloseId === id) {
+      setState({ unsavedExternalCloseId: null });
+    }
     const current = state.notes.find((candidate) => candidate.id === id);
     if (!current?.externalPath) return;
     setState({ notes: state.notes.filter((candidate) => candidate.id !== id) });
@@ -3129,6 +3170,18 @@ export async function closeExternalNote(id: string): Promise<void> {
     saveExternalPaths();
   } finally {
     setNoteBusy(id, false);
+  }
+}
+
+/** External note awaiting a close-without-saving choice, if any. */
+export function getUnsavedExternalCloseId(): string | null {
+  return state.unsavedExternalCloseId;
+}
+
+/** Dismisses the close-without-saving prompt and keeps the note open. */
+export function cancelUnsavedExternalClose(): void {
+  if (state.unsavedExternalCloseId !== null) {
+    setState({ unsavedExternalCloseId: null });
   }
 }
 

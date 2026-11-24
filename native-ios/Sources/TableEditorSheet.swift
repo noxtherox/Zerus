@@ -292,7 +292,7 @@ private struct TableCellEditor: View {
 
 private struct NativeCellLinkSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let request: NativeCellLinkRequest
     @State private var label: String
     @State private var address: String

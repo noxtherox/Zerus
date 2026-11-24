@@ -52,7 +52,7 @@ struct NativeExternalDraft: Codable, Sendable {
     let updated: Date
     var hasUnsavedChanges: Bool {
         let body = baseline.starts(with: [0xef, 0xbb, 0xbf]) ? baseline.dropFirst(3) : baseline[...]
-        return content != String(data: Data(body), encoding: .utf8)
+        return content != NoteDocument.decodeUTF8(Data(body))
     }
 }
 

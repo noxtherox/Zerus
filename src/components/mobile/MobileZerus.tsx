@@ -6,7 +6,6 @@ import { recordSearchVisit, type SearchChatRequest } from "@/lib/global-search";
 import { TasksWorkspace } from "@/components/tasks/TasksWorkspace";
 import { useTasks, useTaskLists, useGeneralTaskListName, loadTasks, refreshTasks, createTaskList, renameTaskList, deleteTaskList, createTask, updateTask, deleteTask } from "@/store/tasks-store";
 import { EditorSettings } from "@/components/notes/EditorSettings";
-import { driveCommand, isDriveSignInExpired, type DriveVaultSelection } from "@/lib/google-drive";
 import { GoogleDrivePicker } from "./GoogleDrivePicker";
 import { DateFormatSetting } from "@/components/notes/DateFormatSetting";
 import { parseNoteReference } from "@/lib/wikilinks";
@@ -153,8 +152,6 @@ import {
   prioritizeNoteLoad,
   loadMoreNotes,
   locateMobileVault,
-  openGoogleDriveVault,
-  prepareGoogleDriveConnection,
   reloadVault,
   resolveNoteConflict,
   openExternalNotes,
@@ -1709,27 +1706,7 @@ function MobileSettings({
   onClose,
   onChangeVault,
 }: MobileSettingsProps) {
-  const { fileLocations, historyError, historySettings, error: vaultError } = useVault();
-  const [driveAction, setDriveAction] = useState<"refresh" | "reconnect" | null>(null);
-  const driveActionInFlight = useRef(false);
-  const [driveError, setDriveError] = useState<string | null>(null);
-  const refreshDriveVault = async (reconnect = false) => {
-    if (driveActionInFlight.current) return;
-    driveActionInFlight.current = true;
-    setDriveAction(reconnect ? "reconnect" : "refresh");
-    setDriveError(null);
-    try {
-      // Renew consent before flushing: expired credentials may be blocking edits.
-      // Native reconnect verifies the original account and retains it on cancellation.
-      if (reconnect) await driveCommand({ operation: "reconnect" });
-      await reloadVault();
-    } catch (error) {
-      setDriveError(error instanceof Error ? error.message : String(error));
-    } finally {
-      driveActionInFlight.current = false;
-      setDriveAction(null);
-    }
-  };
+  const { fileLocations, historyError, historySettings } = useVault();
   const locationMappings = getFileLocationMappings();
   const [locationDraft, setLocationDraft] = useState("");
   const [busyLocation, setBusyLocation] = useState<string | null>(null);
@@ -1779,7 +1756,6 @@ function MobileSettings({
 
   if (driveLocationId) {
     return <GoogleDrivePicker
-      purpose="file-location"
       onClose={() => setDriveLocationId(null)}
       onChoose={async (selection) => mapGoogleDriveFileLocation(driveLocationId, selection)}
     />;
@@ -1935,13 +1911,7 @@ function MobileSettings({
             <span className="flex h-10 w-10 items-center justify-center rounded-[11px] bg-zerus-accent text-white"><Folder className="h-5 w-5" /></span>
             <span className="min-w-0 flex-1"><span className="block text-[15px] font-semibold">{location ?? "Zerus"}</span><span className="mt-0.5 block text-xs text-zerus-text/55">Your Markdown vault</span></span>
           </div>
-          {location?.startsWith("Google Drive ·") && <>
-            <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={() => void refreshDriveVault()} className="mt-3 w-full">{driveAction === "refresh" ? "Saving and refreshing…" : "Save and refresh Google Drive"}</Button>
-            <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={() => void refreshDriveVault(true)} className="mt-2 w-full text-zerus-accent">{driveAction === "reconnect" ? "Reconnecting…" : "Reconnect Google account"}</Button>
-            {isDriveSignInExpired(vaultError) && <p role="alert" className="mt-2 text-sm text-zerus-text/65">Your Google sign-in expired. Reconnect the same account to save pending edits and refresh this vault.</p>}
-            {driveError && <p role="alert" className="mt-2 text-sm text-destructive">{driveError}</p>}
-          </>}
-          <Button type="button" variant="ghost" disabled={driveAction !== null} onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-zerus-text/[0.07] text-sm font-semibold text-zerus-accent hover:bg-zerus-text/[0.1] hover:text-zerus-accent">Change vault</Button>
+          <Button type="button" variant="ghost" onClick={onChangeVault} className="mt-4 h-10 w-full rounded-[12px] bg-zerus-text/[0.07] text-sm font-semibold text-zerus-accent hover:bg-zerus-text/[0.1] hover:text-zerus-accent">Change vault</Button>
         </div>
         </>}
 
@@ -2045,7 +2015,6 @@ interface VaultSetupProps {
   error: string | null;
   onClose?: () => void;
   onLocate: () => Promise<boolean>;
-  onDrive: (selection: DriveVaultSelection) => Promise<boolean>;
   onCreateAtLocation: () => Promise<boolean>;
   onCreateOnDevice: () => Promise<boolean>;
 }
@@ -2055,12 +2024,10 @@ function VaultSetup({
   error,
   onClose,
   onLocate,
-  onDrive,
   onCreateAtLocation,
   onCreateOnDevice,
 }: VaultSetupProps) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
-  const [driveOpen, setDriveOpen] = useState(false);
 
   const run = async (label: string, action: () => Promise<boolean>) => {
     setBusyAction(label);
@@ -2084,12 +2051,6 @@ function VaultSetup({
     </button>
   );
 
-  if (driveOpen) return <GoogleDrivePicker onClose={() => setDriveOpen(false)} onChoose={async (selection) => {
-    const opened = await onDrive(selection);
-    if (opened) onClose?.();
-    return opened;
-  }} />;
-
   return (
     <main className="absolute inset-0 z-50 flex flex-col overflow-y-auto bg-zerus-editor px-5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] pt-4">
       {onClose && <Button variant="ghost" size="icon" onClick={onClose} disabled={busyAction !== null} className="ml-auto h-10 w-10 rounded-full bg-white/[0.08]" aria-label="Close vault setup"><X className="h-5 w-5" /></Button>}
@@ -2103,14 +2064,6 @@ function VaultSetup({
           Locate existing vault
         </Button>
         <p className="mt-2 text-center text-xs leading-4 text-[#77777d]">Use iCloud Drive or another provider that supports folder access.</p>
-        <div className="mt-4 overflow-hidden rounded-[17px] bg-[#292a2b]">
-          {actionRow("Google Drive", "Connect your account and choose a vault folder", <Cloud className="h-5 w-5" />, async () => {
-            if (!(await prepareGoogleDriveConnection())) return false;
-            setDriveOpen(true);
-            return false;
-          })}
-        </div>
-
         <div className="my-6 flex items-center gap-3"><span className="h-px flex-1 bg-white/[0.08]" /><span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#66666b]">Create a vault</span><span className="h-px flex-1 bg-white/[0.08]" /></div>
         <div className="overflow-hidden rounded-[17px] bg-[#292a2b]">
           {actionRow("Choose a location", "Create a Zerus folder wherever you choose", <Folder className="h-5 w-5" />, onCreateAtLocation)}
@@ -2587,7 +2540,7 @@ export function MobileZerus() {
           <VaultSetup
             nativeAvailable={isNativeApp}
             error={vault.error}
-            onLocate={() => runVaultAction(locateMobileVault)} onDrive={(selection) => runVaultAction(() => openGoogleDriveVault(selection))}
+            onLocate={() => runVaultAction(locateMobileVault)}
             onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)}
             onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)}
           />
@@ -2819,7 +2772,7 @@ export function MobileZerus() {
           scope={chatScope}
         />
         {settingsOpen && <MobileSettings location={vault.location} defaultNoteType={defaultNoteType} typeTree={typeTree} onDefaultNoteTypeChange={updateDefaultNoteType} onClose={() => setSettingsOpen(false)} onChangeVault={() => { setSettingsOpen(false); setVaultSetupOpen(true); }} />}
-        {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onDrive={(selection) => runVaultAction(() => openGoogleDriveVault(selection))} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
+        {vault.status === "ready" && vaultSetupOpen && <VaultSetup nativeAvailable={isNativeApp} error={vault.error} onClose={() => setVaultSetupOpen(false)} onLocate={() => runVaultAction(locateMobileVault)} onCreateAtLocation={() => runVaultAction(createMobileVaultAtLocation)} onCreateOnDevice={() => runVaultAction(createMobileVaultOnDevice)} />}
         {vault.status === "ready" && vault.location?.startsWith("Google Drive ·") && Object.values(vault.conflicts)[0] && <DriveConflictReview conflict={Object.values(vault.conflicts)[0]} />}
         {composerOpen && (
           <Composer

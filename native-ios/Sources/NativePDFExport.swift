@@ -59,8 +59,8 @@ final class NativePDFExport {
                 let image = decoded[key] ?? UIImage(data: resource.bytes)?.cgImage
                 if let image {
                     decoded[key] = image
-                    let factor = min(1, width / max(1, CGFloat(resource.width)), 560 / max(1, CGFloat(resource.height)))
-                    let box = NativePDFImageBox(image, width: CGFloat(resource.width) * factor, height: CGFloat(resource.height) * factor)
+                    let size = run.imageSize(resource), factor = min(1, width / max(1, CGFloat(size.width)), 560 / max(1, CGFloat(size.height)))
+                    let box = NativePDFImageBox(image, width: CGFloat(size.width) * factor, height: CGFloat(size.height) * factor)
                     var callbacks = CTRunDelegateCallbacks(version: kCTRunDelegateVersion1, dealloc: { pointer in Unmanaged<NativePDFImageBox>.fromOpaque(pointer).release() }, getAscent: { pointer in Unmanaged<NativePDFImageBox>.fromOpaque(pointer).takeUnretainedValue().height }, getDescent: { _ in 0 }, getWidth: { pointer in Unmanaged<NativePDFImageBox>.fromOpaque(pointer).takeUnretainedValue().width })
                     let retained = Unmanaged.passRetained(box)
                     if let delegate = CTRunDelegateCreate(&callbacks, retained.toOpaque()) {
@@ -77,6 +77,7 @@ final class NativePDFExport {
             let font = base.fontDescriptor.withSymbolicTraits(traits).map { UIFont(descriptor: $0, size: size) } ?? base
             var attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.black, .paragraphStyle: paragraph]
             if run.style.contains(.strike) { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if run.style.contains(.underline) { attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             if let link = run.link { attributes[.link] = link; attributes[.foregroundColor] = UIColor(red: 0.55, green: 0.24, blue: 0.12, alpha: 1); attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             value.append(NSAttributedString(string: text, attributes: attributes))
         }

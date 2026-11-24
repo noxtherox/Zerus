@@ -17,6 +17,32 @@ struct NativeSavedLink: Sendable {
         self.id = id; self.address = address
     }
     static func normalizedURL(_ raw: String) -> URL? {
+        #if os(macOS)
+        return MacWebAddress.foundationURL(raw)
+        #else
+        return foundationURL(raw)
+        #endif
+    }
+    /// Address identity follows the browser on Mac. Keep the canonical text
+    /// separate from any escaping required by Foundation at the system boundary.
+    static func normalizedAddress(_ raw: String) -> String? {
+        #if os(macOS)
+        return MacWebAddress.canonical(raw)
+        #else
+        return foundationURL(raw)?.absoluteString
+        #endif
+    }
+    static func sameAddress(_ left: String, _ right: String) -> Bool {
+        #if os(macOS)
+        guard let left = normalizedAddress(left), let right = normalizedAddress(right) else { return false }
+        return left == right
+        #else
+        guard let left = foundationURL(left), let right = foundationURL(right) else { return false }
+        return left == right
+        #endif
+    }
+    #if !os(macOS)
+    private static func foundationURL(_ raw: String) -> URL? {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.hasPrefix("<") { value.removeFirst() }; if value.hasSuffix(">") { value.removeLast() }
         guard !value.isEmpty, value.rangeOfCharacter(from: .controlCharacters) == nil else { return nil }
@@ -29,11 +55,12 @@ struct NativeSavedLink: Sendable {
         if parts.path.isEmpty { parts.path = "/" }
         return parts.url?.standardized
     }
+    #endif
 
     /// Remove only top-level paragraphs consisting of the managed link. Prose,
     /// reference definitions, code and other destinations retain their bytes.
     static func withoutURL(_ body: String, address: String) -> String {
-        guard let expected = normalizedURL(address)?.absoluteString else { return body }
+        guard let expected = normalizedAddress(address) else { return body }
         let text = body as NSString, document = Document(parsing: body)
         var starts = [0], cursor = 0
         while cursor < text.length {
@@ -50,7 +77,7 @@ struct NativeSavedLink: Sendable {
         var ranges: [NSRange] = []
         for child in document.children {
             guard let paragraph = child as? Paragraph, paragraph.childCount == 1, let link = paragraph.child(at: 0) as? Markdown.Link,
-                  let destination = link.destination, normalizedURL(destination)?.absoluteString == expected,
+                  let destination = link.destination, normalizedAddress(destination) == expected,
                   let range = link.range, let endLine = paragraph.range?.upperBound.line else { continue }
             let lineOffset = max(0, endLine - range.upperBound.line)
             guard let start = offset(range.lowerBound, lineOffset: lineOffset), let end = offset(range.upperBound, lineOffset: lineOffset), end >= start else { continue }
@@ -76,7 +103,7 @@ struct NativeSavedLink: Sendable {
         return output as String
     }
     static func withURL(_ body: String, address: String) -> String {
-        guard let url = normalizedURL(address)?.absoluteString else { return body }
+        guard let url = normalizedAddress(address) else { return body }
         let cleaned = withoutURL(body, address: url), newline = body.contains("\r\n") ? "\r\n" : "\n"
         let text = cleaned as NSString
         guard let first = cleaned.range(of: #"(?m)^ {0,3}#{1,6}[ \t]+[^\r\n]*"#, options: .regularExpression),
@@ -122,21 +149,21 @@ extension VaultFiles {
         var next = paths
         for link in links {
             if link.after == nil { next.removeAll { $0 == link.path } }
-            else if let data = link.after, let text = String(data: data, encoding: .utf8), NativeSavedLink(NoteDocument(path: link.path, content: text, modified: Date())) != nil, !next.contains(link.path) { next.append(link.path) }
+            else if let data = link.after, let text = NoteDocument.decodeUTF8(data), NativeSavedLink(NoteDocument(path: link.path, content: text, modified: Date())) != nil, !next.contains(link.path) { next.append(link.path) }
         }
         let after = next == paths ? bytes : try JSONSerialization.data(withJSONObject: next, options: [.prettyPrinted, .withoutEscapingSlashes])
         return changes + [.init(path: index, before: bytes, after: after)]
     }
 
     func createSavedLink(address: String, title: String) throws -> NoteDocument {
-        guard let url = NativeSavedLink.normalizedURL(address) else { throw VaultFailure(message: "Enter a valid http or https web address.") }
+        guard let url = NativeSavedLink.normalizedURL(address), let canonical = NativeSavedLink.normalizedAddress(address) else { throw VaultFailure(message: "Enter a valid http or https web address.") }
         let snapshot = try scan()
-        if let existing = snapshot.notes.first(where: { !$0.trashed && $0.savedLink?.url == url }) { return existing }
+        if let existing = snapshot.notes.first(where: { !$0.trashed && $0.savedLink.map { NativeSavedLink.sameAddress($0.address, canonical) } == true }) { return existing }
         let id = UUID().uuidString.lowercased(), path = ".zerus/links/" + id + ".md"
         let host = url.host ?? "Link", fallback = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         let name = title.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: #"[\r\n]+"#, with: " ", options: .regularExpression)
-        var content = "# " + (name.isEmpty ? fallback : name) + "\n\n<" + url.absoluteString + ">\n"
-        for (key, value) in [("zerus-id", id), ("zerus-link-id", id), ("zerus-link-url", url.absoluteString)] { content = try NativeFrontmatter(content).setting(key, value: .text(value)) }
+        var content = "# " + (name.isEmpty ? fallback : name) + "\n\n<" + canonical + ">\n"
+        for (key, value) in [("zerus-id", id), ("zerus-link-id", id), ("zerus-link-url", canonical)] { content = try NativeFrontmatter(content).setting(key, value: .text(value)) }
         let paths = Set(snapshot.notes.map(\.path)), root = root
         let reads = snapshot.notes.map { VaultFileChange(path: $0.path, before: Data($0.content.utf8), after: Data($0.content.utf8)) }
         try applyTransaction(reads + [.init(path: path, before: nil, after: Data(content.utf8))], validate: {
@@ -146,12 +173,12 @@ extension VaultFiles {
     }
 
     func updateSavedLink(_ note: NoteDocument, address: String) throws -> VaultSnapshot {
-        guard !note.trashed, let saved = note.savedLink, let url = NativeSavedLink.normalizedURL(address) else { throw VaultFailure(message: "Enter a valid http or https web address.") }
-        if saved.url == url { return try scan() }
+        guard !note.trashed, let saved = note.savedLink, NativeSavedLink.normalizedURL(address) != nil, let canonical = NativeSavedLink.normalizedAddress(address) else { throw VaultFailure(message: "Enter a valid http or https web address.") }
+        if NativeSavedLink.sameAddress(saved.address, canonical) { return try scan() }
         let snapshot = try scan()
-        guard !snapshot.notes.contains(where: { !$0.trashed && $0.path != note.path && $0.savedLink?.url == url }) else { throw VaultFailure(message: "That address is already saved. Open its existing link instead.") }
-        let body = NativeSavedLink.withURL(NativeSavedLink.withoutURL(note.parts.body, address: saved.address), address: url.absoluteString)
-        let content = try NativeFrontmatter(note.replacingBody(body)).setting("zerus-link-url", value: .text(url.absoluteString))
+        guard !snapshot.notes.contains(where: { !$0.trashed && $0.path != note.path && $0.savedLink.map { NativeSavedLink.sameAddress($0.address, canonical) } == true }) else { throw VaultFailure(message: "That address is already saved. Open its existing link instead.") }
+        let body = NativeSavedLink.withURL(NativeSavedLink.withoutURL(note.parts.body, address: saved.address), address: canonical)
+        let content = try NativeFrontmatter(note.replacingBody(body)).setting("zerus-link-url", value: .text(canonical))
         let changes = snapshot.notes.map { item in VaultFileChange(path: item.path, before: Data(item.content.utf8), after: Data((item.path == note.path ? content : item.content).utf8)) }
         guard snapshot.notes.first(where: { $0.path == note.path })?.content == note.content else { throw VaultFailure(message: "This saved link changed outside Zerus. Reload it before updating its address.") }
         let paths = Set(snapshot.notes.map(\.path)), root = root

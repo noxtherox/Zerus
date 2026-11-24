@@ -1,7 +1,11 @@
 import Foundation
 import Security
 import AuthenticationServices
+#if os(macOS)
+import AppKit
+#else
 import UIKit
+#endif
 import ZerusChatGPTCore
 
 public struct ChatGPTAccountSummary: Encodable {
@@ -20,14 +24,14 @@ public struct ChatGPTCommand: Decodable {
   }
 }
 
-private struct ChatGPTSavedAccount: Codable {
+private struct ChatGPTSavedAccount: Codable, Sendable {
   let registration: ChatGPTRegistration
   let label: String
   var credentials: ChatGPTCredentials?
   var model: String
 }
 
-private struct ChatGPTAccountStore: Codable {
+private struct ChatGPTAccountStore: Codable, Sendable {
   let hostID: String
   var activeClientID: String?
   var accounts: [ChatGPTSavedAccount]
@@ -38,7 +42,11 @@ private struct ChatGPTAccountStore: Codable {
 @MainActor
 final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProviding {
   static let endpoint = CloudAIEndpoint.chatGPT
-  private let service = "com.zerus.notes.chatgpt"
+  private let service: String
+  private let http: URLSession
+  init(service: String = "com.zerus.notes.chatgpt", session: URLSession = .shared) {
+    self.service = service; self.http = session; super.init()
+  }
   private var browser: ASWebAuthenticationSession?
   private var listener: ChatGPTLoopback?
   private var finishSignIn: ((Result<URL, Error>) -> Void)?
@@ -46,15 +54,37 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
   private var refreshTasks: [String: Task<ChatGPTCredentials, Error>] = [:]
   private var catalogs: [String: [CloudAIModelResponse]] = [:]
   private var revocationUnconfirmed = false
+  private var cachedStore: ChatGPTAccountStore?
 
   func status() -> CloudAIStatusResponse {
+#if os(macOS)
+    let state = cachedStore
+#else
     let state = try? store()
+#endif
     let active = state?.accounts.first { $0.registration.clientID == state?.activeClientID }
     return CloudAIStatusResponse(endpoint: Self.endpoint, model: active?.model ?? "", configured: active?.credentials != nil,
       account: active?.label, accounts: state?.accounts.map { account in
         ChatGPTAccountSummary(id: account.registration.clientID, label: account.label,
           connected: account.credentials != nil, active: account.registration.clientID == state?.activeClientID)
       } ?? [], revocationUnconfirmed: revocationUnconfirmed)
+  }
+  func restoreStatus(allowInteraction: Bool = false) async throws -> CloudAIStatusResponse {
+#if os(macOS)
+    do {
+      let data = try await AppleKeychainIO.read(service: service, account: "accounts-v1", allowInteraction: allowInteraction)
+      cachedStore = try data.map { try JSONDecoder().decode(ChatGPTAccountStore.self, from: $0) }
+    } catch is CancellationError { throw CancellationError() }
+    catch { cachedStore = nil; throw error }
+#endif
+    return status()
+  }
+  func configureModel(_ model: String) async throws {
+    var state = try await asynchronousStore()
+    guard let index = state.accounts.firstIndex(where: { $0.registration.clientID == state.activeClientID }) else { throw ChatGPTError.message("Continue with ChatGPT before choosing a model.") }
+    if let catalog = catalogs[state.accounts[index].registration.clientID], !catalog.contains(where: { $0.id == model }) { throw ChatGPTError.message("Choose a model available to this ChatGPT account.") }
+    state.accounts[index].model = model
+    try await asynchronousPersist(state)
   }
 
   func configure(model: String) throws {
@@ -71,8 +101,12 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
   }
 
   func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+#if os(macOS)
+    NSApp.keyWindow ?? NSApp.windows.first(where: \.isVisible) ?? ASPresentationAnchor()
+#else
     UIApplication.shared.connectedScenes.filter { $0.activationState == .foregroundActive }.compactMap { $0 as? UIWindowScene }
       .flatMap(\.windows).first(where: \.isKeyWindow) ?? ASPresentationAnchor()
+#endif
   }
 
   func cancelSignIn() { finishSignIn?(.failure(CancellationError())); listener?.stop() }
@@ -81,7 +115,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     guard !signingIn else { throw ChatGPTError.message("ChatGPT sign-in is already in progress.") }
     signingIn = true
     defer { signingIn = false }
-    var state = try store()
+    var state = try await asynchronousStore()
     let existing = addAccount ? nil : state.accounts.first { $0.registration.clientID == (accountID ?? state.activeClientID) }
     if accountID != nil && existing == nil { throw ChatGPTError.message("The selected ChatGPT account is no longer saved.") }
     let registration = existing?.registration ?? (addAccount ? nil : state.pending)
@@ -115,7 +149,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
       }
       session.presentationContextProvider = self
       browser = session
-      if !session.start() { finish(.failure(ChatGPTError.message("The iPhone sign-in browser could not start."))) }
+      if !session.start() { finish(.failure(ChatGPTError.message("The sign-in browser could not start."))) }
       timeout = Task { @MainActor in
         do { try await Task.sleep(nanoseconds: 300_000_000_000) } catch { return }
         finish(.failure(ChatGPTError.message("ChatGPT sign-in timed out. Please try again.")))
@@ -123,9 +157,9 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     }
     let result = try transaction.callback(callback)
     try Task.checkCancellation()
-    state = try store()
+    state = try await asynchronousStore()
     state.pending = registration ?? ChatGPTRegistration(clientID: result.clientID, subject: "", email: "")
-    try persist(state)
+    try await asynchronousPersist(state)
     let token = try await form("https://auth.openai.com/api/accounts/oauth/token", ["grant_type": "authorization_code", "client_id": result.clientID,
       "code": result.code, "code_verifier": transaction.verifier, "redirect_uri": redirect.absoluteString, "resource": "https://api.openai.com/v1"])
     guard let idToken = token["id_token"] as? String else { throw ChatGPTError.message("ChatGPT did not return a verifiable account.") }
@@ -135,7 +169,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     }
     let credentials = try session(from: token, identity: identity, retainedIDToken: idToken)
     try Task.checkCancellation()
-    state = try store()
+    state = try await asynchronousStore()
     if let index = state.accounts.firstIndex(where: { $0.registration.clientID == identity.clientID }) {
       guard state.accounts[index].registration.subject == identity.subject else { throw ChatGPTError.message("The ChatGPT account registration did not match.") }
       state.accounts[index].credentials = credentials
@@ -143,26 +177,26 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
       state.accounts.append(ChatGPTSavedAccount(registration: identity, label: "\(identity.email) · Account \(state.accounts.count + 1)", credentials: credentials, model: ""))
     }
     state.activeClientID = identity.clientID; state.pending = nil
-    try persist(state)
+    try await asynchronousPersist(state)
     revocationUnconfirmed = false
     _ = try await models()
   }
 
   func selectAccount(_ id: String) async throws {
-    let state = try store()
+    let state = try await asynchronousStore()
     guard let account = state.accounts.first(where: { $0.registration.clientID == id }) else { throw ChatGPTError.message("The selected ChatGPT account is no longer saved.") }
     if account.credentials == nil { try await signIn(accountID: id); return }
     _ = try await accessToken(clientID: id)
-    var updated = try store(); updated.activeClientID = id
-    try persist(updated)
+    var updated = try await asynchronousStore(); updated.activeClientID = id
+    try await asynchronousPersist(updated)
     revocationUnconfirmed = false
     _ = try await models()
   }
 
   func models() async throws -> CloudAIModelsResponse {
-    let account = try activeAccount()
+    let account = try await activeAccount()
     let request = ChatGPTModelCatalog.request(accessToken: try await accessToken(clientID: account.registration.clientID))
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await http.data(for: request)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
           let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw ChatGPTError.message("The ChatGPT model catalog could not be reached.")
@@ -175,13 +209,13 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     }
     guard !available.isEmpty else { throw ChatGPTError.message("No eligible models are available for this ChatGPT account.") }
     catalogs[account.registration.clientID] = available
-    if !available.contains(where: { $0.id == account.model }) { try configure(model: available[0].id) }
+    if !available.contains(where: { $0.id == account.model }) { try await configureModel(available[0].id) }
     return CloudAIModelsResponse(models: available)
   }
 
   func generate(_ request: CloudAIGenerateRequest, onDelta: @escaping (String) -> Void) async throws -> CloudAIGenerateResponse {
-    var account = try activeAccount()
-    if catalogs[account.registration.clientID] == nil { _ = try await models(); account = try activeAccount() }
+    var account = try await activeAccount()
+    if catalogs[account.registration.clientID] == nil { _ = try await models(); account = try await activeAccount() }
     guard catalogs[account.registration.clientID]?.contains(where: { $0.id == account.model }) == true else { throw ChatGPTError.message("Choose an available ChatGPT model in Chat model settings.") }
     let agent: [String: Any]
     if let raw = request.agentRequestJSON, let data = raw.data(using: .utf8), let decoded = try JSONSerialization.jsonObject(with: data) as? [String: Any] { agent = decoded }
@@ -197,7 +231,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     httpRequest.setValue("Bearer \(try await accessToken(clientID: account.registration.clientID))", forHTTPHeaderField: "Authorization")
     httpRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
     httpRequest.httpBody = try JSONSerialization.data(withJSONObject: body)
-    let (bytes, response) = try await URLSession.shared.bytes(for: httpRequest)
+    let (bytes, response) = try await http.bytes(for: httpRequest)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       throw ChatGPTError.message("ChatGPT refused this request. Check your selected model, plan permissions and usage in ChatGPT settings.")
     }
@@ -212,14 +246,14 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
   }
 
   func signOut() async throws {
-    let id = try activeAccount().registration.clientID
+    let id = try await activeAccount().registration.clientID
     refreshTasks[id]?.cancel()
     if let task = refreshTasks[id] { _ = try? await task.value }
-    let current = try activeAccount()
+    let current = try await activeAccount()
     revocationUnconfirmed = current.credentials == nil ? false : !(await revoke(current.credentials!))
-    var state = try store()
+    var state = try await asynchronousStore()
     if let index = state.accounts.firstIndex(where: { $0.registration.clientID == id }) { state.accounts[index].credentials = nil }
-    try persist(state)
+    try await asynchronousPersist(state)
     catalogs.removeValue(forKey: id)
     try ChatGPTContinuationStore.removeAccount(root: continuationRoot(), account: continuationAccount(current))
   }
@@ -246,7 +280,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
 
   private func accessToken(clientID: String) async throws -> String {
     if let task = refreshTasks[clientID] { return try await task.value.accessToken }
-    guard let current = try store().accounts.first(where: { $0.registration.clientID == clientID })?.credentials else { throw ChatGPTError.message("Continue with ChatGPT in Chat model settings first.") }
+    guard let current = try await asynchronousStore().accounts.first(where: { $0.registration.clientID == clientID })?.credentials else { throw ChatGPTError.message("Continue with ChatGPT in Chat model settings first.") }
     if current.expiresAt.timeIntervalSinceNow > 60 { return current.accessToken }
     let task = Task { @MainActor in
       var token = try await self.form("https://auth.openai.com/api/accounts/oauth/token", ["grant_type": "refresh_token", "client_id": current.registration.clientID,
@@ -254,17 +288,17 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
       if token["scope"] == nil { token["scope"] = current.scopes.joined(separator: " ") }
       let next = try self.session(from: token, identity: current.registration, retainedIDToken: current.idToken)
       try Task.checkCancellation()
-      var state = try self.store()
+      var state = try await self.asynchronousStore()
       guard let index = state.accounts.firstIndex(where: { $0.registration.clientID == clientID }), state.accounts[index].credentials != nil else { throw CancellationError() }
-      state.accounts[index].credentials = next; try self.persist(state)
+      state.accounts[index].credentials = next; try await self.asynchronousPersist(state)
       return next
     }
     refreshTasks[clientID] = task
     defer { refreshTasks.removeValue(forKey: clientID) }
     do { return try await task.value.accessToken }
     catch ChatGPTSessionError.expired {
-      var state = try store()
-      if let index = state.accounts.firstIndex(where: { $0.registration.clientID == clientID }) { state.accounts[index].credentials = nil; try persist(state) }
+      var state = try await asynchronousStore()
+      if let index = state.accounts.firstIndex(where: { $0.registration.clientID == clientID }) { state.accounts[index].credentials = nil; try await asynchronousPersist(state) }
       throw ChatGPTError.message("Your ChatGPT session expired. Reconnect in Chat model settings.")
     }
   }
@@ -278,10 +312,30 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     return ChatGPTCredentials(registration: identity, accessToken: access, refreshToken: refresh, idToken: retainedIDToken, scopes: scopes, expiresAt: Date().addingTimeInterval(expiry))
   }
 
-  private func activeAccount() throws -> ChatGPTSavedAccount {
-    let state = try store()
+  private func activeAccount() async throws -> ChatGPTSavedAccount {
+    let state = try await asynchronousStore()
     guard let account = state.accounts.first(where: { $0.registration.clientID == state.activeClientID }) else { throw ChatGPTError.message("Continue with ChatGPT in Chat model settings first.") }
     return account
+  }
+
+  private func asynchronousStore() async throws -> ChatGPTAccountStore {
+#if os(macOS)
+    if let data = try await AppleKeychainIO.read(service: service, account: "accounts-v1", allowInteraction: true) {
+      let state = try JSONDecoder().decode(ChatGPTAccountStore.self, from: data); cachedStore = state; return state
+    }
+    let state = ChatGPTAccountStore(hostID: "urn:uuid:\(UUID().uuidString.lowercased())", activeClientID: nil, accounts: [], pending: nil)
+    try await asynchronousPersist(state); return state
+#else
+    return try store()
+#endif
+  }
+  private func asynchronousPersist(_ state: ChatGPTAccountStore) async throws {
+#if os(macOS)
+    try await AppleKeychainIO.save(JSONEncoder().encode(state), service: service, account: "accounts-v1")
+    cachedStore = state
+#else
+    try persist(state)
+#endif
   }
 
   private func store() throws -> ChatGPTAccountStore {
@@ -296,7 +350,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
   private func jsonGET(_ address: String) async throws -> [String: Any] {
     var request = URLRequest(url: URL(string: address)!)
     request.timeoutInterval = 30
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await http.data(for: request)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
           let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw ChatGPTError.message("The ChatGPT account service could not be reached.") }
     return json
@@ -308,7 +362,7 @@ final class ChatGPTManager: NSObject, ASWebAuthenticationPresentationContextProv
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
     let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
     request.httpBody = values.sorted(by: { $0.key < $1.key }).map { "\($0.key.addingPercentEncoding(withAllowedCharacters: allowed)!)=\($0.value.addingPercentEncoding(withAllowedCharacters: allowed)!)" }.joined(separator: "&").data(using: .utf8)
-    let (data, response) = try await URLSession.shared.data(for: request)
+    let (data, response) = try await http.data(for: request)
     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
       if values["grant_type"] == "refresh_token", let error = try? JSONSerialization.jsonObject(with: data) as? [String: Any], error["error"] as? String == "invalid_grant" { throw ChatGPTSessionError.expired }
       throw ChatGPTError.message("ChatGPT authorization could not be completed or renewed. Please reconnect.")

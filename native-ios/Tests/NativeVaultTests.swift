@@ -307,7 +307,7 @@ final class NativeVaultTests: XCTestCase {
         XCTAssertFalse(session.dirty, session.failure ?? "")
         let bytes = try await io.read(path)
         let saved = try XCTUnwrap(String(data: bytes, encoding: .utf8))
-        XCTAssertEqual(saved, "---\r\n# foreign metadata\r\nzerus-id: stable-typed\r\nStatus: [\"Review\", \"A, B\", \"x\\\"y\"] # keep this comment\r\nEstimate: -12.75\r\nTags: [\"new tag\"]\r\nforeign:\r\n  nested: [one, two]\r\nText: 'it''s preserved'\r\nDone: true\r\nDue: \"2026-11-09\"\r\n...  \r\n# Project\r\n\r\n**Body**\r\n---\r\nStatus: body text\r\n")
+        XCTAssertEqual(saved, "---\r\n# foreign metadata\r\nzerus-id: stable-typed\r\n# keep this comment\r\nStatus:\r\n  - \"Review\"\r\n  - \"A, B\"\r\n  - \"x\\\"y\"\r\nEstimate: -12.75\r\nTags: [\"new tag\"]\r\nforeign:\r\n  nested: [one, two]\r\nText: 'it''s preserved'\r\nDone: true\r\nDue: \"2026-11-09\"\r\n...  \r\n# Project\r\n\r\n**Body**\r\n---\r\nStatus: body text\r\n")
         XCTAssertEqual(NativeFrontmatter(saved).entry("Status")?.value, .list(["Review", "A, B", "x\"y"]))
         XCTAssertNil(NativeFrontmatter(saved).entry("foreign")?.value)
         let removed = try NativeFrontmatter(saved).setting("STATUS", value: nil)
@@ -610,13 +610,18 @@ final class NativeVaultTests: XCTestCase {
         try await io.write("Work/art/(diagram%20draft) #é.png", data: bytes, expected: nil)
         try await io.write("Work/art/(diagram draft) #é.png", data: other, expected: nil)
         try await io.write("assets/root.png", data: bytes, expected: nil)
+        try await io.write("Work/art/HTML [©].png", data: bytes, expected: nil)
+        try await io.write("assets/opaque.markdown", data: bytes, expected: nil)
         let pdf = Data("%PDF-1.7\n%%EOF".utf8)
         try await io.write("Shared/report.pdf", data: pdf, expected: nil)
         let relative = "art/%28diagram%2520draft%29%20%23%C3%A9.png"
-        let source = "![Diagram](<" + relative + "> \"Caption\")\n\n[![Linked](" + relative + ")](https://example.com)\n\n![Alt [example](assets/not-selected.txt)](assets/root.png)\n\n[Report](../Shared/report.pdf#page=2)\n\n<!-- zerus-table-widths: 120,240 -->\n| Image | Text |\n| --- | --- |\n| ![Root](assets/root.png) | A\\|B |\n\n`![Literal](assets/not-a-resource.png)`\n\n~~~md\n![Code](assets/not-a-resource.png)\n~~~"
+        let originalSource = "![Diagram](<" + relative + "> \"Caption\")\n\n[![Linked](" + relative + ")](https://example.com)\n\n![Alt [example](assets/not-selected.txt)](assets/root.png)\n\n[Report](../Shared/report.pdf#page=2)\n\n<!-- zerus-table-widths: 120,240 -->\n| Image | Text |\n| --- | --- |\n| ![Root](assets/root.png) | A\\|B |\n\n`![Literal](assets/not-a-resource.png)`\n\n~~~md\n![Code](assets/not-a-resource.png)\n~~~"
+        let html = "\n\n<IMG width='192' height='96' title='Kept &amp; exact' alt='Literal ![label](assets/not-a-resource.png)' src='art/HTML%20[&copy;].png?x=1&amp;y=2#piece'>\n\n<img src=assets/opaque.markdown width=24>\n\n`<img src='assets/not-a-resource.png'>`\n\n<!-- <img src='assets/not-a-resource.png'> -->\n\n    <img src='assets/not-a-resource.png'>\n\n![Literal <img src='assets/not-a-resource.png'>](assets/root.png)\n"
+        let source = originalSource + html
         let fragment = try await io.clipboardFragment(source, notePath: "Work/Source.md")
         XCTAssertEqual(fragment.markdown, source)
-        XCTAssertEqual(fragment.resources.count, 3)
+        XCTAssertEqual(fragment.resources.count, 5)
+        XCTAssertTrue(fragment.includesLocalResources, "Copied resources: \(fragment.resources.map { ($0.reference, $0.bytes?.count) })")
         XCTAssertEqual(fragment.resources.first(where: { $0.reference.contains("diagram") })?.bytes, bytes, "A literal percent sequence in a file name must not resolve to a different file")
         let destination = root.appendingPathComponent("Destination", isDirectory: true)
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
@@ -626,9 +631,15 @@ final class NativeVaultTests: XCTestCase {
         XCTAssertTrue(pasted.contains("`![Literal](assets/not-a-resource.png)`"))
         XCTAssertTrue(pasted.contains("~~~md\n![Code](assets/not-a-resource.png)\n~~~"))
         XCTAssertTrue(pasted.contains("#page=2"))
+        XCTAssertTrue(pasted.contains("width='192' height='96' title='Kept &amp; exact' alt='Literal ![label](assets/not-a-resource.png)'"))
+        XCTAssertTrue(pasted.contains("?x=1&amp;y=2#piece"))
+        XCTAssertTrue(pasted.contains("`<img src='assets/not-a-resource.png'>`"))
+        XCTAssertTrue(pasted.contains("<!-- <img src='assets/not-a-resource.png'> -->"))
+        XCTAssertTrue(pasted.contains("    <img src='assets/not-a-resource.png'>"))
+        XCTAssertTrue(pasted.contains("![Literal <img src='assets/not-a-resource.png'>]"))
         XCTAssertTrue(pasted.contains("](https://example.com)"))
         let references = MarkdownResources.localReferences(in: pasted)
-        XCTAssertEqual(references.count, 3)
+        XCTAssertEqual(references.count, 5)
         for reference in references {
             let copied = try await target.resourceData(reference, notePath: "Other/Note.md")
             XCTAssertTrue(copied == bytes || copied == pdf)
@@ -809,7 +820,7 @@ final class NativeVaultTests: XCTestCase {
         let secondStore = VaultStore()
         await secondStore.open(root!)
         XCTAssertEqual(secondStore.activeVaultID, firstStore.activeVaultID)
-        let subscription = secondStore.$notes.first(where: { $0.first?.content == header + recoveredBody }).sink { _ in saved.fulfill() }
+        let subscription = secondStore.notesPublisher.first(where: { $0.first?.content == header + recoveredBody }).sink { _ in saved.fulfill() }
         defer { subscription.cancel() }
         let resumed = try XCTUnwrap(secondStore.session(for: XCTUnwrap(secondStore.notes.first)))
         defer { resumed.deactivate() }
@@ -874,7 +885,7 @@ final class NativeVaultTests: XCTestCase {
         XCTAssertEqual(returned.activeVaultID, owner)
         XCTAssertEqual(returned.root?.standardizedFileURL, movedRoot.standardizedFileURL)
         let saved = expectation(description: "The original saved vault retains and resumes its draft after moving")
-        let subscription = returned.$notes.first(where: { $0.first?.content == recovered }).sink { _ in saved.fulfill() }
+        let subscription = returned.notesPublisher.first(where: { $0.first?.content == recovered }).sink { _ in saved.fulfill() }
         defer { subscription.cancel() }
         let resumed = try XCTUnwrap(returned.session(for: XCTUnwrap(returned.notes.first)))
         defer { resumed.deactivate() }

@@ -24,6 +24,7 @@ struct NativeBulkField: Codable, Sendable {
     let delta: [String]
     let relation: Bool
     var applied = true
+    var definitionKey: String? = nil
 }
 struct NativeBulkEntry: Codable, Identifiable, Sendable {
     let stableID: String
@@ -36,6 +37,7 @@ struct NativeBulkRecord: Codable, Identifiable, Sendable {
     let date: Date
     let label: String
     var entries: [NativeBulkEntry]
+    var boundaryVersion: Int? = nil
     var appliedCount: Int { entries.flatMap(\.fields).filter(\.applied).count }
     var fieldCount: Int { entries.flatMap(\.fields).count }
     var status: String { appliedCount == 0 ? "Undone" : appliedCount == fieldCount ? "Applied" : "Partially undone" }
@@ -90,13 +92,16 @@ enum NativeBulkHistory {
     static let path = ".zerus/native-bulk-history.json"
     static func read(_ data: Data?) throws -> [NativeBulkRecord] {
         guard let data else { return [] }
-        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], NativeHistory.integer(object["version"]) == 1,
+        guard let object = try NativeJSON.object(with: data) as? [String: Any], NativeHistory.integer(object["version"]) == 1,
               let records = object["records"] as? [[String: Any]] else { throw VaultFailure(message: "Bulk action history uses an unsupported format. Its file and your notes were left unchanged.") }
         let decoded = try JSONDecoder().decode([NativeBulkRecord].self, from: JSONSerialization.data(withJSONObject: records))
         guard Set(decoded.map(\.id)).count == decoded.count else { throw VaultFailure(message: "Bulk action history contains duplicate actions and is preserved without changes.") }
         for record in decoded {
-            guard record.date.timeIntervalSince1970.isFinite, !record.entries.isEmpty, Set(record.entries.map(\.stableID)).count == record.entries.count else { throw VaultFailure(message: "A bulk action has unsupported note records and was preserved.") }
+            guard (record.boundaryVersion == nil || record.boundaryVersion == 1), record.date.timeIntervalSince1970.isFinite, !record.entries.isEmpty, Set(record.entries.map(\.stableID)).count == record.entries.count else { throw VaultFailure(message: "A bulk action has unsupported note records and was preserved.") }
             for entry in record.entries {
+                for field in entry.fields {
+                    if let key = field.definitionKey, key.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) == nil { throw VaultFailure(message: "A bulk action has an unsupported property definition key and was preserved.") }
+                }
                 guard entry.stableID.range(of: #"^[A-Za-z0-9_-]{1,128}$"#, options: .regularExpression) != nil, !entry.fields.isEmpty, Set(entry.fields.map { $0.name.lowercased() }).count == entry.fields.count,
                       entry.fields.allSatisfy({ field in field.name.range(of: #"^[A-Za-z0-9_][A-Za-z0-9_ .-]{0,59}$"#, options: .regularExpression) != nil && (!field.name.lowercased().hasPrefix("zerus-") || ["zerus-pinned", "zerus-archived"].contains(field.name) && !field.relation && field.operation == .set && field.delta.isEmpty) }) else { throw VaultFailure(message: "A bulk action contains unsupported fields and was preserved without applying it.") }
             }
@@ -104,7 +109,7 @@ enum NativeBulkHistory {
         return decoded
     }
     static func encode(_ records: [NativeBulkRecord], original: Data?) throws -> Data {
-        var object = try original.map { try JSONSerialization.jsonObject(with: $0) as? [String: Any] ?? [:] } ?? [:]
+        var object = try original.map { try NativeJSON.object(with: $0) as? [String: Any] ?? [:] } ?? [:]
         // Preserve unmodified records verbatim, including future optional fields.
         let oldRaw = object["records"] as? [[String: Any]] ?? []
         let old = try read(original)
@@ -112,11 +117,18 @@ enum NativeBulkHistory {
         let next = try records.map { record -> [String: Any] in
             if let index = old.firstIndex(where: { $0.id == record.id }), try encoder.encode(old[index]) == encoder.encode(record), index < oldRaw.count { return oldRaw[index] }
             var raw = old.firstIndex(where: { $0.id == record.id }).flatMap { $0 < oldRaw.count ? oldRaw[$0] : nil } ?? [:]
-            let updated = try JSONSerialization.jsonObject(with: encoder.encode(record)) as! [String: Any]
+            let updated = try NativeJSON.object(with: encoder.encode(record)) as! [String: Any]
             raw.merge(updated) { _, value in value }; return raw
         }
         object["version"] = 1; object["records"] = next
         return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    }
+}
+
+private extension NativePropertyDefinition {
+    func bulkDefinitionKey() throws -> String {
+        let fields = [name, type.rawValue, owner, String(multiple), String(hidden), relationTypeKey ?? "", String(relationMultiple), relationPairID ?? "", String(relationInverseHidden)] + options
+        return NativeHistory.hash(String(decoding: try JSONEncoder().encode(fields), as: UTF8.self))
     }
 }
 
@@ -235,25 +247,38 @@ private final class NativeBulkPlanner {
                     try validate(change, definition: definition)
                     let before = try value(original, name: definition.name), relation = definition.type == .relation
                     let (after, delta) = try updated(before, change: change, relation: relation)
-                    if !equivalent(before, after, relation: relation) { fields.append(.init(name: definition.name, before: before, after: after, operation: change.operation, delta: delta, relation: relation)) }
+                    if !equivalent(before, after, relation: relation) { fields.append(.init(name: definition.name, before: before, after: after, operation: change.operation, delta: delta, relation: relation, definitionKey: try definition.bulkDefinitionKey())) }
                 }
                 guard !fields.isEmpty else { issues.append(.init(path: original.path, reason: "Already has the requested values.")); continue }
                 let (identified, _) = try NativeRelationSnapshot.stableReference(original, notes: notes)
                 notes[notes.firstIndex { $0.path == original.path }!] = identified
                 for field in fields { try set(original.path, name: field.name, value: field.after, relation: field.relation) }
-                // Record the actual canonical values emitted by reciprocal linking.
+                // A previous selected note can already have changed this note's
+                // inverse. The receipt must retain the pre-batch value so Undo
+                // restores the user's original graph, not that intermediate state.
                 let saved = notes.first { $0.path == original.path }!
+                let initial = snapshot.source.notes.first { $0.path == original.path }!
                 fields = try fields.map { field in
-                    let before = field.relation ? try canonical(field.before, source: original.path) : field.before
+                    let prior = try value(initial, name: field.name)
+                    let before = field.relation ? try canonical(prior, source: original.path) : prior
                     let delta = field.relation ? try canonical(.list(field.delta), source: original.path)?.selections ?? [] : field.delta
-                    return .init(name: field.name, before: before, after: try value(saved, name: field.name), operation: field.operation, delta: delta, relation: field.relation)
+                    return .init(name: field.name, before: before, after: try value(saved, name: field.name), operation: field.operation, delta: delta, relation: field.relation, definitionKey: field.definitionKey)
                 }
                 entries.append(.init(stableID: saved.stableID!, title: original.title, fields: fields))
                 changedFields[original.path] = fields.map { Self.display($0.name) }
             } catch { notes = oldNotes; schemaBytes = oldBytes; reads = oldReads; issues.append(.init(path: selected.path, reason: error.localizedDescription)) }
         }
+        // Later inverse updates can also change an earlier selected note.
+        // Record each field's final value after the entire batch is planned.
+        entries = try entries.map { entry in
+            let saved = notes.first { $0.stableID == entry.stableID }!
+            let fields = try entry.fields.map { field in
+                NativeBulkField(name: field.name, before: field.before, after: try value(saved, name: field.name), operation: field.operation, delta: field.delta, relation: field.relation, definitionKey: field.definitionKey)
+            }
+            return NativeBulkEntry(stableID: entry.stableID, title: entry.title, fields: fields)
+        }
         var records = snapshot.records
-        if !entries.isEmpty { records.insert(.init(id: UUID(), date: Date(), label: mutation.label, entries: entries), at: 0) }
+        if !entries.isEmpty { records.insert(.init(id: UUID(), date: Date(), label: mutation.label, entries: entries, boundaryVersion: 1), at: 0) }
         return try finish(label: mutation.label, records: records)
     }
     func transition(_ id: UUID, undo: Bool) throws -> NativeBulkPlan {
@@ -278,11 +303,31 @@ private final class NativeBulkPlanner {
                         target = values.isEmpty && target == nil ? nil : .list(values)
                     } else {
                         let expected = undo ? field.after : field.before
-                        guard equivalent(current, expected, relation: field.relation) || equivalent(current, target, relation: field.relation) else { throw VaultFailure(message: "\(Self.display(field.name)) changed later and was not overwritten.") }
+                        // Check outside edits at the transaction boundary. A
+                        // preceding inverse restoration within this Undo/Redo
+                        // must not be mistaken for a newer user edit.
+                        let initial = snapshot.source.notes.first { $0.stableID == entry.stableID }!
+                        // Legacy receipts may contain intermediate inverse values.
+                        // Keep their conservative per-field guard; only new
+                        // receipts promise complete pre/post-batch snapshots.
+                        let observed = records[recordIndex].boundaryVersion == 1 ? try value(initial, name: field.name) : current
+                        guard equivalent(observed, expected, relation: field.relation) || equivalent(observed, target, relation: field.relation) else { throw VaultFailure(message: "\(Self.display(field.name)) changed later and was not overwritten.") }
                     }
                     if !field.name.hasPrefix("zerus-") {
                         guard let definition = try schema.checkedEffective(notePath: note.path).first(where: { $0.id == field.name.lowercased() }), (definition.type == .relation) == field.relation else { throw VaultFailure(message: "The property definition changed. Review it before undoing this action.") }
-                        try validate(.init(name: field.name, operation: target == nil ? .clear : .set, value: target), definition: definition)
+                        do { try validate(.init(name: field.name, operation: target == nil ? .clear : .set, value: target), definition: definition) }
+                        catch {
+                            // Existing values may predate the current picker’s
+                            // normalization. Only Undo may restore that exact
+                            // prior value under its unchanged definition.
+                            guard undo, !field.relation, field.operation == .set || field.operation == .clear,
+                                  !definition.hidden, definition.type != .unsupported,
+                                  target == field.before, let key = field.definitionKey else { throw error }
+                            guard try key == definition.bulkDefinitionKey() else { throw VaultFailure(message: "The property definition changed; its previous values were not restored.") }
+                            if case .number(let text)? = target {
+                                guard let number = Double(text), number.isFinite else { throw VaultFailure(message: "The receipt’s previous number is unsupported and was not restored.") }
+                            }
+                        }
                     }
                     if equivalent(current, target, relation: field.relation) { reads.insert(note.path) }
                     else { try set(note.path, name: field.name, value: target, relation: field.relation, restoringUnresolved: true) }

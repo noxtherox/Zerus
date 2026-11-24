@@ -283,7 +283,7 @@ final class NativeChat: ObservableObject {
 }
 
 struct NativeChatView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     let workspaceID: UUID
     @ObservedObject var chat: NativeChat
     @ObservedObject var agent: NativeAgentController
@@ -359,6 +359,7 @@ struct NativeChatView: View {
                             Color.clear.frame(height: 1).id("bottom")
                         }.padding(24)
                     }
+                    .nativeWorkspaceScroll()
                     .scrollDismissesKeyboard(.interactively)
                     .defaultScrollAnchor(.bottom, for: .initialOffset)
                     .onAppear { followingReply = true; proxy.scrollTo("bottom", anchor: .bottom) }

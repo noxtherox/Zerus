@@ -91,7 +91,7 @@ enum NativeExternalTransferFiles {
 
 extension VaultFiles {
     func prepareExternalTransfer(_ source: NativeExternalSnapshot, project: NativeExternalProjectFiles?, folder: String,
-                                 mode: NativeExternalTransferMode, workspaceID: UUID) throws -> NativeExternalTransferReview {
+                                 mode: NativeExternalTransferMode, workspaceID: UUID, inboxIsRoot: Bool = true) throws -> NativeExternalTransferReview {
         try Task.checkCancellation()
         let destination = try NativeExternalDestination(root: root)
         guard (try? Self.confinedPath(for: source.access.canonical, root: root)) == nil else {
@@ -103,7 +103,7 @@ extension VaultFiles {
             throw VaultFailure(message: "This file contains a connected-file card or stored attachment records. Make those files portable through Library → Files before importing this Markdown.")
         }
         let parent: String
-        if folder == "Inbox" || folder.isEmpty { parent = "" }
+        if folder.isEmpty || inboxIsRoot && folder == "Inbox" { parent = "" }
         else {
             guard NativeFileHub.relative(folder) != nil, !folder.split(separator: "/").contains(where: { $0.hasPrefix(".") }), folder.split(separator: "/").first != "assets" else {
                 throw VaultFailure(message: "Choose a regular note folder in the destination vault.")
@@ -164,7 +164,7 @@ extension VaultFiles {
             guard try Self.notePathInventory(root: root) == paths else { throw VaultFailure(message: "Notes changed while importing. Review the destination again.") }
             for path in review.existingNotePaths {
                 let data = try Data(contentsOf: root.appendingPathComponent(path))
-                if let text = String(data: data, encoding: .utf8), NoteDocument(path: path, content: text, modified: .now).stableID == review.noteID {
+                if let text = NoteDocument.decodeUTF8(data), NoteDocument(path: path, content: text, modified: .now).stableID == review.noteID {
                     throw VaultFailure(message: "A note with this identity was added after the review. No import was saved.")
                 }
             }

@@ -178,7 +178,7 @@ extension VaultFiles {
         let ordinary = Set(MarkdownResources.localReferences(in: markdown))
         let all = Set(MarkdownResources.localReferences(in: markdown, includeNoteFiles: true))
         if !attachments.isEmpty || all != ordinary {
-            let content = (try? read(notePath)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let content = (try? read(notePath)).flatMap { NoteDocument.decodeUTF8($0) } ?? ""
             let note = NoteDocument(path: notePath, content: content, modified: Date())
             let records = NativeFileAttachment.all(in: content)
             var replacements: [String: String] = [:]

@@ -49,7 +49,7 @@ final class NativeAgentController: ObservableObject {
         let selectedAttachments = chat.attachments, earlier = chat.messages, conversation = chat.conversationID
         let reference = reference.map { $0.name + "\n" + $0.text } ?? ""
         running = true; issue = nil; current = nil
-        scopeWatch = vault.$workspaceID.dropFirst().sink { [weak self] value in if value != workspace { self?.stop() } }
+        scopeWatch = vault.workspaceIDPublisher.dropFirst().sink { [weak self] value in if value != workspace { self?.stop() } }
         operation = Task { [weak self] in
             guard let self else { return }
             var turnID: UUID?
@@ -75,7 +75,7 @@ final class NativeAgentController: ObservableObject {
     func resume(_ record: NativeAgentRecord, answer: String?, chat: NativeChat, vault: VaultStore, workspace: UUID) {
         guard !running, !chat.running, !chat.dictating, !chat.importingAttachments, vault.workspaceID == workspace else { return }
         running = true; issue = nil; current = nil
-        scopeWatch = vault.$workspaceID.dropFirst().sink { [weak self] value in if value != workspace { self?.stop() } }
+        scopeWatch = vault.workspaceIDPublisher.dropFirst().sink { [weak self] value in if value != workspace { self?.stop() } }
         operation = Task { [weak self] in
             guard let self else { return }
             var turnID: UUID?

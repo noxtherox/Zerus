@@ -167,7 +167,7 @@ final class NativeNoteNavigation: ObservableObject {
 struct NativeNoteNavigationView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @ObservedObject var navigation: NativeNoteNavigation
     var body: some View {
         NavigationStack(path: Binding(get: { navigation.path }, set: navigation.updatePath)) {

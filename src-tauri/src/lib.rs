@@ -39,8 +39,8 @@ struct CliRunResult {
     truncated: bool,
 }
 
-const BUNDLED_CLI_VERSION: &str = "0.3.0";
-const ZERUS_SKILL_VERSION: &str = "3";
+const BUNDLED_CLI_VERSION: &str = "0.3.1";
+const ZERUS_SKILL_VERSION: &str = "4";
 const ZERUS_SKILL_MARKDOWN: &str = include_str!("../skills/zerus-skill.md");
 
 fn cli_target_path() -> Result<std::path::PathBuf, String> {
@@ -397,6 +397,9 @@ fn cli_export_skill(path: String) -> Result<String, String> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CliMigrationPreview {
+    revision: String,
+    changed_paths: Vec<String>,
+    legacy_keys_renamed: usize,
     notes_scanned: usize,
     notes_changed: usize,
     ids_added: usize,
@@ -410,7 +413,13 @@ fn migration_plan(
     root: &Path,
     pinned_paths: &[String],
     archived_paths: &[String],
-) -> Result<zerus_core::VaultMetadataMigrationPlan, String> {
+) -> Result<
+    (
+        zerus_core::VaultMetadataMigrationPlan,
+        Vec<zerus_core::ScannedNote>,
+    ),
+    String,
+> {
     let notes = zerus_core::scan_vault(root).map_err(|error| error.to_string())?;
     let inputs: Vec<_> = notes
         .iter()
@@ -421,7 +430,34 @@ fn migration_plan(
             legacy_archived: archived_paths.iter().any(|path| path == &note.path),
         })
         .collect();
-    Ok(zerus_core::plan_vault_metadata_migration(&inputs))
+    let plan = zerus_core::plan_vault_metadata_migration(&inputs);
+    Ok((plan, notes))
+}
+
+fn migration_revision(
+    root: &Path,
+    plan: &zerus_core::VaultMetadataMigrationPlan,
+    pinned: &[String],
+    archived: &[String],
+) -> Result<String, String> {
+    let root = root.canonicalize().map_err(|error| error.to_string())?;
+    let mut notes: Vec<_> = plan
+        .notes
+        .iter()
+        .map(|note| (&note.path, &note.plan.before_revision))
+        .collect();
+    notes.sort();
+    let mut pinned = pinned.to_vec();
+    pinned.sort();
+    pinned.dedup();
+    let mut archived = archived.to_vec();
+    archived.sort();
+    archived.dedup();
+    // Newly generated IDs differ between planning passes. The approval binds
+    // the inventory, original bytes and requested legacy flags instead.
+    let bytes =
+        serde_json::to_vec(&(root, notes, pinned, archived)).map_err(|error| error.to_string())?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
 }
 
 #[tauri::command]
@@ -431,8 +467,16 @@ fn cli_migration_preview(
     archived_paths: Vec<String>,
 ) -> Result<CliMigrationPreview, String> {
     let root = Path::new(&vault_path);
-    let plan = migration_plan(root, &pinned_paths, &archived_paths)?;
+    let (plan, _) = migration_plan(root, &pinned_paths, &archived_paths)?;
     Ok(CliMigrationPreview {
+        revision: migration_revision(root, &plan, &pinned_paths, &archived_paths)?,
+        changed_paths: plan
+            .notes
+            .iter()
+            .filter(|note| note.plan.changed)
+            .map(|note| note.path.clone())
+            .collect(),
+        legacy_keys_renamed: plan.summary.legacy_keys_renamed,
         notes_scanned: plan.summary.notes_scanned,
         notes_changed: plan.summary.notes_changed,
         ids_added: plan.summary.ids_added,
@@ -452,47 +496,72 @@ fn cli_migration_apply(
     vault_path: String,
     pinned_paths: Vec<String>,
     archived_paths: Vec<String>,
+    review_revision: String,
+    register_vault: bool,
 ) -> Result<CliMigrationPreview, String> {
     let root = Path::new(&vault_path);
-    let plan = migration_plan(root, &pinned_paths, &archived_paths)?;
+    let (plan, notes) = migration_plan(root, &pinned_paths, &archived_paths)?;
+    let revision = migration_revision(root, &plan, &pinned_paths, &archived_paths)?;
+    if revision != review_revision {
+        return Err("Notes or legacy flags changed after review. Review note metadata again; no files were changed.".to_string());
+    }
     if !plan.can_apply {
         return Err("Migration is blocked by note metadata that needs review".to_string());
     }
-    let mut written: Vec<(std::path::PathBuf, String)> = Vec::new();
+    let history_dir = root.join(".zerus/history");
+    if plan.summary.notes_changed > 0 {
+        fs::create_dir_all(&history_dir).map_err(|error| {
+            format!("Could not prepare metadata history; no notes were changed: {error}")
+        })?;
+    }
+    let originals: HashMap<_, _> = notes
+        .iter()
+        .map(|note| (note.path.as_str(), note.content.as_str()))
+        .collect();
+    let mut written: Vec<(std::path::PathBuf, String, String)> = Vec::new();
     for note in &plan.notes {
         if !note.plan.changed {
             continue;
         }
         let path = root.join(&note.path);
-        let original = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        let original = originals[note.path.as_str()].to_string();
         match zerus_core::atomic_write(
             &path,
             &note.plan.next_content,
             Some(&note.plan.before_revision),
         ) {
-            Ok(_) => written.push((path, original)),
+            Ok(_) => written.push((path, original, note.plan.next_content.clone())),
             Err(error) => {
-                for (written_path, original) in written {
-                    let _ = zerus_core::atomic_write(&written_path, &original, None);
+                let mut retained = Vec::new();
+                for (written_path, original, committed) in written {
+                    let revision = zerus_core::content_revision(&committed);
+                    if zerus_core::atomic_write(&written_path, &original, Some(&revision)).is_err()
+                    {
+                        retained.push(written_path.display().to_string());
+                    }
                 }
-                return Err(format!("Migration was rolled back: {error}"));
+                return Err(if retained.is_empty() {
+                    format!("Migration was rolled back: {error}")
+                } else {
+                    format!("Migration stopped: {error}. Some notes could not be restored and their current files were kept: {}. Review these notes before trying again.", retained.join(", "))
+                });
             }
         }
     }
-    let history_dir = root.join(".zerus/history");
-    fs::create_dir_all(&history_dir).map_err(|error| error.to_string())?;
+    let mut history_nonce = [0u8; 16];
+    OsRng.fill_bytes(&mut history_nonce);
+    let history_nonce = URL_SAFE_NO_PAD.encode(history_nonce);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    for (index, (path, original)) in written.iter().enumerate() {
+    for (index, (path, original, after)) in written.iter().enumerate() {
         let relative = path
             .strip_prefix(root)
             .unwrap_or(path)
             .to_string_lossy()
             .replace('\\', "/");
-        let transaction_id = format!("desktop-{now}-{index}");
-        let after = fs::read_to_string(path).map_err(|error| error.to_string())?;
+        let transaction_id = format!("desktop-{now}-{history_nonce}-{index}");
         let record = serde_json::json!({
             "transactionId": transaction_id,
             "operation": "migration.metadata",
@@ -502,40 +571,52 @@ fn cli_migration_apply(
             "contentAfter": after,
             "createdAtMs": now,
         });
-        fs::write(
-            history_dir.join(format!("{transaction_id}.json")),
-            serde_json::to_vec_pretty(&record).unwrap(),
+        zerus_core::atomic_write(
+            &history_dir.join(format!("{transaction_id}.json")),
+            &serde_json::to_string_pretty(&record).unwrap(),
+            None,
         )
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| format!("Note metadata was applied, but writing its history failed: {error}. Current notes were kept; review them before trying again."))?;
     }
-    let mut manifest =
-        zerus_core::load_or_create_manifest(root).map_err(|error| error.to_string())?;
-    manifest.metadata_version = 1;
-    manifest.ids_required = true;
-    zerus_core::write_vault_manifest(root, &manifest).map_err(|error| error.to_string())?;
-    let registry_path = zerus_core::default_registry_path().map_err(|error| error.to_string())?;
-    let mut registry =
-        zerus_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
-    registry
-        .vaults
-        .retain(|vault| vault.id != manifest.vault_id);
-    registry.vaults.push(zerus_core::VaultRecord {
-        id: manifest.vault_id,
-        name: root
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or("Vault")
-            .to_string(),
-        path: root.canonicalize().map_err(|error| error.to_string())?,
-    });
-    registry
-        .vaults
-        .sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
-    if registry.default_vault_id.is_none() {
-        registry.default_vault_id = Some(manifest.vault_id);
+    if register_vault {
+        let mut manifest =
+            zerus_core::load_or_create_manifest(root).map_err(|error| error.to_string())?;
+        manifest.metadata_version = 1;
+        manifest.ids_required = true;
+        zerus_core::write_vault_manifest(root, &manifest).map_err(|error| error.to_string())?;
+        let registry_path =
+            zerus_core::default_registry_path().map_err(|error| error.to_string())?;
+        let mut registry =
+            zerus_core::load_registry(&registry_path).map_err(|error| error.to_string())?;
+        registry
+            .vaults
+            .retain(|vault| vault.id != manifest.vault_id);
+        registry.vaults.push(zerus_core::VaultRecord {
+            id: manifest.vault_id,
+            name: root
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("Vault")
+                .to_string(),
+            path: root.canonicalize().map_err(|error| error.to_string())?,
+        });
+        registry
+            .vaults
+            .sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        if registry.default_vault_id.is_none() {
+            registry.default_vault_id = Some(manifest.vault_id);
+        }
+        zerus_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
     }
-    zerus_core::save_registry(&registry_path, &registry).map_err(|error| error.to_string())?;
     Ok(CliMigrationPreview {
+        revision,
+        changed_paths: plan
+            .notes
+            .iter()
+            .filter(|note| note.plan.changed)
+            .map(|note| note.path.clone())
+            .collect(),
+        legacy_keys_renamed: plan.summary.legacy_keys_renamed,
         notes_scanned: plan.summary.notes_scanned,
         notes_changed: plan.summary.notes_changed,
         ids_added: plan.summary.ids_added,
@@ -544,6 +625,22 @@ fn cli_migration_apply(
         blocked: false,
         warnings: Vec::new(),
     })
+}
+
+#[tauri::command]
+fn note_metadata_apply(
+    vault_path: String,
+    pinned_paths: Vec<String>,
+    archived_paths: Vec<String>,
+    review_revision: String,
+) -> Result<CliMigrationPreview, String> {
+    cli_migration_apply(
+        vault_path,
+        pinned_paths,
+        archived_paths,
+        review_revision,
+        false,
+    )
 }
 
 #[derive(Default)]
@@ -2564,7 +2661,8 @@ pub fn run() {
             cli_skill_status,
             cli_export_skill,
             cli_migration_preview,
-            cli_migration_apply
+            cli_migration_apply,
+            note_metadata_apply
         ])
         .setup(|app| {
             if let Ok(app_data) = app.path().app_data_dir() {
@@ -2620,6 +2718,7 @@ pub fn run() {
 mod tests {
     use super::{
         ai_model_uses_web_search, anthropic_stream_delta, chat_stream_delta, cli_command_args,
+        cli_migration_preview, note_metadata_apply,
         cli_export_skill, cloud_ai_error_body, cloud_ai_keyring_account, cloud_ai_request_body,
         codex_ai_prompt, codex_thread_start_params, codex_turn_input, copy_file_into_vault,
         desktop_open_paths, normalized_cloud_ai_base_url, remove_legacy_model_directory,
@@ -3071,6 +3170,114 @@ mod tests {
             "first"
         );
         fs::remove_dir_all(root).expect("remove test vault");
+    }
+
+    #[test]
+    fn metadata_preparation_transfers_legacy_flags_without_cli_registration() {
+        let root = test_root("metadata-only");
+        fs::create_dir_all(root.join(".zerus")).unwrap();
+        let manifest = br#"{"version":1,"vaultId":"11111111-1111-4111-8111-111111111111","metadataVersion":0,"idsRequired":false,"foreign":"kept"}"#;
+        fs::write(root.join(".zerus/vault.json"), manifest).unwrap();
+        fs::write(root.join("Pinned.md"), "# Pinned\n").unwrap();
+        fs::write(root.join("Archived.md"), "# Archived\n").unwrap();
+        fs::write(root.join("Explicit.md"), "---\nzerus-id: 22222222-2222-4222-8222-222222222222\nzerus-pinned: false\n---\n# Explicit\n").unwrap();
+        let path = root.to_string_lossy().to_string();
+        let pinned = vec!["Pinned.md".to_string(), "Explicit.md".to_string()];
+        let archived = vec!["Archived.md".to_string()];
+        let preview = cli_migration_preview(path.clone(), pinned.clone(), archived.clone()).unwrap();
+        assert_eq!(preview.ids_added, 2);
+        assert_eq!(preview.pinned_added, 1);
+        assert_eq!(preview.archived_added, 1);
+        let wire = serde_json::to_value(&preview).unwrap();
+        assert!(wire["revision"].as_str().is_some_and(|value| value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())));
+        let mut paths: Vec<String> = serde_json::from_value(wire["changedPaths"].clone()).unwrap();
+        paths.sort();
+        assert_eq!(paths, vec!["Archived.md".to_string(), "Pinned.md".to_string()]);
+        let applied = note_metadata_apply(
+            path.clone(),
+            pinned.clone(),
+            archived.clone(),
+            preview.revision,
+        )
+        .unwrap();
+        assert_eq!(applied.notes_changed, 2);
+        assert!(
+            zerus_core::read_note_metadata(&fs::read_to_string(root.join("Pinned.md")).unwrap())
+                .unwrap()
+                .pinned
+        );
+        assert!(
+            zerus_core::read_note_metadata(&fs::read_to_string(root.join("Archived.md")).unwrap())
+                .unwrap()
+                .archived
+        );
+        assert!(
+            !zerus_core::read_note_metadata(&fs::read_to_string(root.join("Explicit.md")).unwrap())
+                .unwrap()
+                .pinned
+        );
+        assert_eq!(fs::read(root.join(".zerus/vault.json")).unwrap(), manifest);
+        let second = cli_migration_preview(path, pinned, archived).unwrap();
+        assert_eq!(second.notes_changed, 0);
+        let repeated = note_metadata_apply(
+            root.to_string_lossy().to_string(),
+            vec!["Pinned.md".to_string(), "Explicit.md".to_string()],
+            vec!["Archived.md".to_string()],
+            second.revision,
+        )
+        .unwrap();
+        assert_eq!(repeated.notes_changed, 0);
+        assert_eq!(fs::read(root.join(".zerus/vault.json")).unwrap(), manifest);
+        let records: Vec<_> = fs::read_dir(root.join(".zerus/history"))
+            .unwrap()
+            .map(|entry| {
+                serde_json::from_slice::<serde_json::Value>(&fs::read(entry.unwrap().path()).unwrap())
+                    .unwrap()
+            })
+            .collect();
+        assert_eq!(records.len(), 2);
+        for record in records {
+            let note = record["pathAfter"].as_str().unwrap();
+            let before = match note {
+                "Pinned.md" => "# Pinned\n",
+                "Archived.md" => "# Archived\n",
+                _ => panic!("Unexpected history note {note}"),
+            };
+            assert_eq!(record["contentBefore"], before);
+            let after = fs::read_to_string(root.join(note)).unwrap();
+            assert_eq!(record["contentAfter"], after);
+            assert!(after.ends_with(before));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_preparation_refuses_a_changed_review_without_writing() {
+        for change in ["content", "inventory", "flags"] {
+            let root = test_root(&format!("metadata-review-{change}"));
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("A.md"), "# Before\n").unwrap();
+            let path = root.to_string_lossy().to_string();
+            let preview = cli_migration_preview(path.clone(), vec![], vec![]).unwrap();
+            let mut pinned = vec![];
+            match change {
+                "content" => fs::write(root.join("A.md"), "# Outside edit\n").unwrap(),
+                "inventory" => fs::write(root.join("B.md"), "# Added later\n").unwrap(),
+                _ => pinned.push("A.md".to_string()),
+            }
+            let before = fs::read(root.join("A.md")).unwrap();
+            let result = note_metadata_apply(path, pinned, vec![], preview.revision);
+            assert!(
+                result.is_err(),
+                "{change} must invalidate the approved migration"
+            );
+            if let Err(issue) = result {
+                assert!(issue.contains("changed after review"), "{issue}");
+            }
+            assert_eq!(fs::read(root.join("A.md")).unwrap(), before);
+            assert!(!root.join(".zerus").exists());
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

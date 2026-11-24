@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeMoveNoteView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let notePath: String
     let workspace: UUID?
@@ -77,7 +77,7 @@ struct NativeMoveNoteView: View {
 }
 
 struct NativeRelationRepairView: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @State private var plan: NativeRelationMaintenancePlan?
     @State private var reviewing: NativeRelationMaintenancePlan?
     @State private var busy = false
@@ -120,7 +120,7 @@ struct NativeRelationRepairView: View {
 }
 
 private struct NativeRelationMaintenanceReview: View {
-    @EnvironmentObject private var vault: VaultStore
+    @Environment(VaultStore.self) private var vault
     @Environment(\.dismiss) private var dismiss
     let plan: NativeRelationMaintenancePlan
     let saved: () -> Void

@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { parse } from "yaml";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = resolve(dirname(new URL(import.meta.url).pathname), "..");
-const archiveRoot = join(root, "src-tauri/gen/apple/build");
+const native = process.argv.includes("--native");
+const archiveRoot = join(root, native ? "artifacts/native-ios/archives" : "src-tauri/gen/apple/build");
 const generatedProject = join(root, "src-tauri/gen/apple/project.yml");
 const tauriConfig = join(root, "src-tauri/tauri.conf.json");
 const exportOptions = join(
   root,
-  "src-tauri/gen/apple/ExportOptions-TestFlight.plist",
+  native ? "native-ios/ExportOptions-TestFlight.plist" : "src-tauri/gen/apple/ExportOptions-TestFlight.plist",
 );
 const localConfig = join(root, ".appstoreconnect.local");
 
@@ -117,6 +119,10 @@ function archiveMetadata(archive) {
 }
 
 function configuredReleaseMetadata() {
+  if (native) {
+    const project = parse(readFileSync(join(root, "native-ios/project.yml"), "utf8"));
+    return { version: String(project.settings.base.MARKETING_VERSION), build: String(project.settings.base.CURRENT_PROJECT_VERSION), identifier: project.targets.ZerusNative.settings.base.PRODUCT_BUNDLE_IDENTIFIER };
+  }
   const config = JSON.parse(readFileSync(tauriConfig, "utf8"));
   const version = config.version;
   const build = config.bundle?.iOS?.bundleVersion;

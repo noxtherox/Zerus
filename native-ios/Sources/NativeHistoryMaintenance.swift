@@ -81,14 +81,35 @@ extension VaultFiles {
         return result
     }
     nonisolated static func historyRecoveryDrafts() throws -> [String: Data] {
-        let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("NativeDrafts")
-        guard FileManager.default.fileExists(atPath: folder.path) else { return [:] }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let folder = base.appendingPathComponent("NativeDrafts")
         var result: [String: Data] = [:]
-        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey]) where file.pathExtension == "json" {
-            let values = try file.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
-            guard values.isSymbolicLink != true, values.isRegularFile == true else { throw VaultFailure(message: "An unreadable recovery draft prevents history cleanup. Its data is preserved.") }
-            result[file.lastPathComponent] = try Data(contentsOf: file)
+        if FileManager.default.fileExists(atPath: folder.path) {
+            for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey]) where file.pathExtension == "json" {
+                let values = try file.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+                guard values.isSymbolicLink != true, values.isRegularFile == true else { throw VaultFailure(message: "An unreadable recovery draft prevents history cleanup. Its data is preserved.") }
+                result[file.lastPathComponent] = try Data(contentsOf: file)
+            }
         }
+        #if os(macOS)
+        // Both explicit cleanup and automatic retention use this snapshot.
+        // Mac drafts must protect image blobs even when no settings sheet is open.
+        var pending = ["Zerus Native/Drafts", "Zerus Native/ExternalNotes/Drafts", "NativeTaskDrafts"].map { base.appendingPathComponent($0) }
+        while let directory = pending.popLast() {
+            try Task.checkCancellation()
+            guard FileManager.default.fileExists(atPath: directory.path) else { continue }
+            guard try directory.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw VaultFailure(message: "A linked Mac recovery folder prevents history cleanup. Its saved data is preserved.") }
+            for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey]) {
+                let values = try file.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey])
+                guard values.isSymbolicLink != true else { throw VaultFailure(message: "A linked Mac recovery file prevents history cleanup. Its saved data is preserved.") }
+                if values.isDirectory == true { pending.append(file) }
+                else if file.pathExtension == "json" {
+                    guard values.isRegularFile == true else { throw VaultFailure(message: "A Mac recovery file cannot be read. History files are preserved.") }
+                    result[file.path] = try Data(contentsOf: file)
+                }
+            }
+        }
+        #endif
         return result
     }
     func historyMaintenanceSnapshot(includeVersions: Bool = true) throws -> NativeHistoryMaintenanceSnapshot {
@@ -164,7 +185,7 @@ extension VaultFiles {
             }
             for data in futureNotes.values {
                 try Task.checkCancellation()
-                guard let text = String(data: data, encoding: .utf8) else { throw VaultFailure(message: "A note is not UTF-8. No history files were removed.") }
+                guard let text = NoteDocument.decodeUTF8(data) else { throw VaultFailure(message: "A note is not UTF-8. No history files were removed.") }
                 references += try Self.retentionStrings(text)
             }
         }
