@@ -23,7 +23,9 @@ import SwiftUI
                 let editor = try XCTUnwrap(nodes(host).compactMap { $0 as? NSTextView }.first { $0.isEditable })
                 XCTAssertNotNil(nodes(host).compactMap { $0 as? NSPopUpButton }.first { $0.toolTip == "Tables and code" }, "External notes expose the shared block sheets")
                 window.makeFirstResponder(editor)
-                let initial = fullSource ? original : body
+                // Rich text is the default even with foreign HTML blocks, so the
+                // editor owns the body in both variants; the header is preserved.
+                let initial = body
                 let block = try XCTUnwrap(MacCodeBlock.blocks(in: initial).first)
                 let request = MacCodeRequest(workspaceID: session.presentationID, path: session.snapshot.entry.name, source: initial, range: block.range, code: block.code)
                 let replacement = "```python\nvalue = 2\n```".replacingOccurrences(of: "\n", with: ending)
@@ -40,7 +42,7 @@ import SwiftUI
                 let stale = MacCodeChange(request: request, replacement: "```\nwrong\n```")
                 NotificationCenter.default.post(name: .macEditorAction, object: stale)
                 XCTAssertThrowsError(try XCTUnwrap(stale.result).get()) { XCTAssertTrue($0.localizedDescription.contains("note changed")) }
-                let current = fullSource ? session.document.content : session.document.parts.body
+                let current = session.document.parts.body
                 let table = try XCTUnwrap(MacMarkdown.tables(in: current).first)
                 let tableReplacement = "| Name |\n| --- |\n| New |".replacingOccurrences(of: "\n", with: ending)
                 let tableCommand = MacTableChange(request: .init(workspaceID: session.presentationID, path: session.snapshot.entry.name, source: current, range: table.range, table: table.table), replacement: tableReplacement)

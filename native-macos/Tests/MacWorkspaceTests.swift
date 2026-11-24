@@ -230,7 +230,7 @@ final class MacWorkspaceTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("Work/A.md")), Data(source.utf8))
             current.undoManager?.redo(); try await settle()
             XCTAssertEqual(store.body, "# A\n\nAlpha!\n")
-            await store.openNote("Work/B.md"); try await settle()
+            await store.openNote("Work/B.md", newTab: true); try await settle()
             let beta = try XCTUnwrap(editor(host)), betaRange = (beta.string as NSString).range(of: "Beta")
             guard betaRange.location != NSNotFound else { XCTFail("Missing second note body"); return }
             beta.setSelectedRange(NSRange(location: NSMaxRange(betaRange), length: 0)); beta.insertText("!", replacementRange: beta.selectedRange()); beta.breakUndoCoalescing()
@@ -256,7 +256,7 @@ final class MacWorkspaceTests: XCTestCase {
             await store.closeTab(.note("Work/A.md")); try await settle()
             await store.openNote("Work/B.md"); try await settle()
             current = try XCTUnwrap(editor(host))
-            await store.openNote("Work/A.md"); try await settle()
+            await store.openNote("Work/A.md", newTab: true); try await settle()
             current = try XCTUnwrap(editor(host))
             XCTAssertEqual(store.body, "# A\n\nOutside!\n")
             XCTAssertFalse(current.undoManager?.canUndo == true, "Closing a tab releases its live edit history")
@@ -848,8 +848,8 @@ final class MacWorkspaceTests: XCTestCase {
             ("> > | A | B |\n> > | --- | --- |\n> > | One | Two |\n", false),
             ("- Parent\n  > Quote prose\n\n  ```\n  x\n  ```\n", false),
             ("- # Heading\n\n  ```\n  x\n  ```\n", false),
-            ("- Parent\n  ```\n  x\n  ```\n\nOutside\n\n  Kept\n", true),
-            ("- Parent\n\n  | A |\n  | --- |\n  | <script>bad</script> |\n", true),
+            ("- Parent\n  ```\n  x\n  ```\n\nOutside\n\n  Kept\n", false),
+            ("- Parent\n\n  | A |\n  | --- |\n  | <script>bad</script> |\n", false),
             ("- ```swift\n  Parent\n  ```\n- Sibling\n", false),
             ("- | A | B |\n  | --- | --- |\n  | Parent | Keep |\n- Sibling\n", false),
             ("- - ```swift\n    Parent\n    ```\n- Sibling\n", false),
@@ -858,7 +858,7 @@ final class MacWorkspaceTests: XCTestCase {
             ("- > ```swift\n  > Parent\n  > ```\n- Sibling\n", false),
             ("- Parent\n  ```swift\n  x\n  ```\n\n  | A |\n  | --- |\n  | One |\n\n  Tail\n- Sibling\n", false),
             ("- Parent\n  > 1. Child\n  >    ```\n  >    x\n  >    ```\n", false),
-            ("- Parent\n  ```\n  x\n  ```\n\n[ref]: target\n", true)
+            ("- Parent\n  ```\n  x\n  ```\n\n[ref]: target\n", false)
         ]
         let cases = fixtures.flatMap { entry in ["\n", "\r\n", "\r"].map { (body: entry.body.replacingOccurrences(of: "\n", with: $0), source: entry.source) } }
         let files = Dictionary(uniqueKeysWithValues: cases.enumerated().map { index, entry in
@@ -892,7 +892,7 @@ final class MacWorkspaceTests: XCTestCase {
                 for _ in 0..<2 {
                     await store.openNote(path)
                     XCTAssertEqual(Data(store.body.utf8), Data(body.utf8))
-                    XCTAssertEqual(store.sourceMode, body.hasPrefix("<script>"))
+                    XCTAssertFalse(store.sourceMode, "Rich text is the default; Source is only an explicit choice")
                     await store.openNote(other)
                 }
                 XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), bytes)
@@ -1153,15 +1153,15 @@ final class MacWorkspaceTests: XCTestCase {
             ("- Parent\n  > - Nested child\n  >\n  >   | A | B |\n  >   | --- | --- |\n  >   | old | Other |\n- Sibling\n", false),
             ("- > - Nested child\n  >   ```swift\n  >   let value = 1\n  >   ```\n- Sibling\n", false),
             ("- > - # Nested heading\n- Sibling\n", false),
-            ("- > - <div>Unsupported HTML</div>\n- Sibling\n", true),
+            ("- > - <div>Unsupported HTML</div>\n- Sibling\n", false),
             ("> - First\n>   Continuation.\n", false),
             ("- Parent\n  - Child\n  - [ ] Task\n", false),
             ("> # Heading\n> - Item\n>   - Child\n", false),
             ("> First\n>\n> Separate paragraph.\n", false),
             ("Ordinary prose\nwith a soft break.\n", false),
-            ("-\n", true), // Bare empty markers retain their existing guarded admission.
-            ("1.\n", true),
-            ("[reference]: https://example.com\n\n[Link][reference]\n", true),
+            ("-\n", false), // Rich text is the default; Source is only an explicit choice.
+            ("1.\n", false),
+            ("[reference]: https://example.com\n\n[Link][reference]\n", false),
         ] + (rootProse + tabLists + deferredHeads).map { ($0.body, false) }
         for (body, needsSource) in examples {
             let original = note("container", title: "Container", body: body)
@@ -1404,7 +1404,8 @@ final class MacWorkspaceTests: XCTestCase {
                     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds)); host.cacheDisplay(in: host.bounds, to: bitmap)
                     let image = try XCTUnwrap(bitmap.cgImage)
                     let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
-                    request.regionOfInterest = CGRect(x: 0.78, y: 0, width: 0.22, height: 1)
+                    // The inspector column begins near 74% of the 1400-point window.
+                    request.regionOfInterest = CGRect(x: 0.745, y: 0, width: 0.255, height: 1)
                     try VNImageRequestHandler(cgImage: image).perform([request])
                     let text = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
                     observed = text.compactMap { value in known.first { $0.caseInsensitiveCompare(value) == .orderedSame } }
@@ -1597,8 +1598,8 @@ final class MacWorkspaceTests: XCTestCase {
         try await withVault(["Work/A.md": original, "Work/C.md": note("middle-c", title: "Background Charlie"), "Work/D.md": note("middle-d", title: "Next Delta"), "Work/E.md": note("middle-e", title: "Last Echo")]) { root, store in
             for tab in store.tabs { await store.closeTab(tab) }
             await store.openCollection("Work", folder: true)
-            await store.openNote("Work/C.md"); await store.openNote("Work/A.md")
-            await store.openNote("Work/D.md"); await store.openNote("Work/E.md"); await store.openNote("Work/A.md")
+            await store.openNote("Work/C.md", newTab: true); await store.openNote("Work/A.md", newTab: true)
+            await store.openNote("Work/D.md", newTab: true); await store.openNote("Work/E.md", newTab: true); await store.openNote("Work/A.md")
             store.togglePinnedTab(.note("Work/A.md")); store.togglePinnedTab(.note("Work/C.md"))
             let host = NSHostingView(rootView: MacWorkspaceView(store: store))
             let window = NSWindow(contentRect: NSRect(x: -20000, y: 0, width: 1400, height: 850), styleMask: .titled, backing: .buffered, defer: false)
@@ -1670,8 +1671,8 @@ final class MacWorkspaceTests: XCTestCase {
             let original = try Data(contentsOf: root.appendingPathComponent("Work/A.md"))
             await store.openCollection("All Notes")
             await store.openCollection("Work", folder: true)
-            await store.openNote("Work/C.md")
-            await store.openNote("Work/A.md")
+            await store.openNote("Work/C.md", newTab: true)
+            await store.openNote("Work/A.md", newTab: true)
             let order = store.tabs, active = store.activeTab
             let pins: Set<MacTab> = [.collection("All Notes"), .folder("Work"), .note("Work/A.md"), .note("Work/C.md")]
             for tab in pins { store.togglePinnedTab(tab) }

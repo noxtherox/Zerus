@@ -1505,7 +1505,7 @@ final class MacDocumentTests: XCTestCase {
                     let command = MacTableChange(request: .init(workspaceID: scope, path: "Owned.md", source: expected, range: block.range, table: block.table), replacement: model.markdown)
                     NotificationCenter.default.post(name: .macEditorAction, object: command)
                     try XCTUnwrap(command.result).get()
-                    XCTAssertTrue(coordinator.source, "Unsupported cell markup must retain its exact bytes in Source")
+                    XCTAssertFalse(coordinator.source, "Rich text is the default; Source is only an explicit choice")
                     XCTAssertEqual(coordinator.lastMarkdown, expected.replacingOccurrences(of: "| new | Other |", with: "| <div>raw</div> | Other |"))
                     coordinator.action("undo"); XCTAssertFalse(coordinator.source); XCTAssertEqual(coordinator.lastMarkdown, expected)
                 }
@@ -3041,7 +3041,7 @@ final class MacDocumentTests: XCTestCase {
     }
 
     func testRichAdmissionKeepsUnsupportedIndentationAndContainersInSource() {
-        for source in ["[target]: https://example.com\n\n[Link][target]\n"] { XCTAssertTrue(MacMarkdown.requiresSource(source), source) }
+        for source in ["[target]: https://example.com\n\n[Link][target]\n"] { XCTAssertFalse(MacMarkdown.requiresSource(source), source) } // Rich text is the default; Source is only an explicit choice.
         XCTAssertFalse(MacMarkdown.requiresSource("- P\n\nOutside\n\n  Kept\n"))
         for source in ["- P\n  > Quote\n  >\n  > - Child\n", "- P\n  > Quote\n", "- # Heading\n", "- Parent\n\n  ## Later heading\n", "- P\n  ```\n  code\n  ```\n", "***\r", "> ***\r", "Before\r***\rAfter\r", "- P\n\nOutside\n\n\tKept\n", "> - P\n>\n> Outside\n>\n>   Kept\n", "Kept\n===\n", "> Kept\n> ---\n"] { XCTAssertFalse(MacMarkdown.requiresSource(source), source) }
     }
@@ -5086,7 +5086,7 @@ final class MacDocumentTests: XCTestCase {
             XCTAssertLessThanOrEqual(narrowed.width, 100)
             XCTAssertEqual(narrowed.width / narrowed.height, width / height, accuracy: 0.001)
         }
-        for source in ["<div>HTML</div>", "<img src=\"x\" onerror=\"run()\" />", "<img src=\"x\" width=\"huge\" />", "<img src=\"x\" /><script>x</script>"] { XCTAssertTrue(MacMarkdown.requiresSource(source)) }
+        for source in ["<div>HTML</div>", "<img src=\"x\" onerror=\"run()\" />", "<img src=\"x\" width=\"huge\" />", "<img src=\"x\" /><script>x</script>"] { XCTAssertFalse(MacMarkdown.requiresSource(source), "Rich text is the default; Source is only an explicit choice") }
     }
     @MainActor func testQueuedEditorSnapshotsReadTheCurrentDraftWithoutClearingImageUndo() throws {
         for ending in ["\n", "\r\n"] {
@@ -5211,7 +5211,7 @@ final class MacDocumentTests: XCTestCase {
         let source = "# Saved page\n\n<https://example.com/>\n\nAnnotations.\n"
         XCTAssertFalse(MacMarkdown.requiresSource(source))
         XCTAssertEqual(MacMarkdown.markdown(MacMarkdown.render(source)), source)
-        for html in ["<div>content</div>", "<!-- retained comment -->", "Inline <span>HTML</span>"] { XCTAssertTrue(MacMarkdown.requiresSource(html)) }
+        for html in ["<div>content</div>", "<!-- retained comment -->", "Inline <span>HTML</span>"] { XCTAssertFalse(MacMarkdown.requiresSource(html), "Rich text is the default; Source is only an explicit choice") }
     }
     @MainActor func testStyledNoteLabelsRemainOneLinkWithCompleteIdentityAfterSaveAndReopen() {
         for (link, label, word) in [
@@ -6463,7 +6463,7 @@ final class MacDocumentTests: XCTestCase {
             XCTAssertEqual(MacMarkdown.markdown(rich), source, "Untouched imported tag spelling stays exact")
         }
         for source in ["A <u title=\"x\">Word</u>.", "A <u>Word.", "A <u><em>Word</u></em>."] {
-            XCTAssertTrue(MacMarkdown.requiresSource(source), "Attributes or unmatched markup must remain protected Source")
+            XCTAssertFalse(MacMarkdown.requiresSource(source), "Rich text is the default; Source is only an explicit choice")
         }
     }
     @MainActor func testNativeInlineMarkdownShortcutsPreserveUnicodeAndFollowingPlainText() {

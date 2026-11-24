@@ -11,7 +11,7 @@ import XCTest
             "Watch.md": "# Watch\n\n[A](Source/A.md) and [[Source/B|B]].\n",
             ".zerus/properties.json": schema,
         ]) { root, workspace in
-            await workspace.openNote("Source/A.md"); await workspace.openNote("Source/B.md")
+            await workspace.openNote("Source/A.md"); await workspace.openNote("Source/B.md", newTab: true)
             workspace.selectedPaths = ["Source/A.md", "Source/B.md"]
             let review = try await workspace.prepareNoteMoves(paths: workspace.selectedPaths, folder: "Deep/Nested", workspaceID: workspace.workspaceID)
             XCTAssertEqual(review.moves.count, 2); XCTAssertTrue(review.skipped.isEmpty)
@@ -33,7 +33,7 @@ import XCTest
             await workspace.historyStep(-1); XCTAssertEqual(workspace.selection, a.path)
             await workspace.follow("./B.md")
             XCTAssertEqual(workspace.selection, b.path)
-            await workspace.openNote("Watch.md")
+            await workspace.openNote("Watch.md", newTab: true)
             await workspace.follow("./Deep/Nested/A.md")
             XCTAssertEqual(workspace.selection, a.path)
             let object = try JSONSerialization.jsonObject(with: Data(contentsOf: root.appendingPathComponent(".zerus/properties.json"))) as? [String: Any]
