@@ -2,7 +2,7 @@ import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import type { RootContent } from "mdast";
-import { mapWikilinks, parseNoteReference } from "@/lib/wikilinks";
+import { mapWikilinks, parseNoteReference, noteReferenceFromHref } from "@/lib/wikilinks";
 
 // A local fragment survives Lexical's URL sanitization and never opens an external page.
 const parser = unified().use(remarkParse).use(remarkGfm);
@@ -10,10 +10,7 @@ const PREFIX = "#zerus-note:";
 function encodeReference(reference: string): string {
   return encodeURIComponent(reference).replace(/[!'()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
 }
-export function noteReferenceFromHref(href: string): string | null {
-  if (!href.startsWith(PREFIX)) return null;
-  try { return decodeURIComponent(href.slice(PREFIX.length)); } catch { return null; }
-}
+export { noteReferenceFromHref } from "@/lib/wikilinks";
 
 /** Render readable labels as real editor links while preserving their exact target. */
 export function prepareNoteLinks(markdown: string): string {

@@ -26,13 +26,23 @@ export function stripZerusMetadata(content: string): string {
   return next;
 }
 
-export function readZerusMetadata(content: string) {
-  const properties = getNoteProperties(content);
+export function readZerusMetadata(content: string, legacy: { pinned?: boolean; archived?: boolean } = {}) {
+  // Reserved scalars follow the CLI reader, including legacy quoted booleans.
+  // This local lookup does not coerce ordinary user properties or rewrite notes.
+  const properties = Object.fromEntries(
+    Object.entries(getNoteProperties(content)).map(([key, value]) => [key.toLowerCase(), value]),
+  );
   const id = properties[ZERUS_METADATA_KEYS.id];
+  const flag = (key: string, fallback?: boolean) => {
+    const value = properties[key];
+    return value === undefined
+      ? fallback === true
+      : value === true || (typeof value === "string" && value.toLowerCase() === "true");
+  };
   return {
     id: typeof id === "string" && id.length > 0 ? id : null,
-    pinned: properties[ZERUS_METADATA_KEYS.pinned] === true,
-    archived: properties[ZERUS_METADATA_KEYS.archived] === true,
+    pinned: flag(ZERUS_METADATA_KEYS.pinned, legacy.pinned),
+    archived: flag(ZERUS_METADATA_KEYS.archived, legacy.archived),
   };
 }
 

@@ -92,6 +92,9 @@ import {
   fileLocationUsages,
   getFileLocationMappings,
   mapFileLocation,
+  flushPendingWrites,
+  getLegacyNoteFlags,
+  getVaultBackend,
   refreshVaultFromDisk,
   removeFileLocation,
   renameFileLocation,
@@ -161,6 +164,9 @@ const SKILL_AGENTS = [
 ] as const;
 
 interface MigrationPreview {
+  revision: string;
+  changedPaths: string[];
+  legacyKeysRenamed: number;
   notesScanned: number;
   notesChanged: number;
   idsAdded: number;
@@ -168,6 +174,23 @@ interface MigrationPreview {
   archivedAdded: number;
   blocked: boolean;
   warnings: string[];
+}
+
+function checkedMigrationPreview(preview: MigrationPreview): MigrationPreview {
+  if (!preview || typeof preview.revision !== "string" || !/^[a-f0-9]{64}$/.test(preview.revision) ||
+      !Array.isArray(preview.changedPaths) || !preview.changedPaths.every((path) => typeof path === "string") ||
+      !Number.isInteger(preview.legacyKeysRenamed)) {
+    throw new Error("This desktop runtime does not support reviewed note preparation. Restart an updated desktop app before preparing note metadata.");
+  }
+  return preview;
+}
+
+interface MetadataReview {
+  vaultPath: string;
+  pinnedPaths: string[];
+  archivedPaths: string[];
+  backend: ReturnType<typeof getVaultBackend>;
+  preview: MigrationPreview;
 }
 
 export function ThemeSettingsDialog({
@@ -195,16 +218,16 @@ export function ThemeSettingsDialog({
   const [locationDraft, setLocationDraft] = useState("");
   const [cliStatus, setCliStatus] = useState<CliStatus | null>(null);
   const [skillStatuses, setSkillStatuses] = useState<Record<string, SkillInstallStatus>>({});
-  const [migrationPreview, setMigrationPreview] =
-    useState<MigrationPreview | null>(null);
+  const [migrationReview, setMigrationReview] = useState<MetadataReview | null>(null);
+  const migrationPreview = migrationReview?.preview ?? null;
   const [cliBusy, setCliBusy] = useState(false);
   const [cliMessage, setCliMessage] = useState("");
   const [cliMessageKind, setCliMessageKind] = useState<"success" | "error">(
     "success",
   );
-  const [cliInstallConfirmOpen, setCliInstallConfirmOpen] = useState(false);
+  const [metadataConfirmation, setMetadataConfirmation] = useState<{ review: MetadataReview; installCli: boolean } | null>(null);
   const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
-  const { fileLocations, historyError, historySettings, isDesktop, location, notes } = useVault();
+  const { fileLocations, historyError, historySettings, isDesktop, location, notes, status } = useVault();
   const locationMappings = getFileLocationMappings();
 
   useEffect(() => {
@@ -222,18 +245,29 @@ export function ThemeSettingsDialog({
           value,
           await invoke<SkillInstallStatus>("cli_skill_status", { agent: value, profile: null }),
         ] as const)).then((entries) => setSkillStatuses(Object.fromEntries(entries)));
-        if (location) {
-          const pinnedPaths = notes.filter((note) => note.pinned).map((note) => note.path);
-          const archivedPaths = notes.filter((note) => note.archived).map((note) => note.path);
-          void invoke<MigrationPreview>("cli_migration_preview", {
-            vaultPath: location,
-            pinnedPaths,
-            archivedPaths,
-          }).then(setMigrationPreview);
-        }
       }
     }
-  }, [isDesktop, location, notes, open]);
+  }, [isDesktop, open]);
+
+  useEffect(() => {
+    if (!open || !isDesktop || !location || status !== "ready") { setMigrationReview(null); return; }
+    if (cliBusy) return;
+    let active = true;
+    const backend = getVaultBackend();
+    setMigrationReview(null);
+    let pinnedPaths: string[], archivedPaths: string[];
+    try { ({ pinnedPaths, archivedPaths } = getLegacyNoteFlags()); }
+    catch (error) { setCliMessage(String(error)); setCliMessageKind("error"); return; }
+    void invoke<MigrationPreview>("cli_migration_preview", { vaultPath: location, pinnedPaths, archivedPaths })
+      .then(checkedMigrationPreview)
+      .then((preview) => {
+        if (active && getVaultBackend() === backend) setMigrationReview({ vaultPath: location, pinnedPaths, archivedPaths, backend, preview });
+      })
+      .catch((error) => {
+        if (active) { setCliMessage(String(error)); setCliMessageKind("error"); }
+      });
+    return () => { active = false; };
+  }, [cliBusy, isDesktop, location, notes, open, status]);
 
   // Changes apply immediately so you can preview them behind the dialog
   const update = (patch: Partial<ZerusTheme>) => {
@@ -280,57 +314,61 @@ export function ThemeSettingsDialog({
       index,
   );
 
-  const installCli = async (prepareNotes: boolean) => {
-    if (prepareNotes && !location) return;
-
-    setCliBusy(true);
-    setCliMessage("");
+  const reviewMetadata = async (installCli: boolean) => {
+    if (!isDesktop || !location || status !== "ready" || cliBusy) return;
+    const backend = getVaultBackend();
+    setCliBusy(true); setCliMessage("");
     try {
-      let idsAdded: number | null = null;
-      if (prepareNotes && location) {
-        const pinnedPaths = notes
-          .filter((note) => note.pinned)
-          .map((note) => note.path);
-        const archivedPaths = notes
-          .filter((note) => note.archived)
-          .map((note) => note.path);
-        const migration = await invoke<MigrationPreview>(
-          "cli_migration_apply",
-          { vaultPath: location, pinnedPaths, archivedPaths },
-        );
-        await refreshVaultFromDisk();
-        const nextPreview = await invoke<MigrationPreview>(
-          "cli_migration_preview",
-          { vaultPath: location, pinnedPaths, archivedPaths },
-        );
-        setMigrationPreview(nextPreview);
-        idsAdded = migration.idsAdded;
-      }
+      if (!backend) throw new Error("Open a vault before preparing note metadata.");
+      if (!(await flushPendingWrites())) throw new Error("Save or resolve note drafts before preparing metadata.");
+      if (getVaultBackend() !== backend) throw new Error("The vault changed. Review note metadata again.");
+      const { pinnedPaths, archivedPaths } = getLegacyNoteFlags();
+      const preview = checkedMigrationPreview(await invoke<MigrationPreview>("cli_migration_preview", { vaultPath: location, pinnedPaths, archivedPaths }));
+      if (getVaultBackend() !== backend) throw new Error("The vault changed. Review note metadata again.");
+      const review = { vaultPath: location, pinnedPaths, archivedPaths, backend, preview };
+      setMigrationReview(review); setMetadataConfirmation({ review, installCli });
+    } catch (error) { setCliMessage(String(error)); setCliMessageKind("error"); }
+    finally { setCliBusy(false); }
+  };
 
-      const status = await invoke<CliStatus>("cli_install");
-      setCliStatus(status);
-
-      if (idsAdded !== null) {
-        setCliMessage(
-          idsAdded === 0
-            ? "CLI installed successfully. Your notes already have zerus-id."
-            : `CLI installed successfully. Added zerus-id to ${idsAdded} ${idsAdded === 1 ? "note" : "notes"}.`,
-        );
-      } else {
-        setCliMessage(`CLI reinstalled successfully at ${status.executablePath}.`);
-      }
+  const applyMetadata = async () => {
+    const confirmation = metadataConfirmation;
+    if (!confirmation || cliBusy) return;
+    const { review, installCli } = confirmation;
+    let metadataApplied = false;
+    setCliBusy(true); setCliMessage("");
+    try {
+      if (getVaultBackend() !== review.backend) throw new Error("The vault changed. Review note metadata again.");
+      if (!(await flushPendingWrites())) throw new Error("Save or resolve note drafts before preparing metadata.");
+      if (getVaultBackend() !== review.backend) throw new Error("The vault changed. Review note metadata again.");
+      const flagKey = (flags: { pinnedPaths: string[]; archivedPaths: string[] }) => JSON.stringify([[...flags.pinnedPaths].sort(), [...flags.archivedPaths].sort()]);
+      if (flagKey(getLegacyNoteFlags()) !== flagKey(review)) throw new Error("Pins or archive status changed after review. Review note metadata again.");
+      const result = await invoke<MigrationPreview>(installCli ? "cli_migration_apply" : "note_metadata_apply", {
+        vaultPath: review.vaultPath, pinnedPaths: review.pinnedPaths, archivedPaths: review.archivedPaths,
+        reviewRevision: review.preview.revision, ...(installCli ? { registerVault: true } : {}),
+      });
+      metadataApplied = true;
+      if (getVaultBackend() === review.backend) await refreshVaultFromDisk();
+      if (installCli) setCliStatus(await invoke<CliStatus>("cli_install"));
+      setCliMessage(`${installCli ? "CLI installed. " : ""}Prepared ${result.notesChanged} notes: ${result.idsAdded} IDs, ${result.pinnedAdded} pins and ${result.archivedAdded} archive flags added; ${result.legacyKeysRenamed} legacy keys renamed.${getVaultBackend() !== review.backend ? ` Vault: ${review.vaultPath}.` : ""}`);
       setCliMessageKind("success");
-    } catch (error) {
-      setCliMessage(String(error));
-      setCliMessageKind("error");
-    } finally {
-      setCliBusy(false);
-    }
+    } catch (error) { setCliMessage(`${metadataApplied ? "Note metadata was prepared. " : ""}${String(error)}`); setCliMessageKind("error"); }
+    finally { setMetadataConfirmation(null); setCliBusy(false); }
+  };
+
+  const installCli = async () => {
+    if (cliBusy) return;
+    setCliBusy(true); setCliMessage("");
+    try {
+      const status = await invoke<CliStatus>("cli_install");
+      setCliStatus(status); setCliMessage(`CLI reinstalled successfully at ${status.executablePath}.`); setCliMessageKind("success");
+    } catch (error) { setCliMessage(String(error)); setCliMessageKind("error"); }
+    finally { setCliBusy(false); }
   };
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={(next) => { if (!cliBusy) onOpenChange(next); }}>
       <DialogContent className="h-[min(660px,calc(100vh-2rem))] max-h-none max-w-2xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
@@ -355,7 +393,7 @@ export function ThemeSettingsDialog({
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium">Zerus command line</p>
                       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                        Installing the CLI will enable your AI agents to interact directly with the commands for Zerus, which makes it clearer for the agent to work. For that, we will need to introduce some hidden properties in your notes which will not affect how you use the desktop application. Here&apos;s a preview.
+                        Use Zerus from the command line or your AI agents. Prepare note metadata to share stable IDs, pins and archive status with the CLI and native Mac app. You can prepare notes without installing or reinstalling the CLI.
                       </p>
                       <div className="mt-3 rounded-md bg-muted/60 p-3 text-xs">
                         {migrationPreview ? (
@@ -369,7 +407,7 @@ export function ThemeSettingsDialog({
                             )}
                           </>
                         ) : (
-                          <p className="text-muted-foreground">Preparing migration preview…</p>
+                          <p className="text-muted-foreground">{cliMessageKind === "error" && cliMessage ? "Metadata preview unavailable. Review note metadata to try again." : "Reading note metadata…"}</p>
                         )}
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -380,13 +418,13 @@ export function ThemeSettingsDialog({
                             (!cliStatus?.installed &&
                               (!migrationPreview ||
                                 migrationPreview.blocked ||
-                                !location))
+                                !location || status !== "ready"))
                           }
                           onClick={() => {
                             if (cliStatus?.installed) {
-                              void installCli(false);
+                              void installCli();
                             } else {
-                              setCliInstallConfirmOpen(true);
+                              void reviewMetadata(true);
                             }
                           }}
                         >
@@ -395,6 +433,9 @@ export function ThemeSettingsDialog({
                             : cliStatus?.installed
                               ? "Reinstall CLI"
                               : "Install CLI"}
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={cliBusy || !location || status !== "ready"} onClick={() => void reviewMetadata(false)}>
+                          {cliBusy ? "Working…" : "Review note metadata…"}
                         </Button>
                       </div>
                       {cliStatus?.installed && (
@@ -594,7 +635,7 @@ export function ThemeSettingsDialog({
 
           <TabsContent value="general" className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
           <DateFormatSetting />
-          <EditorSettings />
+          <EditorSettings desktopTransfer vaultLocation={status === "ready" ? location : null} />
           <PropertiesPaneSettings />
           <p className="pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Note list
@@ -994,27 +1035,26 @@ export function ThemeSettingsDialog({
         </Tabs>
         </DialogContent>
       </Dialog>
-      <AlertDialog
-        open={cliInstallConfirmOpen}
-        onOpenChange={setCliInstallConfirmOpen}
-      >
+      <AlertDialog open={metadataConfirmation !== null} onOpenChange={(next) => { if (!next && !cliBusy) setMetadataConfirmation(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Install the Zerus CLI?</AlertDialogTitle>
+            <AlertDialogTitle>{metadataConfirmation?.installCli ? "Install the CLI and prepare notes?" : "Prepare shared note metadata?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              To make your notes safely addressable from the command line,
-              Zerus will add a hidden <code>zerus-id</code> property to
-              {migrationPreview
-                ? ` ${migrationPreview.idsAdded} ${migrationPreview.idsAdded === 1 ? "note" : "notes"}`
-                : " your notes"}
-              . This will not change how your notes look or work in the desktop
-              app.
+              {metadataConfirmation?.review.preview.notesChanged ?? 0} notes will receive hidden metadata:
+              {" "}{metadataConfirmation?.review.preview.idsAdded ?? 0} IDs,
+              {" "}{metadataConfirmation?.review.preview.pinnedAdded ?? 0} pins and
+              {" "}{metadataConfirmation?.review.preview.archivedAdded ?? 0} archive flags.
+              {(metadataConfirmation?.review.preview.legacyKeysRenamed ?? 0) > 0 && ` ${metadataConfirmation?.review.preview.legacyKeysRenamed} legacy metadata keys will be renamed.`}
+              {!metadataConfirmation?.installCli && " The CLI installation, vault registration and vault settings will stay unchanged."}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <p className="break-all text-xs text-muted-foreground">{metadataConfirmation?.review.vaultPath}</p>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-md bg-muted p-3 text-xs">{metadataConfirmation?.review.preview.changedPaths.join("\n") || "Note metadata is already up to date."}</pre>
+          {metadataConfirmation?.review.preview.blocked && <p className="text-sm text-destructive">{metadataConfirmation.review.preview.warnings.join(" · ")}</p>}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void installCli(true)}>
-              Install CLI
+            <AlertDialogCancel disabled={cliBusy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={cliBusy || status !== "ready" || metadataConfirmation?.review.preview.blocked || (!metadataConfirmation?.installCli && metadataConfirmation?.review.preview.notesChanged === 0)} onClick={(event) => { event.preventDefault(); void applyMetadata(); }}>
+              {cliBusy ? "Working…" : metadataConfirmation?.installCli ? "Install CLI" : "Prepare notes"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

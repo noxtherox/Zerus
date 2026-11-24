@@ -1,3 +1,4 @@
+use crate::frontmatter::{bom_prefix_len, unquote, without_comment};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -92,20 +93,24 @@ pub enum MetadataError {
 #[derive(Clone, Copy)]
 struct Frontmatter<'a> {
     raw: &'a str,
+    opening_offset: usize,
     body_offset: usize,
     closing_offset: usize,
     newline: &'static str,
 }
 
 fn split_frontmatter(content: &str) -> Result<Option<Frontmatter<'_>>, MetadataError> {
-    let (opening_len, newline) = if content.starts_with("---\r\n") {
+    let prefix = bom_prefix_len(content);
+    let logical = &content[prefix..];
+    let (opening_len, newline) = if logical.starts_with("---\r\n") {
         (5, "\r\n")
-    } else if content.starts_with("---\n") {
+    } else if logical.starts_with("---\n") {
         (4, "\n")
     } else {
         return Ok(None);
     };
 
+    let opening_len = opening_len + prefix;
     let mut cursor = opening_len;
     while cursor <= content.len() {
         let next = content[cursor..]
@@ -118,7 +123,7 @@ fn split_frontmatter(content: &str) -> Result<Option<Frontmatter<'_>>, MetadataE
             next - 1
         };
         let line = content[cursor..line_end].trim_end_matches('\r');
-        if line.trim() == "---" || line.trim() == "..." {
+        if line.trim_end() == "---" || line.trim_end() == "..." {
             let body_offset = if next < content.len() || content.ends_with('\n') {
                 next
             } else {
@@ -126,6 +131,7 @@ fn split_frontmatter(content: &str) -> Result<Option<Frontmatter<'_>>, MetadataE
             };
             return Ok(Some(Frontmatter {
                 raw: &content[opening_len..cursor],
+                opening_offset: opening_len,
                 body_offset,
                 closing_offset: cursor,
                 newline,
@@ -137,18 +143,6 @@ fn split_frontmatter(content: &str) -> Result<Option<Frontmatter<'_>>, MetadataE
         cursor = next;
     }
     Err(MetadataError::UnterminatedFrontmatter)
-}
-
-fn unquote(value: &str) -> &str {
-    let trimmed = value.trim();
-    if trimmed.len() >= 2
-        && ((trimmed.starts_with('"') && trimmed.ends_with('"'))
-            || (trimmed.starts_with('\'') && trimmed.ends_with('\'')))
-    {
-        &trimmed[1..trimmed.len() - 1]
-    } else {
-        trimmed
-    }
 }
 
 fn top_level_key(line: &str) -> Option<&str> {
@@ -200,7 +194,7 @@ fn rename_legacy_metadata_keys(content: &str) -> Result<(String, usize), Metadat
     if renamed == 0 {
         return Ok((content.to_string(), 0));
     }
-    let raw_start = if content.starts_with("---\r\n") { 5 } else { 4 };
+    let raw_start = frontmatter.opening_offset;
     let mut next = String::with_capacity(content.len());
     next.push_str(&content[..raw_start]);
     next.push_str(&next_raw);
@@ -211,6 +205,9 @@ fn rename_legacy_metadata_keys(content: &str) -> Result<(String, usize), Metadat
 fn reserved_values(raw: &str) -> Result<Vec<(String, String)>, MetadataError> {
     let mut values = Vec::new();
     for line in raw.lines() {
+        if line.starts_with(char::is_whitespace) {
+            continue;
+        }
         let Some((raw_key, raw_value)) = line.split_once(':') else {
             continue;
         };
@@ -224,7 +221,7 @@ fn reserved_values(raw: &str) -> Result<Vec<(String, String)>, MetadataError> {
         if values.iter().any(|(existing, _)| existing == &key) {
             return Err(MetadataError::DuplicateKey { key });
         }
-        values.push((key, unquote(raw_value).to_string()));
+        values.push((key, unquote(without_comment(raw_value))));
     }
     Ok(values)
 }
@@ -286,9 +283,12 @@ fn append_metadata_lines(content: &str, lines: &[String]) -> Result<String, Meta
         } else {
             "\n"
         };
+        let prefix = bom_prefix_len(content);
         Ok(format!(
-            "---{newline}{}{newline}---{newline}{content}",
-            lines.join(newline)
+            "{}---{newline}{}{newline}---{newline}{}",
+            &content[..prefix],
+            lines.join(newline),
+            &content[prefix..]
         ))
     }
 }
@@ -430,6 +430,74 @@ mod tests {
 
     fn id() -> Uuid {
         Uuid::parse_str("019f7922-8fae-7733-8357-48b16a134c38").unwrap()
+    }
+
+    #[test]
+    fn native_bom_notes_keep_identity_body_and_prefix_during_preparation() {
+        for prefix in ["", "\u{feff}", "\u{feff}\u{feff}"] {
+            for newline in ["\n", "\r\n"] {
+                let body = format!("# Café{newline}{newline}Keep my text.{newline}");
+                let original = format!("{prefix}---{newline}zerus-id: {}{newline}Foreign: keep{newline}---{newline}{body}", id());
+                assert_eq!(
+                    read_note_metadata(&original).unwrap().id,
+                    Some(id()),
+                    "{original:?}"
+                );
+                assert_eq!(crate::note_body(&original), body);
+                let unchanged =
+                    plan_note_metadata_migration(&original, Uuid::now_v7(), false, false).unwrap();
+                assert!(!unchanged.changed);
+                assert_eq!(unchanged.next_content, original);
+                let edited = crate::set_property(&original, "Status", Some("ready")).unwrap();
+                assert!(edited.starts_with(&format!("{prefix}---{newline}")));
+                assert_eq!(crate::note_body(&edited), body);
+                assert_eq!(read_note_metadata(&edited).unwrap().id, Some(id()));
+                let headerless = format!("{prefix}{body}");
+                let prepared =
+                    plan_note_metadata_migration(&headerless, id(), false, false).unwrap();
+                assert!(prepared
+                    .next_content
+                    .starts_with(&format!("{prefix}---{newline}")));
+                assert_eq!(crate::note_body(&prepared.next_content), body);
+                let legacy = original.replace("zerus-id:", "grimoire-id:");
+                assert_eq!(
+                    plan_note_metadata_migration(&legacy, Uuid::now_v7(), false, false)
+                        .unwrap()
+                        .next_content,
+                    original
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn native_reserved_scalars_allow_comments_and_ignore_nested_foreign_keys() {
+        let source = format!("---\nzerus-id: '{}' # keep ID\nzerus-pinned: true # keep pin\nzerus-archived: \"false\" # keep archive\nForeign:\n  zerus-id: not-a-note-id\n---\n# Note\n", id());
+        let metadata = read_note_metadata(&source).unwrap();
+        assert_eq!(metadata.id, Some(id()));
+        assert!(metadata.pinned);
+        assert!(!metadata.archived);
+        assert_eq!(
+            plan_note_metadata_migration(&source, Uuid::now_v7(), false, false)
+                .unwrap()
+                .next_content,
+            source
+        );
+        let nested = "---\nForeign:\n  zerus-id: not-a-note-id\n---\n# Note\n";
+        assert_eq!(read_note_metadata(nested).unwrap().id, None);
+    }
+
+    #[test]
+    fn indented_yaml_delimiters_do_not_end_frontmatter() {
+        for newline in ["\n", "\r\n"] {
+            let source = format!("---{newline}note: |{newline}  ---{newline}zerus-id: {}{newline}---{newline}# Body{newline}", id());
+            assert_eq!(read_note_metadata(&source).unwrap().id, Some(id()));
+            assert_eq!(crate::note_body(&source), format!("# Body{newline}"));
+            let edited = crate::set_property(&source, "Status", Some("ready")).unwrap();
+            assert_eq!(read_note_metadata(&edited).unwrap().id, Some(id()));
+            assert!(edited.contains(&format!("note: |{newline}  ---{newline}")));
+            assert_eq!(crate::note_body(&edited), format!("# Body{newline}"));
+        }
     }
 
     #[test]

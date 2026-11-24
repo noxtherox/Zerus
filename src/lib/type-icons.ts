@@ -32,7 +32,7 @@ export function isTypeIconValue(value: unknown): value is string {
 
 // Concept matching makes newly created types useful immediately without
 // loading the full picker catalog. Values are verified against Tabler in tests.
-const KEYWORD_ICONS: Record<string, string> = {
+export const TYPE_ICON_KEYWORDS: Record<string, string> = {
   work: "Briefcase", job: "Briefcase", career: "Briefcase", business: "Briefcase",
   office: "Building", company: "Building", project: "FolderCode", task: "Checklist",
   todo: "Checklist", checklist: "Checklist", goal: "Target", habit: "Repeat",
@@ -98,7 +98,7 @@ export async function suggestIconForType(typeName: string): Promise<string | nul
   const raw = typeName.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
   const words = [...new Set(raw.flatMap((word) => [word, ...singulars(word)]))];
   for (const word of words) {
-    const icon = KEYWORD_ICONS[word];
+    const icon = TYPE_ICON_KEYWORDS[word];
     if (icon) return tablerIconValue(icon);
   }
   return null;

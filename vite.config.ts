@@ -10,7 +10,10 @@ export default defineConfig(() => ({
     host: "::",
     port: 8080,
     allowedHosts: ["mac-mini-m4-nox.ibex-oratrice.ts.net"],
+    // Native build trees contain SDK caches and package checkouts, not web inputs.
+    watch: { ignored: ["**/artifacts/**", "**/src-tauri/target/**", "**/native-ios/**", "**/native-macos/**", "**/.worktrees/**"] },
   },
+  optimizeDeps: { entries: ["index.html"] },
   plugins: [
     react(),
     {

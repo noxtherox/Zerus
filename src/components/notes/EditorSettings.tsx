@@ -1,7 +1,11 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { saveCodeBlocksEnabled, useCodeBlocksEnabled, saveNoteLinkShortcutsEnabled, useNoteLinkShortcutsEnabled } from "@/lib/editor-preferences";
 
-export function EditorSettings() {
+export function EditorSettings({ desktopTransfer = false, vaultLocation }: { desktopTransfer?: boolean; vaultLocation?: string | null }) {
+  const [exporting, setExporting] = useState(false);
+  const [message, setMessage] = useState("");
   const enabled = useCodeBlocksEnabled();
   const noteShortcutsEnabled = useNoteLinkShortcutsEnabled();
   return <section className="mb-5">
@@ -24,5 +28,15 @@ export function EditorSettings() {
       </div>
       <Switch id="code-blocks" aria-describedby="code-blocks-description" checked={enabled} onCheckedChange={saveCodeBlocksEnabled} />
     </div>
+    {desktopTransfer ? <div className="mt-3">
+      <Button variant="outline" size="sm" disabled={exporting} onClick={async () => {
+        setExporting(true); setMessage("");
+        try { const { exportDesktopSettings } = await import("@/lib/desktop-settings-transfer"); if (await exportDesktopSettings(vaultLocation) === "saved") setMessage("Settings exported. In Zerus Native, choose File → Import Desktop Settings…"); }
+        catch { setMessage("Settings could not be exported. Try another destination."); }
+        finally { setExporting(false); }
+      }}>Export desktop settings…</Button>
+      <p className="mt-2 text-xs text-muted-foreground">Transfer appearance, colours, saved themes, dates, zoom and editor preferences to Zerus Native. {vaultLocation ? "Includes this vault’s default folder, folder order, keep-open choices and subtype visibility." : ""}</p>
+      {message && <p role="status" className="mt-2 text-xs text-muted-foreground">{message}</p>}
+    </div> : null}
   </section>;
 }

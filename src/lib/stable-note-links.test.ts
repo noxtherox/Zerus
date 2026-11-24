@@ -116,3 +116,28 @@ it("escapes ID alias separators during migration inside tables", () => {
   expect(content).toContain("[[zerus:id\\|Target]]");
   expect(getOutgoingLinkTitles(content)).toEqual(["zerus:id|Target"]);
 });
+
+
+it("indexes native styled fragment links in document order while excluding literal examples", () => {
+  const target = note("target", "# Renamed target");
+  const codeOnly = note("code-only", "# Example only");
+  const source = note("source", [
+    "# Source", "[[zerus:before|Before]]",
+    "[**Project** plan](#zerus-note:zerus%3Atarget%7CProject%20plan)",
+    "`[Example](#zerus-note:zerus%3Acode-only%7CExample)`",
+    "```md\n[Example](#zerus-note:zerus%3Acode-only%7CExample)\n```",
+    "![Example](#zerus-note:zerus%3Acode-only%7CExample)",
+    "<div>[Example](#zerus-note:zerus%3Acode-only%7CExample)</div>",
+    "[Web](https://example.com/#zerus-note:zerus%3Acode-only%7CExample)",
+    "| Link |\n| --- |\n| [Café \\[Q4\\] \\| plan](#zerus-note:zerus%3Atarget%7CCaf%C3%A9%20%5BQ4%5D%20%7C%20plan) |",
+    "[Reference **label**][native-target]", "[native-target]: #zerus-note:zerus%3Atarget%7COld%20label",
+    "[[zerus:after|After]]", "[Broken](#zerus-note:%invalid)",
+  ].join("\n\n"));
+  const original = source.content;
+  expect(getOutgoingLinkTitles(source.content)).toEqual([
+    "zerus:before|Before", "zerus:target|Project plan", "zerus:target|Café [Q4] | plan", "zerus:target|Reference label", "zerus:after|After",
+  ]);
+  expect([...getBacklinksGroupedByType(target, [source, target, codeOnly], {}).values()].flat()).toEqual([source]);
+  expect([...getBacklinksGroupedByType(codeOnly, [source, target, codeOnly], {}).values()].flat()).toEqual([]);
+  expect(source.content).toBe(original);
+});

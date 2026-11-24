@@ -1,5 +1,5 @@
 import { getBacklinksGroupedByType } from "@/lib/links";
-import { getNoteProperties } from "@/lib/frontmatter";
+import { getNoteProperties, setContentProperty } from "@/lib/frontmatter";
 import { defaultTypeViewConfig } from "@/lib/note-views";
 import {
   mkdtemp,
@@ -113,8 +113,10 @@ import {
   addTypeProperty,
   setNoteProperty,
   attachFileToNote,
+  cancelUnsavedExternalClose,
   closeExternalNote,
   copyExternalNoteToVault,
+  getUnsavedExternalCloseId,
   createNote,
   createFileNote,
   getFileHubStatus,
@@ -124,6 +126,7 @@ import {
   deleteTypeViewPreset,
   flushPendingWrites,
   getNotes,
+  getLegacyNoteFlags,
   getPropertySchemas,
   getNoteConflict,
   initStore,
@@ -133,6 +136,7 @@ import {
   openExternalNotes,
   prioritizeNoteLoad,
   refreshVaultFromDisk,
+  reloadVault,
   revealNoteInDesktop,
   resolveNoteConflict,
   restoreNote,
@@ -318,6 +322,63 @@ describe("external note store workflow", () => {
 
   afterAll(async () => {
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps shared false pin and archive flags above older private state", async () => {
+    const pinned = `zerus.pinned.${vault}`, archived = `zerus.archived.${vault}`;
+    const original = [storage.get(pinned), storage.get(archived)];
+    const path = join(vault, "inbox/Welcome.md"), content = await readFile(path, "utf8");
+    try {
+      storage.set(pinned, JSON.stringify(["inbox/Welcome.md"]));
+      storage.set(archived, JSON.stringify(["inbox/Welcome.md"]));
+      await reloadVault();
+      expect(getNotes().find((note) => note.path === "inbox/Welcome.md")).toMatchObject({ pinned: true, archived: true });
+      const nativeEdit = setContentProperty(setContentProperty(content, "zerus-pinned", false), "zerus-archived", false);
+      await writeFile(path, nativeEdit, "utf8");
+      await synchronizeDesktopFiles();
+      expect(getNotes().find((note) => note.path === "inbox/Welcome.md")).toMatchObject({ pinned: false, archived: false });
+      // Reload must also ignore stale private state, even before it is cleaned up.
+      storage.set(pinned, JSON.stringify(["inbox/Welcome.md"]));
+      storage.set(archived, JSON.stringify(["inbox/Welcome.md"]));
+      await reloadVault();
+      expect(getNotes().find((note) => note.path === "inbox/Welcome.md")).toMatchObject({ pinned: false, archived: false });
+      expect(await readFile(path, "utf8")).toBe(nativeEdit);
+    } finally {
+      await writeFile(path, content, "utf8");
+      for (const [index, key] of [pinned, archived].entries()) {
+        const saved = original[index];
+        if (saved === undefined) storage.delete(key); else storage.set(key, saved);
+      }
+      await reloadVault();
+      for (const [index, key] of [pinned, archived].entries()) {
+        const saved = original[index];
+        if (saved === undefined) storage.delete(key); else storage.set(key, saved);
+      }
+    }
+  });
+
+  it("reads current vault legacy flags for metadata preparation instead of cached note rows", () => {
+    const pinned = `zerus.pinned.${vault}`, archived = `zerus.archived.${vault}`;
+    const original = [storage.get(pinned), storage.get(archived)];
+    try {
+      storage.set(pinned, JSON.stringify(["inbox/Welcome.md"]));
+      storage.set(archived, JSON.stringify(["inbox/Later.md"]));
+      expect(getLegacyNoteFlags()).toEqual({ pinnedPaths: ["inbox/Welcome.md"], archivedPaths: ["inbox/Later.md"] });
+      // A peer window changes private state without reloading this note index.
+      storage.set(pinned, JSON.stringify(["inbox/Later.md", "inbox/Later.md"]));
+      storage.set(archived, JSON.stringify(["inbox/Welcome.md"]));
+      expect(getLegacyNoteFlags()).toEqual({ pinnedPaths: ["inbox/Later.md"], archivedPaths: ["inbox/Welcome.md"] });
+      for (const invalid of ["not JSON", '"inbox/Later.md"', '[1,"inbox/Later.md"]']) {
+        storage.set(pinned, invalid);
+        expect(() => getLegacyNoteFlags()).toThrow("Legacy pin or archive state is unreadable");
+        expect(storage.get(pinned)).toBe(invalid);
+      }
+    } finally {
+      for (const [index, key] of [pinned, archived].entries()) {
+        const saved = original[index];
+        if (saved === undefined) storage.delete(key); else storage.set(key, saved);
+      }
+    }
   });
 
   it("shows the cached note index before the first disk read finishes", () => {
@@ -516,13 +577,25 @@ describe("external note store workflow", () => {
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
     expect(getNotes().some((note) => note.id === ids[1])).toBe(true);
-    mocks.failWrites.delete(secondPath);
-    await closeExternalNote(ids[1]);
+    expect(getUnsavedExternalCloseId()).toBe(ids[1]);
+    cancelUnsavedExternalClose();
+    expect(getUnsavedExternalCloseId()).toBeNull();
+    // Read-only sources (e.g. a mounted disk image) can still be closed by
+    // discarding the edits that could not be saved.
+    await closeExternalNote(ids[1], { discardUnsaved: true });
     expect(getNotes().some((note) => note.id === ids[1])).toBe(false);
-    await expect(nodeStat(secondPath)).resolves.toBeDefined();
-    await expect(readFile(secondPath, "utf8")).resolves.toContain(
+    expect(getUnsavedExternalCloseId()).toBeNull();
+    await expect(readFile(secondPath, "utf8")).resolves.not.toContain(
       "Unsaved edit.",
     );
+    // Unedited read-only notes close without attempting a write.
+    mocks.picked = secondPath;
+    const [reopenedId] = await openExternalNotes();
+    await closeExternalNote(reopenedId);
+    expect(getNotes().some((note) => note.id === reopenedId)).toBe(false);
+    expect(getUnsavedExternalCloseId()).toBeNull();
+    mocks.failWrites.delete(secondPath);
+    await expect(nodeStat(secondPath)).resolves.toBeDefined();
 
     const imageDirectory = join(root, "one", "images");
     const imagePath = join(imageDirectory, "diagram one.png");

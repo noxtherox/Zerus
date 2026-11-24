@@ -10,14 +10,21 @@ pub enum PropertyValue {
     List(Vec<String>),
 }
 
+pub(crate) fn bom_prefix_len(content: &str) -> usize {
+    content.len() - content.trim_start_matches('\u{feff}').len()
+}
+
 fn split(content: &str) -> (Option<&str>, &str) {
-    let opening = if content.starts_with("---\r\n") {
-        5
-    } else if content.starts_with("---\n") {
-        4
-    } else {
-        return (None, content);
-    };
+    let prefix = bom_prefix_len(content);
+    let logical = &content[prefix..];
+    let opening = prefix
+        + if logical.starts_with("---\r\n") {
+            5
+        } else if logical.starts_with("---\n") {
+            4
+        } else {
+            return (None, logical);
+        };
     let mut cursor = opening;
     while cursor <= content.len() {
         let next = content[cursor..]
@@ -30,7 +37,7 @@ fn split(content: &str) -> (Option<&str>, &str) {
             next - 1
         };
         let line = content[cursor..end].trim_end_matches('\r');
-        if matches!(line.trim(), "---" | "...") {
+        if matches!(line.trim_end(), "---" | "...") {
             let body = if next < content.len() || content.ends_with('\n') {
                 &content[next..]
             } else {
@@ -43,10 +50,10 @@ fn split(content: &str) -> (Option<&str>, &str) {
         }
         cursor = next;
     }
-    (None, content)
+    (None, logical)
 }
 
-fn unquote(value: &str) -> String {
+pub(crate) fn unquote(value: &str) -> String {
     let value = value.trim();
     if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
         serde_json::from_str(value).unwrap_or_else(|_| value[1..value.len() - 1].to_string())
@@ -55,6 +62,41 @@ fn unquote(value: &str) -> String {
     } else {
         value.to_string()
     }
+}
+
+/// A hash starts a YAML comment only outside quoted scalar/list tokens.
+pub(crate) fn without_comment(value: &str) -> &str {
+    let mut quote = None;
+    let mut escaped = false;
+    let mut previous_whitespace = true;
+    let mut token_start = true;
+    let mut chars = value.char_indices().peekable();
+    while let Some((index, character)) = chars.next() {
+        if escaped {
+            escaped = false;
+        } else if let Some(current) = quote {
+            if current == '"' && character == '\\' {
+                escaped = true;
+            } else if character == current {
+                if current == '\'' && chars.peek().is_some_and(|(_, next)| *next == '\'') {
+                    chars.next();
+                } else {
+                    quote = None;
+                    token_start = false;
+                }
+            }
+        } else if character == '#' && previous_whitespace {
+            return value[..index].trim_end();
+        } else if (character == '"' || character == '\'') && token_start {
+            quote = Some(character);
+        } else if character == '[' || character == ',' {
+            token_start = true;
+        } else if !character.is_whitespace() {
+            token_start = false;
+        }
+        previous_whitespace = character.is_whitespace();
+    }
+    value.trim_end()
 }
 
 fn scalar(value: &str) -> PropertyValue {
@@ -91,7 +133,7 @@ pub fn note_properties(content: &str) -> BTreeMap<String, PropertyValue> {
             index += 1;
             continue;
         }
-        let value = raw_value.trim();
+        let value = without_comment(raw_value).trim();
         if value.is_empty() {
             let mut items = Vec::new();
             let mut cursor = index + 1;
@@ -100,7 +142,7 @@ pub fn note_properties(content: &str) -> BTreeMap<String, PropertyValue> {
                 let Some(item) = trimmed.strip_prefix("- ") else {
                     break;
                 };
-                items.push(unquote(item));
+                items.push(unquote(without_comment(item)));
                 cursor += 1;
             }
             if !items.is_empty() {

@@ -2,7 +2,7 @@
 name: zerus
 description: Work safely with the user's local Zerus Markdown vault through the Zerus CLI.
 metadata:
-  version: "3"
+  version: "4"
 ---
 
 # Zerus CLI
@@ -12,8 +12,8 @@ Use `zerus` for structured access to Zerus vaults. Do not edit `.zerus`,
 
 ## Required automation defaults
 
-- Check `zerus --version` before mutations. This skill requires CLI **0.3.0 or
-  newer**. Older task writers can discard task lists and older relation writers
+- Check `zerus --version` before mutations. This skill requires CLI **0.3.1 or
+  newer**. This version also preserves BOM-prefixed note metadata and handles reserved-field comments. Older task writers can discard task lists and older relation writers
   do not synchronize inverse links. Install the matching CLI from Settings → CLI
   before writing with an older executable.
 - Start with `zerus vault list --json` and select the intended vault.

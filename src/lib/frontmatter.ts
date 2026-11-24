@@ -20,8 +20,9 @@ export function splitFrontmatter(content: string): {
   raw: string | null;
   body: string;
 } {
-  const opening = /^---\r?\n/.exec(content);
-  if (!opening) return { raw: null, body: content };
+  const prefix = /^\uFEFF*/.exec(content)![0];
+  const opening = /^\uFEFF*---\r?\n/.exec(content);
+  if (!opening) return { raw: null, body: content.slice(prefix.length) };
   // Only scan the header; property reads must not split/copy the entire body.
   const closing = /\n(?:---|\.\.\.)[^\S\n]*(?:\n|$)/g;
   closing.lastIndex = opening[0].length - 1;
@@ -33,7 +34,7 @@ export function splitFrontmatter(content: string): {
     };
   }
   // unterminated --- fence: treat everything as body
-  return { raw: null, body: content };
+  return { raw: null, body: content.slice(prefix.length) };
 }
 
 /** Note content without its frontmatter block. */
@@ -55,7 +56,7 @@ function stripQuotes(value: string): string {
         return inner;
       }
     }
-    return inner;
+    return inner.replace(/''/g, "'");
   }
   return value;
 }
@@ -71,6 +72,55 @@ function parseScalar(value: string): PropertyValue {
   if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === "true";
   if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
   return trimmed;
+}
+
+/** Flat YAML string lists, including JSON strings emitted by the Apple clients. */
+function parseInlineList(value: string): string[] | null {
+  const tokens: string[] = [];
+  let token = "";
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = 1; index < value.length - 1; index++) {
+    const char = value[index];
+    if (quote) {
+      token += char;
+      if (quote === '"' && escaped) { escaped = false; continue; }
+      if (quote === '"' && char === "\\") { escaped = true; continue; }
+      if (char === quote) {
+        if (quote === "'" && value[index + 1] === "'") { token += "'"; index++; }
+        else quote = null;
+      }
+    } else if ((char === '"' || char === "'") && token.trim() === "") {
+      quote = char; token += char;
+    } else if (char === ",") {
+      tokens.push(token); token = "";
+    } else if ("[]{}".includes(char)) {
+      // Preserve nested structures as opaque YAML rather than flattening their contents.
+      return null;
+    } else token += char;
+  }
+  if (quote !== null) return null;
+  tokens.push(token);
+  if (tokens.length === 1 && token.trim() === "") return [];
+  const items: string[] = [];
+  for (let index = 0; index < tokens.length; index++) {
+    const raw = tokens[index].trim();
+    if (!raw) {
+      if (index === tokens.length - 1) continue; // YAML permits a trailing comma.
+      return null;
+    }
+    if (raw.startsWith('"')) {
+      try {
+        const decoded: unknown = JSON.parse(raw);
+        if (typeof decoded !== "string") return null;
+        items.push(decoded);
+      } catch { return null; }
+    } else if (raw.startsWith("'")) {
+      if (!/^'(?:[^']|'')*'$/.test(raw)) return null;
+      items.push(stripQuotes(raw));
+    } else items.push(raw);
+  }
+  return items;
 }
 
 function parseNodes(raw: string | null): FmNode[] {
@@ -104,12 +154,8 @@ function parseNodes(raw: string | null): FmNode[] {
     }
     const trimmed = rest.trim();
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      const items = trimmed
-        .slice(1, -1)
-        .split(",")
-        .map((item) => stripQuotes(item.trim()))
-        .filter((item) => item.length > 0);
-      nodes.push({ kind: "prop", key, value: items });
+      const items = parseInlineList(trimmed);
+      nodes.push(items === null ? { kind: "raw", text: lines[i] } : { kind: "prop", key, value: items });
       continue;
     }
     nodes.push({ kind: "prop", key, value: parseScalar(trimmed) });
@@ -182,7 +228,7 @@ export function setContentProperty(
   } else {
     nodes.push({ kind: "prop", key, value });
   }
-  return compose(nodes, body);
+  return /^\uFEFF*/.exec(content)![0] + compose(nodes, body);
 }
 
 /** Renames a frontmatter key, keeping its value. No-op if the key is absent. */
@@ -199,12 +245,15 @@ export function renameContentProperty(
   if (idx < 0) return content;
   const existing = nodes[idx] as Extract<FmNode, { kind: "prop" }>;
   nodes[idx] = { kind: "prop", key: to, value: existing.value };
-  return compose(nodes, body);
+  return /^\uFEFF*/.exec(content)![0] + compose(nodes, body);
 }
 
 /** Replaces the body while preserving the existing frontmatter block. */
 export function withBody(content: string, body: string): string {
-  const { raw } = splitFrontmatter(content);
-  if (raw === null) return body;
-  return `---\n${raw}\n---\n${body}`;
+  const { raw, body: previous } = splitFrontmatter(content);
+  if (body === previous) return content;
+  if (raw === null) return /^\uFEFF*/.exec(content)![0] + body;
+  const header = content.slice(0, content.length - previous.length);
+  const newline = /^\uFEFF*---\r\n/.test(content) ? "\r\n" : "\n";
+  return header + (header.endsWith("\n") ? "" : newline) + body;
 }
