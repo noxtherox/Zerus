@@ -95,6 +95,9 @@ struct NativeWorkspaceDrawer<Sidebar: View, Content: View>: View {
             let progress = width > 0 ? offset / width : 0
             ZStack(alignment: .leading) {
                 Accent.sidebar.ignoresSafeArea()
+                // UIKit-backed lists ignore accessibilityHidden across hosting
+                // boundaries, so a closed drawer must leave the hierarchy entirely.
+                if isOpen || translation != 0 {
                 sidebar()
                     .frame(width: width)
                     .offset(x: -width * 0.18 * (1 - progress))
@@ -104,6 +107,7 @@ struct NativeWorkspaceDrawer<Sidebar: View, Content: View>: View {
                     .allowsHitTesting(isOpen)
                     .accessibilityIdentifier("workspace.drawer")
                     .simultaneousGesture(drawerGesture(width: width, opening: false))
+                }
                 content()
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .background(Accent.paper)

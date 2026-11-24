@@ -947,7 +947,8 @@ struct NativeTextEditor: UIViewRepresentable {
         }
         func revealSelection(_ range: NSRange) {
             guard let view, view.markedTextRange == nil, range.location != NSNotFound, NSMaxRange(range) <= view.attributedText.length else { return }
-            prepareReadingPosition(nil); cancelHeadingRequest()
+            // Keep the received ID so the parent's still-present request is not reapplied.
+            prepareReadingPosition(nil); headingRequest = nil
             if let manager = view.textLayoutManager, let content = manager.textContentManager,
                let start = content.location(content.documentRange.location, offsetBy: range.location) {
                 if let end = content.location(content.documentRange.location, offsetBy: NSMaxRange(range)),

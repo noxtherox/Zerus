@@ -11,7 +11,8 @@ struct LibraryView: View {
     let settings: () -> Void
     var selectRoute: ((NativeNotesRoute) -> Void)? = nil
     var close: (() -> Void)? = nil
-    @State private var expandedFolders: Set<String> = []
+    /// Owned by the workspace so the drawer can leave the hierarchy while closed.
+    @Binding var expandedFolders: Set<String>
     @State private var newFolder: NativeFolderCreation?
     @State private var iconFolder: NativeFolderDestination?
     @State private var renameFolder: NativeFolderDestination?
@@ -172,9 +173,10 @@ private struct NativeCollectionSettingsSection: View {
         Section("Notes") {
             NativeCollectionFilterButton(filters: context.filters, notes: context.notes, archiveOnly: context.archiveOnly, fileTypes: context.fileTypes, otherFiles: context.otherFiles)
             if let selection = context.selection { NativeCollectionSelectionButton(selection: selection) }
+            // A Section forwards modifiers to every row; keep the sheet on its own button.
             Button("Recent actions", systemImage: "clock.arrow.circlepath") { history = true }.accessibilityIdentifier("bulk.history")
+                .sheet(isPresented: $history) { NativeBulkHistoryView(workspaceID: vault.workspaceID) }
         }
-        .sheet(isPresented: $history) { NativeBulkHistoryView(workspaceID: vault.workspaceID) }
     }
 }
 

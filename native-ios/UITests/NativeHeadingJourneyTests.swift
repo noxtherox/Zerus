@@ -40,7 +40,7 @@ final class NativeHeadingJourneyTests: NativeJourneyTestCase {
         let revealed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: deep)
         XCTAssertEqual(XCTWaiter.wait(for: [revealed], timeout: 10), .completed); XCTAssertEqual(app.keyboards.count, 0)
         attach("Cross-note heading link reveals the deep section without a keyboard")
-        outline("first-section"); XCTAssertTrue(first.isHittable); attach("Native outline returns to the first section")
+        outline("first-section"); XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: first)], timeout: 10), .completed); attach("Native outline returns to the first section")
         app.buttons["Note actions"].tap(); app.buttons["Markdown source"].tap(); outline("deep-section")
         let sourceScreenshot = attach("Native outline reveals the exact heading in Markdown source")
         let recognition = VNRecognizeTextRequest(); recognition.recognitionLevel = .accurate; recognition.recognitionLanguages = ["en-US"]; recognition.usesLanguageCorrection = false

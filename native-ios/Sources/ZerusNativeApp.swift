@@ -111,6 +111,7 @@ struct WorkspaceView: View {
     @State private var tab = 0
     @State private var notesPath: [NativeNotesRoute] = []
     @State private var libraryOpen = false
+    @State private var libraryExpandedFolders: Set<String> = []
     @State private var navigationVisible = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -129,7 +130,7 @@ struct WorkspaceView: View {
             else if let root = vault.root {
                 NativeWorkspaceDrawer(isOpen: $libraryOpen) {
                     NavigationStack {
-                        LibraryView(workspaceID: vault.workspaceID, chooseVault: { vaults = true }, settings: { settings = true }, selectRoute: selectLibraryRoute, close: { libraryOpen = false })
+                        LibraryView(workspaceID: vault.workspaceID, chooseVault: { vaults = true }, settings: { settings = true }, selectRoute: selectLibraryRoute, close: { libraryOpen = false }, expandedFolders: $libraryExpandedFolders)
                     }
                 } content: {
                 TabView(selection: $tab) {
@@ -237,7 +238,7 @@ struct WorkspaceView: View {
             // External files have device-wide sessions. Restoring or switching
             // a vault invalidates its editor, not an independent file handoff.
             if let opened, case .vault = opened.content { self.opened = nil }
-            settings = false; vaults = false; newNote = false; askRequest = nil; tab = 0; notesPath = []; libraryOpen = false; navigationVisible = true
+            settings = false; vaults = false; newNote = false; askRequest = nil; tab = 0; notesPath = []; libraryOpen = false; libraryExpandedFolders = []; navigationVisible = true
         }
     }
     private var compositionFolder: String {

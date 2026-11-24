@@ -41,7 +41,8 @@ final class NativeExternalNotesUITests: NativeJourneyTestCase {
         let result = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "search.result.external:", title)).firstMatch
         XCTAssertTrue(result.waitForExistence(timeout: 15), "Full body search must find the registered file after relaunch")
         app.buttons["search.filters"].tap(); app.descendants(matching: .any).matching(identifier: "search.collection").firstMatch.tap()
-        app.buttons["External notes"].tap(); app.buttons["Done"].tap()
+        // The library drawer also exposes an "External notes" row; pick the filter option.
+        app.buttons.matching(NSPredicate(format: "label == %@ AND identifier != %@", "External notes", "library.external")).firstMatch.tap(); app.buttons["Done"].tap()
         XCTAssertTrue(result.waitForExistence(timeout: 10)); result.tap()
         XCTAssertTrue(app.buttons["external.editor.done"].waitForExistence(timeout: 10))
         app.buttons["External note actions"].tap(); app.buttons["Full Markdown source"].tap()
