@@ -2576,6 +2576,8 @@ enum MacMarkdown {
 extension Notification.Name { static let macEditorAction = Notification.Name("zerus.mac.editorAction") }
 
 struct MacRichEditor: NSViewRepresentable {
+    @AppStorage("zerus.mac.interfaceZoom") private var interfaceZoom = 100
+    @AppStorage("zerus.mac.noteTextSize") private var noteTextSize = 100
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.macTheme) private var theme
     @Environment(\.macEditorInteractionEnabled) private var interactionEnabled
@@ -2602,6 +2604,8 @@ struct MacRichEditor: NSViewRepresentable {
     var linkNotes: () -> [NoteDocument] = { [] }
     var headingRequest: MacHeadingRequest?
     var focusRequest: UUID? = nil
+    /// Reports the index of the heading at the top of the viewport.
+    var onVisibleHeading: ((Int?) -> Void)? = nil
     var commandScope: UUID? = nil
     var isCurrent: () -> Bool = { true }
     // SwiftUI can deliver an already-queued view value after a native command
@@ -2615,7 +2619,16 @@ struct MacRichEditor: NSViewRepresentable {
     var createLink: ((String) async throws -> NoteDocument)?
     var chooseImageProject: (() async -> Void)?
     func makeCoordinator() -> Coordinator { sessions?.acquire(self) ?? Coordinator(self) }
+    private func applyNoteSize(_ scroll: NSScrollView) {
+        // Compensate for the surrounding interface transform without changing
+        // attributed text, Markdown, selection or the editor undo history.
+        let scale = MacInterfaceZoom.factor(noteTextSize) / MacInterfaceZoom.factor(interfaceZoom)
+        scroll.minMagnification = 0.25
+        scroll.maxMagnification = 4
+        if abs(scroll.magnification - scale) > 0.0001 { scroll.magnification = scale }
+    }
     func makeNSView(context: Context) -> NSScrollView {
+        defer { if let scroll = context.coordinator.retainedScroll { applyNoteSize(scroll) } }
         context.coordinator.updateParent(self)
         context.coordinator.active = true
         let document = resolvedDocument
@@ -2627,7 +2640,7 @@ struct MacRichEditor: NSViewRepresentable {
             view.setNoteLayout(MacNoteLayout(width: noteWidth, alignment: noteAlignment))
             if isCurrent(), !context.coordinator.lastMarkdown.utf8.elementsEqual(document.markdown.utf8) || context.coordinator.source != document.source { context.coordinator.load(document.markdown, source: document.source) }
             context.coordinator.refreshImages(force: true, includingStored: true)
-            context.coordinator.observeImageViewport(scroll.contentView); context.coordinator.scheduleRemoteImages()
+            context.coordinator.observeImageViewport(scroll.contentView); context.coordinator.scheduleRemoteImages(); context.coordinator.scheduleVisibleHeading()
             context.coordinator.applyTheme(theme)
             context.coordinator.receiveHeading(headingRequest)
             context.coordinator.receiveFocus(focusRequest)
@@ -2692,7 +2705,7 @@ struct MacRichEditor: NSViewRepresentable {
         context.coordinator.receiveHeading(headingRequest)
         context.coordinator.receiveFocus(focusRequest)
         view.onCompositionEnded = { [weak coordinator = context.coordinator] text in coordinator?.compositionEnded(text) }
-        view.onReady = { [weak coordinator = context.coordinator] in coordinator?.applyHeadingRequest(); coordinator?.applyFocusRequest(); coordinator?.scheduleRemoteImages() }
+        view.onReady = { [weak coordinator = context.coordinator] in coordinator?.applyHeadingRequest(); coordinator?.applyFocusRequest(); coordinator?.scheduleRemoteImages(); coordinator?.scheduleVisibleHeading() }
         context.coordinator.observeImageViewport(scroll.contentView)
         return scroll
     }
@@ -2701,6 +2714,7 @@ struct MacRichEditor: NSViewRepresentable {
         (scroll.documentView as? NSTextView)?.delegate = nil
     }
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        applyNoteSize(scroll)
         context.coordinator.updateParent(self)
         context.coordinator.environment = context.environment
         context.coordinator.environment.colorScheme = colorScheme
@@ -2736,6 +2750,8 @@ struct MacRichEditor: NSViewRepresentable {
         private var remoteFailures = Set<String>()
         private var remoteScanScheduled = false
         private var imageViewportObserver: NSObjectProtocol?
+        private var visibleHeadingScheduled = false
+        private var visibleHeadingCache: (markdown: String, starts: [Int])?
         var lastMarkdown = ""; var source = false; var loading = false
         private var ruleComposition: (text: NSAttributedString, selection: NSRange, typing: [NSAttributedString.Key: Any], markdown: String)?
         private var selectionComposition: (text: NSAttributedString, range: NSRange, selection: NSRange, typing: [NSAttributedString.Key: Any])?
@@ -3091,10 +3107,12 @@ struct MacRichEditor: NSViewRepresentable {
                         do { try self?.applyImage(request, value: nil) } catch { self?.parent.onPasteError(error.localizedDescription) }
                     }; return
                 }
-                let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: action == "expand" ? 760 : 580, height: action == "expand" ? 560 : 520), styleMask: [.titled], backing: .buffered, defer: false)
+                let expandSize = NSSize(width: max(760, window.frame.width * 0.94), height: max(560, window.frame.height * 0.92 - 28))
+                let panel = NSPanel(contentRect: NSRect(origin: .zero, size: action == "expand" ? expandSize : NSSize(width: 580, height: 520)), styleMask: action == "expand" ? [.titled, .resizable] : [.titled], backing: .buffered, defer: false)
                 panel.isReleasedWhenClosed = false; panel.title = action == "expand" ? "Image preview" : "Edit image"; editorPanel = panel
                 if action == "expand" {
-                    panel.contentView = editorPanelView(VStack { Image(nsImage: request.image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: .infinity); HStack { Spacer(); Button("Done") { [weak self] in self?.closeEditorPanel() }.keyboardShortcut(.cancelAction) } }.padding(20).frame(width: 760, height: 560), panel: panel)
+                    panel.contentMinSize = NSSize(width: 480, height: 360)
+                    panel.contentView = editorPanelView(MacImagePreviewPanel(image: request.image) { [weak self] in self?.closeEditorPanel() }.frame(minWidth: 480, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity), panel: panel)
                 } else {
                     guard parent.editable else { editorPanel = nil; return }
                     panel.contentView = editorPanelView(MacImageEditView(request: request, apply: { [weak self] value in guard let self else { throw CancellationError() }; try self.applyImage(request, value: value); self.closeEditorPanel() }, cancel: { [weak self] in self?.closeEditorPanel() }), panel: panel)
@@ -3184,6 +3202,7 @@ struct MacRichEditor: NSViewRepresentable {
             }
             view.typingAttributes = typing
             applyTheme(theme, force: true)
+            scheduleVisibleHeading()
             updateWritingContext()
             // Loading/theme storage notifications have finished. Only now can
             // subsequent edits be tracked against the freshly rendered mapping.
@@ -3226,8 +3245,46 @@ struct MacRichEditor: NSViewRepresentable {
             if let imageViewportObserver { NotificationCenter.default.removeObserver(imageViewportObserver) }
             clip.postsBoundsChangedNotifications = true
             imageViewportObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: clip, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.scheduleRemoteImages() }
+                MainActor.assumeIsolated { self?.scheduleRemoteImages(); self?.scheduleVisibleHeading() }
             }
+        }
+        /// Coalesce scroll and typing bursts; counting headings above the
+        /// viewport walks paragraphs, so it runs at most every 80 ms.
+        func scheduleVisibleHeading() {
+            guard parent.onVisibleHeading != nil, !visibleHeadingScheduled else { return }
+            visibleHeadingScheduled = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.visibleHeadingScheduled = false
+                    self.updateVisibleHeading()
+                }
+            }
+        }
+        private func updateVisibleHeading() {
+            guard active, parent.isCurrent(), let report = parent.onVisibleHeading, let view, view.window != nil,
+                  !view.hasMarkedText(), let manager = view.layoutManager, let container = view.textContainer else { return }
+            let rich = view.attributedString(), text = rich.string as NSString
+            guard text.length > 0 else { report(nil); return }
+            // Match the Tauri outline: a heading counts once it is within 48 pt of the top.
+            let point = NSPoint(x: 0, y: max(0, view.visibleRect.minY + 48 - view.textContainerOrigin.y))
+            let limit = manager.characterIndexForGlyph(at: manager.glyphIndex(for: point, in: container))
+            var count = 0
+            if source {
+                if visibleHeadingCache?.markdown != lastMarkdown { visibleHeadingCache = (lastMarkdown, MacHeadings.entries(lastMarkdown).map(\.range.location)) }
+                count = visibleHeadingCache?.starts.prefix { $0 <= limit }.count ?? 0
+            } else {
+                // Rich headings appear in document order, as in richHeadingRange.
+                var offset = 0
+                while offset < text.length, offset <= limit {
+                    let paragraph = text.paragraphRange(for: NSRange(location: offset, length: 0))
+                    let block = rich.attribute(.macBlock, at: offset, effectiveRange: nil) as? String ?? ""
+                    let context = rich.attribute(.macListContext, at: offset, effectiveRange: nil) as? MacListContext
+                    if MacBlockPrefix(context?.textBlock ?? block)?.heading == true { count += 1 }
+                    offset = NSMaxRange(paragraph)
+                }
+            }
+            report(count == 0 ? nil : count - 1)
         }
         func scheduleRemoteImages() {
             guard !remoteScanScheduled else { return }; remoteScanScheduled = true
@@ -3504,7 +3561,7 @@ struct MacRichEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !loading, selectionComposition == nil, let view else { return }; notePreview.hide()
             if !source && codeAtCaret() == nil && !view.hasMarkedText() && view.undoManager?.isUndoing != true && view.undoManager?.isRedoing != true { applyTypedShortcut(view); applyInlineShortcut(view) }
-            publish()
+            publish(); scheduleVisibleHeading()
             if view.undoManager?.isUndoing != true && view.undoManager?.isRedoing != true { showNoteLinks(automatic: true) }
         }
         func prepareComposition(_ range: NSRange) -> NSRange {

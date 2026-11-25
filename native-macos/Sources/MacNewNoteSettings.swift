@@ -53,10 +53,11 @@ struct MacNewNoteSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var issue: String?
     @State private var workspaceID: UUID
+    @Environment(\.macSettingsEmbedded) private var embedded
     init(workspace: MacWorkspace) { self.workspace = workspace; _workspaceID = State(initialValue: workspace.workspaceID) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("New notes").font(.title2.bold())
+            if !embedded { Text("New notes").font(.title2.bold()) }
             Text("Choose the default folder for this vault on this Mac. It is used in All Notes and other sections without a selected folder.").foregroundStyle(.secondary)
             Picker("Default folder", selection: Binding(get: { workspace.defaultNoteFolder }, set: {
                 do { try workspace.setDefaultNoteFolder($0, workspace: workspaceID); issue = nil }
@@ -72,7 +73,7 @@ struct MacNewNoteSettingsView: View {
             }
             if workspace.workspaceID != workspaceID { Text("The vault changed. Close and reopen New notes settings.").font(.caption).foregroundStyle(.red) }
             if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
-            HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding(24).frame(width: 460)
+            if !embedded { HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) } }
+        }.macSettingsChrome(width: 460)
     }
 }

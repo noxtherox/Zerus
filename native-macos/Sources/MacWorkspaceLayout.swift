@@ -35,20 +35,17 @@ extension EnvironmentValues {
 
 /// Keep a stable editor subtree while neighbouring panes collapse. Removing it
 /// on a size-class transition would discard AppKit's selection and Undo manager.
-struct MacWorkspacePanes<Library: View, Collection: View, Editor: View, Inspector: View, Tabs: View>: View {
+struct MacWorkspacePanes<Library: View, Collection: View, Editor: View, Inspector: View>: View {
     let layout: MacWorkspaceArrangement
     var interactionEnabled = true
     let library: Library
     let collection: Collection
     let editor: Editor
     let inspector: Inspector
-    let tabs: Tabs
     var body: some View {
         MacZoomSplitView {
             pane(library, visible: layout.sidebar, minimum: 185, ideal: min(218, layout.sidebarMaximum), maximum: layout.sidebarMaximum)
             VStack(spacing: 0) {
-                tabs
-                Divider()
                 MacZoomSplitView {
                     // Keep the pane slot stable for the editor, but do not mount a
                     // hidden Gallery/board/table/calendar tree while a note is edited.

@@ -1601,7 +1601,8 @@ final class MacWorkspaceTests: XCTestCase {
             await store.openNote("Work/C.md", newTab: true); await store.openNote("Work/A.md", newTab: true)
             await store.openNote("Work/D.md", newTab: true); await store.openNote("Work/E.md", newTab: true); await store.openNote("Work/A.md")
             store.togglePinnedTab(.note("Work/A.md")); store.togglePinnedTab(.note("Work/C.md"))
-            let host = NSHostingView(rootView: MacWorkspaceView(store: store))
+            // Tabs live in the window toolbar; host the strip itself at the top of the fixture.
+            let host = NSHostingView(rootView: MacTabBar(store: store, available: 1200).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading))
             let window = NSWindow(contentRect: NSRect(x: -20000, y: 0, width: 1400, height: 850), styleMask: .titled, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.contentView = host; window.orderFront(nil)
             defer { window.contentView = nil; window.close() }

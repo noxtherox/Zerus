@@ -10,6 +10,7 @@ struct MacWorkspaceView: View {
     @Bindable var store: MacWorkspace
     @AppStorage("zerus.mac.dateFormat") private var dateFormat = "DD/MM/YYYY"
     @AppStorage("zerus.mac.codeBlocks") private var codeBlocks = false
+    @AppStorage("zerus.mac.interfaceZoom") private var interfaceZoom = 100
     @StateObject private var editorSessions = MacEditorSessions()
     @State private var clipboardBusy = false
     @State private var attachmentImporting = false
@@ -73,6 +74,7 @@ struct MacWorkspaceView: View {
                 }
             }
             .toolbar { workspaceToolbar(layout, standalone: standalone) }
+            .toolbar(removing: .title)
             .onChange(of: store.inspectorRequest) { _, _ in toggleInspector(layout) }
             .onChange(of: layout.canInlineSidebar) { _, inline in if inline { compactLibrary = false } }
             .onChange(of: layout.canInlineInspector) { _, inline in if inline { compactInspector = false } }
@@ -128,11 +130,11 @@ struct MacWorkspaceView: View {
         if store.root == nil {
             MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; welcome.frame(maxWidth: .infinity, maxHeight: .infinity) }
         } else if store.destination == "External Notes" && !store.folderCollection {
-            MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; VStack(spacing: 0) { tabStrip; MacExternalNotesView(workspace: store) }.frame(maxWidth: .infinity) }
+            MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; MacExternalNotesView(workspace: store).frame(maxWidth: .infinity) }
         } else if store.destination == "Tasks" && !store.folderCollection {
-            MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; VStack(spacing: 0) { tabStrip; MacTasksView(store: store) }.frame(maxWidth: .infinity) }
+            MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; MacTasksView(store: store).frame(maxWidth: .infinity) }
         } else {
-            MacWorkspacePanes(layout: layout, interactionEnabled: !compactLibrary && !compactInspector && !store.busy, library: sidebarView, collection: collectionView, editor: editorView, inspector: inspectorView, tabs: tabStrip)
+            MacWorkspacePanes(layout: layout, interactionEnabled: !compactLibrary && !compactInspector && !store.busy, library: sidebarView, collection: collectionView, editor: editorView, inspector: inspectorView)
         }
     }
     @ToolbarContentBuilder private func workspaceToolbar(_ layout: MacWorkspaceArrangement, standalone: Bool) -> some ToolbarContent {
@@ -143,7 +145,9 @@ struct MacWorkspaceView: View {
                 else { compactInspector = false; compactLibrary.toggle() }
             } label: { Image(systemName: "sidebar.left") }.disabled(store.busy).help("Show or hide folders").modifier(MacToolbarZoom())
         }
-        ToolbarItem(placement: .principal) { Text(store.vaultTitle).font(.headline).modifier(MacToolbarZoom()) }
+        ToolbarItem(placement: .navigation) {
+            MacTabBar(store: store, available: tabBarWidth(layout, standalone: standalone)).modifier(MacToolbarZoom())
+        }.sharedBackgroundVisibility(.hidden)
         ToolbarItemGroup(placement: .primaryAction) {
             if !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil {
                 Button {
@@ -155,6 +159,16 @@ struct MacWorkspaceView: View {
             Button { Task { await store.createNote() } } label: { Image(systemName: "square.and.pencil") }.disabled(store.root == nil || store.busy).help("New note").modifier(MacToolbarZoom())
             Button { toggleInspector(layout) } label: { Image(systemName: "sidebar.right") }.disabled(store.selection == nil || store.busy).help("Show or hide inspector").modifier(MacToolbarZoom())
         }
+    }
+    /// The tab strip is one toolbar item, so it is sized from the window width
+    /// minus the traffic lights and the other toolbar items. Overestimating the
+    /// reserve only leaves extra space before the trailing buttons; an item that
+    /// is too wide would push them into the toolbar's overflow menu.
+    private func tabBarWidth(_ layout: MacWorkspaceArrangement, standalone: Bool) -> CGFloat {
+        var reserved: CGFloat = 150 + 150
+        if !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil { reserved += 130 }
+        if store.busy { reserved += 36 }
+        return layout.width - reserved / MacInterfaceZoom.factor(interfaceZoom)
     }
     private func toggleInspector(_ layout: MacWorkspaceArrangement) {
         guard !store.busy, store.selection != nil else { return }
@@ -360,40 +374,6 @@ struct MacWorkspaceView: View {
     private func noteWritingArea(_ note: NoteDocument) -> some View {
         MacNoteWritingArea(store: store, draft: store.draftState, note: note, sessions: editorSessions, clipboardBusy: $clipboardBusy, toolbar: formatToolbar)
     }
-    private var tabStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 3) { ForEach(store.tabs) { tab in
-                let title = tab.notePath.flatMap { path in store.notes.first { $0.path == path }?.title ?? (store.current?.path == path ? store.current?.title : nil) } ?? tab.target
-                HStack(spacing: 0) {
-                    Button { Task { await store.activateTab(tab) } } label: {
-                        HStack(spacing: 10) {
-                            if store.pinnedTabs.contains(tab) { Image(systemName: "pin.fill").font(.system(size: 10)).accessibilityLabel("Pinned tab") }
-                            if case .folder(let path) = tab { MacFolderLabel(path: title, icon: store.folderIcon(path)) }
-                            else { Text(title) }
-                        }.lineLimit(1).padding(.leading, 12).padding(.trailing, 12).padding(.vertical, 8)
-                    }
-                    if !store.pinnedTabs.contains(tab) {
-                        Button { Task { await store.closeTab(tab) } } label: {
-                            Image(systemName: "xmark").font(.system(size: 8)).padding(.trailing, 12).padding(.vertical, 10)
-                        }.foregroundStyle(.tertiary).accessibilityLabel("Close " + title)
-                    }
-                }.buttonStyle(MacBoxButtonStyle()).font(.system(size: 12))
-                    .background(store.activeTab == tab ? theme.color(.editorBg) : .clear, in: UnevenRoundedRectangle(topLeadingRadius: 7, topTrailingRadius: 7))
-                    .draggable(tab.id)
-                    .dropDestination(for: String.self) { values, _ in
-                        guard let value = values.first, let source = store.tabs.first(where: { $0.id == value }) else { return false }
-                        store.reorderTab(source, before: tab); return true
-                    }
-                    .contextMenu {
-                        Button(store.pinnedTabs.contains(tab) ? "Unpin tab" : "Pin tab") { store.togglePinnedTab(tab) }
-                        Button("Close tab") { Task { await store.closeTab(tab) } }
-                        Button("Move tab left") { if let index = store.tabs.firstIndex(of: tab), index > 0 { store.reorderTab(tab, before: store.tabs[index - 1]) } }.disabled(store.tabs.first == tab)
-                        Button("Move tab right") { if let index = store.tabs.firstIndex(of: tab), index + 1 < store.tabs.count { let next = store.tabs[index + 1]; store.reorderTab(next, before: tab) } }.disabled(store.tabs.last == tab)
-                    }
-                    .overlay(MacAlternateOpen(action: { Task { await store.closeTab(tab) } }, handlesTripleClick: false).accessibilityHidden(true))
-            } }.padding(.horizontal, 9).padding(.top, 4)
-        }.background(sidebarSurface)
-    }
     private var formatToolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 13) {
             editorButton("undo", icon: "arrow.uturn.backward", help: "Undo")
@@ -519,7 +499,7 @@ struct MacWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MacInspectorGroupHeader(title: definition.name, count: targets.count) { relationName = definition.name }
                     if targets.isEmpty {
-                        Text("None linked").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 2)
+                        Text("None linked").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
                     }
                     ForEach(Array(targets.enumerated()), id: \.offset) { _, text in
                         let reference = NoteReference(wikilink: "[[" + text + "]]")
@@ -533,7 +513,7 @@ struct MacWorkspaceView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 MacInspectorGroupHeader(title: "Backlinks", count: store.backlinks.count, icon: "arrow.uturn.left")
-                if store.backlinks.isEmpty { Text("No notes link here yet").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 2) }
+                if store.backlinks.isEmpty { Text("No notes link here yet").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6) }
                 ForEach(store.backlinks) { linked in
                     MacInspectorNoteLink(title: linked.title, detail: linked.folder) { Task { await store.openNote(linked.path) } }
                 }
@@ -670,7 +650,7 @@ extension URL: @retroactive Identifiable { public var id: String { absoluteStrin
             toolbar
             Divider()
             if store.sourceMode { HStack { Image(systemName: "doc.plaintext"); Text("Markdown source"); Spacer(); Button("Rich text") { store.sourceMode = false } }.font(.caption).foregroundStyle(.secondary).padding(8).background(.quaternary.opacity(0.4)) }
-            MacRichEditor(markdown: editorBody, source: store.sourceMode, editable: !note.trashed && !store.busy && !store.preparingToClose && !store.schemaMaintenanceSaving && !store.noteMovesSaving, root: store.root, path: note.path, onChange: { if current() { store.changedEditor($0) } }, onEditingIntent: { if current() { store.editingIntent() } }, onLink: { value in Task { if current() { await store.follow(value) } } }, onSourceChange: { if current() { store.sourceMode = $0 } }, onPasteError: { if current() { store.issue = $0 } }, onPasteBusy: { if current() { clipboard.wrappedValue = $0 } }, linkNotes: { store.workspaceID == origin ? store.noteSearchSources().notes : [] }, headingRequest: store.headingRequest, focusRequest: store.editorFocusRequest, commandScope: origin, isCurrent: current, readDocument: { (store.editorBody(store.body), store.sourceMode) }, sessions: sessions, createLink: { title in try await store.createLinkedNote(title: title, folder: (note.path as NSString).deletingLastPathComponent, workspaceID: origin) }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(note.path + store.workspaceID.uuidString)
+            MacRichEditor(markdown: editorBody, source: store.sourceMode, editable: !note.trashed && !store.busy && !store.preparingToClose && !store.schemaMaintenanceSaving && !store.noteMovesSaving, root: store.root, path: note.path, onChange: { if current() { store.changedEditor($0) } }, onEditingIntent: { if current() { store.editingIntent() } }, onLink: { value in Task { if current() { await store.follow(value) } } }, onSourceChange: { if current() { store.sourceMode = $0 } }, onPasteError: { if current() { store.issue = $0 } }, onPasteBusy: { if current() { clipboard.wrappedValue = $0 } }, linkNotes: { store.workspaceID == origin ? store.noteSearchSources().notes : [] }, headingRequest: store.headingRequest, focusRequest: store.editorFocusRequest, onVisibleHeading: { index in if current(), store.draftState.visibleHeading != index { store.draftState.visibleHeading = index } }, commandScope: origin, isCurrent: current, readDocument: { (store.editorBody(store.body), store.sourceMode) }, sessions: sessions, createLink: { title in try await store.createLinkedNote(title: title, folder: (note.path as NSString).deletingLastPathComponent, workspaceID: origin) }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(note.path + store.workspaceID.uuidString)
             Divider()
             HStack { Text(draft.saveStatus); Spacer(); MacWordCountLabel(markdown: editorBody).id(note.path + origin.uuidString); Button(store.sourceMode ? "Source" : "Rich text") { store.sourceMode.toggle() }.buttonStyle(MacBoxButtonStyle()) }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 26)
         }

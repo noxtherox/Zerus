@@ -18,7 +18,7 @@ import AppKit
         let host = NSHostingView(rootView: MacZoomViewport {
             GeometryReader { viewport in
                 let layout = MacWorkspaceArrangement(width: viewport.size.width, sidebar: true, inspector: true, hasNote: true, list: true, browsing: false)
-                MacWorkspacePanes(layout: layout, library: column("library"), collection: column("collection"), editor: column("editor"), inspector: column("inspector"), tabs: EmptyView())
+                MacWorkspacePanes(layout: layout, library: column("library"), collection: column("collection"), editor: column("editor"), inspector: column("inspector"))
                     .toolbar { ToolbarItem { Button("Workspace") {} } }
             }
         }.defaultAppStorage(preferences))

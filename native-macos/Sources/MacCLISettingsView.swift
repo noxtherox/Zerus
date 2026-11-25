@@ -6,6 +6,7 @@ struct MacCLISettingsView: View {
     var workspace: MacWorkspace? = nil
     @State private var setup = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.macSettingsEmbedded) private var embedded
     @State private var status: MacCLIStatus?
     @State private var review: MacCLIInstallReview?
     @State private var busy = false
@@ -13,7 +14,7 @@ struct MacCLISettingsView: View {
     @State private var message: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("CLI and agent skills").font(.title2.bold())
+            if !embedded { Text("CLI and agent skills").font(.title2.bold()) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Use Zerus from a terminal or give an AI agent the same vault commands. Installation stays on this Mac.").foregroundStyle(.secondary)
@@ -54,9 +55,9 @@ struct MacCLISettingsView: View {
                 Button("Refresh") { perform { await reload() } }
                 if busy { ProgressView().controlSize(.small) }
                 Spacer()
-                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                if !embedded { Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
             }
-        }.padding(24).frame(width: 660, height: 560).disabled(busy)
+        }.macSettingsChrome(width: 660, height: 560).disabled(busy)
             .interactiveDismissDisabled(busy)
             .task { await reload() }
             .macSheet(isPresented: $setup) { if let workspace { MacCLISetupView(workspace: workspace) } }

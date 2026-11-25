@@ -14,16 +14,17 @@ struct MacHistoryManagementView: View {
     @State private var issue: String?
     @State private var notice: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.macSettingsEmbedded) private var embedded
     init(workspace: MacWorkspace, noteID: String? = nil) { self.workspace = workspace; self.noteID = noteID; _workspaceID = State(initialValue: workspace.workspaceID) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(review == nil ? "Version history settings" : "Review history changes").font(.title2.bold()); Spacer(); if busy { ProgressView().controlSize(.small) }; Button("Done") { dismiss() } }
+            if !embedded || review != nil || busy { HStack { if !embedded || review != nil { Text(review == nil ? "Version history settings" : "Review history changes").font(embedded ? .headline : .title2.bold()) }; Spacer(); if busy { ProgressView().controlSize(.small) }; if !embedded { Button("Done") { dismiss() } } } }
             if let review { reviewPane(review) }
             else if let snapshot { settings(snapshot) }
             else { ContentUnavailableView("History settings", systemImage: "clock.arrow.circlepath", description: Text(issue ?? "Loading saved versions and recovery references…")); Button("Retry") { Task { await reload() } } }
             if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-        }.padding(24).frame(width: 780, height: 650).disabled(busy).interactiveDismissDisabled(busy)
+        }.macSettingsChrome(width: 780, height: 650).disabled(busy).interactiveDismissDisabled(busy)
         .task { await reload() }
         .onChange(of: workspace.workspaceID) { snapshot = nil; review = nil; issue = "The vault changed. Close and reopen history settings." }
         .confirmationDialog("Permanently delete the reviewed history?", isPresented: $confirmDelete, titleVisibility: .visible) {

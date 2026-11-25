@@ -120,7 +120,7 @@ final class MacDocumentTests: XCTestCase {
                 preferences.set(percentage, forKey: "zerus.mac.interfaceZoom"); settle()
                 XCTAssertTrue(nodes(host).contains { $0 === view }, "Zoom cannot recreate the editor")
                 XCTAssertEqual(view.selectedRange(), selection); XCTAssertEqual(coordinator.lastMarkdown, saved)
-                XCTAssertEqual(view.convert(NSRect(x: 0, y: 0, width: 100, height: 100), to: host).width, 100 * factor, accuracy: 0.5)
+                XCTAssertEqual(view.convert(NSRect(x: 0, y: 0, width: 100, height: 100), to: host).width, 100, accuracy: 0.5, "Interface zoom must keep note content at its chosen size")
                 let collection = try XCTUnwrap(nodes(host).first { $0.identifier?.rawValue == "collection" })
                 XCTAssertEqual(collection.convert(NSRect(x: 0, y: 0, width: 100, height: 100), to: host).width, 100 * factor, accuracy: 0.5, "The note list must scale along with the editor")
                 let scroll = try XCTUnwrap(view.enclosingScrollView), rect = scroll.convert(scroll.bounds, to: host)
@@ -150,6 +150,15 @@ final class MacDocumentTests: XCTestCase {
                         view.setSelectedRange(selection)
                     }
                 }
+            }
+            for size in [80, 125, 150, 100] {
+                preferences.set(size, forKey: "zerus.mac.noteTextSize"); settle()
+                XCTAssertEqual(view.convert(NSRect(x: 0, y: 0, width: 100, height: 100), to: host).width, CGFloat(size), accuracy: 0.5)
+                XCTAssertEqual(view.selectedRange(), selection)
+                XCTAssertEqual(coordinator.lastMarkdown, saved)
+                XCTAssertTrue(nodes(host).contains { $0 === view })
+                let collection = try XCTUnwrap(nodes(host).first { $0.identifier?.rawValue == "collection" })
+                XCTAssertEqual(collection.convert(NSRect(x: 0, y: 0, width: 100, height: 100), to: host).width, 100, accuracy: 0.5, "Note size must leave navigation unchanged")
             }
             coordinator.action("undo"); XCTAssertEqual(coordinator.lastMarkdown, original)
             coordinator.action("redo"); XCTAssertEqual(coordinator.lastMarkdown, saved)
@@ -6939,7 +6948,7 @@ private struct MacCompactFixture: View {
                 library: MacPaneFrameProbe(name: "library"),
                 collection: MacPaneFrameProbe(name: "collection"),
                 editor: MacRichEditor(markdown: state.markdown, source: false, editable: true, onChange: { state.markdown = $0 }, onLink: { _ in }),
-                inspector: MacPaneFrameProbe(name: "inspector"), tabs: EmptyView())
+                inspector: MacPaneFrameProbe(name: "inspector"))
         }
     }
 }

@@ -85,26 +85,100 @@ enum MacHeadings {
 
 /// Outline presentation may lag a typing burst; clicks resolve the fragment
 /// against the current draft instead of using a background snapshot's range.
+/// Indent guides, weight and colour carry the hierarchy; the editor reports
+/// the heading at the top of its viewport, which the outline highlights.
 @MainActor struct MacOutlineView: View {
     @ObservedObject var draft: MacNoteDraftState
     let onSelect: (String) -> Void
     private static let queue = DispatchQueue(label: "com.zerus.notes.outline", qos: .userInitiated)
+    private static let maximumHeight: CGFloat = 320
     @StateObject private var state = MacMarkdownSnapshotState<[MacHeading]>(queue: queue, compute: { MacHeadings.entries($0) })
+    @State private var contentHeight: CGFloat = 0
     var body: some View {
         Group {
             if let headings = state.value {
-                ForEach(headings) { heading in
-                    let title = heading.title.isEmpty ? "Untitled heading" : heading.title
-                    let detail = "Heading level " + String(heading.level) + ", " + heading.id
-                    Button { onSelect(heading.id) } label: {
-                        SwiftUI.Text(title).font(.body).padding(.leading, CGFloat(max(0, heading.level - 1)) * 10)
-                    }.buttonStyle(MacBoxButtonStyle()).help("Jump to " + title)
-                        .accessibilityLabel("Jump to " + title).accessibilityValue(detail)
-                        .accessibilityIdentifier("note.heading." + heading.id)
-                }
+                if headings.isEmpty {
+                    SwiftUI.Text("No headings in this note.").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
+                } else { list(headings) }
             } else { ProgressView().controlSize(.mini).accessibilityLabel("Updating outline") }
         }
         .onChange(of: draft.body, initial: true) { _, value in state.request(value) }
         .onDisappear { state.cancel() }
+    }
+    private func list(_ headings: [MacHeading]) -> some View {
+        let base = headings.map(\.level).min() ?? 1
+        let current = draft.visibleHeading.flatMap { headings.indices.contains($0) ? $0 : nil }
+        let scrolls = contentHeight > Self.maximumHeight
+        return ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(headings.enumerated()), id: \.element.id) { index, heading in
+                        let depth = heading.level - base
+                        // Leave air where the outline climbs back out of a section.
+                        let gap = index > 0 && depth < headings[index - 1].level - base
+                        MacOutlineRow(heading: heading, depth: depth, current: index == current) { onSelect(heading.id) }
+                            .padding(.top, gap ? 6 : 0).id(heading.id)
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+            }
+            .scrollDisabled(!scrolls).scrollIndicators(scrolls ? .automatic : .hidden)
+            .frame(height: min(max(contentHeight, 1), Self.maximumHeight))
+            .onChange(of: current) { _, value in
+                // Only the capped list scrolls; never move the surrounding inspector.
+                guard scrolls, let value, headings.indices.contains(value) else { return }
+                withAnimation(.easeOut(duration: 0.15)) { proxy.scrollTo(headings[value].id) }
+            }
+        }
+    }
+}
+
+private struct MacOutlineRow: View {
+    @Environment(\.macTheme) private var theme
+    let heading: MacHeading
+    let depth: Int
+    let current: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    private var title: String { heading.title.isEmpty ? "Untitled heading" : heading.title }
+    private var accent: Color { theme.color(.accent) }
+    private var textStyle: AnyShapeStyle {
+        if current { return AnyShapeStyle(accent) }
+        return depth >= 2 ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+    }
+    private var fill: Color { current ? accent.opacity(0.14) : Color.primary.opacity(hovering ? 0.07 : 0) }
+    private var guides: some View {
+        ForEach(0..<max(0, depth), id: \.self) { _ in
+            Color.clear.frame(width: 12).overlay(alignment: .leading) {
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1).padding(.leading, 4)
+            }
+        }
+    }
+    private var label: some View {
+        SwiftUI.Text(title)
+            .font(.system(size: 12, weight: depth == 0 ? .semibold : .regular))
+            .foregroundStyle(textStyle)
+            .multilineTextAlignment(.leading).lineSpacing(1).fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 3.5)
+    }
+    @ViewBuilder private var marker: some View {
+        if current { RoundedRectangle(cornerRadius: 1).fill(accent).frame(width: 2).padding(.vertical, 3) }
+    }
+    private var row: some View {
+        HStack(alignment: .top, spacing: 0) { guides; label; Spacer(minLength: 0) }
+            .padding(.leading, 8).padding(.trailing, 6)
+            .background(RoundedRectangle(cornerRadius: 5).fill(fill))
+            .overlay(alignment: .leading) { marker }
+            .contentShape(Rectangle())
+    }
+    var body: some View {
+        let jump = "Jump to \(title)"
+        let detail = "Heading level \(heading.level), \(heading.id)"
+        let traits: AccessibilityTraits = current ? .isSelected : []
+        Button(action: action) { row }
+            .buttonStyle(.plain).onHover { hovering = $0 }
+            .help(jump).accessibilityLabel(jump).accessibilityValue(detail)
+            .accessibilityAddTraits(traits)
+            .accessibilityIdentifier("note.heading.\(heading.id)")
     }
 }

@@ -154,11 +154,12 @@ private struct MacPaneDrop: DropDelegate {
 }
 struct MacPaneSettingsView: View {
     @Bindable var workspace: MacWorkspace
+    @Environment(\.macSettingsEmbedded) private var embedded
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         let origin = workspace.workspaceID
         VStack(alignment: .leading, spacing: 16) {
-            Text("Properties pane").font(.title2.bold())
+            if !embedded { Text("Properties pane").font(.title2.bold()) }
             Text("Drag sections or use their menus to reorder them. Click a heading to collapse or expand it. Saved for all notes in this vault.").foregroundStyle(.secondary)
             ForEach(workspace.paneLayout.order) { section in
                 HStack { MacPaneHeader(workspace: workspace, section: section); Text(workspace.paneLayout.collapsed.contains(section) ? "Collapsed" : "Expanded").font(.caption).foregroundStyle(.secondary) }
@@ -168,8 +169,8 @@ struct MacPaneSettingsView: View {
             HStack {
                 Button("Reset pane layout") { Task { do { try await workspace.changePane(.reset, workspaceID: origin) } catch { if workspace.workspaceID == origin { workspace.paneLayoutIssue = error.localizedDescription } } } }.disabled(workspace.paneLayoutSaving || !workspace.paneLayoutReady || workspace.busy || workspace.preparingToClose)
                 Button("Refresh") { Task { await workspace.refreshPaneLayout() } }.disabled(workspace.paneLayoutSaving)
-                Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+                Spacer(); if !embedded { Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }
             }
-        }.padding(24).frame(width: 520).interactiveDismissDisabled(workspace.paneLayoutSaving)
+        }.macSettingsChrome(width: 520).interactiveDismissDisabled(workspace.paneLayoutSaving)
     }
 }

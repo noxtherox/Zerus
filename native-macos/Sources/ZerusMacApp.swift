@@ -50,6 +50,11 @@ struct MacCommands: Commands {
     @FocusedValue(\.macWorkspace) var store: MacWorkspace?
     @Environment(\.openWindow) private var openWindow
     private var locked: Bool { store == nil || store?.busy == true || store?.preparingToClose == true }
+    private var tabsLocked: Bool { locked || store?.editorSheetActive == true || store?.tabs.isEmpty != false }
+    private func closeWindow() {
+        let window = NSApp.keyWindow
+        (window?.sheetParent ?? window)?.performClose(nil)
+    }
     var body: some Commands {
         CommandGroup(after: .appInfo) { MacCheckForUpdates() }
         CommandGroup(replacing: .newItem) {
@@ -65,10 +70,23 @@ struct MacCommands: Commands {
             Button("Print…") { store?.presentPrint() }.keyboardShortcut("p").disabled(locked || store?.canPrintCurrentNote != true)
         }
         CommandGroup(after: .saveItem) {
-            Button("Close Window") {
-                let window = NSApp.keyWindow
-                (window?.sheetParent ?? window)?.performClose(nil)
-            }.keyboardShortcut("w").disabled(store?.editorSheetActive == true)
+            // ⌘W closes the active tab like Safari; with no tabs it closes the window.
+            Button("Close Tab") {
+                guard let store, !store.tabs.isEmpty else { return closeWindow() }
+                guard let tab = store.activeTab, !store.pinnedTabs.contains(tab) else { return NSSound.beep() }
+                Task { await store.closeTab(tab) }
+            }.keyboardShortcut("w").disabled(store?.editorSheetActive == true || store?.busy == true)
+            Button("Close Window") { closeWindow() }.keyboardShortcut("w", modifiers: [.command, .shift]).disabled(store?.editorSheetActive == true)
+        }
+        CommandGroup(before: .windowList) {
+            Button("Show Next Tab") { Task { await store?.cycleTab(by: 1) } }.keyboardShortcut(.tab, modifiers: .control).disabled(tabsLocked)
+            Button("Show Previous Tab") { Task { await store?.cycleTab(by: -1) } }.keyboardShortcut(.tab, modifiers: [.control, .shift]).disabled(tabsLocked)
+            ForEach(1...9, id: \.self) { number in
+                // ⌘9 always selects the last tab, as in Safari.
+                Button(number == 9 ? "Select Last Tab" : "Select Tab \(number)") { Task { await store?.selectTab(at: number == 9 ? Int.max : number - 1) } }
+                    .keyboardShortcut(KeyEquivalent(Character(String(number))), modifiers: .command).disabled(tabsLocked)
+            }
+            Divider()
         }
         CommandGroup(after: .pasteboard) {
             Button("Paste and Match Style") { NSApp.sendAction(#selector(NSTextView.pasteAsPlainText(_:)), to: nil, from: nil) }

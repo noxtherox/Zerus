@@ -3,7 +3,7 @@ import AppKit
 
 /// Shared metrics so every inspector section lines up on one grid.
 enum MacInspectorMetrics {
-    static let keyWidth: CGFloat = 96
+    static let keyWidth: CGFloat = 116
     static let rowHeight: CGFloat = 26
     static let iconWidth: CGFloat = 16
     static let rowRadius: CGFloat = 6
@@ -25,7 +25,8 @@ extension NativePropertyType {
 }
 
 /// One property: type glyph, name and a type-aware value. The whole row edits
-/// on click; checkboxes toggle in place and URLs keep a separate open control.
+/// on click; checkboxes toggle in place and URLs open on click, with a trailing
+/// pencil to edit.
 struct MacInspectorPropertyRow: View {
     @Environment(\.macTheme) private var theme
     let name: String
@@ -37,6 +38,7 @@ struct MacInspectorPropertyRow: View {
     let edit: () -> Void
     let toggle: (Bool) -> Void
     @State private var hovering = false
+    @State private var linkHovering = false
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -73,11 +75,21 @@ struct MacInspectorPropertyRow: View {
             }
         } else if type == .url {
             HStack(spacing: 4) {
-                Text(Self.shortURL(display)).foregroundStyle(theme.color(.link)).lineLimit(1).truncationMode(.middle).help(display)
                 if let url = URL(string: display), url.scheme != nil {
-                    Button { NSWorkspace.shared.open(url) } label: { Image(systemName: "arrow.up.right.square").font(.system(size: 11)) }
-                        .buttonStyle(.plain).foregroundStyle(hovering ? theme.color(.link) : Color.secondary.opacity(0.5))
-                        .help("Open " + display).accessibilityLabel("Open link")
+                    Button { NSWorkspace.shared.open(url) } label: {
+                        Text(Self.shortURL(display)).foregroundStyle(theme.color(.link)).lineLimit(1).truncationMode(.middle)
+                            .underline(linkHovering)
+                    }
+                    .buttonStyle(.plain).onHover { linkHovering = $0 }
+                    .help("Open " + display).accessibilityLabel("Open link")
+                } else {
+                    Text(Self.shortURL(display)).foregroundStyle(theme.color(.link)).lineLimit(1).truncationMode(.middle).help(display)
+                }
+                Spacer(minLength: 4)
+                if !disabled {
+                    Button(action: edit) { Image(systemName: "pencil").font(.system(size: 11)) }
+                        .buttonStyle(.plain).foregroundStyle(hovering ? Color.secondary : Color.secondary.opacity(0.4))
+                        .help("Edit " + name).accessibilityLabel("Edit link")
                 }
             }
         } else if type == .number {
@@ -174,7 +186,6 @@ struct MacInspectorNoteLink: View {
                     if let detail, !detail.isEmpty { Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle) }
                 }
                 Spacer(minLength: 0)
-                if hovering && available { Image(systemName: "arrow.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary) }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
             .background(Color.primary.opacity(hovering ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 7))
@@ -200,7 +211,7 @@ struct MacInspectorGroupHeader: View {
                 Button(action: edit) { Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 18, height: 18).contentShape(Rectangle()) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("Edit " + title).accessibilityLabel("Edit " + title)
             }
-        }.font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 2).padding(.top, 4)
+        }.font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 4)
     }
 }
 

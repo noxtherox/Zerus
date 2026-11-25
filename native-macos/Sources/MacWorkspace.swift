@@ -7,6 +7,8 @@ import Combine
 @MainActor final class MacNoteDraftState: ObservableObject {
     @Published var body = ""
     @Published var saveStatus = "Saved"
+    /// Index of the outline heading at the top of the editor viewport.
+    @Published var visibleHeading: Int?
 }
 
 /// Bulk selection belongs to collection content, not the editor or library.
@@ -1176,7 +1178,7 @@ final class MacWorkspace {
         await loadInspector()
     }
     private func adoptOpenedNote(_ note: NoteDocument, record: Bool, newTab: Bool = false) {
-        headingRequest = nil; browsingCollection = false; baseline = note; selection = note.path; body = drafts[note.path] ?? note.parts.body
+        headingRequest = nil; draftState.visibleHeading = nil; browsingCollection = false; baseline = note; selection = note.path; body = drafts[note.path] ?? note.parts.body
         baselineIdentityUnique = note.stableID.map { id in notes.filter { !$0.trashed && $0.stableID == id }.count == 1 } ?? false
         noteDiskChange = nil; retainedExport = nil; retainedExportReady = false
         sourceMode = openingRequiresSource(body)
