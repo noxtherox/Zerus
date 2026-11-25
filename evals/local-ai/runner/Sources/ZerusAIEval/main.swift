@@ -1,9 +1,11 @@
 import Foundation
 import MLX
+import ZerusLocalAICore
 
 // Usage:
-//   zerus-ai-eval retrieval [--embedders a,b] [--root PATH]
+//   zerus-ai-eval retrieval [--extra-notes DIR] [--root PATH]
 //   zerus-ai-eval llm [--models a,b] [--tasks route,ask,summarize,edit] [--root PATH]
+//   zerus-ai-eval download-test   (real download of the embedding model into a temp store)
 //   zerus-ai-eval list
 // Results are written to <root>/results/<timestamp>-<suite>-<key>.json
 
@@ -24,6 +26,7 @@ func list(_ name: String, default value: [String]) -> [String] {
 let root = URL(fileURLWithPath: option("--root") ?? FileManager.default.currentDirectoryPath)
 let resultsDir = root.appendingPathComponent("results")
 try FileManager.default.createDirectory(at: resultsDir, withIntermediateDirectories: true)
+evalModelStoreRoot = root.appendingPathComponent("local/models")
 let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
 
 func write(_ object: JSON, _ name: String) throws {
@@ -67,10 +70,23 @@ case "retrieval":
         }
         log("\(extra.count) extra notes")
     }
-    let report = try await runRetrieval(
-        fixtures: fixtures, embedderKeys: list("--embedders", default: embedderSpecs.map(\.key)),
-        extraNotes: extra)
+    let report = try await runRetrieval(fixtures: fixtures, extraNotes: extra)
     try write(report, "retrieval")
+
+case "download-test":
+    // Exercises LocalAIModelDownloader end to end (network, checksums, marker).
+    let temp = FileManager.default.temporaryDirectory.appendingPathComponent("zerus-download-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: temp) }
+    let spec = LocalAIModelSpec.embeddingGemma300M
+    let started = Date()
+    final class Decile: @unchecked Sendable { var value = -1 }
+    let lastDecile = Decile()
+    try await LocalAIModelDownloader(store: LocalAIModelStore(root: temp), policy: .anyNetwork).install(spec) { p in
+        let decile = Int(p.fraction * 10)
+        if decile != lastDecile.value { lastDecile.value = decile; log("  \(decile * 10)%") }
+    }
+    let state = LocalAIModelStore(root: temp).state(of: spec)
+    log("installed \(spec.id): \(state) in \(Int(Date().timeIntervalSince(started))) s")
 
 case "llm":
     let tasks = list("--tasks", default: ["route", "ask", "summarize", "edit"])
@@ -115,5 +131,5 @@ case "llm":
 
 default:
     print("LLMs:", llmSpecs.map(\.key).joined(separator: ", "))
-    print("Embedders:", embedderSpecs.map(\.key).joined(separator: ", "))
+    print("Embedder:", LocalAIModelSpec.embeddingGemma300M.id)
 }

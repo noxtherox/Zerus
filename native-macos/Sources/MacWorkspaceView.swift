@@ -15,8 +15,11 @@ struct MacWorkspaceView: View {
     @State private var clipboardBusy = false
     @State private var showAllRecents = false
     @State private var vaultIconRequest: MacVaultIconRequest?
+    @State private var managingVaults = false
     @State private var attachmentImporting = false
     @State private var sidebar = true
+    /// Hides the library, list and inspector so the open note fills the window.
+    @State private var focusMode = false
     @State private var compactLibrary = false
     @State private var compactInspector = false
     @State private var filtersOpen = false
@@ -39,17 +42,19 @@ struct MacWorkspaceView: View {
     @State private var folderRequest: MacFolderRequest?
     @State private var folderIconRequest: MacFolderIconRequest?
     @State private var trashBrowser = false
+    @State private var emptyTrashPlan: NativeNoteTrashPlan?
     @State private var bulkProperties = false
     @State private var bulkMove = false
     @State private var bulkHistory = false
     @State private var recoveryRequest: MacRecoveryRequest?
     @State private var settings = false
+    @State private var newNoteSheet = false
     @State private var exportRequest: MacExportRequest?
     @Environment(\.openWindow) private var openWindow
     var body: some View {
         GeometryReader { geometry in
             let standalone = store.root == nil || ((store.destination == "Tasks" || store.destination == "External Notes") && !store.folderCollection)
-            let layout = MacWorkspaceArrangement(width: geometry.size.width, sidebar: sidebar, inspector: store.inspector, hasNote: store.selection != nil, list: store.viewMode == "List", browsing: store.browsingCollection, standalone: standalone)
+            let layout = MacWorkspaceArrangement(width: geometry.size.width, sidebar: sidebar && !focusMode, inspector: store.inspector && !focusMode, hasNote: store.selection != nil, list: store.viewMode == "List" && !focusMode, browsing: store.browsingCollection && !focusMode, standalone: standalone)
             ZStack {
                 VStack(spacing: 0) {
                     if store.usingStartupCache {
@@ -98,6 +103,7 @@ struct MacWorkspaceView: View {
         .onChange(of: store.editorSheetActive) { _, active in if !active { Task { await store.desktopFiles.drain(in: store) } } }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in Task { await store.desktopFiles.drain(in: store) } }
         .modifier(MacVaultRefresh(store: store))
+        .onChange(of: store.root) { _, _ in managingVaults = false }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await store.refresh() } }
         .alert("Zerus", isPresented: Binding(get: { store.issue != nil }, set: { if !$0 { store.issue = nil } })) { Button("OK") { store.issue = nil } } message: { Text(store.issue ?? "") }
         .macSheet(item: $prompt) { item in promptView(item) }
@@ -106,6 +112,7 @@ struct MacWorkspaceView: View {
         .macSheet(item: $store.missingNoteLink) { request in MacMissingNoteLinkView(workspace: store, request: request) }
         .macSheet(isPresented: $store.showChat) { MacChatView(store: store) }
         .macSheet(isPresented: $settings) { MacSettingsView(workspace: store) }
+        .macSheet(isPresented: $newNoteSheet) { MacNewNoteSheet(workspace: store) }
         .macSheet(item: $exportRequest, onDismiss: { store.editorSheetActive = false; DispatchQueue.main.async { sendEditor("focus") } }) { request in MacNoteExportView(request: request) }
         .macSheet(item: $store.settingsImport, onDismiss: { store.editorSheetActive = false; DispatchQueue.main.async { sendEditor("focus") } }) { review in MacDesktopSettingsImportView(review: review) }
         .macSheet(item: $store.printRequest, onDismiss: { store.editorSheetActive = false; DispatchQueue.main.async { sendEditor("focus") } }) { request in MacNotePrintView(request: request) }
@@ -114,6 +121,7 @@ struct MacWorkspaceView: View {
         .macSheet(isPresented: $bulkHistory) { MacBulkHistoryView(store: store) }
         .macSheet(item: $recoveryRequest) { MacRecoveryView(workspace: store, request: $0) }
         .macSheet(item: $vaultIconRequest) { request in MacVaultIconPicker(workspace: store, request: request) }
+
         .macSheet(item: $folderIconRequest, onDismiss: { store.editorSheetActive = false }) { request in MacFolderIconPicker(workspace: store, request: request) }
         .macSheet(item: $folderRequest) { request in MacFolderReview(store: store, request: request) }
         .macSheet(isPresented: $images) { MacImagesView(workspace: store, notePath: store.selection) }
@@ -130,7 +138,7 @@ struct MacWorkspaceView: View {
         .focusedSceneValue(\.macWorkspace, store)
     }
     @ViewBuilder private func workspaceContent(_ layout: MacWorkspaceArrangement) -> some View {
-        if store.root == nil {
+        if store.root == nil || managingVaults {
             MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; welcome.frame(maxWidth: .infinity, maxHeight: .infinity) }
         } else if store.destination == "External Notes" && !store.folderCollection {
             MacZoomSplitView { if layout.sidebar { sidebarView.frame(minWidth: 185, idealWidth: 218, maxWidth: 240) }; MacExternalNotesView(workspace: store).frame(maxWidth: .infinity) }
@@ -143,23 +151,51 @@ struct MacWorkspaceView: View {
     @ToolbarContentBuilder private func workspaceToolbar(_ layout: MacWorkspaceArrangement, standalone: Bool) -> some ToolbarContent {
         ToolbarItem(placement: .navigation) {
             Button {
-                if layout.sidebar { sidebar = false }
+                if focusMode { focusMode = false; sidebar = true }
+                else if layout.sidebar { sidebar = false }
                 else if layout.canInlineSidebar { sidebar = true }
                 else { compactInspector = false; compactLibrary.toggle() }
             } label: { Image(systemName: "sidebar.left") }.disabled(store.busy).help("Show or hide folders").modifier(MacToolbarZoom())
+        }.sharedBackgroundVisibility(.hidden)
+        if store.root != nil {
+            ToolbarItemGroup(placement: .navigation) {
+                Button { Task { await store.historyStep(-1) } } label: { Image(systemName: "chevron.left") }.disabled(!store.canHistoryStep(-1) || store.busy).help("Back").modifier(MacToolbarZoom())
+                Button { Task { await store.historyStep(1) } } label: { Image(systemName: "chevron.right") }.disabled(!store.canHistoryStep(1) || store.busy).help("Forward").modifier(MacToolbarZoom())
+            }
         }
         ToolbarItem(placement: .navigation) {
             MacTabBar(store: store, available: tabBarWidth(layout, standalone: standalone)).modifier(MacToolbarZoom())
         }.sharedBackgroundVisibility(.hidden)
+        // Only add this group when it shows something: an empty toolbar group
+        // still holds a slot at the trailing edge.
+        let browseToggle = !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil
+        if browseToggle || store.busy {
         ToolbarItemGroup(placement: .primaryAction) {
-            if !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil {
+            if browseToggle {
                 Button {
                     store.browsingCollection.toggle()
                 } label: { Label(store.browsingCollection ? "Back to note" : "Notes", systemImage: store.browsingCollection ? "doc.text" : "list.bullet") }.disabled(clipboardBusy || store.busy).help(store.browsingCollection ? "Return to the selected note" : "Browse notes").modifier(MacToolbarZoom())
             }
             if store.busy { ProgressView().controlSize(.small).modifier(MacToolbarZoom()) }
+        }
+        }
+        // Three capsules: creating stands alone, the note's own controls sit
+        // together, and the inspector toggle closes the row.
+        ToolbarItem(placement: .primaryAction) {
+            Button { newNoteSheet = true } label: { Image(systemName: "square.and.pencil") }.disabled(store.root == nil || store.busy).help("New note…").modifier(MacToolbarZoom())
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItemGroup(placement: .primaryAction) {
             Button { store.showSearch = true } label: { Image(systemName: "magnifyingglass") }.disabled(store.busy).help("Search everything (⌘F)").modifier(MacToolbarZoom())
-            Button { Task { await store.createNote() } } label: { Image(systemName: "square.and.pencil") }.disabled(store.root == nil || store.busy).help("New note").modifier(MacToolbarZoom())
+            if CloudAIFeature.enabled {
+                Button { store.showChat = true } label: { Label("AI", systemImage: "sparkles").labelStyle(.titleAndIcon) }.foregroundStyle(macAccent).disabled(store.root == nil || store.busy).help("AI chat").modifier(MacToolbarZoom())
+            }
+            if let note = store.current {
+                Menu { noteActions(note).labelStyle(.titleAndIcon) } label: { Label("Note actions", systemImage: "ellipsis") }.menuIndicator(.hidden).disabled(store.busy).help("Note actions").modifier(MacToolbarZoom())
+            }
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+        ToolbarItem(placement: .primaryAction) {
             Button { toggleInspector(layout) } label: { Image(systemName: "sidebar.right") }.disabled(store.selection == nil || store.busy).help("Show or hide inspector").modifier(MacToolbarZoom())
         }
     }
@@ -168,13 +204,20 @@ struct MacWorkspaceView: View {
     /// reserve only leaves extra space before the trailing buttons; an item that
     /// is too wide would push them into the toolbar's overflow menu.
     private func tabBarWidth(_ layout: MacWorkspaceArrangement, standalone: Bool) -> CGFloat {
-        var reserved: CGFloat = 150 + 150
+        // Trailing items follow the tab strip directly, so an overestimate
+        // shows as an empty gap at the window's edge. Leading: traffic lights,
+        // sidebar and back/forward. Trailing: the new-note and inspector
+        // capsules, plus the search · AI · ⋯ capsule sized by what it shows.
+        var reserved: CGFloat = 205 + 14 + 48 + 48 + 8 + 37
+        if store.current != nil { reserved += 37 }
+        if CloudAIFeature.enabled { reserved += 62 }
         if !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil { reserved += 130 }
         if store.busy { reserved += 36 }
         return layout.width - reserved / MacInterfaceZoom.factor(interfaceZoom)
     }
     private func toggleInspector(_ layout: MacWorkspaceArrangement) {
         guard !store.busy, store.selection != nil else { return }
+        if focusMode { focusMode = false; store.inspector = true; return }
         if layout.canInlineInspector { compactInspector = false; store.inspector.toggle() }
         else { compactLibrary = false; compactInspector.toggle() }
     }
@@ -184,8 +227,11 @@ struct MacWorkspaceView: View {
                 Button("Open Vault…") { store.chooseVault() }
                 Button("Note recovery drafts…") { store.showNoteRecovery = true }.disabled(store.root == nil)
                 Button("Change Vault Icon…") { if let root = store.root { vaultIconRequest = .init(path: root.path) } }.disabled(store.root == nil)
+                Button("Manage Vaults…") { showAllRecents = true; managingVaults = true }.disabled(store.root == nil || managingVaults)
                 Divider()
-                ForEach(store.recentVaults, id: \.self) { path in Button(URL(fileURLWithPath: path).lastPathComponent) { Task { await store.openRecentVault(path) } } }
+                ForEach(store.recentVaults.filter { $0 != store.root?.path }, id: \.self) { path in
+                    Button(MacRecentVaults.menuTitle(path, among: store.recentVaults)) { Task { await store.openRecentVault(path) } }
+                }
             } label: { Label(store.vaultTitle, systemImage: "books.vertical.fill").font(.system(size: 14, weight: .semibold)) }.menuStyle(.borderlessButton).padding(.horizontal, 8).padding(.top, 14)
             Button { store.showSearch = true } label: {
                 HStack { Image(systemName: "magnifyingglass"); Text("Search everything"); Spacer(); Text("⌘F").font(.caption) }.foregroundStyle(theme.color(.sidebarFg).opacity(0.72)).padding(8).background(theme.color(.sidebarFg).opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
@@ -250,45 +296,124 @@ struct MacWorkspaceView: View {
             HStack(spacing: 9) { Image(systemName: icon).frame(width: 16).foregroundStyle(macAccent).accessibilityHidden(true); Text(name); Spacer() }
                 .padding(.horizontal, 8).padding(.vertical, 6).background(!store.folderCollection && store.destination == name ? macAccent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 6))
         }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(!store.folderCollection && store.destination == name ? .isSelected : []).overlay(MacAlternateOpen { store.navigate(name, newTab: true) }.accessibilityHidden(true))
-            .contextMenu { Button("Open in tab") { store.navigate(name, newTab: true) } }
+            .contextMenu { Button("Open in tab") { store.navigate(name, newTab: true) }; if name == "Trash" { Button("Deleted folders and revisions…") { trashBrowser = true } } }
     }
+    /// Wide layouts (table, board, gallery, calendar) get one toolbar row and a
+    /// floating selection bar; the narrow List column keeps its stacked header.
     private var collectionView: some View {
-        let notes = store.collection
+        let notes = store.collection, wide = store.viewMode != "List"
         return VStack(spacing: 0) {
-
-            HStack(spacing: 8) {
-                Text(store.destination).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-                Spacer(minLength: 0)
-                Menu { ForEach(["List", "Gallery", "Kanban", "Table", "Calendar"], id: \.self) { value in Button(value) { Task { await store.updateCollectionLayout(store.collectionLayout, mode: value) } } }; if store.folderCollection { Divider(); Toggle("Hide subtype notes", isOn: $store.hideSubtypes) } } label: { Text(store.viewMode) }.fixedSize().menuStyle(.borderlessButton)
+            if wide { wideCollectionHeader } else { narrowCollectionHeader }
+            Divider()
+            if !wide {
                 MacCollectionSelectionContent(selection: store.collectionSelection) {
-                    Button { store.selecting.toggle() } label: { Image(systemName: "checkmark.circle").accessibilityHidden(true); Text("Select") }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selecting ? .isSelected : []).help("Select notes for bulk actions")
+                    if store.selecting || !store.selectedPaths.isEmpty { bulkBar }
                 }
-                Button { if !store.folderCollection && store.destination == "Files" { addDocument() } else if !store.folderCollection && store.destination == "Links" { ask(.link) } else { Task { await store.createNote() } } } label: { Image(systemName: "plus") }.buttonStyle(MacBoxButtonStyle())
-            }.padding(.horizontal, 14).frame(height: 46)
-            Divider()
-            VStack(spacing: 8) {
-                HStack { Image(systemName: "magnifyingglass").foregroundStyle(theme.color(.text).opacity(0.72)); MacNoteSearchField(store: store) }.foregroundStyle(theme.color(.text)).padding(7).background(theme.color(.editorBg), in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.color(.text).opacity(0.15)))
-                HStack {
-                Button { filtersOpen.toggle() } label: {
-                    HStack { Image(systemName: "line.3.horizontal.decrease"); Text("Sort & filter"); Spacer(); if store.filters.activeCount > 0 { Text("\(store.filters.activeCount)").font(.caption).foregroundStyle(.white).padding(.horizontal, 5).background(macAccent, in: Capsule()) }; Image(systemName: "chevron.down").font(.caption) }.padding(7).contentShape(Rectangle())
-                }.buttonStyle(MacBoxButtonStyle()).overlay(RoundedRectangle(cornerRadius: 7).stroke(.quaternary)).macPopover(isPresented: $filtersOpen) { filterView }
-                if store.folderCollection { MacSavedViewsMenu(store: store) }
-                }
-            }.padding(.horizontal, 14).padding(.vertical, 10)
-            Divider()
-            if store.destination == "Trash" && !store.folderCollection { Button("Recently deleted…") { trashBrowser = true }.font(.caption).padding(9) }
-            MacCollectionSelectionContent(selection: store.collectionSelection) {
-                if store.selecting || !store.selectedPaths.isEmpty { bulkBar }
             }
             if store.destination == "Files" && !store.folderCollection && store.viewMode == "List" { filesView.modifier(MacCollectionKeyboard(store: store)) }
-            else if store.viewMode != "List" { alternateCollection }
+            else if wide {
+                alternateCollection.overlay(alignment: .bottom) {
+                    MacCollectionSelectionContent(selection: store.collectionSelection) {
+                        if store.selecting || !store.selectedPaths.isEmpty { floatingBulkBar.padding(.bottom, 14).transition(.move(edge: .bottom).combined(with: .opacity)) }
+                    }
+                }
+            }
             else {
                 MacProgressiveNoteList(notes: notes, scope: .init(workspace: store.workspaceID, destination: store.destination, folder: store.folderCollection, query: store.query, filters: store.filters, hideSubtypes: store.hideSubtypes), row: noteRow)
                     .modifier(MacCollectionKeyboard(store: store))
                 if notes.isEmpty { ContentUnavailableView.search(text: store.query).font(.caption).frame(maxHeight: .infinity) }
             }
-            HStack { Text("\(notes.count) notes"); Spacer() }.font(.caption2).foregroundStyle(.secondary).padding(9)
+            HStack { Text("\(notes.count) notes"); if store.filters.activeCount > 0 { Text("· \(store.filters.sort.rawValue) · \(store.filters.activeCount) filter\(store.filters.activeCount == 1 ? "" : "s")") }; Spacer() }.font(.caption2).foregroundStyle(.secondary).padding(9)
         }.background(theme.color(.surface))
+    }
+    private var narrowCollectionHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text(store.destination).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Spacer(minLength: 0)
+                MacViewModeMenu(store: store)
+                emptyTrashButton
+                selectButton
+                newButton.labelStyle(.iconOnly).buttonStyle(MacBoxButtonStyle())
+            }.padding(.horizontal, 14).frame(height: 46)
+            Divider()
+            VStack(spacing: 8) {
+                collectionSearch
+                HStack { filterButton(expanded: true); if store.folderCollection { MacSavedViewsMenu(store: store) } }
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+        }
+    }
+    private var wideCollectionHeader: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Text(store.destination).font(.system(size: 20, weight: .bold)).lineLimit(1)
+                Text("\(store.collection.count)").font(.system(size: 13)).foregroundStyle(.secondary).monospacedDigit()
+                Spacer(minLength: 12)
+                collectionSearch.frame(minWidth: 160, idealWidth: 240, maxWidth: 260)
+                filterButton(expanded: false)
+                if store.folderCollection { MacSavedViewsMenu(store: store) }
+                emptyTrashButton
+                selectButton
+                newButton.buttonStyle(.borderedProminent).tint(theme.color(.text)).foregroundStyle(theme.color(.surface)).controlSize(.regular).help("New note")
+            }.padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+        }
+    }
+    private var collectionSearch: some View {
+        HStack { Image(systemName: "magnifyingglass").foregroundStyle(theme.color(.text).opacity(0.72)); MacNoteSearchField(store: store) }.foregroundStyle(theme.color(.text)).padding(7).background(theme.color(.editorBg), in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.color(.text).opacity(0.15)))
+    }
+    private func filterButton(expanded: Bool) -> some View {
+        Button { filtersOpen.toggle() } label: {
+            HStack { Image(systemName: "line.3.horizontal.decrease"); Text("Sort & filter"); if expanded { Spacer() }; if store.filters.activeCount > 0 { Text("\(store.filters.activeCount)").font(.caption).foregroundStyle(.white).padding(.horizontal, 5).background(macAccent, in: Capsule()) }; Image(systemName: "chevron.down").font(.caption) }.padding(7).contentShape(Rectangle())
+        }.buttonStyle(MacBoxButtonStyle()).overlay(RoundedRectangle(cornerRadius: 7).stroke(.quaternary)).fixedSize(horizontal: !expanded, vertical: false).macPopover(isPresented: $filtersOpen) { filterView }
+    }
+    private var selectButton: some View {
+        MacCollectionSelectionContent(selection: store.collectionSelection) {
+            if store.selecting || !store.selectedPaths.isEmpty {
+                Button { store.clearCollectionSelection() } label: { Text("Done").fontWeight(.semibold).foregroundStyle(macAccent).padding(.horizontal, 9).padding(.vertical, 5).overlay(RoundedRectangle(cornerRadius: 7).stroke(macAccent)) }.buttonStyle(MacBoxButtonStyle()).help("Leave selection mode").keyboardShortcut(.cancelAction)
+            } else {
+                Button { store.selecting = true } label: { Image(systemName: "checkmark.circle").accessibilityHidden(true); Text("Select") }.buttonStyle(MacBoxButtonStyle()).help("Select notes for bulk actions")
+            }
+        }
+    }
+    @ViewBuilder private var emptyTrashButton: some View {
+        if store.destination == "Trash" && !store.folderCollection {
+            Button { Task { emptyTrashPlan = await store.prepareEmptyTrash() } } label: { Text("Empty Trash").foregroundStyle(macAccent) }
+                .buttonStyle(MacBoxButtonStyle()).disabled(store.busy || !store.notes.contains(where: \.trashed)).help("Permanently delete every note in Trash")
+                .confirmationDialog("Empty Trash?", isPresented: Binding(get: { emptyTrashPlan != nil }, set: { if !$0 { emptyTrashPlan = nil } })) {
+                    Button("Delete \(emptyTrashPlan?.deleted.count ?? 0) notes permanently", role: .destructive) { if let plan = emptyTrashPlan { Task { await store.commitEmptyTrash(plan) } } }
+                } message: { Text("These notes and their retained versions will be permanently removed. This cannot be undone.") }
+        }
+    }
+    private var newButton: some View {
+        Button { if !store.folderCollection && store.destination == "Files" { addDocument() } else if !store.folderCollection && store.destination == "Links" { ask(.link) } else { Task { await store.createNote() } } } label: { Label("New", systemImage: "plus") }
+    }
+    /// Bulk actions float over wide layouts so selecting does not push the
+    /// content down. Same actions as the narrow bar.
+    private var floatingBulkBar: some View {
+        let count = store.selectedPaths.count, total = store.collection.count
+        return HStack(spacing: 12) {
+            Text("\(count) selected").fontWeight(.semibold).monospacedDigit()
+            Divider().frame(height: 16)
+            Button("Edit properties…") { bulkProperties = true }.disabled(count == 0)
+            Button("Move…") { bulkMove = true }.disabled(count == 0)
+            Menu("More") {
+                Button("Pin") { Task { await store.flag(store.selectedPaths, pinned: true) } }
+                Button("Unpin") { Task { await store.flag(store.selectedPaths, pinned: false) } }
+                Button("Archive") { Task { await store.flag(store.selectedPaths, archived: true) } }
+                Button("Unarchive") { Task { await store.flag(store.selectedPaths, archived: false) } }
+                Divider()
+                Button("Organization history…") { bulkHistory = true }
+            }.menuStyle(.borderlessButton).fixedSize().disabled(count == 0)
+            if count < total { Button("Select all \(total)") { store.selectAllCollectionNotes() } }
+            Divider().frame(height: 16)
+            Button { store.clearCollectionSelection() } label: { Image(systemName: "xmark") }.help("Clear selection").accessibilityLabel("Clear selection")
+        }
+        .buttonStyle(MacBoxButtonStyle()).font(.system(size: 12.5))
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.color(.text).opacity(0.12)))
+        .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
+        .fixedSize()
     }
     private func noteRow(_ note: NoteDocument) -> some View {
         MacCollectionSelectionContent(selection: store.collectionSelection) { noteRowContent(note) }
@@ -312,6 +437,46 @@ struct MacWorkspaceView: View {
                 .background(store.selectedPaths.contains(note.path) ? macAccent.opacity(0.13) : store.selection == note.path ? theme.color(.editorBg) : .clear)
                 .overlay(alignment: .leading) { if store.selection == note.path { Rectangle().fill(macAccent).frame(width: 3) } }
         }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selectedPaths.contains(note.path) ? .isSelected : []).overlay(MacAlternateOpen { Task { await store.openNote(note.path, newTab: true) } }.accessibilityHidden(true)).contentShape(Rectangle()).contextMenu { noteMenu(note) }.overlay(alignment: .bottom) { Divider().opacity(0.4) }
+    }
+    /// The toolbar ⋯ menu: actions on the open note itself. A linked
+    /// document's own actions live in its file card's split button.
+    @ViewBuilder private func noteActions(_ note: NoteDocument) -> some View {
+        Section {
+            Button("Find in Note", systemImage: "text.magnifyingglass") { MacNoteFind.show() }
+            Button("Version History…", systemImage: "clock.arrow.circlepath") { recoveryRequest = .init(workspaceID: store.workspaceID, path: note.path) }
+            Button(focusMode ? "Exit Focus Mode" : "Focus Mode", systemImage: focusMode ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right") { focusMode.toggle() }
+            Button("Copy Note Link", systemImage: "link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(NoteReference(target: note.title, label: note.title, explicitLabel: false).markdown(label: note.title), forType: .string)
+            }
+            Button("Open in New Tab", systemImage: "plus.square.on.square") { Task { await store.openNote(note.path, newTab: true) } }
+        }
+        Section {
+            Button(note.pinned ? "Unpin" : "Pin", systemImage: note.pinned ? "pin.slash" : "pin") { Task { await store.flag([note.path], pinned: !note.pinned) } }
+            Button(note.archived ? "Unarchive" : "Archive", systemImage: "archivebox") { Task { await store.flag([note.path], archived: !note.archived) } }
+            Button("Duplicate", systemImage: "square.on.square") { Task { await store.duplicate(note) } }
+            Button("Rename…", systemImage: "pencil") { Task { await store.openNote(note.path); ask(.rename, value: note.title) } }
+            Menu("Move to Folder", systemImage: "folder") { Button("Vault root (Inbox)") { Task { await store.move(note, folder: "") } }; ForEach(store.folders, id: \.self) { folder in Button(folder) { Task { await store.move(note, folder: folder) } } } }
+            if note.fileHub == nil && !note.trashed {
+                Button("Link Document…", systemImage: "paperclip") {
+                    Task { do { let request = try await store.prepareFileHub(note); hubInitialSource = nil; fileHubRequest = request } catch { store.issue = error.localizedDescription } }
+                }
+            }
+            Button("Organization History…", systemImage: "clock.arrow.2.circlepath") { bulkHistory = true }
+        }
+        Section {
+            Button("Export…", systemImage: "square.and.arrow.up") {
+                guard let root = store.root else { return }
+                exportRequest = MacExportRequest(note: note, body: store.body, root: root)
+                store.editorSheetActive = true
+            }
+            Button("Print…", systemImage: "printer") { store.presentPrint() }.disabled(!store.canPrintCurrentNote)
+            Button("Show Note in Finder", systemImage: "finder") { store.reveal(note) }
+        }
+        Section {
+            if note.trashed { Button("Restore Note", systemImage: "arrow.uturn.backward") { Task { await store.trash(note) } } }
+            else { Button("Move to Trash", systemImage: "trash", role: .destructive) { Task { await store.trash(note) } } }
+        }
     }
     @ViewBuilder private func noteMenu(_ note: NoteDocument) -> some View {
         Button("Open in New Tab") { Task { await store.openNote(note.path, newTab: true) } }
@@ -349,29 +514,16 @@ struct MacWorkspaceView: View {
     private var editorView: some View {
         VStack(spacing: 0) {
             if let note = store.current {
-                HStack(spacing: 14) {
-                    Button { Task { await store.historyStep(-1) } } label: { Image(systemName: "chevron.left") }
-                    Button { Task { await store.historyStep(1) } } label: { Image(systemName: "chevron.right") }
-                    Text(note.folder.replacingOccurrences(of: "/", with: " / ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Button { store.showChat = true } label: { Label("AI chat", systemImage: "sparkles") }.foregroundStyle(macAccent)
-                    Menu {
-                        noteMenu(note); Divider()
-                        Button("Organization history…") { bulkHistory = true }
-                        Button("Export…") {
-                            guard let root = store.root else { return }
-                            exportRequest = MacExportRequest(note: note, body: store.body, root: root)
-                            store.editorSheetActive = true
-                        }
-                        Button("Print…") { store.presentPrint() }.disabled(!store.canPrintCurrentNote)
-                    } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize()
-                }.buttonStyle(MacBoxButtonStyle()).padding(.horizontal, 18).frame(height: 44)
-                Divider()
+                // Note controls live in the window toolbar. A document note shows
+                // its folder in the file card; every other note gets a slim line.
                 if note.fileHub != nil && !note.trashed {
                     MacFileHubPane(workspace: store, note: note) { noteWritingArea(note) }.id(note.path + store.workspaceID.uuidString)
-                } else if note.savedLink != nil && !note.trashed {
-                    MacSavedLinkPane(store: store, note: note) { noteWritingArea(note) }.id(note.path + store.workspaceID.uuidString)
-                } else { noteWritingArea(note) }
+                } else {
+                    MacNoteBreadcrumb(folder: note.folder, vault: store.vaultTitle).padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 4)
+                    if note.savedLink != nil && !note.trashed {
+                        MacSavedLinkPane(store: store, note: note) { noteWritingArea(note) }.id(note.path + store.workspaceID.uuidString)
+                    } else { noteWritingArea(note) }
+                }
             } else { ContentUnavailableView("Choose a note", systemImage: "doc.text", description: Text("Your ideas, in files you own.")).frame(maxWidth: .infinity, maxHeight: .infinity) }
         }.background(theme.color(.editorBg))
     }
@@ -548,6 +700,11 @@ struct MacWorkspaceView: View {
         return GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
+                    if managingVaults, store.root != nil {
+                        Button { managingVaults = false } label: { Label("Back to " + store.vaultTitle, systemImage: "chevron.left") }
+                            .buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut(.cancelAction)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 24)
+                    }
                     Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(macAccent)
                     Text("A little space for everything").font(.largeTitle.bold()).multilineTextAlignment(.center).padding(.top, 14)
                     Text("Open a folder of Markdown files to start writing.").foregroundStyle(.secondary).padding(.top, 6)
@@ -561,7 +718,7 @@ struct MacWorkspaceView: View {
                         VStack(spacing: 0) {
                             ForEach(Array(shown.enumerated()), id: \.element) { index, path in
                                 MacRecentVaultRow(path: path, icon: store.vaultIcons[path], current: store.root?.path == path,
-                                                  open: { Task { await store.openRecentVault(path) } },
+                                                  open: { if store.root?.path == path { managingVaults = false } else { Task { await store.openRecentVault(path) } } },
                                                   changeIcon: { vaultIconRequest = .init(path: path) },
                                                   remove: { withAnimation(.snappy) { store.forgetRecentVault(path) } })
                                 if index < shown.count - 1 { Divider().padding(.leading, 54) }

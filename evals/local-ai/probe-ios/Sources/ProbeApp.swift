@@ -1,6 +1,8 @@
 import Foundation
 import MLX
 import SwiftUI
+import ZerusLocalAI
+import ZerusLocalAICore
 
 // iOS probe for the local AI benchmark: measures the chosen models on a real
 // iPhone (indexing speed, retrieval, TTFT, tokens/s, memory footprint).
@@ -110,6 +112,15 @@ func runProbe(forceLLM: Bool) async {
     log("device \(info)")
     save(info, "probe-device.json")
 
+    // Production self-test (the gate the apps use), then models from the
+    // app's verified store, downloaded with the app's downloader.
+    var selfTest = LocalAISelfTest()
+    selfTest.reset()
+    selfTest.run()
+    log("MLX self-test: \(selfTest.result)")
+    guard selfTest.result == .passed else { return }
+    if let store = try? LocalAIModelStore.standard() { evalModelStoreRoot = store.root }
+
     let root = Bundle.main.resourceURL!
     guard let fixtures = try? Fixtures(root: root) else {
         log("fixtures missing")
@@ -120,8 +131,7 @@ func runProbe(forceLLM: Bool) async {
     do {
         let sampler = FootprintSampler()
         sampler.start()
-        var report = try await runRetrieval(
-            fixtures: fixtures, embedderKeys: ["embeddinggemma-300m"], extraNotes: [])
+        var report = try await runRetrieval(fixtures: fixtures, extraNotes: [])
         report["footprint_peak_mb"] = sampler.stop()
         report["available_after_mb"] = mb(UInt64(os_proc_available_memory()))
         save(report, "probe-retrieval.json")

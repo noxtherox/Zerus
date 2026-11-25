@@ -111,7 +111,7 @@ struct MacCommands: Commands {
             Button("Search Everything") { store?.showSearch = true }.keyboardShortcut("f").disabled(locked)
             Button("Find in Note") { MacNoteFind.show() }.keyboardShortcut("f", modifiers: [.command, .shift])
             Button("Show Inspector") { store?.inspectorRequest += 1 }.keyboardShortcut("i", modifiers: [.command, .option]).disabled(locked || store?.selection == nil)
-            Button("AI Chat") { store?.showChat = true }.keyboardShortcut("j").disabled(locked)
+            if CloudAIFeature.enabled { Button("AI Chat") { store?.showChat = true }.keyboardShortcut("j").disabled(locked) }
         }
     }
 }

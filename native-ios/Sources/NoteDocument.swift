@@ -339,6 +339,22 @@ actor VaultFiles {
         try result.get()
     }
 
+    /// The first vault path at or after `path` that has no file on disk:
+    /// `Folder/Note.md`, then `Folder/Note 2.md`, `Folder/Note 3.md`, and so on.
+    /// Used for Trash moves and restores, where an earlier note with the same
+    /// name must not block the move. `move` still rejects a late collision.
+    func availablePath(_ path: String) throws -> String {
+        let directory = (path as NSString).deletingLastPathComponent
+        let name = (path as NSString).lastPathComponent
+        let ext = (name as NSString).pathExtension, stem = (name as NSString).deletingPathExtension
+        for index in 1...10_000 {
+            let file = index == 1 ? name : "\(stem) \(index)" + (ext.isEmpty ? "" : ".\(ext)")
+            let candidate = directory.isEmpty ? file : directory + "/" + file
+            if !FileManager.default.fileExists(atPath: try url(for: candidate).path) { return candidate }
+        }
+        throw VaultFailure(message: "Could not find a free name for this note.")
+    }
+
     func move(_ path: String, to destination: String, expected: Data) throws {
         guard !writesSuspendedForRecovery else { throw VaultFailure(message: "Review the interrupted change before moving files.") }
         if path.hasPrefix(".zerus/links/") || destination.hasPrefix(".zerus/links/") {

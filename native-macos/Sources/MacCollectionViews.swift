@@ -17,6 +17,7 @@ struct MacCollectionViews: View {
 
 private struct MacCollectionBody: View {
     @ObservedObject var selection: MacCollectionSelectionState
+    @Environment(\.macTheme) private var theme
     @AppStorage("zerus.mac.dateFormat") private var dateFormat = "DD/MM/YYYY"
     @Bindable var store: MacWorkspace
     var noteMenu: (NoteDocument) -> AnyView
@@ -66,7 +67,8 @@ private struct MacCollectionBody: View {
         } message: { Text("Updates these notes:\n" + (plan?.changedNotes.joined(separator: "\n") ?? "") + (plan?.issues.isEmpty == false ? "\n\nSkipped:\n" + plan!.issues.map { $0.path + ": " + $0.reason }.joined(separator: "\n") : "")) }
     }
     private var controls: some View {
-        HStack(spacing: 18) {
+        HStack(spacing: 14) {
+            MacViewModeMenu(store: store)
             if store.viewMode == "Kanban" || store.viewMode == "Gallery" {
                 Picker("Group by", selection: Binding(get: { grouping?.name ?? "" }, set: { name in update { $0.groupBy = name.isEmpty ? nil : name } })) {
                     Text("No grouping").tag(""); ForEach(groupable) { Text($0.name).tag($0.name) }
@@ -77,12 +79,12 @@ private struct MacCollectionBody: View {
                     Text("Choose date").tag(""); ForEach(fields.filter { $0.type == .date }) { Text($0.name).tag($0.name) }
                 }.frame(maxWidth: 280)
             }
-            Menu("Properties") {
+            Menu {
                 ForEach(fields) { field in Toggle(field.name, isOn: Binding(get: { store.collectionLayout.visibleProperties.contains(field.name) }, set: { enabled in update { layout in if enabled { layout.visibleProperties.append(field.name) } else { layout.visibleProperties.removeAll { $0 == field.name } } } })) }
-            }.fixedSize()
+            } label: { Label("Properties", systemImage: "slider.horizontal.3") }.menuStyle(.borderlessButton).fixedSize()
             Spacer()
             if moving { ProgressView().controlSize(.small) }
-        }.padding(12)
+        }.padding(.horizontal, 16).padding(.vertical, 7)
     }
     private func update(_ transform: (inout MacCollectionLayout) -> Void) {
         var next = store.collectionLayout; transform(&next)
@@ -244,26 +246,149 @@ private struct MacCollectionBody: View {
         do { try await store.commitBoardDrop(plan, scope: scope) }
         catch { if scope.workspace == store.workspaceID { store.issue = error.localizedDescription } }
     }
-    private var table: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(store.collection) { note in
-                        HStack(spacing: 0) {
-                            Button { activate(note) } label: { HStack { if store.selecting { Image(systemName: store.selectedPaths.contains(note.path) ? "checkmark.circle.fill" : "circle") }; Text(note.title).lineLimit(1); Spacer() }.padding(10) }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selectedPaths.contains(note.path) ? .isSelected : []).frame(width: 240).overlay(MacAlternateOpen { openInTab(note) }.accessibilityHidden(true)).contextMenu { noteMenu(note) }
-                            Text(note.folder).font(.caption).lineLimit(1).padding(10).frame(width: 165, alignment: .leading)
-                            ForEach(visibleFields) { field in
-                                Button { editCell(note, field) } label: { Text(MacCollectionValues.value(note, name: field.name).map { display($0, field: field) } ?? "—").lineLimit(2).frame(maxWidth: .infinity, minHeight: 24, alignment: .leading).padding(10).contentShape(Rectangle()) }.buttonStyle(MacBoxButtonStyle()).frame(width: 170).disabled(note.trashed).help("Edit \(field.name) for \(note.title)")
-                            }
-                            Text(note.modified, format: .dateTime.month().day()).font(.caption).padding(10).frame(width: 110)
-                        }.background(store.selectedPaths.contains(note.path) ? Color.accentColor.opacity(0.1) : .clear)
-                        Divider()
-                    }
-                } header: {
-                    HStack(spacing: 0) { Button("Title") { var next = store.filters; next.sort = next.sort == .titleAscending ? .titleDescending : .titleAscending; store.changeCollectionFilters(next) }.buttonStyle(MacBoxButtonStyle()).frame(width: 240, alignment: .leading); Text("Folder").frame(width: 165, alignment: .leading); ForEach(visibleFields) { Text($0.name).frame(width: 170, alignment: .leading) }; Text("Modified").frame(width: 110) }.font(.caption.bold()).padding(.vertical, 12).background(Color(nsColor: .controlBackgroundColor))
-                }
-            }.padding(.horizontal, 10)
+    /// Column widths fill the pane: the name takes 1.6 shares, each property
+    /// one share. Narrow windows keep the minimums and scroll horizontally.
+    private struct TableLayout {
+        static let check: CGFloat = 34, folder: CGFloat = 150, modified: CGFloat = 84
+        let name: CGFloat, field: CGFloat, showsFolder: Bool, total: CGFloat
+        init(width: CGFloat, fields: Int, showsFolder: Bool) {
+            let dividers = CGFloat(fields + (showsFolder ? 3 : 2))
+            let fixed = Self.check + Self.modified + (showsFolder ? Self.folder : 0) + dividers
+            let share = max(width - fixed, 0) / (1.6 + CGFloat(fields))
+            name = max(share * 1.6, 220); field = max(share, 150); self.showsFolder = showsFolder
+            total = fixed + name + field * CGFloat(fields)
         }
+    }
+    private var table: some View {
+        let notes = store.collection
+        // A type or folder view would repeat its own name on every row.
+        let showsFolder = Set(notes.lazy.map(\.folder)).count > 1
+        return GeometryReader { proxy in
+            let layout = TableLayout(width: proxy.size.width - 32, fields: visibleFields.count, showsFolder: showsFolder)
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(notes) { note in tableRow(note, layout) }
+                        if notes.isEmpty { Text("No notes match this view").foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(28) }
+                    } header: { tableHeader(layout, notes: notes) }
+                }
+                .frame(width: layout.total)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(gridLine))
+                .padding(16).padding(.bottom, selection.selecting || !selection.paths.isEmpty ? 64 : 0)
+            }
+        }
+    }
+    private var gridLine: Color { theme.color(.text).opacity(0.1) }
+    private var columnDivider: some View { Rectangle().fill(gridLine).frame(width: 1) }
+    private func tableHeader(_ layout: TableLayout, notes: [NoteDocument]) -> some View {
+        let all = !notes.isEmpty && notes.allSatisfy { selection.paths.contains($0.path) }
+        let sort = store.filters.sort
+        return HStack(spacing: 0) {
+            Button { if all { store.clearCollectionSelection() } else { store.selectAllCollectionNotes() } } label: {
+                Image(systemName: all ? "checkmark.square.fill" : selection.paths.isEmpty ? "square" : "minus.square.fill")
+                    .foregroundStyle(selection.paths.isEmpty ? AnyShapeStyle(.secondary) : AnyShapeStyle(theme.color(.accent)))
+                    .frame(width: TableLayout.check).frame(maxHeight: .infinity).contentShape(Rectangle())
+            }.buttonStyle(.plain).help(all ? "Deselect all" : "Select all").accessibilityLabel(all ? "Deselect all notes" : "Select all notes")
+            columnDivider
+            sortHeader("Name", width: layout.name, arrow: sort == .titleAscending ? "arrow.up" : sort == .titleDescending ? "arrow.down" : nil) {
+                setSort(sort == .titleAscending ? .titleDescending : .titleAscending)
+            }
+            if layout.showsFolder { columnDivider; headerLabel("Folder").frame(width: TableLayout.folder, alignment: .leading) }
+            ForEach(visibleFields) { field in columnDivider; headerLabel(field.name).frame(width: layout.field, alignment: .leading) }
+            columnDivider
+            sortHeader("Modified", width: TableLayout.modified, trailing: true, arrow: sort == .updatedDescending ? "arrow.down" : sort == .updatedAscending ? "arrow.up" : nil) {
+                setSort(sort == .updatedDescending ? .updatedAscending : .updatedDescending)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .overlay(alignment: .bottom) { Rectangle().fill(gridLine).frame(height: 1) }
+    }
+    private func headerLabel(_ text: String) -> some View {
+        Text(text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 8)
+    }
+    private func sortHeader(_ title: String, width: CGFloat, trailing: Bool = false, arrow: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if trailing { Spacer(minLength: 0) }
+                Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                if let arrow { Image(systemName: arrow).font(.system(size: 9, weight: .bold)).foregroundStyle(theme.color(.text)) }
+                if !trailing { Spacer(minLength: 0) }
+            }.padding(.horizontal, 10).padding(.vertical, 8).frame(width: width)
+        }.buttonStyle(MacBoxButtonStyle()).help("Sort by \(title.lowercased())")
+    }
+    private func setSort(_ sort: NativeNoteSort) { var next = store.filters; next.sort = sort; store.changeCollectionFilters(next) }
+    private func tableRow(_ note: NoteDocument, _ layout: TableLayout) -> some View {
+        let selected = selection.paths.contains(note.path)
+        return HStack(spacing: 0) {
+            Button { toggleSelection(note) } label: {
+                Image(systemName: selected ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(selected ? AnyShapeStyle(theme.color(.accent)) : AnyShapeStyle(.tertiary))
+                    .padding(.top, 10).frame(width: TableLayout.check).frame(maxHeight: .infinity, alignment: .top).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel((selected ? "Deselect " : "Select ") + note.title)
+            columnDivider
+            Button { activate(note) } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 7) {
+                    if note.pinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(theme.color(.accent)).accessibilityLabel("Pinned") }
+                    Text(note.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                    Spacer(minLength: 0)
+                }.padding(.horizontal, 10).padding(.vertical, 9).frame(width: layout.name, alignment: .leading).frame(maxHeight: .infinity, alignment: .top).contentShape(Rectangle())
+            }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(selected ? .isSelected : []).overlay(MacAlternateOpen { openInTab(note) }.accessibilityHidden(true))
+            if layout.showsFolder {
+                columnDivider
+                Text(note.folder.isEmpty ? "Inbox" : note.folder).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    .padding(.horizontal, 10).padding(.vertical, 10).frame(width: TableLayout.folder, alignment: .leading).frame(maxHeight: .infinity, alignment: .top)
+            }
+            ForEach(visibleFields) { field in
+                columnDivider
+                Button { editCell(note, field) } label: {
+                    tableValue(note, field).padding(.horizontal, 10).padding(.vertical, 9)
+                        .frame(width: layout.field, alignment: .leading).frame(maxHeight: .infinity, alignment: .topLeading).contentShape(Rectangle())
+                }.buttonStyle(MacBoxButtonStyle()).disabled(note.trashed).help("Edit \(field.name) for \(note.title)")
+            }
+            columnDivider
+            Text(note.modified, format: .dateTime.day().month(.abbreviated)).font(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.vertical, 10).frame(width: TableLayout.modified, alignment: .trailing).frame(maxHeight: .infinity, alignment: .top)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(selected ? theme.color(.accent).opacity(0.12) : store.selection == note.path ? theme.color(.text).opacity(0.05) : .clear)
+        .overlay(alignment: .bottom) { Rectangle().fill(gridLine).frame(height: 1) }
+        .contextMenu { noteMenu(note) }
+    }
+    private func toggleSelection(_ note: NoteDocument) {
+        let modifiers = (NSApp.currentEvent?.modifierFlags ?? []).union(.command), origin = store.workspaceID
+        // A checkbox enters selection mode, so later row clicks keep selecting.
+        store.selecting = true
+        Task { guard origin == store.workspaceID else { return }; await store.activateCollectionNote(note.path, modifiers: modifiers) }
+    }
+    /// Relations and lists read as chips like the property pane; empty cells
+    /// say so instead of showing a dash that looks like data.
+    @ViewBuilder private func tableValue(_ note: NoteDocument, _ field: NativePropertyDefinition) -> some View {
+        if let value = MacCollectionValues.value(note, name: field.name), !value.display.isEmpty {
+            switch field.type {
+            case .relation, .list:
+                let labels = field.type == .relation ? value.selections.map(relationTitle) : value.selections
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(labels.prefix(6).enumerated()), id: \.offset) { _, label in
+                        Text(label).font(.system(size: 12)).lineLimit(1).padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(theme.color(.text).opacity(0.09), in: RoundedRectangle(cornerRadius: 5))
+                    }
+                    if labels.count > 6 { Text("+\(labels.count - 6) more").font(.system(size: 11)).foregroundStyle(.secondary) }
+                }
+            case .checkbox:
+                Image(systemName: value.display == "true" ? "checkmark.square.fill" : "square").foregroundStyle(value.display == "true" ? AnyShapeStyle(theme.color(.accent)) : AnyShapeStyle(.secondary))
+                    .accessibilityLabel(value.display == "true" ? "Checked" : "Unchecked")
+            default:
+                Text(display(value, field: field)).font(.system(size: 12.5)).lineLimit(3).multilineTextAlignment(.leading)
+            }
+        } else {
+            Text("No value").font(.system(size: 12.5)).foregroundStyle(.tertiary)
+        }
+    }
+    private func relationTitle(_ text: String) -> String {
+        guard let reference = NoteReference(wikilink: "[[" + text + "]]") else { return "Unavailable note" }
+        return reference.targets(in: store.notes).first?.title ?? (reference.explicitLabel ? reference.label : "Unavailable note")
     }
     private func editCell(_ note: NoteDocument, _ field: NativePropertyDefinition) {
         let actual = (try? store.schema?.effective(notePath: note.path))?.first { $0.id == field.id }
@@ -273,10 +398,7 @@ private struct MacCollectionBody: View {
     private func display(_ value: NativePropertyValue, field: NativePropertyDefinition) -> String {
         if field.type == .date { return MacNumericDateFormat.validated(dateFormat).display(value.display) }
         guard field.type == .relation else { return value.display }
-        return value.selections.map { text in
-            guard let reference = NoteReference(wikilink: "[[" + text + "]]") else { return "Unavailable note" }
-            return reference.targets(in: store.notes).first?.title ?? (reference.explicitLabel ? reference.label : "Unavailable note")
-        }.joined(separator: ", ")
+        return value.selections.map(relationTitle).joined(separator: ", ")
     }
     private var calendarOrder: [String] {
         guard let name = calendarProperty?.name else { return [] }
@@ -338,5 +460,22 @@ private struct MacBoardColumnDrop: ViewModifier {
                 guard items.count == 1, let transfer = items.first else { return false }
                 return perform(transfer)
             } isTargeted: { active in if targeted != active { targeted = active } }
+    }
+}
+
+/// Switches the collection between its layouts. Shared by the wide toolbar
+/// and the narrow list header.
+struct MacViewModeMenu: View {
+    @Bindable var store: MacWorkspace
+    static let modes = [("List", "list.bullet"), ("Gallery", "square.grid.2x2"), ("Kanban", "rectangle.split.3x1"), ("Table", "tablecells"), ("Calendar", "calendar")]
+    var body: some View {
+        Menu {
+            ForEach(Self.modes, id: \.0) { mode, icon in
+                Button { Task { await store.updateCollectionLayout(store.collectionLayout, mode: mode) } } label: { Label(mode, systemImage: icon) }
+            }
+            if store.folderCollection { Divider(); Toggle("Hide subtype notes", isOn: $store.hideSubtypes) }
+        } label: {
+            Label(store.viewMode, systemImage: Self.modes.first { $0.0 == store.viewMode }?.1 ?? "list.bullet").fontWeight(.semibold)
+        }.menuStyle(.borderlessButton).fixedSize().help("Change layout")
     }
 }

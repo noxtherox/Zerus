@@ -11,7 +11,7 @@ extension VaultFiles {
             } catch { problems.append("Some file details are unavailable. Refresh to retry.") }
         }
         var chats: [NativeSearchConversation] = []
-        do {
+        if CloudAIFeature.enabled { do {
             let history = try conversations()
             problems += history.issues
             for conversation in history.conversations where conversation.deletedAt == nil {
@@ -21,7 +21,7 @@ extension VaultFiles {
                     messages: conversation.messages.map { ChatMessage(role: $0.role, content: $0.text) }, origin: .shared(conversation.id)))
             }
         } catch is CancellationError { throw CancellationError() }
-        catch { problems.append("Conversation history is unavailable. Other results remain searchable; refresh to retry.") }
+        catch { problems.append("Conversation history is unavailable. Other results remain searchable; refresh to retry.") } }
         return .init(files: files, conversations: chats, problems: Array(Set(problems)).sorted())
     }
 }

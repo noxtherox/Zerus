@@ -64,7 +64,7 @@ enum NativeNotesRoute: Hashable {
 private struct NativeWorkspaceNavigation: View {
     @Binding var tab: Int
     let compose: () -> Void
-    private let destinations = [(0, "Notes", "square.stack", "notes"), (1, "Tasks", "checkmark.circle", "tasks"), (3, "Ask", "sparkles", "ask"), (4, "Search", "magnifyingglass", "search")]
+    private let destinations = [(0, "Notes", "square.stack", "notes"), (1, "Tasks", "checkmark.circle", "tasks"), (3, "Ask", "sparkles", "ask"), (4, "Search", "magnifyingglass", "search")].filter { $0.0 != 3 || CloudAIFeature.enabled }
     var body: some View {
         HStack(spacing: 2) {
             ForEach(destinations, id: \.0) { value, title, symbol, identifier in
@@ -166,7 +166,7 @@ struct WorkspaceView: View {
                         else { ProgressView("Opening conversations…") }
                         }.toolbar(.hidden, for: .tabBar)
                     }
-                    Tab("Search", systemImage: "magnifyingglass", value: 4) { NativeSearchView(open: open, ask: { askRequest = $0; tab = 3 }, library: showLibrary, settings: { settings = true }).toolbar(.hidden, for: .tabBar) }
+                    Tab("Search", systemImage: "magnifyingglass", value: 4) { NativeSearchView(open: open, ask: CloudAIFeature.enabled ? { askRequest = $0; tab = 3 } : nil, library: showLibrary, settings: { settings = true }).toolbar(.hidden, for: .tabBar) }
                 }
                 .tabViewStyle(.tabBarOnly)
                 .toolbar(.hidden, for: .tabBar)

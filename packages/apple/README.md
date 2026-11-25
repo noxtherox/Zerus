@@ -19,6 +19,21 @@ normal Keychain authorization.
   legacy width metadata and per-occurrence dimensions for native Mac and iOS
   image management and exports. It depends on Swift Markdown and SwiftSoup,
   without an AppKit or UIKit dependency.
+- `LocalAI` (`docs/local-ai-plan.md`): on-device AI for the native apps.
+  - `ZerusLocalAICore` (no MLX): the pinned model catalog (Hugging Face
+    revision plus a checksum for every file), `LocalAIModelStore`
+    (Application Support, excluded from backups) and `LocalAIModelDownloader`
+    (Wi-Fi only by default, verifies before installing). Also chunking, the
+    per-device SQLite `LocalAISearchIndex` (embeddings, BM25 fallback while
+    indexing, exact-match boost) and `LocalAIPipelines` (router, Ask,
+    Summarize, rewrite, append, find/replace edit, create, properties) with
+    grammar-constrained JSON. Tests: `swift test` in `packages/apple/LocalAI`.
+    `NetworkGuardTests` fail if anything except the downloader uses the network.
+  - `ZerusLocalAI` (MLX): `MLXLanguageModel`, `MLXEmbedder`, `LocalAIRuntime`
+    (lazy loading/unloading, capabilities) and `LocalAISelfTest`, which turns
+    AI off on devices whose GPU cannot run MLX, such as the A13. It must be
+    built with xcodebuild, because SwiftPM cannot compile MLX's Metal shaders.
+    `evals/local-ai/runner` runs these pipelines against the eval suite.
 - `IOSServices`: iOS Drive, cloud AI, ChatGPT account management, and speech
   capture. It depends on `ChatGPTCore` and Apple frameworks. Application-facing
   request/response types and services are public; credential and audio-session

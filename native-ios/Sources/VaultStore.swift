@@ -658,7 +658,7 @@ final class VaultStore {
                 try await saveRelationMaintenance(plan)
                 return true
             }
-            try await io.move(note.path, to: path, expected: Data(session.document.content.utf8))
+            try await io.move(note.path, to: try await io.availablePath(path), expected: Data(session.document.content.utf8))
             guard workspaceID == origin else { return false }
             discardSession(session)
             await refresh()

@@ -65,6 +65,8 @@ struct MacFileHubPane<Notes: View>: View {
     @State private var expanded = false
     @State private var locations = false
     @State private var replacing: MacFileHubRequest?
+    /// Preselected in the replace sheet when copying the current file into the vault.
+    @State private var replacingSource: URL?
     @State private var detaching: MacFileHubRequest?
     private enum Refresh: Equatable {
         case check(UUID), reload(UUID)
@@ -85,6 +87,7 @@ struct MacFileHubPane<Notes: View>: View {
                     Image(nsImage: lease.map { NSWorkspace.shared.icon(forFile: $0.url.path) } ?? NSWorkspace.shared.icon(for: UTType(filenameExtension: (hub.name as NSString).pathExtension) ?? .data))
                         .resizable().scaledToFit().frame(width: 36, height: 36).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
+                        MacNoteBreadcrumb(folder: note.folder, vault: workspace.vaultTitle)
                         Text(hub.name).font(.headline).lineLimit(1)
                         HStack(spacing: 5) {
                             Text(hub.kind == .vault ? (hub.managed ? "Vault copy" : "Vault file connection") : hub.kind == .location ? "Folder connection" : "Original connection on this Mac").lineLimit(1)
@@ -95,22 +98,7 @@ struct MacFileHubPane<Notes: View>: View {
                         if let lease { Text(lease.url.path).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(lease.url.path).textSelection(.enabled) }
                     }
                     Spacer()
-                    if canPreview(hub) { Button(showsDocument ? "Hide document" : "Show document") { showsDocument.toggle(); expanded = false } }
-                    if let lease { Button("Open in default app") { NSWorkspace.shared.open(lease.url) } }
-                    Menu {
-                        Button("Open in default app") { if let lease { NSWorkspace.shared.open(lease.url) } }.disabled(lease == nil)
-                        Button("Reveal document in Finder") { if let lease { NSWorkspace.shared.activateFileViewerSelecting([lease.url]) } }.disabled(lease == nil)
-                        Button("Locate original…") { locate() }
-                        Button("File locations…") { locations = true }
-                        if hub.kind == .location, lease?.locatedOnDevice == true {
-                            Button("Use folder mapping again") { Task { do { try await workspace.useFolderMapping(note, workspaceID: workspaceID) } catch { issue = error.localizedDescription } } }
-                        }
-                        Button("Replace document…") { Task { do { guard workspaceID == workspace.workspaceID else { throw CancellationError() }; replacing = try await workspace.prepareFileHub(note) } catch { issue = error.localizedDescription } } }
-                        Button("Detach document…") { Task { do { guard workspaceID == workspace.workspaceID else { throw CancellationError() }; detaching = try await workspace.prepareFileHub(note) } catch { issue = error.localizedDescription } } }
-                        Divider()
-                        Button("Reload preview") { issue = nil; refresh = .reload(UUID()) }
-                        ForEach(NativeFileAttachment.all(in: note.content)) { backup in Button("Open backup: " + backup.name) { Task { await workspace.previewAttachment(backup) } } }
-                    } label: { Image(systemName: "ellipsis") }.menuStyle(.borderlessButton).fixedSize().accessibilityLabel("Document actions")
+                    fileMenu(hub)
                 }.padding(12)
                 Divider()
                 if let problem = issue ?? (preview.source == request.source ? preview.issue : nil) { HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).font(.caption).textSelection(.enabled); Spacer(); Button("Locate file…") { locate() } }.foregroundStyle(.secondary).padding(10) }
@@ -137,11 +125,63 @@ struct MacFileHubPane<Notes: View>: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh = .check(UUID()) }
         .onDisappear { preview.cancel() }
         .macSheet(isPresented: $locations) { MacFileLocationsView(workspace: workspace) }
-        .macSheet(item: $replacing) { request in MacFileHubEditor(workspace: workspace, request: request) { _ in } }
+        .macSheet(item: $replacing) { request in MacFileHubEditor(workspace: workspace, request: request, initialSource: replacingSource) { _ in } }
         .alert("Detach this document?", isPresented: Binding(get: { detaching != nil }, set: { if !$0 { detaching = nil } })) {
             Button("Cancel", role: .cancel) { detaching = nil }
             Button("Detach document") { if let request = detaching { Task { do { _ = try await workspace.saveFileHub(request, source: nil, storage: .copy, title: note.title, folder: note.folder, detach: true) } catch { workspace.issue = error.localizedDescription } } }; detaching = nil }
         } message: { Text("The note and its backup attachments stay in place. The original document and existing vault copy are kept.") }
+    }
+    /// A split button: clicking opens the file in its default app (or locates
+    /// a missing one); the chevron holds every action on the linked file.
+    private func fileMenu(_ hub: NativeFileHub) -> some View {
+        let app = lease.flatMap { NSWorkspace.shared.urlForApplication(toOpen: $0.url) }
+        // A button plus a borderless chevron menu: a bordered SwiftUI menu
+        // redraws its button smaller while the menu is open on macOS 26.
+        return HStack(spacing: 2) {
+            Button {
+                if let lease { NSWorkspace.shared.open(lease.url) } else { locate() }
+            } label: {
+                if lease == nil { Label("Locate File…", systemImage: "scope") }
+                else { Label(app.map { "Open in " + Self.appName($0) } ?? "Open", systemImage: "arrow.up.forward.app") }
+            }.labelStyle(.titleAndIcon).buttonStyle(.bordered).help(lease == nil ? "Find this document on this Mac" : "Open the document in its default app")
+            Menu {
+            Group {
+            Section(hub.name) {
+                Button("Show in Finder", systemImage: "folder") { if let lease { NSWorkspace.shared.activateFileViewerSelecting([lease.url]) } }.disabled(lease == nil)
+                if let lease {
+                    let apps = NSWorkspace.shared.urlsForApplications(toOpen: lease.url)
+                    if !apps.isEmpty {
+                        Menu("Open With", systemImage: "arrow.up.forward.app") {
+                            ForEach(apps, id: \.self) { app in Button(Self.appName(app)) { NSWorkspace.shared.open([lease.url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration()) } }
+                        }
+                    }
+                }
+            }
+            Section {
+                if hub.kind != .vault, let lease { Button("Copy into Vault…", systemImage: "tray.and.arrow.down") { prepareReplacement(source: lease.url) } }
+                Button("Replace with Another File…", systemImage: "arrow.triangle.2.circlepath") { prepareReplacement(source: nil) }
+                Button("Locate Original…", systemImage: "scope") { locate() }
+                Button("File Locations…", systemImage: "externaldrive") { locations = true }
+                if hub.kind == .location, lease?.locatedOnDevice == true {
+                    Button("Use Folder Mapping Again", systemImage: "folder.badge.gearshape") { Task { do { try await workspace.useFolderMapping(note, workspaceID: workspaceID) } catch { issue = error.localizedDescription } } }
+                }
+            }
+            Section {
+                if canPreview(hub) { Button(showsDocument ? "Hide Preview" : "Show Preview", systemImage: showsDocument ? "eye.slash" : "eye") { showsDocument.toggle(); expanded = false } }
+                Button("Reload Preview", systemImage: "arrow.clockwise") { issue = nil; refresh = .reload(UUID()) }
+                ForEach(NativeFileAttachment.all(in: note.content)) { backup in Button("Open Backup: " + backup.name, systemImage: "clock.arrow.circlepath") { Task { await workspace.previewAttachment(backup) } } }
+            }
+            Section {
+                Button("Detach from Note…", systemImage: "scissors", role: .destructive) { Task { do { guard workspaceID == workspace.workspaceID else { throw CancellationError() }; detaching = try await workspace.prepareFileHub(note) } catch { issue = error.localizedDescription } } }
+            }
+            }.labelStyle(.titleAndIcon)
+            } label: { Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More file actions").accessibilityLabel("Document actions")
+        }.padding(2).background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).fixedSize()
+    }
+    private static func appName(_ app: URL) -> String { (FileManager.default.displayName(atPath: app.path) as NSString).deletingPathExtension }
+    private func prepareReplacement(source: URL?) {
+        Task { do { guard workspaceID == workspace.workspaceID else { throw CancellationError() }; replacingSource = source; replacing = try await workspace.prepareFileHub(note) } catch { issue = error.localizedDescription } }
     }
     /// Files Quick Look can only draw as a generic icon get no preview area;
     /// the note fills the pane and the header offers to open the file instead.
@@ -205,15 +245,13 @@ private struct MacDocumentSurface: View {
 }
 /// Word, Excel and PowerPoint files render poorly in an embedded
 /// `QLPreviewView` (first page only, no scrolling, lost formatting), so they
-/// show a cover thumbnail and hand off to the system Quick Look panel, which
-/// renders every page, sheet and slide the way Finder does.
+/// show a cover thumbnail and open in their associated app instead.
 private struct MacOfficeDocumentCard: View {
     static let extensions: Set<String> = ["doc", "docx", "docm", "dot", "dotx", "dotm", "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "xltm",
                                           "ppt", "pptx", "pptm", "pps", "ppsx", "ppsm", "pot", "potx", "potm", "odt", "ods", "odp"]
     static func handles(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
     let url: URL
     @State private var thumbnail: (url: URL, image: NSImage?)?
-    @State private var anchor = MacQuickLookPanelAnchor()
     @Environment(\.displayScale) private var scale
     var body: some View {
         VStack(spacing: 16) {
@@ -224,50 +262,18 @@ private struct MacOfficeDocumentCard: View {
                 } else if thumbnail?.url == url {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().scaledToFit().frame(width: 96, height: 96)
                 } else { ProgressView().controlSize(.small) }
-            }.frame(maxWidth: 320, maxHeight: 360).onTapGesture(count: 2) { anchor.show(url) }
+            }.frame(maxWidth: 320, maxHeight: 360).onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
             Text(url.lastPathComponent).font(.headline).lineLimit(2).multilineTextAlignment(.center)
-            HStack {
-                Button("Quick Look") { anchor.show(url) }.keyboardShortcut(.space, modifiers: [])
-                Button("Open externally") { NSWorkspace.shared.open(url) }
-            }
+            Button("Open externally") { NSWorkspace.shared.open(url) }
             Spacer(minLength: 0)
         }
         .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(MacQuickLookPanelAnchorView(anchor: anchor))
         .task(id: url) {
             let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 320, height: 360), scale: max(1, scale), representationTypes: .thumbnail)
             let image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
             thumbnail = (url, image)
         }
-        .onDisappear { anchor.close() }
     }
-}
-/// A responder that controls the shared Quick Look panel while it shows this
-/// card's file. The panel finds its controller through the responder chain,
-/// so `show` makes this view first responder before opening the panel.
-@MainActor final class MacQuickLookPanelAnchor: NSView, @preconcurrency QLPreviewPanelDataSource {
-    private var url: URL?
-    override var acceptsFirstResponder: Bool { true }
-    func show(_ url: URL) {
-        self.url = url
-        guard let panel = QLPreviewPanel.shared() else { NSWorkspace.shared.open(url); return }
-        window?.makeFirstResponder(self)
-        if panel.isVisible, panel.dataSource === self { panel.reloadData() } else { panel.makeKeyAndOrderFront(nil) }
-    }
-    func close() {
-        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.dataSource === self else { return }
-        panel.orderOut(nil)
-    }
-    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { url != nil }
-    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = self; panel.reloadData() }
-    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil }
-    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { url == nil ? 0 : 1 }
-    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! { url as NSURL? }
-}
-private struct MacQuickLookPanelAnchorView: NSViewRepresentable {
-    let anchor: MacQuickLookPanelAnchor
-    func makeNSView(context: Context) -> MacQuickLookPanelAnchor { anchor }
-    func updateNSView(_ view: MacQuickLookPanelAnchor, context: Context) {}
 }
 /// Decodes a display-sized image off the main thread and keeps recent ones,
 /// so opening a large photo, or redrawing its sheet, never blocks the window.
@@ -315,4 +321,17 @@ private struct MacQuickLook: NSViewRepresentable {
     func makeNSView(context: Context) -> QLPreviewView { let view = QLPreviewView(frame: .zero, style: .normal)!; view.previewItem = url as NSURL; return view }
     func updateNSView(_ view: QLPreviewView, context: Context) {}
     static func dismantleNSView(_ view: QLPreviewView, coordinator: ()) { view.close() }
+}
+
+/// The open note's folder as a quiet path line ("Work › ESAB Documents"),
+/// shown where the separate note header used to be.
+struct MacNoteBreadcrumb: View {
+    let folder: String
+    let vault: String
+    var body: some View {
+        let parts = folder.split(separator: "/").map(String.init)
+        Label((parts.isEmpty ? [vault] : parts).joined(separator: " › "), systemImage: "folder")
+            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            .frame(maxWidth: .infinity, alignment: .leading).help(folder.isEmpty ? vault : folder)
+    }
 }

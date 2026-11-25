@@ -1,26 +1,74 @@
 import Foundation
 import HuggingFace
-import MLX
-import MLXGuidedGeneration
 import MLXHuggingFace
-import MLXLLM
 import MLXLMCommon
 import Tokenizers
+import ZerusLocalAI
+import ZerusLocalAICore
 
 struct LLMSpec {
     let key: String
     let repo: String
     let note: String
+    /// The production catalog entry (pinned + verified), when this is the shipped model.
+    var production: LocalAIModelSpec? = nil
 }
 
 let llmSpecs: [LLMSpec] = [
-    LLMSpec(key: "qwen3.5-2b", repo: "mlx-community/Qwen3.5-2B-4bit", note: "2.27B incl. vision tower"),
+    LLMSpec(key: "qwen3.5-2b", repo: "mlx-community/Qwen3.5-2B-4bit", note: "production model", production: .qwen35_2B),
     LLMSpec(key: "lfm3-1.7b", repo: "mlx-community/LFM3-1.7B-OptiQ-4bit", note: "1.73B, LFM Open License"),
     LLMSpec(key: "qwen3-1.7b", repo: "mlx-community/Qwen3-1.7B-4bit", note: "August 2026 baseline"),
     LLMSpec(key: "lfm2.5-1.2b", repo: "mlx-community/LFM2.5-1.2B-Instruct-4bit", note: "LFM Open License"),
     LLMSpec(key: "qwen3.5-0.8b", repo: "mlx-community/Qwen3.5-0.8B-4bit", note: "speed floor"),
     LLMSpec(key: "minicpm5-1b", repo: "mlx-community/MiniCPM5-1B-OptiQ-4bit", note: "Apache-2.0"),
 ]
+
+// MARK: - Model folders
+
+/// Production models live in a runner-local `LocalAIModelStore`
+/// (`local/models`, gitignored) exactly as in the app: pinned revision,
+/// every file checksum-verified. The store is seeded from the Hugging Face
+/// cache when the pinned snapshot is there (APFS clones), otherwise
+/// downloaded with the app's `LocalAIModelDownloader`.
+func productionDirectory(_ spec: LocalAIModelSpec, storeRoot: URL? = nil) async throws -> URL {
+    let store = LocalAIModelStore(root: storeRoot ?? evalModelStoreRoot)
+    if store.state(of: spec) != .installed {
+        let snapshot = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent(".cache/huggingface/hub/models--\(spec.repository.replacingOccurrences(of: "/", with: "--"))/snapshots/\(spec.revision)")
+        let target = store.directory(for: spec)
+        if FileManager.default.fileExists(atPath: snapshot.path) {
+            log("seeding \(spec.id) from the Hugging Face cache")
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+            for file in spec.files {
+                let destination = target.appendingPathComponent(file.path)
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.copyItem(at: snapshot.appendingPathComponent(file.path).resolvingSymlinksInPath(), to: destination)
+            }
+            try store.verifyAndMarkInstalled(spec)
+        } else {
+            log("downloading \(spec.id) (\(spec.totalBytes / 1_000_000) MB)")
+            final class Decile: @unchecked Sendable { var value = -1 }
+            let last = Decile()
+            try await LocalAIModelDownloader(store: store, policy: .anyNetwork).install(spec) { p in
+                let decile = Int(p.fraction * 10)
+                if decile != last.value { last.value = decile; log("  \(decile * 10)%") }
+            }
+        }
+    }
+    return store.directory(for: spec)
+}
+
+nonisolated(unsafe) var evalModelStoreRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    .appendingPathComponent("local/models")
+
+/// Other candidates (comparisons only) come from the Hugging Face cache.
+func candidateDirectory(_ repo: String) async throws -> URL {
+    try await #hubDownloader().download(
+        id: repo, revision: nil, matching: ["*.safetensors", "*.json", "*.jinja"], useLatest: false,
+        progressHandler: { _ in })
+}
+
+// MARK: - Stats
 
 struct GenStats {
     var calls = 0
@@ -44,127 +92,51 @@ struct GenStats {
     }
 }
 
-final class LLM {
+/// The production `MLXLanguageModel` plus per-run statistics. Pipelines take
+/// it as their `LocalAILanguageModel`.
+final class LLM: LocalAILanguageModel, @unchecked Sendable {
     let spec: LLMSpec
-    let container: ModelContainer
-    let loadSeconds: Double
-    var stats = GenStats()
-    private let grammar = GrammarBox()
+    let model: MLXLanguageModel
+    private let lock = NSLock()
+    private var _stats = GenStats()
+    var stats: GenStats { lock.withLock { _stats } }
+    var loadSeconds: Double { model.loadSeconds }
+    var pipelines: LocalAIPipelines { LocalAIPipelines(model: self) }
 
     init(_ spec: LLMSpec) async throws {
         self.spec = spec
-        let t = Date()
-        container = try await #huggingFaceLoadModelContainer(
-            configuration: ModelConfiguration(id: spec.repo))
-        loadSeconds = Date().timeIntervalSince(t)
+        let directory: URL
+        if let production = spec.production { directory = try await productionDirectory(production) }
+        else { directory = try await candidateDirectory(spec.repo) }
+        model = try await MLXLanguageModel(modelID: spec.key, directory: directory)
     }
 
-    private func userInput(system: String, user: String) -> UserInput {
-        UserInput(
-            chat: [.system(system), .user(user)],
-            additionalContext: ["enable_thinking": false])
-    }
-
-    /// Unconstrained greedy generation.
-    func text(system: String, user: String, maxTokens: Int = 400) async throws -> String {
-        let input = userInput(system: system, user: user)
-        let (out, ttft, prompt, produced, tps) = try await container.perform {
-            context -> (String, Double, Int, Int, Double) in
-            let lmInput = try await context.processor.prepare(input: input)
-            var params = GenerateParameters()
-            params.maxTokens = maxTokens
-            params.temperature = 0
-            params.repetitionPenalty = 1.05
-            let start = Date()
-            var first: Double?
-            var text = ""
-            var prompt = 0
-            var produced = 0
-            var tps = 0.0
-            for await item in try generate(input: lmInput, parameters: params, context: context) {
-                switch item {
-                case .chunk(let s):
-                    if first == nil { first = Date().timeIntervalSince(start) }
-                    text += s
-                case .info(let info):
-                    prompt = info.promptTokenCount
-                    produced = info.generationTokenCount
-                    tps = info.tokensPerSecond
-                default: break
-                }
-            }
-            return (text, first ?? Date().timeIntervalSince(start), prompt, produced, tps)
-        }
-        record(ttft: ttft, prompt: prompt, produced: produced, tps: tps)
-        return stripThinking(out)
-    }
-
-    /// Grammar-constrained JSON generation. Returns the parsed object or nil.
-    func json(system: String, user: String, schema: String, maxTokens: Int = 600) async -> JSON? {
-        let input = userInput(system: system, user: user)
-        let box = grammar
+    func generateJSON(system: String, user: String, schema: String, maxTokens: Int) async throws -> String {
         do {
-            let (out, ttft, prompt, produced, elapsed) = try await container.perform {
-                context -> (String, Double, Int, Int, Double) in
-                let lmInput = try await context.processor.prepare(input: input)
-                if box.tokenizer == nil {
-                    let vocab = TokenizerVocabExtractor.extractForGrammar(from: context.tokenizer)
-                    box.tokenizer = try GrammarTokenizer(
-                        vocab: vocab.vocab, vocabType: vocab.vocabType,
-                        eosTokenId: Int32(context.tokenizer.eosTokenId ?? 0))
-                    box.vocabSize = vocab.vocab.count
-                }
-                let grammarTokenizer = box.tokenizer!
-                let constraint = try GrammarConstraint(
-                    tokenizer: grammarTokenizer, jsonSchema: schema, fastForward: true,
-                    hostTokenizer: context.tokenizer)
-                let start = Date()
-                var first: Double?
-                var text = ""
-                let produced = try GuidedGenerationLoop.run(
-                    input: lmInput, context: context, constraint: constraint,
-                    maxTokens: maxTokens, vocabSize: box.vocabSize,
-                    logitProcessor: GenerateParameters(repetitionPenalty: 1.05, repetitionContextSize: 64).processor()
-                ) { delta in
-                    if first == nil { first = Date().timeIntervalSince(start) }
-                    text += delta
-                    return true
-                }
-                let elapsed = Date().timeIntervalSince(start)
-                return (text, first ?? elapsed, lmInput.text.tokens.size, produced, elapsed)
-            }
-            let decode = max(0.001, elapsed - ttft)
-            record(ttft: ttft, prompt: prompt, produced: produced, tps: Double(produced) / decode)
-            return try JSONSerialization.jsonObject(with: Data(out.utf8)) as? JSON
+            let out = try await model.generateJSON(system: system, user: user, schema: schema, maxTokens: maxTokens)
+            record()
+            return out
         } catch {
-            stats.calls += 1
-            stats.failures += 1
-            log("  json generation error: \(error)")
-            return nil
+            lock.withLock { _stats.calls += 1; _stats.failures += 1 }
+            log("  generation error: \(error)")
+            throw error
         }
     }
 
-    private func record(ttft: Double, prompt: Int, produced: Int, tps: Double) {
-        stats.calls += 1
-        stats.promptTokens += prompt
-        stats.outputTokens += produced
-        stats.ttft.append(ttft)
-        if produced > 4 { stats.decodeTPS.append(tps) }
+    func generateText(system: String, user: String, maxTokens: Int, onText: (@Sendable (String) -> Void)?) async throws -> String {
+        let out = try await model.generateText(system: system, user: user, maxTokens: maxTokens, onText: onText)
+        record()
+        return out
     }
-}
 
-func stripThinking(_ s: String) -> String {
-    var out = s
-    while let open = out.range(of: "<think>"),
-        let close = out.range(of: "</think>", range: open.upperBound ..< out.endIndex)
-    {
-        out.removeSubrange(open.lowerBound ..< close.upperBound)
+    private func record() {
+        let s = model.lastStats
+        lock.withLock {
+            _stats.calls += 1
+            _stats.promptTokens += s.promptTokens
+            _stats.outputTokens += s.outputTokens
+            _stats.ttft.append(s.timeToFirstToken)
+            if s.outputTokens > 4 { _stats.decodeTPS.append(s.tokensPerSecond) }
+        }
     }
-    return out.trimmingCharacters(in: .whitespacesAndNewlines)
-}
-
-/// Per-model grammar tokenizer cache (built once; xgrammar caches compiled schemas).
-final class GrammarBox: @unchecked Sendable {
-    var tokenizer: GrammarTokenizer?
-    var vocabSize = 0
 }
