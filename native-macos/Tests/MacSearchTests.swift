@@ -26,6 +26,13 @@ import CoreText
         await workspace.openVault(root)
         let model = MacSearchModel(external: workspace.external.store)
         model.query = "quasar"; model.filters.collection = .chats; await model.rebuild(workspace)
+        guard CloudAIFeature.enabled else {
+            // Cloud AI is hidden: conversations are neither read nor listed.
+            XCTAssertEqual(model.result?.items.count, 0); XCTAssertEqual(model.result?.problems, [])
+            model.filters.collection = nil; await model.run()
+            XCTAssertFalse(model.result?.items.contains { $0.collection == .chats } ?? true)
+            return
+        }
         XCTAssertEqual(model.result?.items.map(\.title), ["Quasar active conversation"])
         XCTAssertFalse(try XCTUnwrap(model.result).problems.isEmpty)
         let target = try XCTUnwrap(model.result?.items.first)

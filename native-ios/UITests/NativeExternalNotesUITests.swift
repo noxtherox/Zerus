@@ -4,6 +4,7 @@ import UIKit
 final class NativeExternalNotesUITests: NativeJourneyTestCase {
     @MainActor
     func testExternalFileCreationNativeEditingReopenReloadCancelForgetAndFilesOpenKeepTheOriginal() throws {
+        try XCTSkipIf(nativeCloudAIHidden, "These journeys go through the hidden cloud AI Ask tab.")
         continueAfterFailure = false
         let app = launchNativeJourney()
         if app.buttons["vault.create"].waitForExistence(timeout: 3) { app.buttons["vault.create"].tap() }
@@ -99,6 +100,7 @@ final class NativeExternalNotesUITests: NativeJourneyTestCase {
     }
     @MainActor
     func testCancelingAProviderBlockedSearchOpenRejectsItsLateEditorAndAllowsRetryAfterRelaunch() throws {
+        try XCTSkipIf(nativeCloudAIHidden, "These journeys go through the hidden cloud AI Ask tab.")
         continueAfterFailure = false
         let app = launchNativeJourney()
         if app.buttons["vault.create"].waitForExistence(timeout: 3) { app.buttons["vault.create"].tap() }

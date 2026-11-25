@@ -47,7 +47,7 @@ struct NativeSearchView: View {
     @Environment(\.scenePhase) private var phase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let open: (NoteDocument) -> Void
-    let ask: (NativeSearchAskRequest) -> Void
+    let ask: ((NativeSearchAskRequest) -> Void)?
     let library: () -> Void
     let settings: () -> Void
     @StateObject private var model = NativeSearchModel()
@@ -101,7 +101,7 @@ struct NativeSearchView: View {
                                     .contextMenu {
                                         Button("Open", systemImage: "arrow.up.forward.app") { openResult(item, workspace: result.workspaceID) }
                                         Button("Preview", systemImage: "eye") { preview = .init(item: item, workspaceID: result.workspaceID) }
-                                        if case .file = item.target {} else { Button("Ask Zerus about this", systemImage: "sparkles") { askAbout(item, workspace: result.workspaceID) } }
+                                        if case .file = item.target {} else if ask != nil { Button("Ask Zerus about this", systemImage: "sparkles") { askAbout(item, workspace: result.workspaceID) } }
                                         ShareLink(item: item.text) { Label("Share text", systemImage: "square.and.arrow.up") }
                                     }
                             }
@@ -115,7 +115,7 @@ struct NativeSearchView: View {
                             }
                         }
                     } else if !model.loading {
-                        ContentUnavailableView(recent ? "Find a thought." : "No results", systemImage: "magnifyingglass", description: Text(recent ? "Search notes, external notes, saved links, tasks, files, and AI conversations." : "Try another phrase or change your filters."))
+                        ContentUnavailableView(recent ? "Find a thought." : "No results", systemImage: "magnifyingglass", description: Text(recent ? (CloudAIFeature.enabled ? "Search notes, external notes, saved links, tasks, files, and AI conversations." : "Search notes, external notes, saved links, tasks, and files.") : "Try another phrase or change your filters."))
                     }
                 }
                 if external.searching { ProgressView("Checking external files…").font(.caption).accessibilityIdentifier("search.external.loading") }
@@ -150,7 +150,7 @@ struct NativeSearchView: View {
             .onAppear { model.search(query: query, filters: filters) }
             .refreshable { await vault.refresh(); model.rebuild(vault: vault, external: external.searchRecords); await external.refreshSearchIndex() }
             .sheet(isPresented: $filtering) { NativeSearchFilterView(filters: $filters, folders: model.result?.folders ?? [], properties: model.result?.properties ?? []) }
-            .sheet(item: $preview) { selection in NativeSearchPreview(item: selection.item, busy: $openingExternal, cancel: cancelExternalAction, ask: { askAbout(selection.item, workspace: selection.workspaceID) }) }
+            .sheet(item: $preview) { selection in NativeSearchPreview(item: selection.item, busy: $openingExternal, cancel: cancelExternalAction, ask: ask == nil ? nil : { askAbout(selection.item, workspace: selection.workspaceID) }) }
             .sheet(item: $task) { value in TaskDetailView(task: value) }
             .fullScreenCover(item: $externalSession, onDismiss: { Task { await external.refreshSearchIndex() } }) { NativeExternalEditorScreen(session: $0) }
             .quickLookPreview($file)
@@ -213,7 +213,7 @@ struct NativeSearchView: View {
                     guard current() else { return }
                     guard let note = record.document else { vault.error = record.issue ?? "This external file is unavailable."; return }
                     preview = nil; focused = false; model.visited(item)
-                    ask(.init(workspaceID: workspace, prompt: "Help me understand \"\(note.title)\".", notes: [], document: try record.referenceDocument()))
+                    ask?(.init(workspaceID: workspace, prompt: "Help me understand \"\(note.title)\".", notes: [], document: try record.referenceDocument()))
                 } else {
                     let session = try await external.open(entry)
                     guard current() else { return }
@@ -233,7 +233,7 @@ struct NativeSearchView: View {
             notes = [note.path]
         } else { document = .init(name: item.title, text: String(item.text.prefix(20_000))) }
         preview = nil; focused = false; model.visited(item)
-        ask(.init(workspaceID: origin, prompt: "Help me understand \"\(item.title)\".", notes: notes, document: document))
+        ask?(.init(workspaceID: origin, prompt: "Help me understand \"\(item.title)\".", notes: notes, document: document))
     }
 }
 
@@ -248,7 +248,7 @@ private struct NativeSearchFilterView: View {
                 Section("Search in") {
                     Picker("Collection", selection: $filters.collection) {
                         Text("Everything").tag(Optional<NativeSearchCollection>.none)
-                        ForEach(NativeSearchCollection.allCases, id: \.self) { Text($0.rawValue).tag(Optional($0)) }
+                        ForEach(NativeSearchCollection.visibleCases, id: \.self) { Text($0.rawValue).tag(Optional($0)) }
                     }.accessibilityIdentifier("search.collection")
                     Picker("Modified", selection: $filters.days) { Text("Any time").tag(0); Text("Last day").tag(1); Text("Last 7 days").tag(7); Text("Last 30 days").tag(30); Text("Last 90 days").tag(90) }
                     Toggle("Include archived", isOn: $filters.archived)
@@ -279,7 +279,7 @@ private struct NativeSearchPreview: View {
     let item: NativeSearchItem
     @Binding var busy: Bool
     let cancel: () -> Void
-    let ask: () -> Void
+    let ask: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         NavigationStack {
@@ -304,7 +304,7 @@ private struct NativeSearchPreview: View {
                         if busy { Button("Cancel", action: cancel).accessibilityIdentifier("search.reference.cancel") }
                         else { Button("Done") { dismiss() } }
                     }
-                    ToolbarItem(placement: .primaryAction) { Button(busy ? "Preparing reference…" : "Ask Zerus", systemImage: "sparkles", action: ask).disabled(busy) }
+                    ToolbarItem(placement: .primaryAction) { if let ask { Button(busy ? "Preparing reference…" : "Ask Zerus", systemImage: "sparkles", action: ask).disabled(busy) } }
                 }
         }.onDisappear { if busy { cancel() } }
     }

@@ -233,15 +233,17 @@ struct SettingsView: View {
                 Section {
                     NavigationLink { NativeAppearanceView() } label: { Label("Appearance", systemImage: "paintpalette") }.accessibilityIdentifier("settings.appearance")
                 }
-                Section("AI") {
-                    Button("Workflows", systemImage: "list.bullet.rectangle") { aiWorkflows = true }.accessibilityIdentifier("settings.aiWorkflows")
-                    Button("AI limits", systemImage: "gauge.with.dots.needle.33percent") { aiLimits = true }.accessibilityIdentifier("settings.aiLimits")
-                    Button("AI instructions and memory", systemImage: "text.bubble") { aiGuidance = true }.accessibilityIdentifier("settings.aiGuidance")
+                if CloudAIFeature.enabled {
+                    Section("AI") {
+                        Button("Workflows", systemImage: "list.bullet.rectangle") { aiWorkflows = true }.accessibilityIdentifier("settings.aiWorkflows")
+                        Button("AI limits", systemImage: "gauge.with.dots.needle.33percent") { aiLimits = true }.accessibilityIdentifier("settings.aiLimits")
+                        Button("AI instructions and memory", systemImage: "text.bubble") { aiGuidance = true }.accessibilityIdentifier("settings.aiGuidance")
+                    }
                 }
                 Section {
                     LabeledContent("Version", value: (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") + " (" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") + ")")
                     NavigationLink("Open-source licenses") { NativeLicensesView() }.accessibilityIdentifier("settings.licenses")
-                } header: { Text("Zerus Native · Preview") } footer: { Text("This native preview opens Files vaults and includes Ask, reviewed AI edits and on-device dictation. Remaining mobile features are still being ported. The existing Zerus app remains available alongside it.") }
+                } header: { Text("Zerus Native · Preview") } footer: { Text(CloudAIFeature.enabled ? "This native preview opens Files vaults and includes Ask, reviewed AI edits and on-device dictation. Remaining mobile features are still being ported. The existing Zerus app remains available alongside it." : "This native preview opens Files vaults and includes on-device dictation. Remaining mobile features are still being ported. The existing Zerus app remains available alongside it.") }
             }.navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
                 .sheet(isPresented: $aiGuidance) { NativeAgentGuidanceView(workspaceID: vault.workspaceID) }

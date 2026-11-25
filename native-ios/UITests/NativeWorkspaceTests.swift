@@ -1,5 +1,9 @@
 import XCTest
 
+/// Mirrors `CloudAIFeature.enabled == false` in the app (UI tests cannot import
+/// it). Journeys through the hidden cloud AI Ask tab are skipped meanwhile.
+let nativeCloudAIHidden = true
+
 final class NativeWorkspaceTests: NativeJourneyTestCase {
     @MainActor
     func testTaskDraftCloseRelaunchResumeSaveAndReviewedDiscardKeepVaultTaskUnchanged() throws {
@@ -349,6 +353,7 @@ final class NativeWorkspaceTests: NativeJourneyTestCase {
 
     @MainActor
     func testUnifiedSearchBodyTaskFiltersRecentRelaunchAndAskPreservesPromptWithoutSending() throws {
+        try XCTSkipIf(nativeCloudAIHidden, "These journeys go through the hidden cloud AI Ask tab.")
         continueAfterFailure = false
         let app = launchNativeJourney()
         if app.buttons["vault.create"].waitForExistence(timeout: 3) { app.buttons["vault.create"].tap() }

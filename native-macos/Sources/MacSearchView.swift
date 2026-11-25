@@ -83,7 +83,7 @@ struct MacSearchView: View {
     private func header(_ p: MacSearchPalette) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(p.muted)
-            TextField("Search notes, tasks, links, files, chats…", text: $model.query).textFieldStyle(.plain).font(.system(size: 18)).focused($focused).disabled(opening)
+            TextField(CloudAIFeature.enabled ? "Search notes, tasks, links, files, chats…" : "Search notes, tasks, links, files…", text: $model.query).textFieldStyle(.plain).font(.system(size: 18)).focused($focused).disabled(opening)
                 .onSubmit { if let item = selected { open(item) } }
                 .onKeyPress(.downArrow) { moveSelection(1); return .handled }
                 .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
@@ -91,8 +91,10 @@ struct MacSearchView: View {
             Button(action: close) { MacSearchKey(label: showsPreview ? "esc  hide preview" : "esc", palette: p) }
                 .buttonStyle(.plain).keyboardShortcut(.cancelAction).help(showsPreview ? "Hide preview" : "Close search")
             // ⌘↵ asks AI from anywhere in the panel.
-            Button("Ask AI", action: ask).keyboardShortcut(.return, modifiers: .command).hidden().frame(width: 0, height: 0)
-                .disabled(trimmedQuery.isEmpty || model.loading || opening)
+            if CloudAIFeature.enabled {
+                Button("Ask AI", action: ask).keyboardShortcut(.return, modifiers: .command).hidden().frame(width: 0, height: 0)
+                    .disabled(trimmedQuery.isEmpty || model.loading || opening)
+            }
         }.padding(.horizontal, 16).padding(.vertical, 13).overlay(alignment: .bottom) { Rectangle().fill(p.line).frame(height: 1) }
     }
 
@@ -101,7 +103,7 @@ struct MacSearchView: View {
             chipMenu(model.filters.collection?.rawValue ?? "Everything", active: model.filters.collection != nil, p) {
                 Picker("Kind", selection: $model.filters.collection) {
                     Text("Everything").tag(NativeSearchCollection?.none)
-                    ForEach(NativeSearchCollection.allCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag(Optional($0)) }
+                    ForEach(NativeSearchCollection.visibleCases, id: \.self) { Label($0.rawValue, systemImage: $0.icon).tag(Optional($0)) }
                 }.pickerStyle(.inline)
             }
             chipMenu(daysTitle, active: model.filters.days != 0, p) {
@@ -169,7 +171,7 @@ struct MacSearchView: View {
                     if result.total > result.items.count {
                         Button("Show more results") { Task { await model.more() } }.buttonStyle(.plain).foregroundStyle(p.accent).font(.caption).padding(.horizontal, 16).padding(.vertical, 10)
                     }
-                    if !trimmedQuery.isEmpty { askRow(p) }
+                    if CloudAIFeature.enabled, !trimmedQuery.isEmpty { askRow(p) }
                 }.padding(.vertical, 4)
             }.onChange(of: selectedKey) { if let selectedKey { proxy.scrollTo(selectedKey, anchor: .center) } }
         }
@@ -179,7 +181,7 @@ struct MacSearchView: View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass").font(.system(size: 26)).foregroundStyle(p.muted)
             Text(browsingRecent ? "Search across your workspace" : "No results").font(.headline)
-            Text(browsingRecent ? "Notes, tasks, saved links, AI conversations, PDF/text file contents and connected external Markdown." : "Try fewer words or remove a filter.")
+            Text(browsingRecent ? (CloudAIFeature.enabled ? "Notes, tasks, saved links, AI conversations, PDF/text file contents and connected external Markdown." : "Notes, tasks, saved links, PDF/text file contents and connected external Markdown.") : "Try fewer words or remove a filter.")
                 .font(.callout).foregroundStyle(p.muted).multilineTextAlignment(.center)
         }.frame(maxWidth: .infinity).padding(.horizontal, 40).padding(.vertical, 60)
     }
@@ -227,8 +229,8 @@ struct MacSearchView: View {
             HStack(spacing: 8) {
                 Button { open(item) } label: { Text("Open  ↵").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5).foregroundStyle(p.onAccent).background(p.accent, in: RoundedRectangle(cornerRadius: 6)) }
                     .buttonStyle(.plain).disabled(opening)
-                Button(action: ask) { Text("Ask AI  ⌘↵").font(.system(size: 12)).padding(.horizontal, 11).padding(.vertical, 5).overlay(RoundedRectangle(cornerRadius: 6).stroke(p.line)) }
-                    .buttonStyle(.plain).disabled(trimmedQuery.isEmpty || model.loading || opening)
+                if CloudAIFeature.enabled { Button(action: ask) { Text("Ask AI  ⌘↵").font(.system(size: 12)).padding(.horizontal, 11).padding(.vertical, 5).overlay(RoundedRectangle(cornerRadius: 6).stroke(p.line)) }
+                    .buttonStyle(.plain).disabled(trimmedQuery.isEmpty || model.loading || opening) }
                 Spacer()
                 Text("Click again to open").font(.caption).foregroundStyle(p.muted)
             }.padding(.horizontal, 16).padding(.vertical, 10).overlay(alignment: .top) { Rectangle().fill(p.line).frame(height: 1) }
