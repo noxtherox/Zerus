@@ -575,14 +575,9 @@ pnpm macos:release               # tagged release: DMG + Sparkle feed, published
 Intermediate QA uses the built app; another DMG is unnecessary unless a check
 needs packaging or the final handoff is ready. Artifacts are under
 `artifacts/native-macos/`. The canonical native Mac version is in
-`native-macos/project.yml`; the theme-correction build is 0.3.85/build126.
-Presets and saved palettes select their matching Light/Dark appearance, including
-native title bars, controls, sheets and popovers. Its implementation is newer
-than the last delivered Preview125 DMG. A separate
-configured Developer ID candidate has passed Apple notarization, ticket
-validation, Gatekeeper assessment and a controlled launch. It remains private;
-production update delivery remains separate. The corrected native build126 DMG
-is notarized, stapled and checked through its private download endpoint.
+`native-macos/project.yml`; `pnpm release` advances it together with the
+Windows version. Presets and saved palettes select their matching Light/Dark
+appearance, including native title bars, controls, sheets and popovers.
 
 Native distribution packaging needs a Developer ID Application identity and
 notarization credentials. Production packaging defaults to the approved separate
