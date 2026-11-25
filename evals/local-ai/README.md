@@ -76,3 +76,27 @@ counts and kinds match the spec, every referenced note exists, selections and
 satisfied by the unedited note, and `must_include` groups for answerable,
 same-language ask/summarize items occur in the source notes. It also prints
 per-file language counts.
+
+## Runner
+
+`runner/` runs the **production** code from `packages/apple/LocalAI`: the
+pipelines (prompts, schemas, retries), the verified model store and loader,
+and the search index. Changing a prompt in `ZerusLocalAICore/Prompts.swift`
+therefore needs an eval run.
+
+```sh
+cd evals/local-ai
+xcodebuild -scheme ZerusAIEval -destination 'platform=macOS' \
+  -derivedDataPath runner/.build/xcode -skipMacroValidation \
+  -skipPackagePluginValidation -configuration Release build   # from runner/
+./runner/.build/xcode/Build/Products/Release/zerus-ai-eval retrieval [--extra-notes local/vault-copy]
+./runner/.build/xcode/Build/Products/Release/zerus-ai-eval llm --models qwen3.5-2b
+./runner/.build/xcode/Build/Products/Release/zerus-ai-eval download-test
+```
+
+Production models live in `local/models` (gitignored) as a
+`LocalAIModelStore`: seeded from the Hugging Face cache when the pinned
+snapshot is there, otherwise downloaded with `LocalAIModelDownloader`; every
+file is checksum-verified either way. Other `--models` candidates load from
+the Hugging Face cache for comparison only. `probe-ios/` runs the same code on
+an iPhone, including the MLX self-test that gates on-device AI.

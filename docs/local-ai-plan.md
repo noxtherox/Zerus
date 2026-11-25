@@ -1,6 +1,6 @@
 # Local AI plan (native macOS + native iOS)
 
-Status: agreed 2026-11-25. Phase 1 (model selection) in progress.
+Status: agreed 2026-11-25. Phase 1 closed 2026-11-25; phase 2 (hide cloud AI UI) done; phase 3 (shared core) done.
 
 ## Decisions
 
@@ -20,9 +20,13 @@ Status: agreed 2026-11-25. Phase 1 (model selection) in progress.
   unmodified. Pin both to a fixed Hugging Face revision.
 - **Languages:** fully multilingual (LLM and embedding model).
 - **Hardware floor:** LLM features need iPhones with ≥6 GB RAM or
-  Apple-silicon Macs (M1/8 GB). Semantic search (embedding model only) also
-  runs on 4 GB iPhones such as the iPhone 11, which is the worst-case test
-  device. Below that, keyword search only.
+  Apple-silicon Macs (M1/8 GB). Semantic search (embedding model only) is
+  offered on 4 GB iPhones when MLX works there. When AI is enabled, a short
+  MLX self-test (a tiny matrix multiply plus one embedding) runs once per app
+  and OS version. Devices that fail it, such as the A13 iPhone 11
+  (ml-explore/mlx-swift#526), keep keyword search and show "On-device AI isn't
+  supported on this iPhone". Revisit when #526 is fixed. Apple's
+  `NLContextualEmbedding` is a possible later fallback for those devices.
 - **Delivery:** opt-in download in Settings from pinned Hugging Face revisions
   with checksum verification, Wi-Fi only by default, stored in Application
   Support (never in the vault), with "Delete models".
@@ -50,7 +54,9 @@ Status: agreed 2026-11-25. Phase 1 (model selection) in progress.
 
 1. Model shortlist, evaluation suite (`evals/local-ai/`), benchmarks on Mac
    and a 6 GB iPhone. **Gate: user picks the models.**
-2. Hide the cloud AI UI in the native apps.
+2. Hide the cloud AI UI in the native apps. One switch,
+   `CloudAIFeature.enabled` in `native-ios/Sources/NativeSearch.swift`
+   (shared with macOS), gates every entry point.
 3. Shared core in `packages/apple/`: download/lifecycle, MLX runtime,
    chunking + embedding index, hybrid search, pipelines.
 4. macOS UI.
@@ -118,6 +124,43 @@ Qwen3.5-2B 55/74, Qwen3-1.7B 19/41.
 Reciprocal-rank fusion with BM25 lowered recall@5 at every weight tried
 (1.0 → 0.78, 0.5 → 0.82, 0.25 → 0.95 for EmbeddingGemma 2).
 
-Still pending: iPhone speed and memory (iOS probe on the iPhone 18 Pro Max
-and the iPhone 11 now; a real 6 GB iPhone before release), and the
-real-vault question set.
+### iPhone probe (`evals/local-ai/probe-ios/`, 2026-11-25, iOS 27.2.1)
+
+- **iPhone 18 Pro Max (12 GB):** EmbeddingGemma 300M indexed 148 chunks/s,
+  5 ms per query, recall@5 1.00, 631 MB peak footprint. Qwen3.5-2B loaded in
+  36 s (download included) at 1.2 GB; 24-task subset 19/24; median TTFT
+  0.21 s (max 3.2 s); ~87 tok/s; 1.75 GB peak footprint.
+- **iPhone 11 (A13, 4 GB):** MLX cannot run here. GPU kernel compilation
+  fails (`XPC_ERROR_CONNECTION_INTERRUPTED`, open upstream issue
+  ml-explore/mlx-swift#526); the CPU device rejects compiled kernels, and
+  with compilation disabled it had not indexed 151 chunks after 30 minutes.
+  Decision: the self-test gate above decides per device; the iPhone 11 is the
+  test device for the fallback path.
+
+Phase 1 closed 2026-11-25. Moved to later phases: the 6 GB iPhone check
+(phase 5) and the real-vault question set (a pre-release check, not a gate).
+
+## Phase 3 results (2026-11-25, `packages/apple/LocalAI`)
+
+The eval runner now runs the production package (pipelines, verified model
+store and loader, SQLite search index).
+
+- **LLM (Qwen3.5-2B, production pipelines):** 104/126. Route 36/40, Ask
+  21/24, unanswerable 5/6, summaries 9/16, edits 33/40 (find/replace 7/8 with
+  one retry). Median TTFT 0.39 s, 78 tok/s, 2,052 MB peak.
+- **Search (EmbeddingGemma 300M, 40 fixtures + 635-note vault copy, 1.5k
+  chunks):** semantic recall@5 1.00; keyword fallback 0.75 (with the
+  exact-match boost); about 52 ms per query including the query embedding.
+- **Downloader:** a real download of EmbeddingGemma (210 MB) installed and
+  verified in 7 s.
+- **iPhone 11:** `LocalAISelfTest` reports *failed* in 1.8 s without a crash,
+  so the device keeps keyword search.
+- **iPhone 18 Pro Max (production probe):** the self-test passed in 1.1 s. The
+  app's downloader fetched and verified both models over Wi-Fi in about 55 s.
+  Search: semantic recall@5 1.00, keyword 0.75, 146 chunks/s, 16 ms per
+  query, 690 MB peak. Qwen3.5-2B: 19/24 on the 24-task subset, median TTFT
+  0.19 s (max 0.97 s), 87 tok/s, 1,733 MB peak footprint.
+
+Still open for phases 4 and 5: Settings UI (download, delete, capability
+message), wiring the index to vault changes, `BGProcessingTask` indexing on
+iOS, and the 6 GB iPhone run.
