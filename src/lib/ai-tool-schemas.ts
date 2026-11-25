@@ -64,7 +64,7 @@ export const AI_TOOL_SCHEMAS = {
   note_properties: z.object({
     selector,
     revision: z.string().min(1),
-    values: z.record(property),
+    values: z.record(z.string(), property),
   }),
   note_organize: z.object({
     selector,

@@ -16,10 +16,11 @@
   "pnpm": {
     "overrides": {
       "js-yaml": "4.3.2",
-      "undici@7.29.0": "7.29.1",
       "brace-expansion@1.1.18": "1.1.21",
       "brace-expansion@5.0.9": "5.0.12",
-      "source-map-js": "1.2.2"
+      "source-map-js": "1.2.2",
+      "undici@>=7 <7.30.1": "^7.30.2",
+      "postcss-selector-parser@<6.1.5": "^6.1.5"
     },
     "patchedDependencies": {
       "@mdxeditor/editor@4.2.1": "patches/@mdxeditor__editor@4.2.1.patch",
@@ -140,7 +141,7 @@
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.5.2",
     "unified": "^11.0.5",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
@@ -162,9 +163,9 @@
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.67.0",
+    "typescript-eslint": "^8.74.0",
     "vite": "^8.2.4",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "yaml": "^2.9.0"
   }
 }

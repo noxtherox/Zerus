@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  # Rebuild the Windows installer for an existing tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, e.g. v0.3.86
+        required: true
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   windows:
@@ -14,6 +23,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: pnpm/action-setup@v4
         with:
@@ -40,11 +51,9 @@ jobs:
         shell: bash
         run: |
           APP_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          test "v${APP_VERSION}" = "${GITHUB_REF_NAME}"
+          test "v${APP_VERSION}" = "${RELEASE_TAG}"
 
-      - name: Test
-        run: pnpm exec vitest run --exclude '.claude/**'
-
+      # `pnpm release` runs the full test suite before tagging.
       - name: Build Windows installer
         run: pnpm windows:build
 
@@ -76,9 +85,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --verify-tag --title "Zerus $GITHUB_REF_NAME" \
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "Zerus $RELEASE_TAG" \
               --notes "Download the DMG for Apple Silicon Macs on macOS 26 or later, or the unsigned EXE installer for Windows. The macOS app is signed, notarized and updates itself automatically." \
               || true
           fi
-          gh release upload "$GITHUB_REF_NAME" windows-installer/*.exe --clobber
+          gh release upload "$RELEASE_TAG" windows-installer/*.exe --clobber

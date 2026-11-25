@@ -2,6 +2,7 @@ import type { AiAgentEngine } from "./ai-agent-engine";
 import type { ZerusLoopStep } from "./ai-pi-agent";
 import type { ModelMessage } from "@ai-sdk/provider-utils";
 import { zodSchema } from "@ai-sdk/provider-utils";
+import type { ZodType } from "zod";
 import { ToolLoopAgent, stepCountIs, tool } from "ai";
 import type { AiProviderConfig } from "./ai-provider-config";
 import {
@@ -172,7 +173,7 @@ export async function runZerusAgent(
     (Object.keys(AI_TOOL_SCHEMAS) as AiToolName[]).map(async (name) => ({
       name,
       description: AI_TOOL_DESCRIPTIONS[name],
-      inputSchema: await zodSchema(AI_TOOL_SCHEMAS[name]).jsonSchema,
+      inputSchema: await zodSchema(AI_TOOL_SCHEMAS[name] as ZodType).jsonSchema,
     })),
   );
   const transport: NativeAiTransport = async (request, requestSignal) => {
