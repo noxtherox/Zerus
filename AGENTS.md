@@ -51,23 +51,28 @@
   desktop DMG or an iOS App Store build before running a build command.
 - Do not infer the target from recent conversation or the last platform that
   was built.
-- Explicit requests such as **native DMG**, **Tauri DMG**, or
+- Explicit requests such as **native DMG**, **macOS build**, **Tauri DMG**, or
   **new iOS build** do not require clarification.
 
 ## macOS desktop terminology
 
-- During the transition, the SwiftUI app in `native-macos/` is the primary
-  desktop codebase and the Tauri/React app remains supported. Tag
+- The SwiftUI app in `native-macos/` is the production macOS app, shipped as
+  **Zerus** under `com.zerus.notes` (see `docs/native-macos.md`). The Tauri/React
+  desktop app is deprecated on macOS and ships only on Windows. Tag
   `tauri-baseline` marks the last Tauri-only state.
-- **Native macOS build** or **native DMG** means run `pnpm macos:native:dmg`
-  (identity `com.zerus.notes.macos.native`, see `docs/native-macos.md`).
-- **Tauri build**, **Tauri DMG**, or any **release** request means run
-  `pnpm desktop:build`. This creates and verifies the Tauri macOS desktop
-  artifacts, including the DMG, and remains the release pipeline until the user
-  explicitly switches releases to the native app.
-- **New desktop build**, **macOS build**, or **build the DMG** alone is
-  ambiguous while both apps are supported; ask whether the user wants the
-  native or the Tauri DMG.
+- **Native macOS build**, **native DMG**, **macOS build**, **build the DMG** or
+  **new desktop build** means run `pnpm macos:native:dmg`. Source
+  `~/.zprofile` first so notarization credentials are available.
+- The macOS part of a **release** is `pnpm macos:release`, run on the tagged
+  commit after `pnpm release <version>`. It builds and notarizes the native DMG,
+  attaches it to the versioned GitHub release and publishes the signed Sparkle
+  appcast/ZIP to the `native-macos` feed release. CI builds only the Windows
+  installer.
+- **Tauri build** or **Tauri DMG** means the retained recovery build,
+  `pnpm macos:tauri:build`. Never publish it as a release.
+- Earlier native previews used `com.zerus.notes.macos.native` ("Zerus Native");
+  `MacIdentityMigration` copies their preferences once. Do not reuse that
+  identity for production builds.
 
 ## iOS terminology
 

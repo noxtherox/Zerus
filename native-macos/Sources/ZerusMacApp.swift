@@ -3,6 +3,7 @@ import AppKit
 
 @main struct ZerusMacApp: App {
     @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var delegate
+    init() { MacIdentityMigration.run() }
     var body: some Scene {
         WindowGroup(id: "workspace") { MacWindow() }.handlesExternalEvents(matching: ["*"]).defaultSize(width: 1400, height: 850).windowResizability(.contentMinSize).windowStyle(.titleBar).commands { MacCommands() }
         Settings { MacZoomPresentation { MacSettingsView() }.modifier(MacThemeHost()) }

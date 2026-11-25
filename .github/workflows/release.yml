@@ -6,123 +6,8 @@ on:
       - "v*"
 
 jobs:
-  macos:
-    name: Build notarized macOS release
-    runs-on: macos-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify platform boundaries
-        run: pnpm platform:verify
-
-      - name: Verify updater signing key
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-        run: pnpm updater-key:verify
-
-      - name: Verify release version
-        run: |
-          APP_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          test "v${APP_VERSION}" = "${GITHUB_REF_NAME}"
-
-      - name: Test
-        run: pnpm exec vitest run --exclude '.claude/**'
-
-      - name: Import Developer ID certificate
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH="$RUNNER_TEMP/zerus-developer-id.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/zerus-signing.keychain-db"
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERTIFICATE_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep 'Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)'
-
-      - name: Prepare App Store Connect API key
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_CONTENT }}
-        run: |
-          API_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY}.p8"
-          printf '%s' "$APPLE_API_KEY_CONTENT" > "$API_KEY_PATH"
-          chmod 600 "$API_KEY_PATH"
-          echo "APPLE_API_KEY_PATH=$API_KEY_PATH" >> "$GITHUB_ENV"
-
-      - name: Build and publish release
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
-          APPLE_SIGNING_IDENTITY: "Developer ID Application: Tiago Honrado Rio Pereira (TX9RYY52XR)"
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-        with:
-          tagName: v__VERSION__
-          releaseName: Zerus v__VERSION__
-          releaseBody: |
-            Download the DMG for Apple Silicon macOS or the unsigned EXE installer for Windows.
-
-            The macOS build is signed, notarized, and stapled. Installed macOS copies check for signed updates automatically.
-          releaseDraft: true
-          prerelease: false
-          args: --target aarch64-apple-darwin
-
-      - name: Notarize and staple DMG
-        env:
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_PATH: ${{ env.APPLE_API_KEY_PATH }}
-        run: node scripts/notarize-macos-dmg.mjs
-
-      - name: Verify packaged desktop artifacts
-        run: pnpm desktop:verify -- --require-notarized
-
-      - name: Replace release DMG with stapled artifact
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --clobber
-
-      - name: Publish verified macOS release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
-
   windows:
     name: Build Windows installer
-    needs: macos
     runs-on: windows-latest
     permissions:
       contents: read
@@ -151,6 +36,15 @@ jobs:
       - name: Verify platform boundaries
         run: pnpm platform:verify
 
+      - name: Verify release version
+        shell: bash
+        run: |
+          APP_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test "v${APP_VERSION}" = "${GITHUB_REF_NAME}"
+
+      - name: Test
+        run: pnpm exec vitest run --exclude '.claude/**'
+
       - name: Build Windows installer
         run: pnpm windows:build
 
@@ -162,7 +56,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Attach verified Windows artifacts
+    name: Publish Windows installer
     needs: windows
     runs-on: ubuntu-latest
     permissions:
@@ -175,8 +69,16 @@ jobs:
           name: zerus-windows-nsis
           path: windows-installer
 
-      - name: Add Windows installer to draft release
+      # The macOS DMG is built, notarized and attached locally by
+      # `pnpm macos:release`, which may run before or after this job.
+      - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh release upload "$GITHUB_REF_NAME" windows-installer/*.exe
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "Zerus $GITHUB_REF_NAME" \
+              --notes "Download the DMG for Apple Silicon Macs on macOS 26 or later, or the unsigned EXE installer for Windows. The macOS app is signed, notarized and updates itself automatically." \
+              || true
+          fi
+          gh release upload "$GITHUB_REF_NAME" windows-installer/*.exe --clobber

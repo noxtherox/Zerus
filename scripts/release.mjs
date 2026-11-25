@@ -36,6 +36,7 @@ const cargoPath = "src-tauri/Cargo.toml";
 const lockPath = "src-tauri/Cargo.lock";
 const appleProjectPath = "src-tauri/gen/apple/project.yml";
 const appleInfoPath = "src-tauri/gen/apple/app_iOS/Info.plist";
+const nativeMacPath = "native-macos/project.yml";
 const config = JSON.parse(readFileSync(configPath, "utf8"));
 const currentVersion = config.version;
 const currentParts = currentVersion.split(".").map(Number);
@@ -50,6 +51,22 @@ const isNewer =
 if (!isNewer) {
   throw new Error(`Version ${version} must be newer than ${currentVersion}.`);
 }
+
+// The native macOS app shares the release version; its build number only grows.
+const nativeMac = readFileSync(nativeMacPath, "utf8");
+const nativeVersion = nativeMac.match(/^(\s*MARKETING_VERSION:\s*)([0-9.]+)\s*$/m)?.[2];
+const nativeBuild = Number(nativeMac.match(/^\s*CURRENT_PROJECT_VERSION:\s*(\d+)\s*$/m)?.[1]);
+if (!nativeVersion || !Number.isSafeInteger(nativeBuild)) {
+  throw new Error(`Cannot read the native macOS version from ${nativeMacPath}.`);
+}
+const nativeParts = nativeVersion.split(".").map(Number);
+const nativeDifference = nextParts.findIndex((part, index) => part !== nativeParts[index]);
+if (nativeDifference === -1 || nextParts[nativeDifference] < nativeParts[nativeDifference]) {
+  throw new Error(`Version ${version} must be newer than the native macOS version ${nativeVersion}.`);
+}
+const nextNativeMac = nativeMac
+  .replace(/^(\s*MARKETING_VERSION:\s*)[0-9.]+(\s*)$/m, `$1${version}$2`)
+  .replace(/^(\s*CURRENT_PROJECT_VERSION:\s*)\d+(\s*)$/m, `$1${nativeBuild + 1}$2`);
 
 run("pnpm", ["updater-key:verify"]);
 run("pnpm", ["build"]);
@@ -83,7 +100,8 @@ if (
   nextCargo === cargo ||
   nextLock === lock ||
   nextAppleProject === appleProject ||
-  nextAppleInfo === appleInfo
+  nextAppleInfo === appleInfo ||
+  nextNativeMac === nativeMac
 ) {
   throw new Error("Could not locate every version field; no release was created.");
 }
@@ -94,6 +112,7 @@ writeFileSync(cargoPath, nextCargo);
 writeFileSync(lockPath, nextLock);
 writeFileSync(appleProjectPath, nextAppleProject);
 writeFileSync(appleInfoPath, nextAppleInfo);
+writeFileSync(nativeMacPath, nextNativeMac);
 
 run("cargo", ["check", "--manifest-path", cargoPath, "-p", "app"]);
 run("git", [
@@ -103,9 +122,11 @@ run("git", [
   lockPath,
   appleProjectPath,
   appleInfoPath,
+  nativeMacPath,
 ]);
 run("git", ["commit", "-m", `Release ${tag}`]);
 run("git", ["tag", "-a", tag, "-m", `Zerus ${tag}`]);
 run("git", ["push", "--atomic", "origin", "main", `refs/tags/${tag}`]);
 
-console.log(`${tag} pushed. GitHub Actions is building and publishing the release.`);
+console.log(`${tag} pushed. GitHub Actions is building the Windows installer.`);
+console.log("Run `pnpm macos:release` now to build, notarize and publish the macOS DMG and update feed.");

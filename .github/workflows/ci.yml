@@ -104,7 +104,7 @@ jobs:
         run: cargo test --workspace --locked --manifest-path src-tauri/Cargo.toml
 
   desktop:
-    name: macOS desktop smoke test
+    name: Legacy Tauri macOS smoke test
     runs-on: macos-latest
     timeout-minutes: 30
 
@@ -140,4 +140,4 @@ jobs:
           --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Verify installer and launch app
-        run: pnpm desktop:smoke
+        run: pnpm macos:tauri:smoke
