@@ -94,7 +94,7 @@ export function verifyNativeMacDmg(dmg, options) {
   try {
     execFileSync('hdiutil', ['attach', '-readonly', '-nobrowse', '-mountpoint', mount, dmg], { stdio: 'pipe' });
     attached = true;
-    return verifyNativeMacApp(join(mount, 'Zerus Native.app'), options);
+    return verifyNativeMacApp(join(mount, 'Zerus.app'), options);
   } finally {
     if (attached) execFileSync('hdiutil', ['detach', mount], { stdio: 'pipe' });
     if (existsSync(mount)) rmdirSync(mount);

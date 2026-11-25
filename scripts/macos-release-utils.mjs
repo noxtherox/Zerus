@@ -26,7 +26,7 @@ export function parseDeveloperIdApplications(output) {
 export function resolveSigningIdentity(requestedIdentity, identities) {
   if (requestedIdentity === "-") {
     throw new Error(
-      "APPLE_SIGNING_IDENTITY=- is not allowed for a release build. Use pnpm desktop:build:local for an explicit ad-hoc build.",
+      "APPLE_SIGNING_IDENTITY=- is not allowed for a release build. Use pnpm macos:native:dmg --local for an explicit ad-hoc build.",
     );
   }
 

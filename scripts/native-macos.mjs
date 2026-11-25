@@ -41,32 +41,30 @@ if (action === 'dmg' && !local) {
   if (credentials.kind === 'App Store Connect API key' && !existsSync(process.env.APPLE_API_KEY_PATH)) throw new Error('APPLE_API_KEY_PATH does not exist.');
 }
 run('xcodebuild', [...common, '-configuration', 'Release', 'build']);
-const built = resolve(derived, 'Build/Products/Release/Zerus Native.app');
+const built = resolve(derived, 'Build/Products/Release/Zerus.app');
 if (action === 'build') { console.log(`Native app: ${built}`); process.exit(0); }
 const staging = resolve(output, 'dmg-staging');
 rmSync(staging, { recursive: true, force: true }); mkdirSync(staging, { recursive: true });
-const app = resolve(staging, 'Zerus Native.app');
+const app = resolve(staging, 'Zerus.app');
 run('ditto', [built, app]);
 rmSync(resolve(app, 'Contents/Resources/CLI'), { recursive: true, force: true });
 run('ditto', ['native-macos/Resources/CLI', resolve(app, 'Contents/Resources/CLI')]);
 mkdirSync(resolve(app, 'Contents/Resources'), { recursive: true });
 copyFileSync('src-tauri/icons/icon.icns', resolve(app, 'Contents/Resources/Zerus.icns'));
 run('/usr/libexec/PlistBuddy', ['-c', 'Add :CFBundleIconFile string Zerus', resolve(app, 'Contents/Info.plist')]);
-// This separate identity lets the native migration build coexist with installed Zerus.
 signNativeMacApp(app, identity, local);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', app]);
 const appReceipt = verifyNativeMacApp(app, { local });
 const plist = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleShortVersionString', resolve(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
 symlinkSync('/Applications', resolve(staging, 'Applications'));
-copyFileSync('docs/native-macos.md', resolve(staging, 'Read before testing.md'));
 const buildNumber = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleVersion', resolve(app, 'Contents/Info.plist')], { encoding: 'utf8' }).trim();
-const dmg = resolve(output, `Zerus-Native-${plist}-preview-${buildNumber}-arm64${local ? '-local' : ''}.dmg`);
-const receipt = resolve(output, `artifact-preview-${buildNumber}${local ? '-local' : ''}.json`);
-const candidate = resolve(output, `.Zerus-Native-${plist}-preview-${buildNumber}${local ? '-local' : ''}.pending.dmg`);
+const dmg = resolve(output, `Zerus-${plist}-${buildNumber}-arm64${local ? '-local' : ''}.dmg`);
+const receipt = resolve(output, `artifact-${buildNumber}${local ? '-local' : ''}.json`);
+const candidate = resolve(output, `.Zerus-${plist}-${buildNumber}${local ? '-local' : ''}.pending.dmg`);
 rmSync(receipt, { force: true });
 rmSync(receipt + '.pending', { force: true });
 rmSync(candidate, { force: true });
-run('hdiutil', ['create', '-volname', 'Zerus Native', '-srcfolder', staging, '-ov', '-format', 'UDZO', candidate]);
+run('hdiutil', ['create', '-volname', 'Zerus', '-srcfolder', staging, '-ov', '-format', 'UDZO', candidate]);
 run('hdiutil', ['verify', candidate]);
 if (!local) {
   run('codesign', ['--force', '--sign', identity, '--timestamp', candidate]);

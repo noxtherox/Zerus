@@ -1,8 +1,12 @@
-# Native macOS migration
+# Native macOS app
 
-This is an **in-progress native SwiftUI macOS application**, not yet a replacement
-for the production desktop app. Full desktop feature parity remains the release
-acceptance criterion. Development and Computer Use checks use internal app builds.
+This **native SwiftUI macOS application is the production macOS app**. It replaced
+the Tauri desktop app on macOS and ships as **Zerus** under `com.zerus.notes`
+(Apple Silicon, macOS 26+). Preview builds used `com.zerus.notes.macos.native`
+("Zerus Native"); `MacIdentityMigration` copies their preferences on first launch,
+and private Application Support/Caches folders keep their "Zerus Native" names.
+Releases are published with `pnpm macos:release` (see the README). AI parity
+remains deferred. The history below records the migration. Development and Computer Use checks use internal app builds.
 Create a DMG only when needed for packaged-app QA; the user does not need to
 retest intermediate builds. Deliver the final DMG after acceptance. Current
 non-AI performance and installed evidence is recorded in
@@ -606,15 +610,14 @@ by Git. The SwiftUI app remains the native interface; the CLI is a separate help
 ```sh
 pnpm macos:native:build
 pnpm macos:native:test
-pnpm desktop:build --native
+pnpm macos:native:dmg
 ```
 
-`desktop:build --native` builds Release, signs with the configured Zerus Developer
+`macos:native:dmg` builds Release, signs with the configured Zerus Developer
 ID, packages the DMG, submits it to Apple, requires Accepted notarization, staples
 the ticket and checks Gatekeeper. It uses the existing `APPLE_API_ISSUER`,
 `APPLE_API_KEY`, `APPLE_API_KEY_PATH` configuration (or the documented Apple ID
-alternative). `pnpm desktop:build --native --local` (or
-`pnpm macos:native:dmg --local`) builds an ad-hoc local DMG without notarization.
+alternative). `pnpm macos:native:dmg --local` builds an ad-hoc local DMG without notarization.
 Use this route for intermediate testing; reserve notarization for substantial
 milestones. The native version/build come from `native-macos/project.yml`.
 Packaging does not increment them automatically or change iOS versions.
@@ -623,14 +626,14 @@ Artifacts live under `artifacts/native-macos/`. The native target configuration
 is checked against the packaged app before creating a DMG: bundle identity,
 version/build, executable name, macOS platform, minimum macOS version, arm64
 architecture and signing channel must match. Successful packaging writes
-`artifact-preview-<build>-local.json` (or the non-local equivalent) with the actual
+`artifact-<build>-local.json` (or the non-local equivalent) with the actual
 executable and DMG SHA-256 values. A local receipt says notarization was not
 submitted; installed UI verification is explicitly separate. A stale receipt is
 removed before replacing a DMG.
 
 The native target configuration
-is `native-macos/project.yml`, generated with XcodeGen. This test channel does
-not use or replace the Tauri updater feed; automatic native updates are pending.
+is `native-macos/project.yml`, generated with XcodeGen. Native updates use the
+Sparkle channel in `native-macos/update-channel.json`, not the Tauri updater feed.
 
 ## Navigation storage and historical performance verification
 
@@ -775,7 +778,8 @@ resolved draft is saved before update relaunch. Both used disposable local QA
 keys and the internal app; neither establishes Developer ID/notarized production
 acceptance. An older native build without
 Sparkle needs one manual installation of an updater-enabled build. The Tauri
-app remains a separate installed application.
+macOS app cannot update into Sparkle on its own; install the first native DMG
+manually. It replaces `Zerus.app` in Applications under the same identity.
 
 
 ### Preparing native update artifacts
@@ -797,19 +801,19 @@ vault/repository. CI may instead pass `--key-file /protected/native-key.txt` for
 an owner-only private seed file. Account and file options are mutually exclusive;
 verification never needs either.
 
-After `pnpm desktop:build --native` has produced the configured, Developer ID
+After `pnpm macos:native:dmg` has produced the configured, Developer ID
 signed and notarized app, use the approved native GitHub download directory.
 The commands below prepare and verify local files only:
 
 ```sh
 pnpm macos:native:appcast prepare \
-  --app 'artifacts/native-macos/dmg-staging/Zerus Native.app' \
+  --app artifacts/native-macos/dmg-staging/Zerus.app \
   --output artifacts/native-macos/native-update-release \
   --download-prefix 'https://github.com/noxtherox/Zerus/releases/download/native-macos/' \
   --account zerus-native
 
 pnpm macos:native:appcast verify \
-  --app 'artifacts/native-macos/dmg-staging/Zerus Native.app' \
+  --app artifacts/native-macos/dmg-staging/Zerus.app \
   --output artifacts/native-macos/native-update-release \
   --download-prefix 'https://github.com/noxtherox/Zerus/releases/download/native-macos/'
 ```

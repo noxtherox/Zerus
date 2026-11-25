@@ -61,7 +61,7 @@ function context(app, prefix, local) {
   nativeUpdateBuildSettings({ ZERUS_NATIVE_UPDATE_FEED_URL: plist.SUFeedURL, ZERUS_NATIVE_UPDATE_PUBLIC_KEY: plist.SUPublicEDKey }, { required: true });
   const feedURL = new URL(plist.SUFeedURL), feedName = basename(feedURL.pathname);
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*\.xml$/.test(feedName)) throw new Error('Native feed filename must be a plain XML filename.');
-  const archiveName = `Zerus-Native-${receipt.version}-${receipt.build}-arm64.zip`;
+  const archiveName = `Zerus-${receipt.version}-${receipt.build}-arm64.zip`;
   return { receipt, feedName, archiveName, downloadPrefix: httpsPrefix(prefix), appSealSha256: hash(join(app, 'Contents/_CodeSignature/CodeResources')), feedURL: feedURL.href, expected: { ...receipt, publicKey: plist.SUPublicEDKey, downloadURL: new URL(archiveName, httpsPrefix(prefix)).href } };
 }
 
@@ -70,11 +70,11 @@ function matchArchiveApp(actual, expected) {
 }
 function verifyArchiveApp(archive, expected, local) {
   const names = execFileSync('unzip', ['-Z1', archive], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }).trim().split('\n');
-  if (names.some(name => name.startsWith('/') || name.includes('\\') || name.split('/').includes('..') || !(name === 'Zerus Native.app' || name.startsWith('Zerus Native.app/') || name === '__MACOSX' || name.startsWith('__MACOSX/')))) throw new Error('Native update archive has unexpected paths outside its app bundle.');
+  if (names.some(name => name.startsWith('/') || name.includes('\\') || name.split('/').includes('..') || !(name === 'Zerus.app' || name.startsWith('Zerus.app/') || name === '__MACOSX' || name.startsWith('__MACOSX/')))) throw new Error('Native update archive has unexpected paths outside its app bundle.');
   const directory = mkdtempSync(join(tmpdir(), 'zerus-native-update-verify-'));
   try {
     execFileSync('ditto', ['-x', '-k', archive, directory]);
-    const app = join(directory, 'Zerus Native.app');
+    const app = join(directory, 'Zerus.app');
     matchArchiveApp(context(app, expected.downloadPrefix, local), expected);
     if (!local) {
       execFileSync('xcrun', ['stapler', 'validate', app], { stdio: 'pipe' });
@@ -98,7 +98,7 @@ export function prepareNativeAppcast({ app, output, downloadPrefix, account, key
   mkdirSync(output);
   const stage = mkdtempSync(join(output, '.pending-'));
   try {
-    const stagedApp = join(stage, 'Zerus Native.app');
+    const stagedApp = join(stage, 'Zerus.app');
     execFileSync('ditto', [app, stagedApp]);
     const details = context(stagedApp, prefix, local);
     if (!local) {

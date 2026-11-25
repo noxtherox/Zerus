@@ -9,10 +9,10 @@ import {
 } from "./macos-release-utils.mjs";
 import { notarizeNewestMacosDmg } from "./notarize-macos-dmg.mjs";
 
-// A native migration build has its own bundle identity and release artifacts.
+// Legacy Tauri macOS build, retained for recovery only. macOS releases ship the
+// native app (`pnpm macos:release`); Windows still builds from Tauri.
 if (process.argv.includes("--native")) {
-  execFileSync("node", ["scripts/native-macos.mjs", "dmg", ...(process.argv.includes("--local") ? ["--local"] : [])], { stdio: "inherit", env: process.env });
-  process.exit(0);
+  throw new Error("Use `pnpm macos:native:dmg` for the native app.");
 }
 
 const localBuild = process.argv.includes("--local");
