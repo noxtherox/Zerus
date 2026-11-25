@@ -1,0 +1,6 @@
+runner/.build/
+runner/.swiftpm/
+results/
+local/
+probe-ios/build/
+probe-ios/ZerusAIProbe.xcodeproj/

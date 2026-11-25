@@ -150,7 +150,7 @@ private struct MacOutlineRow: View {
     private var guides: some View {
         ForEach(0..<max(0, depth), id: \.self) { _ in
             Color.clear.frame(width: 12).overlay(alignment: .leading) {
-                Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1).padding(.leading, 4)
+                Rectangle().fill(Color.primary.opacity(0.2)).frame(width: 1).padding(.leading, 4)
             }
         }
     }

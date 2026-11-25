@@ -9,7 +9,7 @@ extension VaultFiles {
     func applyMacSchemaMaintenance(_ plan: NativeRelationMaintenancePlan) throws -> VaultSnapshot {
         let paths = plan.changes.filter { $0.path.lowercased().hasSuffix(".md") }.map(\.path), root = self.root
         return try applyRelationChanges(schema: plan.snapshot.schema, notes: plan.snapshot.notes, changes: plan.changes) {
-            for path in paths where !(try MacNoteRecoveryStore.locations(root: root, path: path)).isEmpty {
+            if let path = try MacNoteRecoveryStore.firstRetained(root: root, paths: paths) {
                 throw VaultFailure(message: "A retained draft exists for \(path). Resolve or export it before changing folder definitions.")
             }
         }

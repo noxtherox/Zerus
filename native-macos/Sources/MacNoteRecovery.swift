@@ -107,6 +107,23 @@ enum MacNoteRecoveryStore {
             keys.contains { name == $0 + ".json" || (name.hasPrefix($0 + "-") && name.hasSuffix(".json")) }
         }.map { folder.appendingPathComponent($0) }
     }
+    /// The first of `paths` with a retained draft, listing the drafts folder
+    /// once. Bulk reviews check hundreds of notes against thousands of drafts.
+    static func firstRetained(root: URL, paths: [String]) throws -> String? {
+        guard !paths.isEmpty else { return nil }
+        flushCheckpoints()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return nil }
+        guard try directory.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw VaultFailure(message: "The private drafts folder is a link.") }
+        // Draft names are `<hex hash>.json` or `<hex hash>-<window>.json`.
+        var present = Set<Substring>()
+        for name in try FileManager.default.contentsOfDirectory(atPath: directory.path) where name.hasSuffix(".json") {
+            let stem = name.dropLast(5)
+            present.insert(stem.firstIndex(of: "-").map { stem[..<$0] } ?? stem)
+        }
+        guard !present.isEmpty else { return nil }
+        let roots = Set([root.standardizedFileURL, root.standardizedFileURL.resolvingSymlinksInPath()]).map(\.path)
+        return paths.first { path in roots.contains { present.contains(Substring(NativeHistory.hash($0 + "/" + path))) } }
+    }
     static func checkpoint(root: URL, note: NoteDocument, body: String, windowID: String) throws {
         flushCheckpoints()
         try checkpointQueue.sync { try writeCheckpoint(root: root, note: note, body: body, windowID: windowID) }

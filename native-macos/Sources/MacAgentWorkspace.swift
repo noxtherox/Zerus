@@ -312,8 +312,8 @@ extension VaultFiles {
         try applyTransaction(status + [.init(path: NativeAgentJournal.path(record.id), before: record.bytes, after: nil)], historySource: "ai-run-delete")
     }
     func checkMacAgentDrafts(_ review: NativeAgentReview) throws {
-        for change in review.changedNotes where !(try MacNoteRecoveryStore.locations(root: root, path: change.path)).isEmpty {
-            throw VaultFailure(message: "A retained draft exists for \(change.path). Save or resolve it before applying AI changes.")
+        if let path = try MacNoteRecoveryStore.firstRetained(root: root, paths: review.changedNotes.map(\.path)) {
+            throw VaultFailure(message: "A retained draft exists for \(path). Save or resolve it before applying AI changes.")
         }
     }
     /// The native engine owns proposal/receipt construction. This Mac commit
@@ -330,7 +330,7 @@ extension VaultFiles {
         try applyTransaction(review.changes, historySource: "ai", reading: external.map(\.file), validate: {
             guard (try? MacAgentFileIdentity(root)) == identity else { throw VaultFailure(message: "The vault changed since this AI review. Reopen it and review again.") }
             for guardFile in external { try guardFile.validate() }
-            for path in paths where !(try MacNoteRecoveryStore.locations(root: root, path: path)).isEmpty {
+            if let path = try MacNoteRecoveryStore.firstRetained(root: root, paths: paths) {
                 throw VaultFailure(message: "A retained draft exists for \(path). Save or resolve it before applying AI changes.")
             }
         })

@@ -120,7 +120,7 @@ extension VaultFiles {
     func applyMacNoteMoveHistory(_ review: MacNoteMoveHistoryReview) throws -> VaultSnapshot {
         let root = self.root, paths = review.plan.changes.filter { $0.path.lowercased().hasSuffix(".md") && $0.before != $0.after }.map(\.path)
         let snapshot = try applyRelationChanges(schema: review.plan.snapshot.schema, notes: review.plan.snapshot.notes, changes: review.plan.changes) {
-            for path in paths where !(try MacNoteRecoveryStore.locations(root: root, path: path)).isEmpty {
+            if let path = try MacNoteRecoveryStore.firstRetained(root: root, paths: paths) {
                 throw VaultFailure(message: "A retained draft exists for \(path). Save or resolve it before changing these moves.")
             }
         }

@@ -1,0 +1,60 @@
+{"id": "ret-01", "lang": "en", "query": "lisbon hotel 2022", "expected": ["lisbon-trip-2022"]}
+{"id": "ret-02", "lang": "en", "query": "where did we stay in Lisbon in May 2025", "expected": ["lisbon-trip-2025"]}
+{"id": "ret-03", "lang": "en", "query": "Atlas project", "expected": ["project-atlas-kickoff", "project-atlas-mobile"]}
+{"id": "ret-04", "lang": "en", "query": "driver app redesign budget", "expected": ["project-atlas-mobile"]}
+{"id": "ret-05", "lang": "en", "query": "novel about a retired botanist saving an orchard", "expected": ["book-notes-quiet-orchard"]}
+{"id": "ret-06", "lang": "en", "query": "do planted roofs keep flats cooler in a heatwave", "expected": ["research-urban-heat-gardens"]}
+{"id": "ret-07", "lang": "en", "query": "what do I need from the supermarket this week", "expected": ["weekly-groceries"]}
+{"id": "ret-08", "lang": "en", "query": "canal run personal best", "expected": ["journal-2026-02-14"]}
+{"id": "ret-09", "lang": "en", "query": "quartz worktop cost", "expected": ["home-renovation-plan"]}
+{"id": "ret-10", "lang": "en", "query": "dentist check-up", "expected": ["dentist-reminder"]}
+{"id": "ret-11", "lang": "pt", "query": "receita de bacalhau no forno", "expected": ["receita-bacalhau-com-natas"]}
+{"id": "ret-12", "lang": "pt", "query": "o que tenho de comprar para o jantar de sábado", "expected": ["lista-compras-jantar-sabado"]}
+{"id": "ret-13", "lang": "pt", "query": "quanto vão custar as obras da fachada do prédio", "expected": ["reuniao-condominio-marco-2026"]}
+{"id": "ret-14", "lang": "pt", "query": "transportadora para a mudança", "expected": ["plano-mudanca-porto"]}
+{"id": "ret-15", "lang": "pt", "query": "férias em Tavira", "expected": ["diario-ferias-algarve"]}
+{"id": "ret-16", "lang": "pt", "query": "aquele romance da mulher que guarda um farol", "expected": ["notas-livro-o-mar-interior"]}
+{"id": "ret-17", "lang": "pt", "query": "inspeção do carro", "expected": ["tarefas-casa-semana"]}
+{"id": "ret-18", "lang": "es", "query": "horario del tren a Sevilla", "expected": ["viaje-sevilla-2026"]}
+{"id": "ret-19", "lang": "es", "query": "cómo hacer tortilla de patatas", "expected": ["receta-tortilla-espanola"]}
+{"id": "ret-20", "lang": "es", "query": "objetivo de facturación del segundo trimestre", "expected": ["reunion-equipo-ventas-q2"]}
+{"id": "ret-21", "lang": "es", "query": "metodología de las entrevistas a agricultores", "expected": ["notas-tesis-capitulo-3"]}
+{"id": "ret-22", "lang": "fr", "query": "hôtel à Lyon", "expected": ["voyage-lyon-weekend"]}
+{"id": "ret-23", "lang": "fr", "query": "date de sortie de la version 2.4", "expected": ["compte-rendu-reunion-produit"]}
+{"id": "ret-24", "lang": "fr", "query": "recette avec des lardons", "expected": ["recette-quiche-lorraine"]}
+{"id": "ret-25", "lang": "fr", "query": "quoi offrir à la famille pour les fêtes", "expected": ["idees-cadeaux-noel"]}
+{"id": "ret-26", "lang": "de", "query": "Budget für die neue Website", "expected": ["projektplan-website-relaunch"]}
+{"id": "ret-27", "lang": "de", "query": "Wer vertritt Sabine, während sie weg ist?", "expected": ["teammeeting-2026-01-20"]}
+{"id": "ret-28", "lang": "de", "query": "Roman über eine verlassene Hafenstadt", "expected": ["buchnotizen-die-stille-stadt"]}
+{"id": "ret-29", "lang": "de", "query": "Was muss ich fürs Grillfest einkaufen", "expected": ["einkaufsliste-wochenende"]}
+{"id": "ret-30", "lang": "ja", "query": "京都の旅館の予約", "expected": ["kyoto-ryokou-2026"]}
+{"id": "ret-31", "lang": "ja", "query": "冬キャンペーンの予算", "expected": ["kaigi-memo-marketing"]}
+{"id": "ret-32", "lang": "ja", "query": "妹の結婚式", "expected": ["nikki-2026-04-02"]}
+{"id": "ret-33", "lang": "zh", "query": "上海出差住哪个酒店", "expected": ["shanghai-chuchai-2026"]}
+{"id": "ret-34", "lang": "zh", "query": "红烧肉怎么做", "expected": ["hongshaorou-shipu"]}
+{"id": "ret-35", "lang": "zh", "query": "pandas 学到哪里了", "expected": ["xuexi-jihua-python"]}
+{"id": "ret-36", "lang": "it", "query": "come si fa il risotto ai porcini", "expected": ["ricetta-risotto-funghi"]}
+{"id": "ret-37", "lang": "it", "query": "albergo a Firenze", "expected": ["viaggio-firenze-2024"]}
+{"id": "ret-38", "lang": "en", "query": "team offsite agenda in Lisbon", "expected": ["lisbon-offsite-planning"]}
+{"id": "ret-39", "lang": "en", "query": "Berlin conference talk about small models", "expected": ["berlin-conference-notes"]}
+{"id": "ret-40", "lang": "en", "query": "Christmas Eve menu", "expected": ["christmas-dinner-2026"]}
+{"id": "ret-41", "lang": "en", "query": "how expensive is redoing the cooking area at home", "expected": ["home-renovation-plan"]}
+{"id": "ret-42", "lang": "en", "query": "when does the old invoicing software stop working for us", "expected": ["project-atlas-kickoff"]}
+{"id": "ret-43", "lang": "pt", "query": "quanto pagamos por mês ao prédio a partir de abril", "expected": ["reuniao-condominio-marco-2026"]}
+{"id": "ret-44", "lang": "en", "query": "Seville Easter trip train times", "expected": ["viaje-sevilla-2026"]}
+{"id": "ret-45", "lang": "en", "query": "winter campaign launch date from the marketing meeting", "expected": ["kaigi-memo-marketing"]}
+{"id": "ret-46", "lang": "en", "query": "braised pork belly recipe", "expected": ["hongshaorou-shipu"]}
+{"id": "ret-47", "lang": "en", "query": "Python learning plan progress", "expected": ["xuexi-jihua-python"]}
+{"id": "ret-48", "lang": "en", "query": "condo meeting facade repair budget", "expected": ["reuniao-condominio-marco-2026"]}
+{"id": "ret-49", "lang": "en", "query": "moving to Porto checklist", "expected": ["plano-mudanca-porto"]}
+{"id": "ret-50", "lang": "pt", "query": "viagem a Quioto em outubro", "expected": ["kyoto-ryokou-2026"]}
+{"id": "ret-51", "lang": "pt", "query": "receita de risoto de cogumelos", "expected": ["ricetta-risotto-funghi"]}
+{"id": "ret-52", "lang": "es", "query": "viaje de negocios a Shanghái", "expected": ["shanghai-chuchai-2026"]}
+{"id": "ret-53", "lang": "fr", "query": "objectifs de chiffre d'affaires de l'équipe commerciale", "expected": ["reunion-equipo-ventas-q2"]}
+{"id": "ret-54", "lang": "de", "query": "Rezept für Kabeljau mit Sahne aus dem Ofen", "expected": ["receita-bacalhau-com-natas"]}
+{"id": "ret-55", "lang": "de", "query": "Wann ist der Zahnarzttermin?", "expected": ["dentist-reminder"]}
+{"id": "ret-56", "lang": "ja", "query": "リスボンのチーム合宿の会場", "expected": ["lisbon-offsite-planning"]}
+{"id": "ret-57", "lang": "zh", "query": "2025年5月里斯本旅行住的酒店", "expected": ["lisbon-trip-2025"]}
+{"id": "ret-58", "lang": "it", "query": "ricetta francese della torta salata con pancetta", "expected": ["recette-quiche-lorraine"]}
+{"id": "ret-59", "lang": "en", "query": "which agency is doing the bakery website relaunch", "expected": ["projektplan-website-relaunch"]}
+{"id": "ret-60", "lang": "pt", "query": "notas da conferência em Berlim sobre modelos pequenos", "expected": ["berlin-conference-notes"]}

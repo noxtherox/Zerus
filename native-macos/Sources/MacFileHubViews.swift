@@ -2,6 +2,7 @@ import ImageIO
 import SwiftUI
 import AppKit
 import QuickLookUI
+import QuickLookThumbnailing
 import UniformTypeIdentifiers
 
 struct MacFileHubEditor: View {
@@ -60,6 +61,7 @@ struct MacFileHubPane<Notes: View>: View {
     @StateObject private var preview = MacFileHubPreview()
     @State private var issue: String?
     @State private var showsDocument = true
+    @State private var previewable: (url: URL, value: Bool)?
     @State private var expanded = false
     @State private var locations = false
     @State private var replacing: MacFileHubRequest?
@@ -80,21 +82,23 @@ struct MacFileHubPane<Notes: View>: View {
         VStack(spacing: 0) {
             if let hub = note.fileHub {
                 HStack(spacing: 10) {
-                    Image(systemName: "doc").foregroundStyle(.secondary)
+                    Image(nsImage: lease.map { NSWorkspace.shared.icon(forFile: $0.url.path) } ?? NSWorkspace.shared.icon(for: UTType(filenameExtension: (hub.name as NSString).pathExtension) ?? .data))
+                        .resizable().scaledToFit().frame(width: 36, height: 36).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(hub.name).font(.caption.bold()).lineLimit(1)
+                        Text(hub.name).font(.headline).lineLimit(1)
                         HStack(spacing: 5) {
                             Text(hub.kind == .vault ? (hub.managed ? "Vault copy" : "Vault file connection") : hub.kind == .location ? "Folder connection" : "Original connection on this Mac").lineLimit(1)
                             if let lease { Text("· " + ByteCountFormatter.string(fromByteCount: lease.size, countStyle: .file)) }
                             else { Text("· File unavailable") }
                             if preview.refreshing { ProgressView().controlSize(.mini) }
-                        }.font(.caption2).foregroundStyle(.secondary)
-                        if let lease { Text(lease.url.path).font(.caption2).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(lease.url.path).textSelection(.enabled) }
+                        }.font(.callout).foregroundStyle(.secondary)
+                        if let lease { Text(lease.url.path).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(lease.url.path).textSelection(.enabled) }
                     }
                     Spacer()
-                    Button(showsDocument ? "Hide document" : "Show document") { showsDocument.toggle(); expanded = false }
+                    if canPreview(hub) { Button(showsDocument ? "Hide document" : "Show document") { showsDocument.toggle(); expanded = false } }
+                    if let lease { Button("Open in default app") { NSWorkspace.shared.open(lease.url) } }
                     Menu {
-                        Button("Open externally") { if let lease { NSWorkspace.shared.open(lease.url) } }.disabled(lease == nil)
+                        Button("Open in default app") { if let lease { NSWorkspace.shared.open(lease.url) } }.disabled(lease == nil)
                         Button("Reveal document in Finder") { if let lease { NSWorkspace.shared.activateFileViewerSelecting([lease.url]) } }.disabled(lease == nil)
                         Button("Locate original…") { locate() }
                         Button("File locations…") { locations = true }
@@ -110,7 +114,7 @@ struct MacFileHubPane<Notes: View>: View {
                 }.padding(12)
                 Divider()
                 if let problem = issue ?? (preview.source == request.source ? preview.issue : nil) { HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).font(.caption).textSelection(.enabled); Spacer(); Button("Locate file…") { locate() } }.foregroundStyle(.secondary).padding(10) }
-                if showsDocument, let lease {
+                if showsDocument, let lease, canPreview(hub) {
                     if ["html", "htm"].contains(lease.url.pathExtension.lowercased()) || ["html", "htm"].contains((hub.name as NSString).pathExtension.lowercased()) {
                         MacHTMLPreviewView(lease: lease, preferenceKey: MacHTMLPreviewSession.key(root: workspace.root, identity: hub.id), expanded: $expanded, notes: notes)
                             .id(lease.id)
@@ -125,6 +129,10 @@ struct MacFileHubPane<Notes: View>: View {
                 } else { notes() }
             }
         }
+        .task(id: lease?.url) {
+            guard let url = lease?.url, MacDocumentPreviewability.immediate(url) == nil else { return }
+            previewable = (url, await MacDocumentPreviewability.check(url))
+        }
         .task(id: request) { issue = nil; await preview.refresh(note, workspace: workspace, workspaceID: workspaceID, force: request.refresh.forced) }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in refresh = .check(UUID()) }
         .onDisappear { preview.cancel() }
@@ -135,9 +143,18 @@ struct MacFileHubPane<Notes: View>: View {
             Button("Detach document") { if let request = detaching { Task { do { _ = try await workspace.saveFileHub(request, source: nil, storage: .copy, title: note.title, folder: note.folder, detach: true) } catch { workspace.issue = error.localizedDescription } } }; detaching = nil }
         } message: { Text("The note and its backup attachments stay in place. The original document and existing vault copy are kept.") }
     }
+    /// Files Quick Look can only draw as a generic icon get no preview area;
+    /// the note fills the pane and the header offers to open the file instead.
+    private func canPreview(_ hub: NativeFileHub) -> Bool {
+        guard let lease else { return false }
+        if ["html", "htm"].contains((hub.name as NSString).pathExtension.lowercased()) { return true }
+        if let known = MacDocumentPreviewability.immediate(lease.url) { return known }
+        guard let previewable, previewable.url == lease.url else { return false }
+        return previewable.value
+    }
     private func document(_ lease: NativeFileLease) -> some View {
         VStack(spacing: 0) {
-            HStack { Text("Document preview").font(.caption).foregroundStyle(.secondary); Spacer(); Button(expanded ? "Show notes" : "Expand document") { expanded.toggle() }; Button("Open externally") { NSWorkspace.shared.open(lease.url) } }.padding(8)
+            HStack { Text("Document preview").font(.callout).foregroundStyle(.secondary); Spacer(); Button(expanded ? "Show notes" : "Expand document") { expanded.toggle() } }.padding(8)
             MacDocumentSurface(lease: lease).id(lease.id)
         }
     }
@@ -146,6 +163,21 @@ struct MacFileHubPane<Notes: View>: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.item]; panel.canChooseDirectories = false; panel.message = "Locate this document on this Mac. The shared note’s connection details stay the same."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task { do { let selected = try NativeFileLease(scope: url); try await workspace.locateFileHub(note, source: selected, workspaceID: origin); issue = nil } catch { issue = error.localizedDescription } }
+    }
+}
+
+enum MacDocumentPreviewability {
+    /// PDFs, HTML and images always render; other types need a Quick Look check.
+    static func immediate(_ url: URL) -> Bool? {
+        let ext = url.pathExtension.lowercased()
+        if ext == "pdf" || ext == "html" || ext == "htm" || UTType(filenameExtension: ext)?.conforms(to: .image) == true { return true }
+        return nil
+    }
+    /// True when Quick Look can draw the file's contents rather than only its icon.
+    static func check(_ url: URL) async -> Bool {
+        if let known = immediate(url) { return known }
+        let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 64, height: 64), scale: 1, representationTypes: .thumbnail)
+        return (try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request)) != nil
     }
 }
 
@@ -166,9 +198,76 @@ private struct MacDocumentSurface: View {
             if lease.url.pathExtension.lowercased() == "pdf" { MacPDFView(url: lease.url) }
             else if ["html", "htm"].contains(lease.url.pathExtension.lowercased()) { MacHTMLStandalonePreview(lease: lease) }
             else if UTType(filenameExtension: lease.url.pathExtension)?.conforms(to: .image) == true { MacPreviewImage(url: lease.url) }
+            else if MacOfficeDocumentCard.handles(lease.url) { MacOfficeDocumentCard(url: lease.url) }
             else { MacQuickLook(url: lease.url) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+/// Word, Excel and PowerPoint files render poorly in an embedded
+/// `QLPreviewView` (first page only, no scrolling, lost formatting), so they
+/// show a cover thumbnail and hand off to the system Quick Look panel, which
+/// renders every page, sheet and slide the way Finder does.
+private struct MacOfficeDocumentCard: View {
+    static let extensions: Set<String> = ["doc", "docx", "docm", "dot", "dotx", "dotm", "xls", "xlsx", "xlsm", "xlsb", "xlt", "xltx", "xltm",
+                                          "ppt", "pptx", "pptm", "pps", "ppsx", "ppsm", "pot", "potx", "potm", "odt", "ods", "odp"]
+    static func handles(_ url: URL) -> Bool { extensions.contains(url.pathExtension.lowercased()) }
+    let url: URL
+    @State private var thumbnail: (url: URL, image: NSImage?)?
+    @State private var anchor = MacQuickLookPanelAnchor()
+    @Environment(\.displayScale) private var scale
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer(minLength: 0)
+            Group {
+                if let thumbnail, thumbnail.url == url, let image = thumbnail.image {
+                    Image(nsImage: image).resizable().scaledToFit().shadow(color: .black.opacity(0.18), radius: 6, y: 2)
+                } else if thumbnail?.url == url {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().scaledToFit().frame(width: 96, height: 96)
+                } else { ProgressView().controlSize(.small) }
+            }.frame(maxWidth: 320, maxHeight: 360).onTapGesture(count: 2) { anchor.show(url) }
+            Text(url.lastPathComponent).font(.headline).lineLimit(2).multilineTextAlignment(.center)
+            HStack {
+                Button("Quick Look") { anchor.show(url) }.keyboardShortcut(.space, modifiers: [])
+                Button("Open externally") { NSWorkspace.shared.open(url) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(20).frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(MacQuickLookPanelAnchorView(anchor: anchor))
+        .task(id: url) {
+            let request = QLThumbnailGenerator.Request(fileAt: url, size: CGSize(width: 320, height: 360), scale: max(1, scale), representationTypes: .thumbnail)
+            let image = try? await QLThumbnailGenerator.shared.generateBestRepresentation(for: request).nsImage
+            thumbnail = (url, image)
+        }
+        .onDisappear { anchor.close() }
+    }
+}
+/// A responder that controls the shared Quick Look panel while it shows this
+/// card's file. The panel finds its controller through the responder chain,
+/// so `show` makes this view first responder before opening the panel.
+@MainActor final class MacQuickLookPanelAnchor: NSView, @preconcurrency QLPreviewPanelDataSource {
+    private var url: URL?
+    override var acceptsFirstResponder: Bool { true }
+    func show(_ url: URL) {
+        self.url = url
+        guard let panel = QLPreviewPanel.shared() else { NSWorkspace.shared.open(url); return }
+        window?.makeFirstResponder(self)
+        if panel.isVisible, panel.dataSource === self { panel.reloadData() } else { panel.makeKeyAndOrderFront(nil) }
+    }
+    func close() {
+        guard QLPreviewPanel.sharedPreviewPanelExists(), let panel = QLPreviewPanel.shared(), panel.dataSource === self else { return }
+        panel.orderOut(nil)
+    }
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { url != nil }
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = self; panel.reloadData() }
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil }
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { url == nil ? 0 : 1 }
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! { url as NSURL? }
+}
+private struct MacQuickLookPanelAnchorView: NSViewRepresentable {
+    let anchor: MacQuickLookPanelAnchor
+    func makeNSView(context: Context) -> MacQuickLookPanelAnchor { anchor }
+    func updateNSView(_ view: MacQuickLookPanelAnchor, context: Context) {}
 }
 /// Decodes a display-sized image off the main thread and keeps recent ones,
 /// so opening a large photo, or redrawing its sheet, never blocks the window.

@@ -36,6 +36,24 @@ final class MacPerformanceBenchmarkTests: XCTestCase {
             }
         }
     }
+    /// Applies the reviewed repair, so only point it at a disposable copy.
+    func testRelationRepairTimings() async throws {
+        guard let vault, ProcessInfo.processInfo.environment["ZERUS_BENCH_REPAIR"] != nil else { throw XCTSkip("Set TEST_RUNNER_ZERUS_BENCH_REPAIR with a disposable vault copy.") }
+        let store = MacWorkspace(); await store.openVault(vault)
+        let io = try XCTUnwrap(store.io)
+        let snapshot = try await time("repair.snapshot") { try await io.relationDefinitionSnapshot() }
+        let plan = try await time("repair.plan") { try snapshot.repairPlan() }
+        print("ZBENCH repair summaries=\(plan.summaries.count) issues=\(plan.issues.count) changed=\(plan.changedNotes.count) notes=\(snapshot.notes.count)")
+        let prepared = try await time("repair.prepare(total)") { try await store.prepareRelationRepair() }
+        print("ZBENCH repair changes=\(prepared.changes.count)")
+        guard prepared.hasChanges else { return }
+        if ProcessInfo.processInfo.environment["ZERUS_BENCH_REPAIR"] == "split" {
+            let saved = try await time("repair.commit.write") { try await io.applyMacSchemaMaintenance(prepared) }
+            await time("repair.commit.adopt") { await store.adoptSchemaMaintenanceSnapshot(saved) }
+        } else {
+            try await time("repair.commit") { try await store.commitSchemaMaintenance(prepared) }
+        }
+    }
     func testVaultTimings() async throws {
         guard let vault else { throw XCTSkip("Set TEST_RUNNER_ZERUS_BENCH_VAULT to run benchmarks.") }
         let store = MacWorkspace()

@@ -238,7 +238,7 @@ extension VaultFiles {
             try coordinatingCLIRecovery(connected) {
                 try applyTransaction(review.changes, historySource: "macos-cli-setup") {
                     guard try MacAgentFileIdentity(root) == identity else { throw VaultFailure(message: "The vault changed after CLI metadata review.") }
-                    for path in paths where !(try MacNoteRecoveryStore.locations(root: root, path: path)).isEmpty { throw VaultFailure(message: "A retained note draft exists for " + path + ". Save or resolve it before preparing CLI metadata.") }
+                    if let path = try MacNoteRecoveryStore.firstRetained(root: root, paths: paths) { throw VaultFailure(message: "A retained note draft exists for " + path + ". Save or resolve it before preparing CLI metadata.") }
                     for guardFile in connected { try guardFile.validate(action: "CLI metadata changes") }
                 }
             }

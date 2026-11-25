@@ -97,12 +97,13 @@ struct MacChatComposer: NSViewRepresentable {
     @Binding var text: String
     var enabled: Bool
     var acceptsAttachments: Bool
+    var textColor: NSColor = .labelColor
     var attach: ([MacChatAttachmentInput]) -> Void
     var issue: (String) -> Void
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView(), view = MacChatTextView()
-        scroll.hasVerticalScroller = true; scroll.borderType = .bezelBorder; scroll.drawsBackground = false
-        view.isRichText = false; view.allowsUndo = true; view.font = .systemFont(ofSize: 13); view.textContainerInset = NSSize(width: 8, height: 8)
+        scroll.hasVerticalScroller = true; scroll.borderType = .noBorder; scroll.drawsBackground = false; scroll.autohidesScrollers = true
+        view.isRichText = false; view.allowsUndo = true; view.font = .systemFont(ofSize: 13); view.textContainerInset = NSSize(width: 0, height: 0); view.drawsBackground = false
         view.isVerticallyResizable = true; view.isHorizontallyResizable = false; view.autoresizingMask = [.width]
         view.textContainer?.widthTracksTextView = true; view.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         view.setAccessibilityLabel("Ask about your notes…")
@@ -112,7 +113,7 @@ struct MacChatComposer: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) { context.coordinator.parent = self; if let view = scroll.documentView as? MacChatTextView { update(view) } }
     private func update(_ view: MacChatTextView) {
         if view.string != text, !view.hasMarkedText() { let selection = view.selectedRange(); view.string = text; view.setSelectedRange(NSRange(location: min(selection.location, (text as NSString).length), length: 0)) }
-        view.isEditable = enabled; view.acceptsAttachments = acceptsAttachments; view.attach = attach; view.issue = issue
+        view.textColor = textColor; view.insertionPointColor = textColor; view.isEditable = enabled; view.acceptsAttachments = acceptsAttachments; view.attach = attach; view.issue = issue
     }
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         if let view = scroll.documentView as? MacChatTextView { view.delegate = nil; view.attach = nil; view.issue = nil }

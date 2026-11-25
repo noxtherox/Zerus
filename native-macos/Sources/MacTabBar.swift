@@ -2,30 +2,43 @@ import SwiftUI
 import AppKit
 
 /// Width rules for the title-bar tab strip. Tabs share the available width
-/// between a minimum and maximum; once they reach the minimum the strip
-/// scrolls and an overflow chip lists every open tab.
+/// between a minimum and maximum; once they reach the minimum, the tabs that
+/// no longer fit move into the overflow chip. The strip never scrolls.
 struct MacTabBarMetrics: Equatable {
     static let minimum: CGFloat = 110
     static let maximum: CGFloat = 200
     static let spacing: CGFloat = 4
     static let chip: CGFloat = 58
     let overflowing: Bool
+    /// Number of tabs drawn in the strip; the rest are listed by the chip.
+    let shown: Int
     let strip: CGFloat
     let tab: CGFloat
     let active: CGFloat
     /// `activeIdeal` is the width the active tab needs to show its full title.
     init(available: CGFloat, count: Int, activeIdeal: CGFloat) {
         let available = max(0, available)
-        guard count > 0 else { overflowing = false; strip = 0; tab = 0; active = 0; return }
-        let active = min(Self.maximum, max(Self.minimum, activeIdeal))
-        let others = CGFloat(count - 1), gaps = Self.spacing * others
-        overflowing = active + others * Self.minimum + gaps > available
-        let strip = overflowing ? max(0, available - Self.chip - 6) : available
-        let tab = others == 0 ? active : min(Self.maximum, max(Self.minimum, (strip - active - gaps) / others))
-        self.tab = tab
+        guard count > 0 else { overflowing = false; shown = 0; strip = 0; tab = 0; active = 0; return }
+        var active = min(Self.maximum, max(Self.minimum, activeIdeal))
+        let others = CGFloat(count - 1)
+        overflowing = active + others * (Self.minimum + Self.spacing) > available
+        let room = overflowing ? max(0, available - Self.chip - 6) : available
+        active = min(active, room)
+        let fit = Int(max(0, (room - active) / (Self.minimum + Self.spacing)))
+        shown = overflowing ? min(count, 1 + fit) : count
+        let rest = CGFloat(shown - 1), gaps = Self.spacing * rest
+        var tab = rest == 0 ? active : min(Self.maximum, max(Self.minimum, (room - active - gaps) / rest))
         // With room to spare, the active tab matches the others rather than standing out.
-        self.active = max(active, tab)
-        self.strip = overflowing ? strip : min(strip, self.active + others * tab + gaps)
+        if tab > active { tab = min(Self.maximum, (room - gaps) / CGFloat(shown)); active = tab }
+        self.tab = tab
+        self.active = active
+        strip = min(room, active + rest * tab + gaps)
+    }
+    /// The tabs drawn in the strip: leading tabs in order, always including the active one.
+    func visible(_ tabs: [MacTab], active: MacTab?) -> [MacTab] {
+        var result = Array(tabs.prefix(shown))
+        if let active, tabs.contains(active), !result.contains(active), !result.isEmpty { result[result.count - 1] = active }
+        return result
     }
 }
 
@@ -34,56 +47,27 @@ struct MacTabBar: View {
     /// Width the toolbar can give the strip, in toolbar (unzoomed) points.
     let available: CGFloat
     @Environment(\.macTheme) private var theme
-    @State private var visible: Set<MacTab> = []
     @State private var listOpen = false
-    @State private var edges = (leading: false, trailing: false)
 
     var body: some View {
         let tabs = store.tabs
         let metrics = MacTabBarMetrics(available: available, count: tabs.count, activeIdeal: store.activeTab.map(idealWidth) ?? 0)
         HStack(spacing: 6) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: MacTabBarMetrics.spacing) {
-                        ForEach(tabs) { tab in
-                            MacTabButton(store: store, tab: tab, title: title(tab))
-                                .frame(width: store.activeTab == tab ? metrics.active : metrics.tab)
-                                .id(tab)
-                                .onScrollVisibilityChange(threshold: 0.6) { shown in
-                                    if shown { visible.insert(tab) } else { visible.remove(tab) }
-                                }
-                        }
-                    }
+            HStack(spacing: MacTabBarMetrics.spacing) {
+                ForEach(metrics.visible(tabs, active: store.activeTab)) { tab in
+                    MacTabButton(store: store, tab: tab, title: title(tab))
+                        .frame(width: store.activeTab == tab ? metrics.active : metrics.tab)
                 }
-                .scrollDisabled(!metrics.overflowing)
-                .onScrollGeometryChange(for: [Bool].self) { geometry in
-                    [geometry.contentOffset.x > 1, geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1]
-                } action: { _, clipped in edges = (clipped[0], clipped[1]) }
-                .frame(width: metrics.strip, height: 30)
-                .mask(fade(leading: metrics.overflowing && edges.leading, trailing: metrics.overflowing && edges.trailing))
-                .onChange(of: store.activeTab) { _, tab in reveal(tab, proxy) }
-                .onChange(of: metrics) { _, _ in reveal(store.activeTab, proxy) }
-                .onAppear { reveal(store.activeTab, proxy) }
             }
-            if metrics.overflowing { overflowChip(hidden: max(0, tabs.count - visible.intersection(tabs).count)) }
+            .frame(width: metrics.strip, height: 30, alignment: .leading)
+            .clipped()
+            if metrics.overflowing { overflowChip(hidden: max(0, tabs.count - metrics.shown)) }
         }
         // Fill the reserved width so the trailing toolbar items stay at the window edge.
         .frame(width: max(0, available), alignment: .leading)
         .accessibilityElement(children: .contain).accessibilityLabel("Open tabs")
     }
 
-    private func reveal(_ tab: MacTab?, _ proxy: ScrollViewProxy) {
-        guard let tab else { return }
-        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(tab) }
-    }
-    /// Fade the strip's clipped edges so partly hidden tabs read as scrollable.
-    private func fade(leading: Bool, trailing: Bool) -> some View {
-        HStack(spacing: 0) {
-            if leading { LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 28) }
-            Rectangle()
-            if trailing { LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 28) }
-        }
-    }
     private func overflowChip(hidden: Int) -> some View {
         Button { listOpen.toggle() } label: {
             HStack(spacing: 3) {
@@ -158,13 +142,63 @@ private struct MacTabButton: View {
             guard let value = values.first, let source = store.tabs.first(where: { $0.id == value }) else { return false }
             store.reorderTab(source, before: tab); return true
         }
-        .contextMenu {
-            Button(pinned ? "Unpin tab" : "Pin tab") { store.togglePinnedTab(tab) }
-            Button("Close tab") { Task { await store.closeTab(tab) } }
-            Button("Move tab left") { if let index = store.tabs.firstIndex(of: tab), index > 0 { store.reorderTab(tab, before: store.tabs[index - 1]) } }.disabled(store.tabs.first == tab)
-            Button("Move tab right") { if let index = store.tabs.firstIndex(of: tab), index + 1 < store.tabs.count { let next = store.tabs[index + 1]; store.reorderTab(next, before: tab) } }.disabled(store.tabs.last == tab)
-        }
         .overlay(MacAlternateOpen(action: { Task { await store.closeTab(tab) } }, handlesTripleClick: false).accessibilityHidden(true))
+        // The strip is hosted in the window toolbar, where NSToolbar claims
+        // right-clicks before SwiftUI's `.contextMenu` sees them.
+        .overlay(MacTabContextMenu(items: menuItems).accessibilityHidden(true))
+        .accessibilityAction(named: pinned ? "Unpin tab" : "Pin tab") { store.togglePinnedTab(tab) }
+    }
+    private func menuItems() -> [MacTabContextMenu.Item] {
+        let pinned = store.pinnedTabs.contains(tab), tabs = store.tabs
+        return [
+            .init(title: pinned ? "Unpin Tab" : "Pin Tab") { store.togglePinnedTab(tab) },
+            .init(title: "Close Tab", enabled: !pinned) { Task { await store.closeTab(tab) } },
+            .separator,
+            .init(title: "Move Tab Left", enabled: tabs.first != tab) {
+                if let index = store.tabs.firstIndex(of: tab), index > 0 { store.reorderTab(tab, before: store.tabs[index - 1]) }
+            },
+            .init(title: "Move Tab Right", enabled: tabs.last != tab) {
+                if let index = store.tabs.firstIndex(of: tab), index + 1 < store.tabs.count { store.reorderTab(store.tabs[index + 1], before: tab) }
+            },
+        ]
+    }
+}
+
+/// AppKit context menu for views placed in the window toolbar. Only
+/// right-clicks and Control-clicks are claimed; other events pass through.
+private struct MacTabContextMenu: NSViewRepresentable {
+    struct Item {
+        var title = ""
+        var enabled = true
+        var action: (() -> Void)?
+        static let separator = Item()
+        init(title: String, enabled: Bool = true, action: @escaping () -> Void) { self.title = title; self.enabled = enabled; self.action = action }
+        private init() {}
+    }
+    let items: () -> [Item]
+    func makeNSView(context: Context) -> MenuView { let view = MenuView(); view.items = items; return view }
+    func updateNSView(_ view: MenuView, context: Context) { view.items = items }
+    final class MenuView: NSView {
+        var items: (() -> [Item])?
+        private var actions: [() -> Void] = []
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard super.hitTest(point) != nil, let event = NSApp.currentEvent else { return nil }
+            if event.type == .rightMouseDown || event.type == .leftMouseDown && event.modifierFlags.contains(.control) { return self }
+            return nil
+        }
+        override func rightMouseDown(with event: NSEvent) { show(event) }
+        override func mouseDown(with event: NSEvent) { if event.modifierFlags.contains(.control) { show(event) } }
+        private func show(_ event: NSEvent) {
+            let menu = NSMenu(); menu.autoenablesItems = false; actions = []
+            for item in items?() ?? [] {
+                guard let action = item.action else { menu.addItem(.separator()); continue }
+                let entry = NSMenuItem(title: item.title, action: #selector(fire(_:)), keyEquivalent: "")
+                entry.target = self; entry.isEnabled = item.enabled; entry.tag = actions.count
+                actions.append(action); menu.addItem(entry)
+            }
+            NSMenu.popUpContextMenu(menu, with: event, for: self)
+        }
+        @objc private func fire(_ sender: NSMenuItem) { if actions.indices.contains(sender.tag) { actions[sender.tag]() } }
     }
 }
 
