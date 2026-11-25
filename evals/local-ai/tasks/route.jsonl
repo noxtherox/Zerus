@@ -1,0 +1,40 @@
+{"id": "route-01", "lang": "en", "request": "What time is my dentist appointment?", "expected": "ask"}
+{"id": "route-02", "lang": "en", "request": "Summarize the Atlas kickoff notes", "expected": "summarize"}
+{"id": "route-03", "lang": "en", "request": "Mark the boarding passes task as done", "expected": "edit"}
+{"id": "route-04", "lang": "pt", "request": "Resume-me a reunião de condomínio", "expected": "summarize"}
+{"id": "route-05", "lang": "pt", "request": "Quanto custa a transportadora?", "expected": "ask"}
+{"id": "route-06", "lang": "pt", "request": "Acrescenta 'comprar pilhas' à lista de tarefas", "expected": "edit"}
+{"id": "route-07", "lang": "es", "request": "¿Cuándo sale el tren a Sevilla?", "expected": "ask"}
+{"id": "route-08", "lang": "es", "request": "Hazme un resumen corto de la reunión de ventas", "expected": "summarize"}
+{"id": "route-09", "lang": "es", "request": "Cambia el estado de la nota a terminado", "expected": "edit"}
+{"id": "route-10", "lang": "fr", "request": "Peux-tu résumer le compte rendu de la réunion produit ?", "expected": "summarize"}
+{"id": "route-11", "lang": "fr", "request": "Crée une nouvelle note pour mes idées de vacances", "expected": "edit"}
+{"id": "route-12", "lang": "fr", "request": "Combien de lardons faut-il pour la quiche ?", "expected": "ask"}
+{"id": "route-13", "lang": "de", "request": "Fasse mir die Buchnotizen in drei Sätzen zusammen", "expected": "summarize"}
+{"id": "route-14", "lang": "de", "request": "Füge den Tag 'dringend' hinzu", "expected": "edit"}
+{"id": "route-15", "lang": "de", "request": "Wer übernimmt Sabines Kunden?", "expected": "ask"}
+{"id": "route-16", "lang": "ja", "request": "京都旅行の予算はいくら？", "expected": "ask"}
+{"id": "route-17", "lang": "ja", "request": "この会議メモを要約して", "expected": "summarize"}
+{"id": "route-18", "lang": "ja", "request": "雨具の準備を完了にして", "expected": "edit"}
+{"id": "route-19", "lang": "zh", "request": "帮我总结一下上海出差的安排", "expected": "summarize"}
+{"id": "route-20", "lang": "zh", "request": "红烧肉要放多少冰糖？", "expected": "ask"}
+{"id": "route-21", "lang": "zh", "request": "把截止日期改成12月20日", "expected": "edit"}
+{"id": "route-22", "lang": "it", "request": "Riassumi il viaggio a Firenze", "expected": "summarize"}
+{"id": "route-23", "lang": "it", "request": "Aggiungi il timo alla lista degli ingredienti", "expected": "edit"}
+{"id": "route-24", "lang": "en", "request": "tl;dr of the rooftop garden research?", "expected": "summarize"}
+{"id": "route-25", "lang": "en", "request": "Did we ever decide who signs off the archived accounts migration?", "expected": "ask"}
+{"id": "route-26", "lang": "en", "request": "Can you make this paragraph shorter?", "expected": "edit"}
+{"id": "route-27", "lang": "en", "request": "Give me the key points of my Lisbon offsite plan", "expected": "summarize"}
+{"id": "route-28", "lang": "en", "request": "Add a TL;DR at the end of this note", "expected": "edit"}
+{"id": "route-29", "lang": "en", "request": "What do my notes say about Lisbon?", "expected": "ask"}
+{"id": "route-30", "lang": "pt", "request": "Traduz esta secção para inglês", "expected": "edit"}
+{"id": "route-31", "lang": "pt", "request": "O que decidimos sobre a quota mensal?", "expected": "ask"}
+{"id": "route-32", "lang": "es", "request": "Ponle la etiqueta 'viajes' y quita la fecha", "expected": "edit"}
+{"id": "route-33", "lang": "fr", "request": "Quels sont les points principaux de cette note, en bref ?", "expected": "summarize"}
+{"id": "route-34", "lang": "de", "request": "Hab ich irgendwo notiert, wann der Relaunch live geht?", "expected": "ask"}
+{"id": "route-35", "lang": "en", "request": "Rename Ana to Ana Ribeiro everywhere in this note", "expected": "edit"}
+{"id": "route-36", "lang": "en", "request": "Write me a short recap of the Berlin conference notes", "expected": "summarize"}
+{"id": "route-37", "lang": "ja", "request": "ポスターの印刷期限はいつ？", "expected": "ask"}
+{"id": "route-38", "lang": "zh", "request": "新建一个购物清单", "expected": "edit"}
+{"id": "route-39", "lang": "it", "request": "Quanto abbiamo speso in totale a Firenze?", "expected": "ask"}
+{"id": "route-40", "lang": "pt", "request": "Faz um resumo do livro O Mar Interior em duas linhas", "expected": "summarize"}

@@ -190,7 +190,8 @@ struct MacThemeHost: ViewModifier {
 }
 
 /// Keep AppKit's title bar on the same opaque surface as the themed toolbar.
-/// The probe also applies when SwiftUI attaches a newly created window.
+/// The probe also applies when SwiftUI attaches a newly created window, and
+/// locks the toolbar display mode so right-clicking it shows no menu.
 private struct MacThemeWindowBackground: NSViewRepresentable {
     let color: NSColor
     func makeNSView(context: Context) -> Probe { Probe(color: color) }
@@ -199,10 +200,12 @@ private struct MacThemeWindowBackground: NSViewRepresentable {
         var color: NSColor
         init(color: NSColor) { self.color = color; super.init(frame: .zero) }
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); apply() }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); apply(); DispatchQueue.main.async { [weak self] in self?.apply() } }
         func apply() {
             window?.titlebarAppearsTransparent = true
             window?.backgroundColor = color
+            // The toolbar is icon-only by design; hide AppKit's "Icon and Text / Icon Only" context menu.
+            if let toolbar = window?.toolbar { toolbar.allowsDisplayModeCustomization = false; toolbar.displayMode = .iconOnly }
         }
     }
 }

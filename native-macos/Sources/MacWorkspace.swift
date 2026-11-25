@@ -202,7 +202,8 @@ final class MacWorkspace {
         get { inspectorRecovery.historyIssue }
         set { inspectorRecovery.historyIssue = newValue }
     }
-    var recentVaults: [String] = UserDefaults.standard.stringArray(forKey: "zerus.mac.recentVaults") ?? []
+    var recentVaults: [String] = MacRecentVaults.stored()
+    var vaultIcons: [String: String] = UserDefaults.standard.dictionary(forKey: MacRecentVaults.iconsKey) as? [String: String] ?? [:]
     private(set) var io: VaultFiles?
     @ObservationIgnored private var backlinkSources: [String: (content: String, references: [NoteReference])] = [:]
     @ObservationIgnored private var cachedBacklinks: (path: String, notes: [NoteDocument])?
@@ -562,8 +563,10 @@ final class MacWorkspace {
             do { taskDraftStore = try NativeTaskDraftStore(vaultRoot: url, vaultID: identity?.taskDraftID) }
             catch { taskDraftIssue = error.localizedDescription }
             apply(snapshot, cache: cached == nil); destination = "All Notes"; folderCollection = false; query = ""; navigation = []; navigationIndex = -1
-            recentVaults.removeAll { $0 == url.path }; recentVaults.insert(url.path, at: 0); recentVaults = Array(recentVaults.prefix(12))
-            UserDefaults.standard.set(recentVaults, forKey: "zerus.mac.recentVaults")
+            if !MacRecentVaults.isTemporary(url.path) {
+                recentVaults.removeAll { $0 == url.path }; recentVaults.insert(url.path, at: 0); recentVaults = Array(recentVaults.prefix(12))
+                UserDefaults.standard.set(recentVaults, forKey: MacRecentVaults.recentsKey)
+            }
             if let bookmark = try? url.bookmarkData(options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil) { UserDefaults.standard.set(bookmark, forKey: "zerus.mac.bookmark." + NativeHistory.hash(url.path)) }
             folderOrder = UserDefaults.standard.stringArray(forKey: MacFolderOrdering.key(url)) ?? []
             let key = MacNavigationState.key(url)

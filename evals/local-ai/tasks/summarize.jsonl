@@ -1,0 +1,16 @@
+{"id": "sum-01", "lang": "en", "note": "research-urban-heat-gardens", "max_words": 150, "must_include": [["4.2"], ["1.6"], ["38"], ["Northvale"], ["maintenance", "volunteer", "irrigation", "water"]], "must_not": ["4.8", "Harlow Bay University", "peer-reviewed study shows"]}
+{"id": "sum-02", "lang": "en", "note": "project-atlas-kickoff", "max_words": 80, "must_include": [["30 June", "June 30"], ["48,000", "48000", "$48k", "48k"], ["Marcus"], ["Ledger 2", "billing"]], "must_not": ["22,500", "15 September", "Jonas"]}
+{"id": "sum-03", "lang": "en", "note": "home-renovation-plan", "max_words": 60, "must_include": [["12 December", "December 12"], ["13,050", "13050"], ["Kowal"]], "must_not": ["£15,000", "January"]}
+{"id": "sum-04", "lang": "en", "note": "lisbon-offsite-planning", "max_words": 80, "must_include": [["22"], ["14,000", "14000", "14k"], ["Beatriz"], ["18"]], "must_not": ["Miradouro Verde", "Sofia"]}
+{"id": "sum-05", "lang": "pt", "note": "reuniao-condominio-marco-2026", "max_words": 70, "must_include": [["45"], ["Ferraz"], ["18 500", "18.500", "18500"], ["fachada"]], "must_not": ["950", "Mudanças Rápidas"]}
+{"id": "sum-06", "lang": "pt", "note": "plano-mudanca-porto", "max_words": 60, "must_include": [["28 de fevereiro"], ["Mudanças Rápidas"], ["950"]], "must_not": ["Ferraz", "18 500"]}
+{"id": "sum-07", "lang": "es", "note": "reunion-equipo-ventas-q2", "max_words": 60, "must_include": [["340.000", "340 000", "340000"], ["Oporto", "Portugal"], ["SDR"]], "must_not": ["400.000", "Sevilla"]}
+{"id": "sum-08", "lang": "fr", "note": "compte-rendu-reunion-produit", "max_words": 60, "must_include": [["3 novembre"], ["2.4"], ["synchronisation"], ["PDF"]], "must_not": ["Lyon", "10 novembre"]}
+{"id": "sum-09", "lang": "de", "note": "projektplan-website-relaunch", "max_words": 60, "must_include": [["1. Juni"], ["15.000", "15000"], ["Pixelwerk"]], "must_not": ["Tickora", "22.500"]}
+{"id": "sum-10", "lang": "ja", "note": "kaigi-memo-marketing", "max_words": 60, "must_include": [["11月4日"], ["300万"], ["佐藤"]], "must_not": ["500万", "月見荘"]}
+{"id": "sum-11", "lang": "zh", "note": "shanghai-chuchai-2026", "max_words": 60, "must_include": [["青岚"], ["120万"], ["9月21日"]], "must_not": ["150万", "里斯本"]}
+{"id": "sum-12", "lang": "it", "note": "viaggio-firenze-2024", "max_words": 50, "must_include": [["Ponte Antico"], ["950"], ["Fiesole"]], "must_not": ["Lisbona", "Carnaroli"]}
+{"id": "sum-13", "lang": "en", "note": "kyoto-ryokou-2026", "max_words": 60, "must_include": [["Tsukimi", "月見荘"], ["150,000", "150000", "15万", "¥150", "150k"], ["Kyoto"]], "must_not": ["Lisbon", "Yokohama"]}
+{"id": "sum-14", "lang": "pt", "note": "project-atlas-kickoff", "max_words": 70, "must_include": [["30 de junho"], ["48 000", "48.000", "48,000", "48000"], ["Marcus"]], "must_not": ["22 500", "15 de setembro"]}
+{"id": "sum-15", "lang": "es", "note": "receita-bacalhau-com-natas", "max_words": 60, "must_include": [["bacalao"], ["200"], ["25 minutos"], ["nata"]], "must_not": ["180", "pato"]}
+{"id": "sum-16", "lang": "de", "note": "research-urban-heat-gardens", "max_words": 120, "must_include": [["4,2", "4.2"], ["38"], ["Dach"], ["1,6", "1.6"]], "must_not": ["4,8", "4.8"]}

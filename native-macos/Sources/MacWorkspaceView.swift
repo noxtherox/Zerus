@@ -13,6 +13,8 @@ struct MacWorkspaceView: View {
     @AppStorage("zerus.mac.interfaceZoom") private var interfaceZoom = 100
     @StateObject private var editorSessions = MacEditorSessions()
     @State private var clipboardBusy = false
+    @State private var showAllRecents = false
+    @State private var vaultIconRequest: MacVaultIconRequest?
     @State private var attachmentImporting = false
     @State private var sidebar = true
     @State private var compactLibrary = false
@@ -111,6 +113,7 @@ struct MacWorkspaceView: View {
         .macSheet(isPresented: $bulkProperties) { MacBulkEditor(store: store, paths: store.selectedPaths) }
         .macSheet(isPresented: $bulkHistory) { MacBulkHistoryView(store: store) }
         .macSheet(item: $recoveryRequest) { MacRecoveryView(workspace: store, request: $0) }
+        .macSheet(item: $vaultIconRequest) { request in MacVaultIconPicker(workspace: store, request: request) }
         .macSheet(item: $folderIconRequest, onDismiss: { store.editorSheetActive = false }) { request in MacFolderIconPicker(workspace: store, request: request) }
         .macSheet(item: $folderRequest) { request in MacFolderReview(store: store, request: request) }
         .macSheet(isPresented: $images) { MacImagesView(workspace: store, notePath: store.selection) }
@@ -180,6 +183,7 @@ struct MacWorkspaceView: View {
             Menu {
                 Button("Open Vault…") { store.chooseVault() }
                 Button("Note recovery drafts…") { store.showNoteRecovery = true }.disabled(store.root == nil)
+                Button("Change Vault Icon…") { if let root = store.root { vaultIconRequest = .init(path: root.path) } }.disabled(store.root == nil)
                 Divider()
                 ForEach(store.recentVaults, id: \.self) { path in Button(URL(fileURLWithPath: path).lastPathComponent) { Task { await store.openRecentVault(path) } } }
             } label: { Label(store.vaultTitle, systemImage: "books.vertical.fill").font(.system(size: 14, weight: .semibold)) }.menuStyle(.borderlessButton).padding(.horizontal, 8).padding(.top, 14)
@@ -188,7 +192,7 @@ struct MacWorkspaceView: View {
             }.buttonStyle(MacBoxButtonStyle()).padding(.vertical, 8)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach([("All Notes", "doc.text"), ("Tasks", "checkmark.square"), ("Links", "link"), ("Files", "doc.on.doc"), ("External Notes", "arrow.up.right.square"), ("Pinned", "pin")], id: \.0) { name, icon in navigationRow(name, icon: icon) }
+                    ForEach([("All Notes", "doc.text"), ("Tasks", "checkmark.square"), ("Links", "link"), ("Files", "doc.on.doc"), ("External Notes", "arrow.up.right.square")], id: \.0) { name, icon in navigationRow(name, icon: icon) }
                     HStack { Text("Types").font(.caption).foregroundStyle(.secondary); Spacer(); Button { ask(.folder) } label: { Image(systemName: "plus") }.buttonStyle(MacBoxButtonStyle()).help("Create folder") }.padding(.horizontal, 8).padding(.top, 15)
                     if let message = store.folderIconIssue { Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8) }
                     LazyVStack(spacing: 2) {
@@ -262,7 +266,7 @@ struct MacWorkspaceView: View {
                 Button { if !store.folderCollection && store.destination == "Files" { addDocument() } else if !store.folderCollection && store.destination == "Links" { ask(.link) } else { Task { await store.createNote() } } } label: { Image(systemName: "plus") }.buttonStyle(MacBoxButtonStyle())
             }.padding(.horizontal, 14).frame(height: 46)
             Divider()
-            VStack(spacing: 7) {
+            VStack(spacing: 8) {
                 HStack { Image(systemName: "magnifyingglass").foregroundStyle(theme.color(.text).opacity(0.72)); MacNoteSearchField(store: store) }.foregroundStyle(theme.color(.text)).padding(7).background(theme.color(.editorBg), in: RoundedRectangle(cornerRadius: 7)).overlay(RoundedRectangle(cornerRadius: 7).stroke(theme.color(.text).opacity(0.15)))
                 HStack {
                 Button { filtersOpen.toggle() } label: {
@@ -270,7 +274,7 @@ struct MacWorkspaceView: View {
                 }.buttonStyle(MacBoxButtonStyle()).overlay(RoundedRectangle(cornerRadius: 7).stroke(.quaternary)).macPopover(isPresented: $filtersOpen) { filterView }
                 if store.folderCollection { MacSavedViewsMenu(store: store) }
                 }
-            }.padding(.horizontal, 12).padding(.bottom, 10)
+            }.padding(.horizontal, 14).padding(.vertical, 10)
             Divider()
             if store.destination == "Trash" && !store.folderCollection { Button("Recently deleted…") { trashBrowser = true }.font(.caption).padding(9) }
             MacCollectionSelectionContent(selection: store.collectionSelection) {
@@ -529,20 +533,10 @@ struct MacWorkspaceView: View {
         MacCollectionViews(store: store, noteMenu: { note in AnyView(noteMenu(note)) })
     }
     private var filesView: some View {
-        let represented = Set(store.notes.filter { !$0.trashed && $0.fileHub?.kind == .vault }.compactMap { $0.fileHub?.path })
-        let rawFiles = store.files.filter { !represented.contains($0) && (store.query.isEmpty || $0.localizedCaseInsensitiveContains(store.query)) }
-        return ScrollView {
+        ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
                 HStack { Button("Add document…") { addDocument() }; Spacer(); Button("Locations…") { fileLocations = true } }.font(.caption).padding(12)
                 ForEach(store.collection) { note in noteRow(note) }
-                if !rawFiles.isEmpty { Text("Other vault files").font(.caption.bold()).foregroundStyle(.secondary).padding(12) }
-                ForEach(rawFiles, id: \.self) { path in
-                    HStack {
-                        Button { if let root = store.root { filePreview = root.appendingPathComponent(path) } } label: { Label((path as NSString).lastPathComponent, systemImage: "doc").lineLimit(2) }.buttonStyle(MacBoxButtonStyle())
-                        Spacer()
-                        Button { if let root = store.root { addDocument(root.appendingPathComponent(path)) } } label: { Image(systemName: "note.text.badge.plus") }.buttonStyle(MacBoxButtonStyle()).help("Add notes for " + (path as NSString).lastPathComponent)
-                    }.padding(12)
-                }
             }
         }
     }
@@ -550,7 +544,42 @@ struct MacWorkspaceView: View {
         Task { do { let request = try await store.prepareFileHub(); hubInitialSource = source; fileHubRequest = request } catch { store.issue = error.localizedDescription } }
     }
     private var welcome: some View {
-        VStack(spacing: 18) { Image(systemName: "books.vertical").font(.system(size: 48)).foregroundStyle(macAccent); Text("A little space for everything").font(.largeTitle.bold()); Text("Open a folder of Markdown files to start writing.").foregroundStyle(.secondary); MacPendingDesktopFiles(opener: store.desktopFiles); Button("Open Vault…") { store.chooseVault() }.buttonStyle(.borderedProminent); ForEach(store.recentVaults, id: \.self) { path in Button(URL(fileURLWithPath: path).lastPathComponent) { Task { await store.openRecentVault(path) } } } }.padding(40)
+        let recents = store.recentVaults, shown = showAllRecents ? recents : Array(recents.prefix(5))
+        return GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(macAccent)
+                    Text("A little space for everything").font(.largeTitle.bold()).multilineTextAlignment(.center).padding(.top, 14)
+                    Text("Open a folder of Markdown files to start writing.").foregroundStyle(.secondary).padding(.top, 6)
+                    MacPendingDesktopFiles(opener: store.desktopFiles).padding(.top, 12)
+                    HStack(spacing: 10) {
+                        Button("Open Vault…") { store.chooseVault() }.buttonStyle(.borderedProminent)
+                        Button("New Vault…") { store.createVault() }
+                    }.controlSize(.large).padding(.top, 18)
+                    if !recents.isEmpty {
+                        Text("Recent").font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4).padding(.top, 30).padding(.bottom, 6)
+                        VStack(spacing: 0) {
+                            ForEach(Array(shown.enumerated()), id: \.element) { index, path in
+                                MacRecentVaultRow(path: path, icon: store.vaultIcons[path], current: store.root?.path == path,
+                                                  open: { Task { await store.openRecentVault(path) } },
+                                                  changeIcon: { vaultIconRequest = .init(path: path) },
+                                                  remove: { withAnimation(.snappy) { store.forgetRecentVault(path) } })
+                                if index < shown.count - 1 { Divider().padding(.leading, 54) }
+                            }
+                        }
+                        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.09)))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        if recents.count > 5 {
+                            Button(showAllRecents ? "Show Fewer" : "Show All \(recents.count) Recent Vaults…") { withAnimation(.snappy) { showAllRecents.toggle() } }
+                                .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary).padding(.top, 10)
+                        }
+                    }
+                }
+                .frame(width: 400).padding(40)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+        }
     }
     private func ask(_ value: MacPrompt, value text: String = "") { input = text; secondInput = ""; prompt = value }
     private func promptView(_ kind: MacPrompt) -> some View {

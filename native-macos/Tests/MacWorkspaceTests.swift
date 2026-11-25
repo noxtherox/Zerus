@@ -1593,6 +1593,19 @@ final class MacWorkspaceTests: XCTestCase {
             _ = await latest.prepareToCloseWindow()
         }
     }
+    func testTabBarMetricsShrinkThenOverflowWithoutScrolling() {
+        let roomy = MacTabBarMetrics(available: 1200, count: 4, activeIdeal: 150)
+        XCTAssertFalse(roomy.overflowing); XCTAssertEqual(roomy.shown, 4)
+        let crowded = MacTabBarMetrics(available: 900, count: 20, activeIdeal: 180)
+        XCTAssertTrue(crowded.overflowing); XCTAssertLessThan(crowded.shown, 20)
+        XCTAssertGreaterThanOrEqual(crowded.tab, MacTabBarMetrics.minimum)
+        let used = crowded.active + CGFloat(crowded.shown - 1) * (crowded.tab + MacTabBarMetrics.spacing)
+        XCTAssertLessThanOrEqual(used, 900 - MacTabBarMetrics.chip - 6 + 0.5, "Visible tabs must fit beside the chip")
+        let tabs = (0..<20).map { MacTab.note("N\($0).md") }
+        let visible = crowded.visible(tabs, active: tabs[17])
+        XCTAssertEqual(visible.count, crowded.shown); XCTAssertEqual(visible.last, tabs[17])
+        XCTAssertEqual(MacTabBarMetrics(available: 50, count: 3, activeIdeal: 200).shown, 1)
+    }
     func testMiddleClickClosesWorkspaceTabsWithoutInterceptingOtherGesturesOrLosingFailedSaves() async throws {
         let original = note("middle-a", title: "Active Alpha")
         try await withVault(["Work/A.md": original, "Work/C.md": note("middle-c", title: "Background Charlie"), "Work/D.md": note("middle-d", title: "Next Delta"), "Work/E.md": note("middle-e", title: "Last Echo")]) { root, store in
