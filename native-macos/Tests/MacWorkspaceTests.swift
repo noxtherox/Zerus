@@ -2827,6 +2827,32 @@ final class MacWorkspaceTests: XCTestCase {
             XCTAssertEqual(try String(contentsOf: beta.appendingPathComponent("contract.txt"), encoding: .utf8), "Beta version!")
         }
     }
+    func testLocatedDeviceOnlyFileBecomesSyncedLocationOnceItsFolderIsMapped() async throws {
+        let locations = #"{"version":1,"locations":[{"id":"onedrive","name":"OneDrive"}]}"#
+        let document = "---\nzerus-id: news\nzerus-file-id: deck\nzerus-file-name: News.pptx\nzerus-file-kind: local\n---\n# Competitor news\n"
+        try await withVault(["Notes/News.md": document, ".zerus/file-locations.json": locations]) { root, store in
+            let cloud = FileManager.default.temporaryDirectory.appendingPathComponent("Zerus-promote-" + UUID().uuidString)
+            let downloads = cloud.appendingPathComponent("Downloads OneDrive"), deck = downloads.appendingPathComponent("News.pptx")
+            try FileManager.default.createDirectory(at: downloads, withIntermediateDirectories: true); try Data("slides".utf8).write(to: deck)
+            let mappings = try XCTUnwrap(store.fileMappings), mappingFile = await mappings.file
+            defer { try? FileManager.default.removeItem(at: cloud); try? FileManager.default.removeItem(at: mappingFile.deletingLastPathComponent()) }
+            let origin = store.workspaceID, note = try XCTUnwrap(store.notes.first)
+            try await store.locateFileHub(note, source: NativeFileLease(scope: deck), workspaceID: origin)
+            XCTAssertEqual(store.notes.first?.fileHub?.kind, .local, "Without a mapped folder the link stays on this device")
+            let definitions = try await store.fileLocationsSnapshot(workspaceID: origin).definitions
+            let location = try XCTUnwrap(definitions.locations.first)
+            try await store.mapFileLocation(location, folder: cloud, workspaceID: origin)
+            let promoted = try XCTUnwrap(store.notes.first { $0.path == "Notes/News.md" }?.fileHub)
+            XCTAssertEqual(promoted.kind, .location); XCTAssertEqual(promoted.locationID, "onedrive"); XCTAssertEqual(promoted.id, "deck")
+            XCTAssertEqual(promoted.path, "Downloads OneDrive/News.pptx")
+            let disk = try String(contentsOf: root.appendingPathComponent("Notes/News.md"), encoding: .utf8)
+            XCTAssertEqual(NoteDocument(path: "Notes/News.md", content: disk, modified: Date()).fileHub, promoted, "The synced note carries the portable reference")
+            let current = try XCTUnwrap(store.notes.first)
+            let resolved = try await store.resolveFileHub(current, workspaceID: origin)
+            XCTAssertFalse(resolved.locatedOnDevice, "The device override is cleared once the note carries the synced location")
+            XCTAssertEqual(try String(contentsOf: resolved.url, encoding: .utf8), "slides")
+        }
+    }
     func testCopiedVaultDoesNotInheritLocationMappingAndRejectsThePreviousVaultReview() async throws {
         let definitions = #"{"version":1,"locations":[{"id":"same-id","name":"Same name"}]}"#
         let content = "---\nzerus-id: doc\nzerus-file-id: ref\nzerus-file-name: source.txt\nzerus-file-kind: location\nzerus-file-location: same-id\nzerus-file-path: source.txt\n---\n# Document\n"

@@ -151,6 +151,14 @@ actor NativeFileMappings {
         } else { try set("location:" + id, url: nil) }
     }
     func locate(_ reference: NativeFileHub, source: NativeFileLease) throws { try set("file:" + reference.id, url: source.url) }
+    /// A `local` reference is only the fallback for files outside every mapped
+    /// location. Once the file this device located for it sits inside the
+    /// vault or a mapped location, return the portable reference to sync.
+    func promotion(for reference: NativeFileHub, locations: [NativeFileLocation]) throws -> NativeFileHub? {
+        guard reference.kind == .local, let url = try mapped("file:" + reference.id) else { return nil }
+        let promoted = try self.reference(for: NativeFileLease(scope: url, locatedOnDevice: true), id: reference.id, locations: locations)
+        return promoted.kind == .local ? nil : promoted
+    }
     func resolve(_ reference: NativeFileHub) throws -> NativeFileLease {
         if let override = try mapped("file:" + reference.id) { return try NativeFileLease(scope: override, locatedOnDevice: true) }
         switch reference.kind {

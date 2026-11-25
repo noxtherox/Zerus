@@ -63,6 +63,28 @@ extension MacWorkspace {
         try await mappings.locate(hub, source: source)
         guard workspaceID == self.workspaceID else { throw CancellationError() }
         fileMappingRevision += 1
+        await promoteLocalFileHubs(workspaceID: workspaceID)
+    }
+    /// Rewrites device-only (`local`) document links as synced vault or
+    /// location references once this device maps their folder, so other
+    /// devices and apps resolve them too. Best effort: a failure keeps the link.
+    func promoteLocalFileHubs(workspaceID: UUID) async {
+        guard workspaceID == self.workspaceID, let io, let mappings = fileMappings, await save(), workspaceID == self.workspaceID,
+              let locations = try? await io.fileLocations(), var basis = try? await io.scan() else { return }
+        var promoted = false
+        for candidate in basis.notes where !candidate.trashed && candidate.fileHub?.kind == .local {
+            guard workspaceID == self.workspaceID, !isDirty else { return }
+            guard let note = basis.notes.first(where: { $0.path == candidate.path }), let hub = note.fileHub,
+                  let reference = try? await mappings.promotion(for: hub, locations: locations.locations) else { continue }
+            do {
+                _ = try await io.saveFileHub(basis: basis, note: note, original: hub, reference: reference, title: "", folder: "", source: nil, storage: .external, locations: locations)
+                promoted = true
+                try await mappings.set("file:" + hub.id, url: nil)
+                basis = try await io.scan()
+            } catch { continue }
+        }
+        guard promoted, workspaceID == self.workspaceID, let snapshot = try? await io.scan(), workspaceID == self.workspaceID else { return }
+        apply(snapshot); await reloadCurrent(); fileMappingRevision += 1
     }
     func resolveFileHub(_ note: NoteDocument, workspaceID: UUID) async throws -> NativeFileLease {
         guard workspaceID == self.workspaceID, let mappings = fileMappings, let hub = note.fileHub else { throw VaultFailure(message: "This document needs a file connection.") }
@@ -116,6 +138,7 @@ extension MacWorkspace {
         try await mappings.mapLocation(location.id, url: folder)
         guard workspaceID == self.workspaceID else { throw CancellationError() }
         fileMappingRevision += 1
+        if folder != nil { await promoteLocalFileHubs(workspaceID: workspaceID) }
     }
     func useFolderMapping(_ note: NoteDocument, workspaceID: UUID) async throws {
         guard workspaceID == self.workspaceID, let mappings = fileMappings, let reference = note.fileHub, reference.kind == .location,

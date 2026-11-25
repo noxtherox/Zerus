@@ -110,6 +110,7 @@ vi.mock("@tauri-apps/plugin-fs", async () => {
 vi.mock("@/utils/toast", () => ({ showError: vi.fn() }));
 
 import {
+  addFileLocation,
   addTypeProperty,
   setNoteProperty,
   attachFileToNote,
@@ -877,6 +878,35 @@ describe("external note store workflow", () => {
     await expect(readFile(managedDocument, "utf8")).resolves.toBe(
       "managed presentation bytes",
     );
+  });
+
+  it("promotes a device-only file link to a synced location once its folder is mapped", async () => {
+    const folder = join(root, "cloud-drive", "Downloads OneDrive");
+    await mkdir(folder, { recursive: true });
+    const document = join(folder, "Competitor News.pptx");
+    await writeFile(document, "slides");
+
+    const note = await createNote(["inbox"], "# Competitor news\n");
+    expect(note).toBeDefined();
+    await attachFileToNote(note!.id, document, "local");
+    const local = getFileHubReference(getNotes().find((candidate) => candidate.id === note!.id)!)!;
+    expect(local.kind).toBe("local");
+    expect(JSON.parse(storage.get("zerus.fileHubMappings.v1")!)[local.id]).toBe(document);
+
+    mocks.picked = join(root, "cloud-drive");
+    await expect(addFileLocation("OneDrive")).resolves.toBe(true);
+    mocks.picked = null;
+
+    const promoted = getFileHubReference(getNotes().find((candidate) => candidate.id === note!.id)!)!;
+    expect(promoted).toMatchObject({
+      id: local.id,
+      kind: "location",
+      path: "Downloads OneDrive/Competitor News.pptx",
+      managed: false,
+    });
+    expect(promoted.locationId).toBeTruthy();
+    expect(JSON.parse(storage.get("zerus.fileHubMappings.v1")!)[local.id]).toBeUndefined();
+    await expect(getFileHubStatus(note!.id)).resolves.toMatchObject({ exists: true });
   });
 
   it("keeps desktop-opened files linked until the user copies one into the vault", async () => {

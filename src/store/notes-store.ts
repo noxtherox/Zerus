@@ -563,6 +563,7 @@ function setFileLocationMapping(id: string, path: string | null) {
   else delete mappings[id];
   saveStringMap(FILE_LOCATION_MAPPINGS_KEY, mappings);
   setState({});
+  promoteLocalFileHubs();
 }
 
 export function setFileHubMapping(id: string, path: string | null) {
@@ -1535,6 +1536,7 @@ async function loadVault(nextBackend: VaultBackend) {
     });
     stabilizeVaultLinks();
     migrateLegacyRelations();
+    promoteLocalFileHubs();
     startupEditedNoteIds.clear();
     for (const id of editedIds) {
       pendingFlush.set(
@@ -2318,6 +2320,7 @@ export async function synchronizeDesktopFiles() {
         migrateLegacyRelations();
         saveNoteDisplayState();
       }
+      if (notesChanged || locationsChanged) promoteLocalFileHubs();
     }
     if (registryChanged) saveExternalPaths();
     if (notesChanged || typesChanged || locationsChanged) {
@@ -3666,6 +3669,29 @@ async function createFileHubNote(
   }
 }
 
+/**
+ * A `local` reference is only a fallback for files outside every mapped
+ * location, and its path lives in this device's storage. Once this device can
+ * express that path as a vault or location reference, write the portable form
+ * into the note so other devices and apps can resolve it too.
+ */
+function promoteLocalFileHubs() {
+  if (state.status !== "ready" || !isTauri()) return;
+  const overrides = getFileHubMappings();
+  for (const note of state.notes) {
+    if (isExternalNote(note) || isTrashed(note)) continue;
+    const reference = getFileHubReference(note);
+    const path = reference?.kind === "local" ? overrides[reference.id] : undefined;
+    if (!reference || !path) continue;
+    const next = externalFileHubReference(reference.id, reference.name, path);
+    if (next.kind === "local") continue;
+    updateNoteContent(note.id, setFileHubReference(note.content, next));
+    const saved = state.notes.find((candidate) => candidate.id === note.id);
+    // Keep the device override until the note really carries the portable form.
+    if (saved && getFileHubReference(saved)?.kind === next.kind) setFileHubMapping(reference.id, null);
+  }
+}
+
 function externalFileHubReference(id: string, name: string, canonical: string): FileHubReference {
   const vaultPath = state.location ? pathInsideRoot(state.location, canonical) : null;
   const match = mostSpecificLocation(canonical, state.fileLocations, getFileLocationMappings());
@@ -3822,6 +3848,7 @@ export async function locateFileHub(id: string): Promise<boolean> {
     }
   }
   setFileHubMapping(reference.id, canonical);
+  promoteLocalFileHubs();
   return true;
 }
 
