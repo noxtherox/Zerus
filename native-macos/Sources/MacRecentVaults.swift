@@ -136,7 +136,13 @@ struct MacRecentVaultRow: View {
                 HStack(spacing: 12) {
                     MacVaultIconView(path: path, value: icon, size: 30)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(MacRecentVaults.name(path)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(MacRecentVaults.name(path)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                            if current {
+                                Text("Open").font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                                    .padding(.horizontal, 5).padding(.vertical, 1).background(Color.green.opacity(0.15), in: Capsule())
+                            }
+                        }
                         Text(MacRecentVaults.location(path)).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer(minLength: 8)
@@ -146,7 +152,7 @@ struct MacRecentVaultRow: View {
                 Menu { actions } label: { Image(systemName: "ellipsis").frame(width: 22, height: 22) }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More")
                 Button(action: remove) { Image(systemName: "xmark.circle.fill").frame(width: 22, height: 22) }
-                    .buttonStyle(.plain).help("Remove from Recents").accessibilityLabel("Remove " + MacRecentVaults.name(path) + " from Recents")
+                    .buttonStyle(.plain).disabled(current).opacity(current ? 0 : 1).help("Remove from Recents").accessibilityLabel("Remove " + MacRecentVaults.name(path) + " from Recents")
             }.foregroundStyle(.secondary).opacity(hovering ? 1 : 0)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -258,5 +264,14 @@ struct MacVaultIconPicker: View {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.allowsMultipleSelection = false; panel.prompt = "Use Image"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try workspace.setVaultImage(path, from: url); issue = nil } catch { issue = error.localizedDescription }
+    }
+}
+
+extension MacRecentVaults {
+    /// Menu label: the folder name, plus its location when another recent
+    /// vault shares the same name.
+    static func menuTitle(_ path: String, among paths: [String]) -> String {
+        let duplicate = paths.contains { $0 != path && name($0) == name(path) }
+        return duplicate ? name(path) + " — " + location(path) : name(path)
     }
 }

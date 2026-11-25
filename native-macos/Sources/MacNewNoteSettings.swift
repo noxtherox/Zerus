@@ -77,3 +77,61 @@ struct MacNewNoteSettingsView: View {
         }.macSettingsChrome(width: 460)
     }
 }
+
+/// Shown by the toolbar's New note button so the destination folder (the
+/// note's type) is chosen before the file is created.
+struct MacNewNoteSheet: View {
+    @Bindable var workspace: MacWorkspace
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var folder: String
+    @State private var creating = false
+    @FocusState private var titleFocused: Bool
+    private let workspaceID: UUID
+    init(workspace: MacWorkspace) {
+        self.workspace = workspace
+        workspaceID = workspace.workspaceID
+        let current = workspace.folderCollection && MacNewNotePreferences.ordinary(workspace.destination) ? workspace.destination : workspace.defaultNoteFolder
+        _folder = State(initialValue: current)
+    }
+    private var options: [String] { Array(Set(workspace.defaultNoteFolderOptions + [folder])).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("New note").font(.title2.bold())
+            TextField("Title", text: $title, prompt: Text("Untitled")).textFieldStyle(.roundedBorder).focused($titleFocused).onSubmit(create)
+            Text("Folder").font(.headline)
+            ScrollViewReader { proxy in
+                List(options, id: \.self, selection: Binding(get: { Optional(folder) }, set: { if let value = $0 { folder = value } })) { option in
+                    HStack(spacing: 8) {
+                        MacFolderIcon(value: workspace.folderIcon(option)).foregroundStyle(.secondary).frame(width: 18).accessibilityHidden(true)
+                        Text(option.replacingOccurrences(of: "/", with: " / "))
+                        Spacer()
+                        if option == workspace.defaultNoteFolder { Text("Default").font(.caption).foregroundStyle(.secondary) }
+                    }.tag(option).contentShape(Rectangle())
+                }
+                .listStyle(.bordered(alternatesRowBackgrounds: false)).frame(height: 240)
+                .onAppear { proxy.scrollTo(folder, anchor: .center) }
+            }
+            if workspace.workspaceID != workspaceID { Text("The vault changed. Close and try again.").font(.caption).foregroundStyle(.red) }
+            HStack {
+                if creating { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Create", action: create).keyboardShortcut(.defaultAction)
+                    .disabled(creating || workspace.busy || workspace.workspaceID != workspaceID)
+            }
+        }
+        .padding(24).frame(width: 420)
+        .onAppear { titleFocused = true }
+    }
+    private func create() {
+        guard !creating, workspace.workspaceID == workspaceID else { return }
+        let name = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        creating = true
+        Task {
+            let created = await workspace.createNote(title: name.isEmpty ? "Untitled" : name, folder: folder)
+            creating = false
+            if created != nil { dismiss() }
+        }
+    }
+}

@@ -1202,6 +1202,7 @@ final class MacWorkspace {
             body = recovery; drafts[note.path] = recovery; persistDraft(); saveStatus = "Recovered draft — Save to keep"; issue = "An unsaved draft was recovered for \(note.title). Review it before saving."
         }
     }
+    func canHistoryStep(_ step: Int) -> Bool { navigation.indices.contains(navigationIndex + step) }
     func historyStep(_ step: Int) async {
         let next = navigationIndex + step
         guard navigation.indices.contains(next) else { return }
@@ -1514,10 +1515,24 @@ final class MacWorkspace {
         guard await save(), let io else { return }
         do {
             let current = notes.first { $0.path == note.path } ?? note
-            let path = current.trashed ? String(current.path.dropFirst(7)) : ".trash/" + current.path
+            let path = try await io.availablePath(current.trashed ? String(current.path.dropFirst(7)) : ".trash/" + current.path)
             try await io.move(current.path, to: path, expected: Data(current.content.utf8))
             tabs.removeAll { $0 == .note(note.path) }; if selection == note.path { selection = nil; baseline = nil; body = ""; activeTab = nil }
             apply(try await io.scan())
+        } catch { issue = error.localizedDescription }
+    }
+    /// Reviews permanent removal of every note currently in Trash.
+    func prepareEmptyTrash() async -> NativeNoteTrashPlan? {
+        guard await save(), let io else { return nil }
+        let paths = Set(notes.filter(\.trashed).map(\.path)); guard !paths.isEmpty else { return nil }
+        do { return try await io.prepareNoteTrashPurge(try await io.revisionTrashSnapshot(), paths: paths) }
+        catch { issue = error.localizedDescription; return nil }
+    }
+    func commitEmptyTrash(_ plan: NativeNoteTrashPlan) async {
+        guard await save(), let io else { return }
+        do {
+            guard plan.snapshot.root == root else { throw VaultFailure(message: "The vault changed. Review emptying Trash again.") }
+            apply(try await io.applyNoteTrashPurge(plan)); await reconcileNavigation()
         } catch { issue = error.localizedDescription }
     }
     func duplicate(_ note: NoteDocument) async {

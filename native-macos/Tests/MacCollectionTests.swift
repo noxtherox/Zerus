@@ -103,7 +103,7 @@ final class MacCollectionTests: XCTestCase {
             let request = VNRecognizeTextRequest(); request.recognitionLevel = .accurate; request.usesLanguageCorrection = false
             try VNImageRequestHandler(cgImage: image).perform([request])
             observations = request.results ?? []
-            return observations.compactMap { $0.topCandidates(1).first?.string }
+            return observations.compactMap { $0.topCandidates(1).first.map { $0.string.applyingTransform(.toLatin, reverse: false) ?? $0.string } }
         }
         let shown = try renderedText().joined(separator: "\n")
         for text in ["Meeting A", "Owner: Ada", "Score: 3", "Meeting B", "Owner: Ben", "Priority: Low", "Score: 4", "Undated C", "Owner: Grace", "Score: 7"] {
@@ -112,7 +112,9 @@ final class MacCollectionTests: XCTestCase {
         // Exercise the AppKit -> SwiftUI modifier transport on this owned
         // offscreen window; direct model calls cannot catch lost event flags.
         func click(_ label: String, modifiers: NSEvent.ModifierFlags = [], middle: Bool = false, count: Int = 1) async throws {
-            let box = try XCTUnwrap(observations.first { $0.topCandidates(1).first?.string.hasSuffix(label) == true }?.boundingBox)
+            // OCR can read bold Latin capitals as Cyrillic homoglyphs or add a
+            // trailing stray glyph; fold to Latin and match the label inside.
+            let box = try XCTUnwrap(observations.first { $0.topCandidates(1).first.map { ($0.string.applyingTransform(.toLatin, reverse: false) ?? $0.string).contains(label) } == true }?.boundingBox)
             let point = host.convert(NSPoint(x: box.midX * host.bounds.width, y: (host.isFlipped ? 1 - box.midY : box.midY) * host.bounds.height), to: nil)
             for type in middle ? [NSEvent.EventType.otherMouseDown, .otherMouseUp] : [.leftMouseDown, .leftMouseUp] {
                 var event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: modifiers, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: count, pressure: 1))
