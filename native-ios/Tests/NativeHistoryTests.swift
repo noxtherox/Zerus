@@ -127,6 +127,33 @@ final class NativeHistoryTests: XCTestCase {
         XCTAssertEqual(entry.label, "Milestone"); XCTAssertNotNil(entry.object["foreign"])
     }
 
+    func testUnreadableHistoryRecordDoesNotBlockSavingAndBlocksReviews() async throws {
+        let io = VaultFiles(root: root!), path = "Note.md"
+        let first = "---\nzerus-id: history-note\n---\n# Note\nFirst\n", second = first + "Second\n", third = second + "Third\n"
+        try await io.write(path, data: Data(first.utf8), expected: nil)
+        try await io.write(path, data: Data(second.utf8), expected: Data(first.utf8))
+        let before = try await io.historySnapshot(notePath: path)
+        let blocked = try XCTUnwrap(before.versions.first), file = root.appendingPathComponent(blocked.path)
+        // Model a file-provider placeholder whose download fails.
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: file.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path) }
+
+        try await io.write(path, data: Data(third.utf8), expected: Data(second.utf8))
+        let saved = try await io.read(path); XCTAssertEqual(saved, Data(third.utf8))
+        let after = try await io.historySnapshot(notePath: path)
+        XCTAssertEqual(after.unreadable, [blocked.path])
+        XCTAssertTrue(after.problems.contains { $0.contains(blocked.id) })
+        XCTAssertEqual(after.versions.first?.content, third)
+        let target = try XCTUnwrap(after.versions.first { $0.content == first })
+        do { _ = try await io.prepareHistory(after, action: .restore(target.id)); XCTFail("Reviews must wait for unreadable records") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("could not be read")) }
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
+        let untouched = try Data(contentsOf: file); XCTAssertEqual(untouched, blocked.bytes)
+        let recovered = try await io.historySnapshot(notePath: path)
+        XCTAssertTrue(recovered.unreadable.isEmpty)
+        XCTAssertTrue(recovered.versions.contains { $0.id == blocked.id && $0.content == second })
+    }
     func testRestoreAndClearReviewsRejectChangedRecordsAndNoteBytesWithoutPartialWrites() async throws {
         let io = VaultFiles(root: root!), path = "Note.md", original = "---\nzerus-id: history-note\n---\n# Note\nBefore\n", after = "---\nzerus-id: history-note\n---\n# Note\nAfter\n"
         try await io.write(path, data: Data(original.utf8), expected: nil)
