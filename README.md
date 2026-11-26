@@ -641,6 +641,27 @@ local excerpts and does not contact an AI provider.
 For context selection, shared desktop/mobile conversation history, response
 actions, and retention behavior, see [`docs/ai-chat.md`](docs/ai-chat.md).
 
+### On-device AI in the native macOS and iOS apps
+
+The native SwiftUI macOS app replaces cloud AI with **on-device AI**: semantic
+search, **Ask your notes** with citations (⌘J, or ⌘↵ in search), note
+summaries, and edits. Edits cover rewriting a selection, adding to a note,
+instruction edits, properties and new notes. Each edit opens a diff preview,
+and applied changes can be undone. Nothing is sent to a server: questions,
+notes and the search index stay on the Mac. The only network use is the opt-in
+download in **Settings → On-device AI**. It fetches two models from Hugging
+Face, pinned to exact versions and checksum-verified: Qwen3.5-2B (4-bit MLX,
+Apache-2.0, about 1.75 GB) and EmbeddingGemma 300M (4-bit MLX, Gemma Terms of
+Use, about 0.2 GB). By default the download uses only Wi-Fi or Ethernet. Models
+and indexes live in Application Support, outside the vault, are excluded from
+backups, are never synced, and can be deleted from Settings. The cloud chat
+interface is hidden in the native apps; the Tauri apps keep it unchanged.
+The native iOS app offers the same features from search and a note's actions
+menu. Ask, summaries and edits need an iPhone with at least 6 GB of RAM.
+iPhones that pass the on-device check but have less RAM get semantic search
+only. iPhones whose GPU can't run the models (A13, such as the iPhone 11)
+keep keyword search. See [`docs/local-ai-plan.md`](docs/local-ai-plan.md).
+
 ## CLI and further documentation
 
 The desktop app can install the `zerus` CLI and optional agent skills from

@@ -3,13 +3,17 @@ import Foundation
 /// Cloud AI (chat, providers, sign-in, Ask) is hidden in the native apps while
 /// on-device AI replaces it (docs/local-ai-plan.md). The code stays in the tree
 /// until a later cleanup; flip this to restore the entry points.
-enum CloudAIFeature { static let enabled = false }
+enum CloudAIFeature {
+    static let enabled = false
+    /// Saved AI conversations (now on-device chats) stay searchable.
+    static let conversationsSearchable = true
+}
 
 enum NativeSearchCollection: String, CaseIterable, Sendable {
     case notes = "Notes", external = "External notes", files = "Files", links = "Saved links", tasks = "Tasks", chats = "AI conversations"
     var icon: String { switch self { case .notes, .external: "doc.text"; case .files: "doc"; case .links: "link"; case .tasks: "checkmark.circle"; case .chats: "sparkles" } }
     /// Collections offered in search filters; AI conversations only with cloud AI.
-    static var visibleCases: [Self] { allCases.filter { $0 != .chats || CloudAIFeature.enabled } }
+    static var visibleCases: [Self] { allCases.filter { $0 != .chats || CloudAIFeature.conversationsSearchable } }
 }
 struct NativeSearchConversation: Identifiable, Sendable {
     enum Origin: Sendable { case current, nativeArchive(URL), shared(String) }
@@ -203,7 +207,7 @@ enum NativeSearch {
             items.append(.init(id: "task:" + task.id, collection: .tasks, title: task.title, text: text, location: location, modified: task.modified, completed: task.completed, priority: task.priority, target: .task(task.id), preview: preview))
         }
         items += fileItems(supplement.files)
-        for chat in supplement.conversations where CloudAIFeature.enabled {
+        for chat in supplement.conversations where CloudAIFeature.conversationsSearchable {
             items.append(.init(id: "chat:" + chat.id, collection: .chats, title: chat.title, text: chat.text, location: "AI conversations", modified: chat.modified, archived: chat.archived, target: .conversation(chat)))
         }
         return items

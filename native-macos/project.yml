@@ -10,6 +10,8 @@ packages:
     path: ../packages/apple/Markdown
   ZerusChatGPTCore:
     path: ../packages/apple/ChatGPTCore
+  ZerusLocalAI:
+    path: ../packages/apple/LocalAI
   SwiftSoup:
     url: https://github.com/scinfu/SwiftSoup.git
     exactVersion: 2.14.3
@@ -80,6 +82,7 @@ targets:
       - ../native-ios/Sources/NativeTasks.swift
       - ../native-ios/Sources/NativeTaskDrafts.swift
       - ../native-ios/Sources/NativeSearch.swift
+      - ../native-ios/Sources/NativeLocalAI.swift
       - ../native-ios/Sources/NativeExternalSearch.swift
       - ../native-ios/Sources/NativeHTMLClipboard.swift
       - ../native-ios/Sources/NativeCollectionFilters.swift
@@ -110,6 +113,10 @@ targets:
       - package: Sparkle
       - package: ZerusMarkdown
       - package: ZerusChatGPTCore
+      - package: ZerusLocalAI
+        product: ZerusLocalAICore
+      - package: ZerusLocalAI
+        product: ZerusLocalAI
       - package: SwiftSoup
       - package: WebURL
         product: WebURL

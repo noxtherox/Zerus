@@ -61,11 +61,12 @@ public actor LocalAISearchIndex {
             """)
         var stored: String?
         try database.prepare("SELECT value FROM meta WHERE key = 'embedding_model'").bind([]).rows { stored = $0.string(0) }
-        if stored != embeddingModelID {
+        let identity = embeddingModelID + "#chunks-v\(LocalAIChunker.version)"
+        if stored != identity {
             // A different embedding model: vectors are incompatible; start over.
             try database.transaction {
                 try database.execute("DELETE FROM chunks; DELETE FROM notes;")
-                try database.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES('embedding_model', ?)").bind([embeddingModelID]).run()
+                try database.prepare("INSERT OR REPLACE INTO meta(key, value) VALUES('embedding_model', ?)").bind([identity]).run()
             }
         }
         try database.prepare("SELECT path, hash FROM notes").bind([]).rows { indexedHashes[$0.string(0)] = $0.string(1) }

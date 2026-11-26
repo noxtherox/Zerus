@@ -11,6 +11,9 @@ enum MacInterfaceZoom {
 
 struct MacZoomViewport<Content: View>: View {
     @AppStorage("zerus.mac.interfaceZoom") private var percentage = 100
+    /// False when the content draws its own title bar and the divider under
+    /// it, as the workspace window does.
+    var separatesToolbar = true
     @ViewBuilder let content: () -> Content
     var body: some View {
         GeometryReader { viewport in
@@ -18,7 +21,7 @@ struct MacZoomViewport<Content: View>: View {
             // Separate the native toolbar from the scaled canvas. This also
             // keeps split views inside the window's usable safe area.
             VStack(spacing: 0) {
-                Divider()
+                if separatesToolbar { Divider() }
                 content()
             }.frame(width: viewport.size.width / factor, height: viewport.size.height / factor)
                 .scaleEffect(factor, anchor: .topLeading)

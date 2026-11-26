@@ -62,6 +62,10 @@ struct MacTabBar: View {
             .frame(width: metrics.strip, height: 30, alignment: .leading)
             .clipped()
             if metrics.overflowing { overflowChip(hidden: max(0, tabs.count - metrics.shown)) }
+            // The strip fills the title bar between the leading and trailing
+            // controls, so its empty part acts as title bar there.
+            Color.clear.frame(maxWidth: .infinity).frame(height: 30)
+                .overlay(MacTitleBarDoubleClick().accessibilityHidden(true))
         }
         // Fill the reserved width so the trailing toolbar items stay at the window edge.
         .frame(width: max(0, available), alignment: .leading)
@@ -161,6 +165,36 @@ private struct MacTabButton: View {
                 if let index = store.tabs.firstIndex(of: tab), index + 1 < store.tabs.count { store.reorderTab(store.tabs[index + 1], before: tab) }
             },
         ]
+    }
+}
+
+/// Double-clicking empty title-bar space performs the system's title-bar
+/// action (Desktop & Dock › "Double-click a window's title bar to"). Only
+/// double-clicks are claimed, so single clicks still drag the window.
+struct MacTitleBarDoubleClick: NSViewRepresentable {
+    func makeNSView(context: Context) -> ClickView { ClickView() }
+    func updateNSView(_ view: ClickView, context: Context) {}
+    final class ClickView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard super.hitTest(point) != nil, let event = NSApp.currentEvent,
+                  event.type == .leftMouseDown, event.clickCount == 2 else { return nil }
+            return self
+        }
+        override func mouseDown(with event: NSEvent) {
+            guard event.clickCount == 2 else { return }
+            MacTitleBarDoubleClick.perform(in: window)
+        }
+    }
+    /// Performs the action chosen in Desktop & Dock for title-bar double-clicks.
+    static func perform(in window: NSWindow?) {
+        guard let window else { return }
+        let defaults = UserDefaults.standard
+        switch defaults.string(forKey: "AppleActionOnDoubleClick") {
+        case "None": return
+        case "Minimize": window.performMiniaturize(nil)
+        case nil where defaults.bool(forKey: "AppleMiniaturizeOnDoubleClick"): window.performMiniaturize(nil)
+        default: window.performZoom(nil)
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import ZerusLocalAICore
 import QuickLook
 import UIKit
 
@@ -62,6 +63,17 @@ struct NativeSearchView: View {
     @State private var externalAction = UUID()
     @State private var externalTask: Task<Void, Never>?
     @FocusState private var focused: Bool
+    /// On-device semantic matches ("Best matches") and local Ask.
+    @State private var semantic: [LocalAISearchHit] = []
+    @State private var askQuestion: NativeLocalAskQuestion?
+    @State private var pendingCreate: String?
+    @State private var createRequest: NativeLocalAIRequest?
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var localAsk: Bool { !CloudAIFeature.enabled && NativeLocalAI.shared.canGenerate && !trimmedQuery.isEmpty }
+    private var semanticNotes: [NoteDocument] {
+        guard filters.collection == nil || filters.collection == .notes else { return [] }
+        return semantic.compactMap { hit in vault.notes.first { $0.path == hit.path && !$0.trashed && (filters.archived || !$0.archived) } }
+    }
     private var recent: Bool { query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && filters.isEmpty }
     private var actionLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
@@ -92,11 +104,46 @@ struct NativeSearchView: View {
                     }
                 }
                 if let problem = model.problem { Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary); Button("Try again") { model.rebuild(vault: vault) } } }
+                if !CloudAIFeature.enabled, NativeLocalAI.shared.canGenerate, trimmedQuery.isEmpty {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Ask your notes").font(.headline)
+                                Text("Type a question above, then tap Ask. Answers come from your notes, on this iPhone.").font(.subheadline).foregroundStyle(.secondary)
+                            }
+                        } icon: { Image(systemName: "sparkles").foregroundStyle(Accent.color) }
+                        .padding(.vertical, 4)
+                        .onTapGesture { focused = true }
+                    }.accessibilityIdentifier("search.localAsk.hint")
+                }
+                if localAsk {
+                    Section {
+                        Button { focused = false; askQuestion = .init(text: trimmedQuery) } label: {
+                            Label("Ask: “\(trimmedQuery)”", systemImage: "sparkles").font(.body.weight(.semibold)).lineLimit(2)
+                        }.accessibilityIdentifier("search.localAsk")
+                    }
+                }
+                if !semanticNotes.isEmpty {
+                    Section("Best matches") {
+                        ForEach(semanticNotes, id: \.path) { note in
+                            Button { focused = false; open(note) } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(note.title).font(.headline).lineLimit(2)
+                                    Text(semantic.first { $0.path == note.path }?.passage ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                                    Text(note.folder).font(.caption).foregroundStyle(.secondary)
+                                }.padding(.vertical, 5).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                            }.buttonStyle(.plain).listRowBackground(Accent.card).accessibilityIdentifier("search.best." + note.path)
+                        }
+                    }
+                }
                 if let result = model.result, result.workspaceID == vault.workspaceID {
                     if !result.problems.isEmpty { Section { ForEach(result.problems, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) } } }
                     if !result.items.isEmpty {
                         Section {
-                            ForEach(result.items) { item in
+                            ForEach(result.items.filter { item in
+                                guard case .note(let path, _) = item.target else { return true }
+                                return !semanticNotes.contains { $0.path == path }
+                            }) { item in
                                 Button { openResult(item, workspace: result.workspaceID) } label: { row(item) }.buttonStyle(.plain).listRowBackground(Accent.card).accessibilityIdentifier("search.result." + item.id)
                                     .contextMenu {
                                         Button("Open", systemImage: "arrow.up.forward.app") { openResult(item, workspace: result.workspaceID) }
@@ -115,7 +162,7 @@ struct NativeSearchView: View {
                             }
                         }
                     } else if !model.loading {
-                        ContentUnavailableView(recent ? "Find a thought." : "No results", systemImage: "magnifyingglass", description: Text(recent ? (CloudAIFeature.enabled ? "Search notes, external notes, saved links, tasks, files, and AI conversations." : "Search notes, external notes, saved links, tasks, and files.") : "Try another phrase or change your filters."))
+                        ContentUnavailableView(recent ? "Find a thought." : "No results", systemImage: "magnifyingglass", description: Text(recent ? (CloudAIFeature.conversationsSearchable ? "Search notes, external notes, saved links, tasks, files, and AI conversations." : "Search notes, external notes, saved links, tasks, and files.") : "Try another phrase or change your filters."))
                     }
                 }
                 if external.searching { ProgressView("Checking external files…").font(.caption).accessibilityIdentifier("search.external.loading") }
@@ -136,7 +183,7 @@ struct NativeSearchView: View {
                     } label: { Image(systemName: "ellipsis") }.accessibilityLabel("Settings")
                 }
             }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: !CloudAIFeature.enabled && NativeLocalAI.shared.canGenerate ? "Search or ask your notes" : "Search")
             .searchPresentationToolbarBehavior(.avoidHidingContent)
             .nativeSearchContrast("Search")
             .searchFocused($focused)
@@ -146,6 +193,24 @@ struct NativeSearchView: View {
             .onChange(of: external.searchRevision) { _, _ in model.updateExternal(external.searchRecords) }
             .onChange(of: phase) { _, value in if value == .active { Task { await external.refreshSearchIndex() } } }
             .onChange(of: query) { _, _ in model.search(query: query, filters: filters) }
+            .task(id: trimmedQuery) {
+                guard !trimmedQuery.isEmpty, NativeLocalAI.shared.searchReady else { semantic = []; return }
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                let hits = await NativeLocalAI.shared.search(trimmedQuery, in: vault)
+                if !Task.isCancelled { semantic = hits }
+            }
+            .sheet(item: $askQuestion, onDismiss: {
+                if let instruction = pendingCreate {
+                    pendingCreate = nil
+                    createRequest = NativeLocalAIRequest(kind: .create, path: nil, markdown: "", content: "", selection: nil, instruction: instruction, autoRun: true)
+                }
+            }) { ask in
+                NativeLocalAskView(question: ask.text, open: { path in
+                    guard let note = vault.notes.first(where: { $0.path == path }) else { return }
+                    askQuestion = nil; open(note)
+                }, create: { instruction in pendingCreate = instruction; askQuestion = nil })
+            }
+            .sheet(item: $createRequest) { request in NativeLocalAIActionView(request: request, openNote: open) }
             .onChange(of: filters) { _, _ in model.search(query: query, filters: filters) }
             .onAppear { model.search(query: query, filters: filters) }
             .refreshable { await vault.refresh(); model.rebuild(vault: vault, external: external.searchRecords); await external.refreshSearchIndex() }
@@ -315,4 +380,9 @@ private struct NativeSearchPreviewSelection: Identifiable {
     let item: NativeSearchItem
     let workspaceID: UUID
     var id: String { workspaceID.uuidString + ":" + item.id }
+}
+
+struct NativeLocalAskQuestion: Identifiable {
+    let id = UUID()
+    let text: String
 }

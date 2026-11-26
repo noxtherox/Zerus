@@ -1,4 +1,5 @@
 import SwiftUI
+import ZerusLocalAICore
 
 /// Command-palette search. Results stay a compact grouped list until a row is
 /// clicked; the panel then widens into list + preview. Clicking the previewed
@@ -21,6 +22,9 @@ struct MacSearchView: View {
     @State private var actionID = UUID()
     @State private var issue: String?
     @State private var opening = false
+    /// On-device semantic matches shown as "Best matches" above keyword groups.
+    @State private var semantic: [LocalAISearchHit] = []
+    @State private var askQuestion: MacLocalAskQuestion?
     @FocusState private var focused: Bool
     init(workspace: MacWorkspace) {
         self.workspace = workspace; external = workspace.external
@@ -30,16 +34,30 @@ struct MacSearchView: View {
     private var browsingRecent: Bool { model.query.isEmpty && model.filters.isEmpty }
     private var trimmedQuery: String { model.query.trimmingCharacters(in: .whitespacesAndNewlines) }
     /// Results grouped by kind, groups ordered by their best-ranked item.
-    private var groups: [(collection: NativeSearchCollection?, items: [NativeSearchItem])] {
-        guard let items = model.result?.items, !items.isEmpty else { return [] }
-        if browsingRecent { return [(nil, items)] }
+    /// On-device semantic matches lead as "Best matches" when the index is ready.
+    private var groups: [(title: String, collection: NativeSearchCollection?, items: [NativeSearchItem])] {
+        guard let items = model.result?.items else { return [] }
+        if browsingRecent { return items.isEmpty ? [] : [("Recent", nil, items)] }
+        let best = semanticItems
+        let bestPaths = Set(best.compactMap { if case .note(let path, _) = $0.target { path } else { nil } })
         var order: [NativeSearchCollection] = [], buckets: [NativeSearchCollection: [NativeSearchItem]] = [:]
         for item in items {
+            if case .note(let path, _) = item.target, bestPaths.contains(path) { continue }
             if buckets[item.collection] == nil { order.append(item.collection) }
             buckets[item.collection, default: []].append(item)
         }
-        return order.map { ($0, buckets[$0] ?? []) }
+        return (best.isEmpty ? [] : [("Best matches", nil, best)]) + order.map { ($0.rawValue, $0, buckets[$0] ?? []) }
     }
+    private var semanticItems: [NativeSearchItem] {
+        guard model.filters.collection == nil || model.filters.collection == .notes else { return [] }
+        return semantic.compactMap { hit in
+            guard let note = workspace.notes.first(where: { $0.path == hit.path }), !note.trashed, model.filters.archived || !note.archived else { return nil }
+            return NativeSearchItem(id: "semantic:" + hit.path, collection: .notes, title: note.title, text: note.parts.body, location: note.folder,
+                                    folder: note.folder, modified: note.modified, archived: note.archived,
+                                    target: .note(path: note.path, stableID: note.stableID), preview: hit.passage)
+        }
+    }
+    private var localAsk: Bool { !CloudAIFeature.enabled && MacLocalAI.shared.canGenerate && !trimmedQuery.isEmpty }
     private var ordered: [NativeSearchItem] { groups.flatMap(\.items) }
     private var selected: NativeSearchItem? { ordered.first(where: { $0.id == selectedKey }) ?? ordered.first }
     private var showsPreview: Bool { previewing && selected != nil }
@@ -71,6 +89,18 @@ struct MacSearchView: View {
         .onChange(of: workspace.workspaceID) { refresh = UUID(); openedTask = nil; openedFile = nil; openedChat = nil; action?.cancel(); actionID = UUID(); selectedKey = nil; previewing = false; opening = false }
         .task(id: refresh) { await model.rebuild(workspace) }
         .task(id: request) { do { try await Task.sleep(for: .milliseconds(140)); await model.run() } catch {} }
+        .task(id: trimmedQuery) {
+            guard !trimmedQuery.isEmpty, MacLocalAI.shared.searchReady else { semantic = []; return }
+            do { try await Task.sleep(for: .milliseconds(250)) } catch { return }
+            let hits = await MacLocalAI.shared.search(trimmedQuery, in: workspace)
+            if !Task.isCancelled { semantic = hits }
+        }
+        .macSheet(item: $askQuestion) { ask in
+            MacLocalAskView(workspace: workspace, question: ask.text, open: { path in openLocal(path) }, handOff: { kind, instruction, path in
+                MacLocalAI.shared.handOff = .init(workspaceID: workspace.workspaceID, kind: kind, instruction: instruction, path: path)
+                askQuestion = nil; workspace.showSearch = false
+            })
+        }
         .macSheet(item: $openedTask, onDismiss: { refresh = UUID() }) { task in MacTaskEditor(store: workspace, task: task) }
         .macSheet(item: $openedFile) { lease in MacLeasedPreview(lease: lease) }
         .macSheet(item: $openedChat, onDismiss: { refresh = UUID() }) { chat in MacConversationChatView(workspace: workspace, chat: chat, launchNotice: chatNotice) }
@@ -94,6 +124,8 @@ struct MacSearchView: View {
             if CloudAIFeature.enabled {
                 Button("Ask AI", action: ask).keyboardShortcut(.return, modifiers: .command).hidden().frame(width: 0, height: 0)
                     .disabled(trimmedQuery.isEmpty || model.loading || opening)
+            } else if localAsk {
+                Button("Ask your notes") { askQuestion = .init(text: trimmedQuery) }.keyboardShortcut(.return, modifiers: .command).hidden().frame(width: 0, height: 0)
             }
         }.padding(.horizontal, 16).padding(.vertical, 13).overlay(alignment: .bottom) { Rectangle().fill(p.line).frame(height: 1) }
     }
@@ -155,11 +187,11 @@ struct MacSearchView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    ForEach(groups, id: \.collection) { group in
+                    ForEach(groups, id: \.title) { group in
                         HStack {
-                            Text(group.collection?.rawValue ?? "Recent").textCase(.uppercase).tracking(0.6)
+                            Text(group.title).textCase(.uppercase).tracking(0.6)
                             Spacer()
-                            if group.collection == nil { Button("Clear") { Task { await model.clearRecent() } }.buttonStyle(.plain).foregroundStyle(p.accent).textCase(nil) }
+                            if browsingRecent { Button("Clear") { Task { await model.clearRecent() } }.buttonStyle(.plain).foregroundStyle(p.accent).textCase(nil) }
                             else { Text("\(group.items.count)") }
                         }.font(.system(size: 10.5, weight: .medium)).foregroundStyle(p.muted).padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 3)
                         ForEach(group.items) { item in
@@ -172,6 +204,7 @@ struct MacSearchView: View {
                         Button("Show more results") { Task { await model.more() } }.buttonStyle(.plain).foregroundStyle(p.accent).font(.caption).padding(.horizontal, 16).padding(.vertical, 10)
                     }
                     if CloudAIFeature.enabled, !trimmedQuery.isEmpty { askRow(p) }
+                    if localAsk { localAskRow(p) }
                 }.padding(.vertical, 4)
             }.onChange(of: selectedKey) { if let selectedKey { proxy.scrollTo(selectedKey, anchor: .center) } }
         }
@@ -202,6 +235,27 @@ struct MacSearchView: View {
         }.font(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(p.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 6)
+    }
+
+    private func localAskRow(_ p: MacSearchPalette) -> some View {
+        Button { askQuestion = .init(text: trimmedQuery) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles").foregroundStyle(p.accent).frame(width: 22)
+                Text("Ask your notes: “\(trimmedQuery)”").lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                MacSearchKey(label: "⌘↵", palette: p)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain).font(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
+            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(p.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 6)
+    }
+
+    private func openLocal(_ path: String) {
+        let origin = workspace.workspaceID
+        askQuestion = nil
+        Task {
+            do { try await workspace.openSearchNote(path: path, stableID: nil, workspaceID: origin); workspace.showSearch = false }
+            catch { issue = error.localizedDescription }
+        }
     }
 
     private func resultPreview(_ item: NativeSearchItem, _ p: MacSearchPalette) -> some View {
@@ -524,4 +578,9 @@ private struct MacSearchFlow: Layout {
         }
         return rows
     }
+}
+
+struct MacLocalAskQuestion: Identifiable {
+    let id = UUID()
+    let text: String
 }

@@ -2648,6 +2648,7 @@ struct MacRichEditor: NSViewRepresentable {
         }
         let scroll = NSScrollView(); scroll.hasVerticalScroller = true; scroll.drawsBackground = false
         let view = MacEditorTextView(); view.isRichText = !document.source; view.importsGraphics = false; view.allowsUndo = true
+        view.layoutManager?.delegate = view
         // Lay out visible/requested ranges, rather than filling the whole note
         // during idle time. Jumps can skip preceding offscreen paragraphs.
         view.layoutManager?.allowsNonContiguousLayout = true
@@ -2842,6 +2843,9 @@ struct MacRichEditor: NSViewRepresentable {
                         guard self.parent.commandScope == command.scope, self.parent.path == command.request.path else { return }
                         do { try self.applyCode(command); command.result = .success(()) }
                         catch { command.result = .failure(error) }
+                    } else if let command = note.object as? MacLocalAIEditorRequest {
+                        guard self.parent.commandScope == command.scope, self.parent.path == command.path else { return }
+                        command.result = Result { try self.handleLocalAI(command) }
                     } else if let command = note.object as? MacAttachmentImport {
                         guard self.parent.commandScope == command.scope, self.parent.path == command.path else { return }
                         command.task = Task { try await self.importAttachment(command) }
@@ -2893,6 +2897,33 @@ struct MacRichEditor: NSViewRepresentable {
             let nextSource = source || MacMarkdown.requiresSource(updated)
             let output = nextSource ? NSAttributedString(string: updated, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular), .foregroundColor: NSColor.labelColor]) : MacMarkdown.render(updated, root: root, path: parent.path, images: parent.images)
             commit(output, selection: NSRange(location: output.length, length: 0), name: "Attach file", asSource: nextSource == source ? nil : nextSource)
+        }
+        /// On-device AI: report the selection, or apply an approved rewrite of
+        /// the whole note as one undo step ("Undo AI Edit").
+        func handleLocalAI(_ command: MacLocalAIEditorRequest) throws -> MacLocalAIEditorRequest.Snapshot {
+            guard let view, active, parent.isCurrent() else { throw VaultFailure(message: "Open the note in the editor and try again.") }
+            switch command.kind {
+            case .read:
+                let range = view.selectedRange()
+                var selection: String?
+                if range.length > 0, NSMaxRange(range) <= view.textStorage?.length ?? 0 {
+                    selection = source ? (view.string as NSString).substring(with: range)
+                        : MacMarkdown.markdown(view.attributedString().attributedSubstring(from: range))
+                }
+                return .init(markdown: lastMarkdown, selection: selection)
+            case .replace(let expected, let replacement, let actionName):
+                guard parent.editable, !pasting, !view.hasMarkedText() else { throw VaultFailure(message: "The note can't be edited right now. Try again in a moment.") }
+                guard Data(lastMarkdown.utf8) == Data(expected.utf8) else {
+                    throw VaultFailure(message: "The note changed while the suggestion was being reviewed. Run the action again.")
+                }
+                let nextSource = source || MacMarkdown.requiresSource(replacement)
+                let output = nextSource
+                    ? NSAttributedString(string: replacement, attributes: [.font: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular), .foregroundColor: NSColor.labelColor])
+                    : MacMarkdown.render(replacement, root: parent.root, path: parent.path, images: parent.images)
+                let caret = min(view.selectedRange().location, output.length)
+                commit(output, selection: NSRange(location: caret, length: 0), name: actionName, asSource: nextSource == source ? nil : nextSource)
+                return .init(markdown: lastMarkdown, selection: nil)
+            }
         }
         func applyTable(_ command: MacTableChange) throws {
             guard let view, parent.editable, !pasting, !view.hasMarkedText(), parent.commandScope == command.scope,
@@ -3444,6 +3475,8 @@ struct MacRichEditor: NSViewRepresentable {
             view.typingAttributes = typing
             view.linkTextAttributes = [.foregroundColor: themeColors.color(.link)]
             view.insertionPointColor = theme.nsColor(.accent)
+            (view as? MacEditorTextView)?.markerColor = themeColors.color(.accent)
+            MacRuleAttachment.strokeColor = themeColors.rule
             view.backgroundColor = theme.nsColor(.editorBg)
             // MacEditorTextView paints the writing surface before code cards.
             view.drawsBackground = false
@@ -5144,8 +5177,68 @@ struct MacRichEditor: NSViewRepresentable {
 }
 
 /// Native selection with explicit controls for checkboxes, image handles and link previews.
-private final class MacEditorTextView: NSTextView {
+private final class MacEditorTextView: NSTextView, NSLayoutManagerDelegate {
     private var noteLayout = MacNoteLayout()
+    /// Theme color for list markers. Applied only while drawing, so the
+    /// stored text, Markdown export and clipboard never carry it.
+    var markerColor: NSColor = MacMarkdown.accent
+    /// The visible marker at the start of a list item's first paragraph.
+    private func listMarker(atParagraph start: Int, in text: NSAttributedString) -> String? {
+        guard isRichText, start < text.length else { return nil }
+        let attrs = text.attributes(at: start, effectiveRange: nil)
+        guard attrs[.macCode] == nil, attrs[.macTable] == nil, attrs[.attachment] == nil else { return nil }
+        let context = attrs[.macListContext] as? MacListContext
+        guard context?.continuation != true, let source = context?.source ?? attrs[.macBlock] as? String,
+              let prefix = MacBlockPrefix(source), prefix.list else { return nil }
+        let display = prefix.display, length = display.utf16.count
+        guard length > 1, start + length <= text.length,
+              (text.string as NSString).substring(with: NSRange(location: start, length: length)) == display else { return nil }
+        return display
+    }
+    func layoutManager(_ layoutManager: NSLayoutManager, shouldUseTemporaryAttributes attrs: [NSAttributedString.Key: Any] = [:], forDrawingToScreen toScreen: Bool, atCharacterIndex charIndex: Int, effectiveRange effectiveCharRange: NSRangePointer?) -> [NSAttributedString.Key: Any]? {
+        guard isRichText, let text = layoutManager.textStorage, charIndex < text.length else { return attrs }
+        let raw = text.string as NSString, paragraph = raw.paragraphRange(for: NSRange(location: charIndex, length: 0))
+        var applied = NSRange(location: charIndex, length: NSMaxRange(paragraph) - charIndex)
+        var result = attrs
+        if let marker = listMarker(atParagraph: paragraph.location, in: text) {
+            // Exclude the separating space so selection and spelling marks stay ordinary.
+            let glyphs = NSRange(location: paragraph.location, length: marker.utf16.count - 1)
+            if NSLocationInRange(charIndex, glyphs) {
+                applied = NSRange(location: charIndex, length: NSMaxRange(glyphs) - charIndex)
+                // The bullet glyph is replaced by a larger drawn dot (see drawListBullets).
+                result[.foregroundColor] = marker == "• " ? NSColor.clear : markerColor
+            } else if charIndex < glyphs.location {
+                applied.length = glyphs.location - charIndex
+            }
+        }
+        if let effective = effectiveCharRange {
+            let incoming = effective.pointee
+            effective.pointee = incoming.length > 0 && NSLocationInRange(charIndex, incoming) ? NSIntersectionRange(incoming, applied) : applied
+        }
+        return result
+    }
+    private func drawListBullets(_ dirtyRect: NSRect) {
+        guard isRichText, let manager = layoutManager, let container = textContainer else { return }
+        let rich = attributedString(), raw = rich.string as NSString
+        guard rich.length > 0 else { return }
+        let area = NSRect(x: 0, y: dirtyRect.minY - textContainerOrigin.y, width: container.size.width, height: dirtyRect.height)
+        let visibleGlyphs = manager.glyphRange(forBoundingRect: area, in: container)
+        guard visibleGlyphs.location != NSNotFound, visibleGlyphs.length > 0 else { return }
+        let visible = raw.paragraphRange(for: manager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil))
+        markerColor.setFill()
+        raw.enumerateSubstrings(in: visible, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, _ in
+            guard self.listMarker(atParagraph: paragraph.location, in: rich) == "• " else { return }
+            let glyph = manager.glyphIndexForCharacter(at: paragraph.location)
+            guard glyph < manager.numberOfGlyphs, !manager.isNotShownAttribute(forGlyphAt: glyph) else { return }
+            let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            let bullet = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
+            let font = rich.attribute(.font, at: paragraph.location, effectiveRange: nil) as? NSFont ?? MacMarkdown.font("")
+            let baseline = line.minY + manager.location(forGlyphAt: glyph).y
+            let diameter = (font.pointSize * 0.42).rounded()
+            let center = NSPoint(x: bullet.midX + self.textContainerOrigin.x, y: baseline - font.xHeight / 2 + self.textContainerOrigin.y)
+            NSBezierPath(ovalIn: NSRect(x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)).fill()
+        }
+    }
     func setNoteLayout(_ value: MacNoteLayout) {
         guard value != noteLayout || textContainer?.widthTracksTextView == true else { return }
         noteLayout = value; updateWritingWidth(); needsDisplay = true
@@ -5223,6 +5316,7 @@ private final class MacEditorTextView: NSTextView {
         backgroundColor.setFill(); dirtyRect.fill()
         drawCodeBlocks(dirtyRect)
         super.draw(dirtyRect)
+        drawListBullets(dirtyRect)
         guard let rect = imageDrag?.preview ?? selectedImageRect(), rect.width > 0, rect.height > 0 else { return }
         NSColor.controlAccentColor.setStroke(); let outline = NSBezierPath(rect: rect); outline.lineWidth = 1.5; outline.stroke()
         let handle = NSBezierPath(roundedRect: resizeHandle(rect), xRadius: 2, yRadius: 2)

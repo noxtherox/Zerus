@@ -68,11 +68,22 @@ public struct LocalAIPropertyOperation: Sendable, Hashable {
     public let kind: Kind
     public let key: String
     public let values: [String]
+
+    public init(kind: Kind, key: String, values: [String]) {
+        self.kind = kind
+        self.key = key
+        self.values = values
+    }
 }
 
 public struct LocalAIFindReplace: Sendable, Hashable {
     public let find: String
     public let replace: String
+
+    public init(find: String, replace: String) {
+        self.find = find
+        self.replace = replace
+    }
 }
 
 public struct LocalAIEditResult: Sendable, Equatable {
@@ -111,6 +122,11 @@ public struct LocalAIPipelines: Sendable {
         let byID = Dictionary(uniqueKeysWithValues: zip(ids, sources.map(\.path)))
         var paths: [String] = []
         for id in out["sources"] as? [String] ?? [] { if let p = byID[id], !paths.contains(p) { paths.append(p) } }
+        // Small models sometimes answer without citing: cite the notes that
+        // contain the quoted evidence.
+        if found, paths.isEmpty {
+            paths = sources.filter { source in evidence.contains { LocalAIGrounding.isGrounded($0, in: source.content) } }.map(\.path)
+        }
         let corpus = sources.map(\.content).joined(separator: "\n")
         let verified = !found || (!evidence.isEmpty && evidence.allSatisfy { LocalAIGrounding.isGrounded($0, in: corpus) })
         return LocalAIAnswer(

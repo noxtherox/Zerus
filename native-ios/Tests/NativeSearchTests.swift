@@ -96,7 +96,7 @@ final class NativeSearchTests: XCTestCase {
         let isolated = root.appendingPathComponent("LinkedVault")
         try FileManager.default.createDirectory(at: isolated.appendingPathComponent(".zerus"), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: isolated.appendingPathComponent(".zerus/chats"), withDestinationURL: root.appendingPathComponent(".zerus/chats"))
-        guard CloudAIFeature.enabled else {
+        guard CloudAIFeature.conversationsSearchable else {
             // Cloud AI is hidden: conversation history is neither read nor surfaced.
             let hidden = try await VaultFiles(root: root).searchSupplement(files: [], liveConversation: nil)
             XCTAssertTrue(hidden.conversations.isEmpty); XCTAssertTrue(hidden.problems.isEmpty)
