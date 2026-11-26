@@ -57,7 +57,7 @@ struct MacNewNoteSettingsView: View {
     init(workspace: MacWorkspace) { self.workspace = workspace; _workspaceID = State(initialValue: workspace.workspaceID) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if !embedded { Text("New notes").font(.title2.bold()) }
+            if !embedded { Text("New notes").macFont(.title2.bold()) }
             Text("Choose the default folder for this vault on this Mac. It is used in All Notes and other sections without a selected folder.").foregroundStyle(.secondary)
             Picker("Default folder", selection: Binding(get: { workspace.defaultNoteFolder }, set: {
                 do { try workspace.setDefaultNoteFolder($0, workspace: workspaceID); issue = nil }
@@ -67,12 +67,12 @@ struct MacNewNoteSettingsView: View {
                     Text(folder == workspace.inboxNoteFolder ? folder + " (default)" : folder.replacingOccurrences(of: "/", with: " / ")).tag(folder)
                 }
             }.disabled(workspace.workspaceID != workspaceID || workspace.busy || workspace.preparingToClose)
-            Text("When you are browsing a folder, new notes stay in that folder. Explicit destinations such as Create linked note take precedence.").font(.caption).foregroundStyle(.secondary)
+            Text("When you are browsing a folder, new notes stay in that folder. Explicit destinations such as Create linked note take precedence.").macFont(.caption).foregroundStyle(.secondary)
             if !workspace.folders.contains(workspace.defaultNoteFolder), workspace.defaultNoteFolder != workspace.inboxNoteFolder {
-                Text("The saved folder is currently absent. Creating a note will recreate it.").font(.caption).foregroundStyle(.secondary)
+                Text("The saved folder is currently absent. Creating a note will recreate it.").macFont(.caption).foregroundStyle(.secondary)
             }
-            if workspace.workspaceID != workspaceID { Text("The vault changed. Close and reopen New notes settings.").font(.caption).foregroundStyle(.red) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if workspace.workspaceID != workspaceID { Text("The vault changed. Close and reopen New notes settings.").macFont(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             if !embedded { HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) } }
         }.macSettingsChrome(width: 460)
     }
@@ -97,22 +97,22 @@ struct MacNewNoteSheet: View {
     private var options: [String] { Array(Set(workspace.defaultNoteFolderOptions + [folder])).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("New note").font(.title2.bold())
+            Text("New note").macFont(.title2.bold())
             TextField("Title", text: $title, prompt: Text("Untitled")).textFieldStyle(.roundedBorder).focused($titleFocused).onSubmit(create)
-            Text("Folder").font(.headline)
+            Text("Folder").macFont(.headline)
             ScrollViewReader { proxy in
                 List(options, id: \.self, selection: Binding(get: { Optional(folder) }, set: { if let value = $0 { folder = value } })) { option in
                     HStack(spacing: 8) {
                         MacFolderIcon(value: workspace.folderIcon(option)).foregroundStyle(.secondary).frame(width: 18).accessibilityHidden(true)
                         Text(option.replacingOccurrences(of: "/", with: " / "))
                         Spacer()
-                        if option == workspace.defaultNoteFolder { Text("Default").font(.caption).foregroundStyle(.secondary) }
+                        if option == workspace.defaultNoteFolder { Text("Default").macFont(.caption).foregroundStyle(.secondary) }
                     }.tag(option).contentShape(Rectangle())
                 }
                 .listStyle(.bordered(alternatesRowBackgrounds: false)).frame(height: 240)
                 .onAppear { proxy.scrollTo(folder, anchor: .center) }
             }
-            if workspace.workspaceID != workspaceID { Text("The vault changed. Close and try again.").font(.caption).foregroundStyle(.red) }
+            if workspace.workspaceID != workspaceID { Text("The vault changed. Close and try again.").macFont(.caption).foregroundStyle(.red) }
             HStack {
                 if creating { ProgressView().controlSize(.small) }
                 Spacer()

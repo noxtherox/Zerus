@@ -162,18 +162,18 @@ struct MacNoteMoveHistoryView: View {
     @State private var issue: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(review.action + " note moves").font(.title2.bold()); Spacer(); Button("Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
+            HStack { Text(review.action + " note moves").macFont(.title2.bold()); Spacer(); Button("Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
             Text(review.undo ? "Restore original paths, folder definitions and reference text together. Attachment files stay in place. Later edits to affected notes or settings block Undo. Unrelated notes are preserved." : "Repeat the saved moves, folder definitions and reference changes together. Attachment files stay in place. Later edits to affected notes or settings, new incoming references or occupied paths block Redo. Unrelated notes are preserved.").foregroundStyle(.secondary)
             ScrollView { VStack(alignment: .leading, spacing: 12) {
-                ForEach(review.record.moves) { move in Label(review.undo ? move.destination + " → " + move.source : move.source + " → " + move.destination, systemImage: review.undo ? "arrow.uturn.backward" : "arrow.uturn.forward").font(.callout) }
-                Divider(); Text("Note changes").font(.headline)
+                ForEach(review.record.moves) { move in Label(review.undo ? move.destination + " → " + move.source : move.source + " → " + move.destination, systemImage: review.undo ? "arrow.uturn.backward" : "arrow.uturn.forward").macFont(.callout) }
+                Divider(); Text("Note changes").macFont(.headline)
                 ForEach(review.noteChanges, id: \.path) { change in DisclosureGroup(change.path) { MacHistoryDifferenceView(before: change.before.map { String(decoding: $0, as: UTF8.self) } ?? "", after: change.after.map { String(decoding: $0, as: UTF8.self) } ?? "") } }
                 if !review.settingChanges.isEmpty {
-                    Divider(); Text("Shared settings").font(.headline)
+                    Divider(); Text("Shared settings").macFont(.headline)
                     ForEach(review.settingChanges, id: \.path) { change in DisclosureGroup(change.path) { MacHistoryDifferenceView(before: change.before.map { String(decoding: $0, as: UTF8.self) } ?? "", after: change.after.map { String(decoding: $0, as: UTF8.self) } ?? "") } }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack { if busy { ProgressView().controlSize(.small) }; Spacer(); Button(review.action + " reviewed moves") { busy = true; issue = nil; Task { defer { busy = false }; do { try await workspace.commitNoteMoveHistory(review); saved(); dismiss() } catch { issue = error.localizedDescription } } }.disabled(busy) }
         }.padding(24).frame(width: 720, height: 530).interactiveDismissDisabled(busy)
     }

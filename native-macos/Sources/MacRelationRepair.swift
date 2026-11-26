@@ -50,30 +50,30 @@ struct MacRelationRepairView: View {
     private var noteChanges: [VaultFileChange] { plan?.changes.filter { $0.path.lowercased().hasSuffix(".md") && $0.before != $0.after } ?? [] }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Repair relations").font(.title2.bold()); Spacer(); Button(applied ? "Done" : "Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
+            HStack { Text("Repair relations").macFont(.title2.bold()); Spacer(); Button(applied ? "Done" : "Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
             Text("Review relation definitions left behind after notes moved between folders. Only unambiguous relations are restored; unresolved values stay unchanged.").foregroundStyle(.secondary)
-            if applied { Label("Reviewed repairs saved", systemImage: "checkmark.circle").font(.headline) }
+            if applied { Label("Reviewed repairs saved", systemImage: "checkmark.circle").macFont(.headline) }
             if let plan {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
-                        if plan.summaries.isEmpty { Text("No unambiguous repairs found.").font(.headline) }
+                        if plan.summaries.isEmpty { Text("No unambiguous repairs found.").macFont(.headline) }
                         else { ForEach(Array(plan.summaries.enumerated()), id: \.offset) { _, summary in Label(summary, systemImage: "arrow.triangle.branch") } }
                         if !noteChanges.isEmpty {
-                            Divider(); Text("Affected notes (\(noteChanges.count))").font(.headline)
+                            Divider(); Text("Affected notes (\(noteChanges.count))").macFont(.headline)
                             ForEach(noteChanges, id: \.path) { change in
                                 DisclosureGroup(change.path) { MacHistoryDifferenceView(before: change.before.map { String(decoding: $0, as: UTF8.self) } ?? "", after: change.after.map { String(decoding: $0, as: UTF8.self) } ?? "") }
                             }
                         }
                         if !plan.issues.isEmpty {
-                            Divider(); Text("Needs attention (\(plan.issues.count))").font(.headline)
+                            Divider(); Text("Needs attention (\(plan.issues.count))").macFont(.headline)
                             ForEach(plan.issues) { item in
-                                VStack(alignment: .leading, spacing: 4) { Text(item.name + " · " + item.path).font(.subheadline.bold()); Text(item.reason).font(.caption).foregroundStyle(.secondary) }.textSelection(.enabled)
+                                VStack(alignment: .leading, spacing: 4) { Text(item.name + " · " + item.path).macFont(.subheadline.bold()); Text(item.reason).macFont(.caption).foregroundStyle(.secondary) }.textSelection(.enabled)
                             }
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.frame(minHeight: 120, maxHeight: 410)
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 if busy { ProgressView().controlSize(.small) }
                 Spacer()

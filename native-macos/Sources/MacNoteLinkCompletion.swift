@@ -67,7 +67,7 @@ struct MacNoteLinkTrigger: Equatable {
         @FocusState private var focused: Bool
         var body: some View {
             VStack(alignment: .leading, spacing: 2) {
-                SwiftUI.Text("Link a note").font(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 3)
+                SwiftUI.Text("Link a note").macFont(.caption.bold()).foregroundStyle(.secondary).padding(.bottom, 3)
                 if model.manual {
                     TextField("Find a note", text: $model.query).textFieldStyle(.roundedBorder).focused($focused)
                         .onSubmit { model.select(model.index) }
@@ -77,12 +77,12 @@ struct MacNoteLinkTrigger: Equatable {
                 }
                 ScrollViewReader { proxy in ScrollView { VStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(model.notes.enumerated()), id: \.element.path) { index, note in
-                    Button { model.select(index) } label: { VStack(alignment: .leading, spacing: 2) { SwiftUI.Text(note.title).font(.callout.bold()); SwiftUI.Text(note.path).font(.caption2).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(5).background(model.index == index ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).id(index)
+                    Button { model.select(index) } label: { VStack(alignment: .leading, spacing: 2) { SwiftUI.Text(note.title).macFont(.callout.bold()); SwiftUI.Text(note.path).macFont(.caption2).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(5).background(model.index == index ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).id(index)
                 }
-                if model.canCreate { Button { model.select(model.notes.count) } label: { Label("Create “" + model.query + "”", systemImage: "plus").font(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(8).background(model.index == model.notes.count ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).id(model.notes.count) }
-                if model.count == 0 { SwiftUI.Text("No matching notes.").font(.caption).foregroundStyle(.secondary).padding(8) }
+                if model.canCreate { Button { model.select(model.notes.count) } label: { Label("Create “" + model.query + "”", systemImage: "plus").macFont(.callout).frame(maxWidth: .infinity, alignment: .leading).padding(8).background(model.index == model.notes.count ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).id(model.notes.count) }
+                if model.count == 0 { SwiftUI.Text("No matching notes.").macFont(.caption).foregroundStyle(.secondary).padding(8) }
                 } }.onChange(of: model.index) { proxy.scrollTo(model.index, anchor: .center) } }
-                SwiftUI.Text("↑↓ Choose · Return Insert · Esc Dismiss").font(.caption2).foregroundStyle(.secondary)
+                SwiftUI.Text("↑↓ Choose · Return Insert · Esc Dismiss").macFont(.caption2).foregroundStyle(.secondary)
             }.padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).overlay { RoundedRectangle(cornerRadius: 8).stroke(.quaternary) }.task { if model.manual { focused = true } }
         }
     }
@@ -117,9 +117,9 @@ struct MacMissingNoteLinkView: View {
     @State private var issue: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SwiftUI.Text("Create linked note?").font(.title2.bold())
+            SwiftUI.Text("Create linked note?").macFont(.title2.bold())
             SwiftUI.Text("“" + request.title + "” does not exist. Create it in " + request.folder + "?")
-            if let issue { SwiftUI.Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { SwiftUI.Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { Button("Cancel") { dismiss() }.disabled(saving); Spacer(); if saving { ProgressView().controlSize(.small) }; Button("Create and open") {
                 saving = true
                 Task { defer { saving = false }; do {
@@ -240,22 +240,22 @@ struct MacInlineLinkEditView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SwiftUI.Text(request.destination == nil ? "Insert link" : "Edit link").font(.headline)
+            SwiftUI.Text(request.destination == nil ? "Insert link" : "Edit link").macFont(.headline)
             Picker("Link destination", selection: $noteDestination) { SwiftUI.Text("Web URL").tag(false); SwiftUI.Text("Vault note").tag(true) }.pickerStyle(.segmented)
             if noteDestination {
                 TextField("Find a note", text: $query).focused($focused)
                 ScrollView { VStack(alignment: .leading, spacing: 4) {
                     ForEach(matches, id: \.path) { note in
                         Button { selectedPath = note.path; issue = nil } label: {
-                            HStack { Image(systemName: selectedPath == note.path ? "checkmark.circle.fill" : "doc.text"); VStack(alignment: .leading) { SwiftUI.Text(note.title); SwiftUI.Text(note.path).font(.caption).foregroundStyle(.secondary) }; Spacer() }.padding(6).contentShape(Rectangle())
+                            HStack { Image(systemName: selectedPath == note.path ? "checkmark.circle.fill" : "doc.text"); VStack(alignment: .leading) { SwiftUI.Text(note.title); SwiftUI.Text(note.path).macFont(.caption).foregroundStyle(.secondary) }; Spacer() }.padding(6).contentShape(Rectangle())
                         }.buttonStyle(MacBoxButtonStyle()).accessibilityLabel("Link to " + note.title + ", " + note.path)
                     }
                     if matches.isEmpty { SwiftUI.Text("No matching notes.").foregroundStyle(.secondary) }
                 } }.frame(height: 150)
             } else { TextField("Web URL", text: $address).focused($focused).autocorrectionDisabled(true) }
             TextField("Display text", text: $label).disabled(!request.canEditLabel)
-            if !request.canEditLabel { SwiftUI.Text("Your selected text and formatting will be kept.").font(.caption).foregroundStyle(.secondary) }
-            if let issue { SwiftUI.Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if !request.canEditLabel { SwiftUI.Text("Your selected text and formatting will be kept.").macFont(.caption).foregroundStyle(.secondary) }
+            if let issue { SwiftUI.Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 if let destination = request.destination {
                     Button("Remove link") { save(nil) }

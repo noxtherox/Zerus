@@ -47,6 +47,7 @@ struct MacTabBar: View {
     /// Width the toolbar can give the strip, in toolbar (unzoomed) points.
     let available: CGFloat
     @Environment(\.macTheme) private var theme
+    @Environment(\.macTextScale) private var textScale
     @State private var listOpen = false
 
     var body: some View {
@@ -76,9 +77,9 @@ struct MacTabBar: View {
         Button { listOpen.toggle() } label: {
             HStack(spacing: 3) {
                 if hidden > 0 { Text("+\(hidden)").monospacedDigit() }
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold))
+                Image(systemName: "chevron.down").macFont(.system(size: 8, weight: .semibold))
             }
-            .font(.system(size: 11, weight: .medium))
+            .macFont(.system(size: 11, weight: .medium))
             .foregroundStyle(theme.color(.sidebarFg).opacity(0.85))
             .frame(width: MacTabBarMetrics.chip - 14, height: 22)
             .background(theme.color(.sidebarFg).opacity(listOpen ? 0.16 : 0.1), in: RoundedRectangle(cornerRadius: 6))
@@ -96,7 +97,7 @@ struct MacTabBar: View {
         tab.notePath.flatMap { path in store.notes.first { $0.path == path }?.title ?? (store.current?.path == path ? store.current?.title : nil) } ?? tab.target
     }
     private func idealWidth(_ tab: MacTab) -> CGFloat {
-        let text = (title(tab) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12)]).width
+        let text = (title(tab) as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 12 * textScale)]).width
         let icon: CGFloat = store.pinnedTabs.contains(tab) || { if case .folder = tab { return true }; return false }() ? 20 : 0
         return ceil(text) + icon + 46
     }
@@ -114,7 +115,7 @@ private struct MacTabButton: View {
         HStack(spacing: 4) {
             Button { Task { await store.activateTab(tab) } } label: {
                 HStack(spacing: 6) {
-                    if pinned { Image(systemName: "pin.fill").font(.system(size: 9)).accessibilityLabel("Pinned tab") }
+                    if pinned { Image(systemName: "pin.fill").macFont(.system(size: 9)).accessibilityLabel("Pinned tab") }
                     if case .folder(let path) = tab { MacFolderLabel(path: title, icon: store.folderIcon(path)) }
                     else { Text(title) }
                     Spacer(minLength: 0)
@@ -124,7 +125,7 @@ private struct MacTabButton: View {
             // narrow inactive tabs keep as much of their title as possible.
             if !pinned && (hovering || active) {
                 Button { Task { await store.closeTab(tab) } } label: {
-                    Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).frame(width: 16, height: 16)
+                    Image(systemName: "xmark").macFont(.system(size: 8, weight: .semibold)).frame(width: 16, height: 16)
                         .background(foreground.opacity(hovering ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 4))
                 }
                 .opacity(0.6)
@@ -132,7 +133,7 @@ private struct MacTabButton: View {
             }
         }
         .buttonStyle(MacBoxButtonStyle())
-        .font(.system(size: 12, weight: active ? .medium : .regular))
+        .macFont(.system(size: 12, weight: active ? .medium : .regular))
         .foregroundStyle(foreground.opacity(active ? 0.95 : 0.6))
         .padding(.leading, 10).padding(.trailing, !pinned && (hovering || active) ? 5 : 10)
         .frame(height: 26)
@@ -267,15 +268,15 @@ private struct MacTabList: View {
                     Image(systemName: icon(tab)).frame(width: 14).foregroundStyle(.secondary)
                     Text(title(tab)).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 0)
-                    if store.pinnedTabs.contains(tab) { Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    if store.pinnedTabs.contains(tab) { Image(systemName: "pin.fill").macFont(.system(size: 9)).foregroundStyle(.secondary) }
                 }.padding(.vertical, 5).padding(.leading, 6)
             }
             if !store.pinnedTabs.contains(tab) {
-                Button { Task { await store.closeTab(tab) } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .semibold)).frame(width: 18, height: 18) }
+                Button { Task { await store.closeTab(tab) } } label: { Image(systemName: "xmark").macFont(.system(size: 8, weight: .semibold)).frame(width: 18, height: 18) }
                     .foregroundStyle(.secondary).help("Close tab").accessibilityLabel("Close " + title(tab))
             }
         }
-        .buttonStyle(MacBoxButtonStyle()).font(.system(size: 12, weight: active ? .semibold : .regular))
+        .buttonStyle(MacBoxButtonStyle()).macFont(.system(size: 12, weight: active ? .semibold : .regular))
         .padding(.trailing, 4)
         .background(active ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 5))
     }

@@ -24,19 +24,19 @@ struct MacTaskCollectionsView: View {
     private var connected: Bool { store.workspaceID == workspaceID }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Lists & categories").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text("Lists & categories").macFont(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
             if connected {
                 ScrollView { VStack(alignment: .leading, spacing: 14) {
-                    HStack { Text("Task lists").font(.headline); Spacer(); Button("New list…") { naming = .init(title: "New task list", original: "", kind: .createList) } }
-                    HStack { Text(store.generalTaskListName); Spacer(); Text("Default list").font(.caption).foregroundStyle(.secondary); Button("Rename…") { naming = .init(title: "Rename default list", original: store.generalTaskListName, kind: .renameList(nil)) }.accessibilityLabel("Rename default task list") }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
+                    HStack { Text("Task lists").macFont(.headline); Spacer(); Button("New list…") { naming = .init(title: "New task list", original: "", kind: .createList) } }
+                    HStack { Text(store.generalTaskListName); Spacer(); Text("Default list").macFont(.caption).foregroundStyle(.secondary); Button("Rename…") { naming = .init(title: "Rename default list", original: store.generalTaskListName, kind: .renameList(nil)) }.accessibilityLabel("Rename default task list") }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                     ForEach(store.taskLists) { list in
-                        HStack { VStack(alignment: .leading) { Text(list.name); Text("\(store.tasks.filter { $0.listID == list.id }.count) tasks").font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Rename…") { naming = .init(title: "Rename task list", original: list.name, kind: .renameList(list)) }.accessibilityLabel("Rename " + list.name); Button("Delete…", role: .destructive) {
+                        HStack { VStack(alignment: .leading) { Text(list.name); Text("\(store.tasks.filter { $0.listID == list.id }.count) tasks").macFont(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Rename…") { naming = .init(title: "Rename task list", original: list.name, kind: .renameList(list)) }.accessibilityLabel("Rename " + list.name); Button("Delete…", role: .destructive) {
                             let assigned = Set(store.tasks.filter { $0.listID == list.id }.map(\.id))
                             review = .init(title: "Delete “\(list.name)”?", detail: "\(assigned.count) tasks move to \(store.generalTaskListName). Their supporting notes are kept.", change: .deleteList(list, assigned: assigned))
                         }.accessibilityLabel("Delete list " + list.name) }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                     }
                     Divider().padding(.vertical, 6)
-                    HStack { Text("Categories").font(.headline); Spacer(); Button("New category…") { naming = .init(title: "New task category", original: "", kind: .category) } }
+                    HStack { Text("Categories").macFont(.headline); Spacer(); Button("New category…") { naming = .init(title: "New task category", original: "", kind: .category) } }
                     ForEach(store.taskCategories, id: \.self) { category in
                         HStack { Text(category); Spacer(); Button("Remove…", role: .destructive) {
                             let assigned = Set(store.tasks.filter { $0.category.caseInsensitiveCompare(category) == .orderedSame }.map(\.id))
@@ -72,8 +72,8 @@ private struct MacTaskNameForm: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(request.title).font(.headline); TextField("Name", text: $name)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            Text(request.title).macFont(.headline); TextField("Name", text: $name)
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Save") { busy = true; Task { if await save(name) { dismiss() } else { issue = store.issue; store.issue = nil }; busy = false } }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy) }
         }.padding(24).frame(width: 420).onAppear { name = request.original }
     }

@@ -46,14 +46,14 @@ struct MacFilePreview: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(url.lastPathComponent).font(.headline); Spacer(); Button("Open externally") { NSWorkspace.shared.open(url) }; Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }; Button("Done") { dismiss() } }.padding(15)
+            HStack { Text(url.lastPathComponent).macFont(.headline); Spacer(); Button("Open externally") { NSWorkspace.shared.open(url) }; Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }; Button("Done") { dismiss() } }.padding(15)
             Divider()
             if url.pathExtension.lowercased() == "pdf" { MacPDFView(url: url) }
             else if ["html", "htm"].contains(url.pathExtension.lowercased()) { MacWebPreview(url: url) }
             else if ["md", "markdown", "txt"].contains(url.pathExtension.lowercased()) {
-                if draft.canSave { TextEditor(text: $draft.text).font(.system(.body, design: .monospaced)).padding(15) }
+                if draft.canSave { TextEditor(text: $draft.text).macFont(.system(.body, design: .monospaced)).padding(15) }
                 else { ContentUnavailableView("Text preview unavailable", systemImage: "doc.text", description: Text("Open this file externally to view its encoding.")) }
-                HStack { Text(draft.issue ?? "External file — edits stay at the original location").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Save") { draft.save() }.disabled(!draft.canSave) }.padding(15)
+                HStack { Text(draft.issue ?? "External file — edits stay at the original location").macFont(.caption).foregroundStyle(.secondary); Spacer(); Button("Save") { draft.save() }.disabled(!draft.canSave) }.padding(15)
             } else if let image = NSImage(contentsOf: url) { Image(nsImage: image).resizable().scaledToFit().padding(20) }
             else { ContentUnavailableView("Preview unavailable", systemImage: "doc", description: Text("Use Open externally to view this file in its associated app.")) }
         }.task {
@@ -107,13 +107,13 @@ struct MacNotePrintView: View {
     @State private var attempt = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Print note").font(.title2.bold())
-            Text(request.note.title).font(.headline).lineLimit(2)
-            Text("Prints the note as it was when this dialog opened.").font(.caption).foregroundStyle(.secondary)
+            Text("Print note").macFont(.title2.bold())
+            Text(request.note.title).macFont(.headline).lineLimit(2)
+            Text("Prints the note as it was when this dialog opened.").macFont(.caption).foregroundStyle(.secondary)
             if preparing { HStack { ProgressView().controlSize(.small); Text("Preparing pages…") } }
             if let prepared {
                 Text("\(prepared.document.pageCount) \(prepared.document.pageCount == 1 ? "page" : "pages") ready")
-                Text("Choose your printer or save a PDF in the print dialog.").font(.caption).foregroundStyle(.secondary)
+                Text("Choose your printer or save a PDF in the print dialog.").macFont(.caption).foregroundStyle(.secondary)
                 MacNoteExportWarnings(warnings: prepared.warnings)
             }
             if let issue {
@@ -152,10 +152,10 @@ private struct MacNoteExportWarnings: View {
     let warnings: [String]
     var body: some View {
         if !warnings.isEmpty {
-            Text("Some content could not be fully included:").font(.headline)
+            Text("Some content could not be fully included:").macFont(.headline)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
-                    ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in Text(warning).font(.caption).textSelection(.enabled) }
+                    ForEach(Array(warnings.enumerated()), id: \.offset) { _, warning in Text(warning).macFont(.caption).textSelection(.enabled) }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(height: 120)
         }
@@ -173,15 +173,15 @@ struct MacNoteExportView: View {
     @State private var exported: URL?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Export note").font(.title2.bold())
-            Text(request.note.title).font(.headline).lineLimit(2)
-            Text("Exports the note as it was when this dialog opened.").font(.caption).foregroundStyle(.secondary)
+            Text("Export note").macFont(.title2.bold())
+            Text(request.note.title).macFont(.headline).lineLimit(2)
+            Text("Exports the note as it was when this dialog opened.").macFont(.caption).foregroundStyle(.secondary)
             Picker("Format", selection: $format) {
                 ForEach(NativeExportFormat.allCases) { format in Text(format.title + " (." + format.rawValue + ")").tag(format) }
             }.accessibilityIdentifier("note.export.format")
-            Text(format.detail).font(.caption).foregroundStyle(.secondary)
+            Text(format.detail).macFont(.caption).foregroundStyle(.secondary)
             Toggle("Include properties", isOn: $includeProperties).accessibilityIdentifier("note.export.properties")
-            Text("Adds visible note properties as a compact table. Zerus metadata stays hidden.").font(.caption).foregroundStyle(.secondary)
+            Text("Adds visible note properties as a compact table. Zerus metadata stays hidden.").macFont(.caption).foregroundStyle(.secondary)
             if busy { HStack { ProgressView().controlSize(.small); Text("Preparing export…") } }
             if let issue { Text(issue).foregroundStyle(.red).textSelection(.enabled) }
             if let exported {

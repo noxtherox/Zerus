@@ -106,21 +106,21 @@ struct MacSchemaReviewView: View {
     @State private var issue: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text(review.title).font(.title2.bold()); Spacer(); Button("Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
+            HStack { Text(review.title).macFont(.title2.bold()); Spacer(); Button("Cancel") { dismiss() }.disabled(busy).keyboardShortcut(.cancelAction) }
             Text(review.definition == nil ? "Review the definition and stored values that will be removed. Paired relations are updated together; an inherited definition can keep a value in place." : "Review folder definitions and note values before applying. Paired relations are updated together.").foregroundStyle(.secondary)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if review.summaries.isEmpty { Text("No definition changes.").foregroundStyle(.secondary) }
                     ForEach(Array(review.summaries.enumerated()), id: \.offset) { _, text in Text(text).textSelection(.enabled) }
                     if !review.noteChanges.isEmpty {
-                        Divider(); Text("Notes with value changes (\(review.noteChanges.count))").font(.headline)
+                        Divider(); Text("Notes with value changes (\(review.noteChanges.count))").macFont(.headline)
                         ForEach(review.noteChanges, id: \.path) { change in
                             DisclosureGroup(change.path) { MacHistoryDifferenceView(before: change.before.map { String(decoding: $0, as: UTF8.self) } ?? "", after: change.after.map { String(decoding: $0, as: UTF8.self) } ?? "") }
                         }
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(minHeight: 120, maxHeight: 400)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { if busy { ProgressView().controlSize(.small) }; Spacer(); Button(review.definition == nil ? "Remove reviewed property" : "Apply reviewed changes", role: review.definition == nil ? .destructive : nil) { commit() }.buttonStyle(.borderedProminent).disabled(busy || !review.plan.hasChanges) }
         }.padding(24).frame(width: 720).interactiveDismissDisabled(busy)
     }

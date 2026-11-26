@@ -15,14 +15,14 @@ struct MacHTMLPreviewView<Notes: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(label).font(.caption).foregroundStyle(.secondary)
+                Text(label).macFont(.caption).foregroundStyle(.secondary)
                 if session.state.loading { ProgressView().controlSize(.mini) }
                 Spacer()
                 Button("Downloads…") { MacHTMLDownloads.shared.show() }
                 Button("Choose HTML preview…") { choosing = true }
                 if rendered { Button(expanded ? "Show notes" : "Expand HTML") { expanded.toggle() }.disabled(!hasNotes) }
             }.padding(8)
-            if let problem = issue ?? session.state.issue { Text(problem).font(.caption).foregroundStyle(.red).textSelection(.enabled).padding(8) }
+            if let problem = issue ?? session.state.issue { Text(problem).macFont(.caption).foregroundStyle(.red).textSelection(.enabled).padding(8) }
             if rendered, let document = session.state.document, let mode = session.state.mode {
                 if expanded || !hasNotes { page(document, mode: mode) }
                 else { MacZoomSplitView(axis: .vertical) { page(document, mode: mode).frame(minHeight: 180, idealHeight: 330); notes().frame(minHeight: 160) } }
@@ -53,17 +53,17 @@ struct MacHTMLPreviewView<Notes: View>: View {
     }
     private var chooser: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Choose HTML preview").font(.title2.bold())
-            Text(lease.url.lastPathComponent).font(.headline).textSelection(.enabled)
+            Text("Choose HTML preview").macFont(.title2.bold())
+            Text(lease.url.lastPathComponent).macFont(.headline).textSelection(.enabled)
             if session.state.approvalExpired { Text("This file changed since it was reviewed. Choose its preview again.").foregroundStyle(.orange) }
             if let document = session.state.document {
-                Text(document.needsChoice ? "This file contains scripts or external resources. Full preview can run its scripts and download files; external requests are limited to the origins below." : "No scripts or external dependencies were detected.").font(.callout)
+                Text(document.needsChoice ? "This file contains scripts or external resources. Full preview can run its scripts and download files; external requests are limited to the origins below." : "No scripts or external dependencies were detected.").macFont(.callout)
                 if !document.origins.isEmpty {
-                    ScrollView { VStack(alignment: .leading, spacing: 5) { ForEach(document.origins, id: \.self) { Text($0).font(.caption).textSelection(.enabled) } } }.frame(maxHeight: 180)
+                    ScrollView { VStack(alignment: .leading, spacing: 5) { ForEach(document.origins, id: \.self) { Text($0).macFont(.caption).textSelection(.enabled) } } }.frame(maxHeight: 180)
                 }
-                if !document.fullReady { Text("Full preview supports up to 128 external origins. Safe preview and Only link remain available.").font(.caption).foregroundStyle(.orange) }
-            } else { Text(session.state.issue ?? "Wait for this document to finish loading.").font(.callout).foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                if !document.fullReady { Text("Full preview supports up to 128 external origins. Safe preview and Only link remain available.").macFont(.caption).foregroundStyle(.orange) }
+            } else { Text(session.state.issue ?? "Wait for this document to finish loading.").macFont(.callout).foregroundStyle(.secondary) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             choice("Only link the file", detail: "Keep the connection without rendering HTML.", mode: .link)
             choice("Safe preview", detail: "Render with scripts and external resources disabled.", mode: .safe)
             choice("Full preview", detail: "Allow scripts, downloads and the reviewed external origins in an isolated preview.", mode: .full)
@@ -78,7 +78,7 @@ struct MacHTMLPreviewView<Notes: View>: View {
                 do { try await session.choose(mode); choosing = false } catch { issue = error.localizedDescription }
             }
         } label: {
-            VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(detail).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
+            VStack(alignment: .leading, spacing: 4) { Text(title).macFont(.headline); Text(detail).macFont(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading).padding(10)
         }.disabled(mode != .link && (session.state.document == nil || mode == .full && session.state.document?.fullReady != true))
     }
 }
@@ -99,7 +99,7 @@ struct MacWebPreview: View {
     var body: some View {
         Group {
             if loadedFor == url, let lease { MacHTMLStandalonePreview(lease: lease) }
-            else if let issue { Text(issue).font(.caption).foregroundStyle(.secondary).padding() }
+            else if let issue { Text(issue).macFont(.caption).foregroundStyle(.secondary).padding() }
             else { ProgressView("Loading HTML…") }
         }.task(id: url) {
             lease = nil; loadedFor = nil; issue = nil

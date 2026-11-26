@@ -134,7 +134,7 @@ struct MacHTMLPageView: View {
     init(document: MacHTMLPreviewDocument, mode: MacHTMLPreviewMode) { _page = StateObject(wrappedValue: MacHTMLWebPage(document: document, mode: mode)) }
     var body: some View {
         VStack(spacing: 0) {
-            if let issue = page.issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled).padding(8) }
+            if let issue = page.issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled).padding(8) }
             MacHTMLWebSurface(page: page)
         }.task { await page.load() }.onDisappear { page.stop() }
     }

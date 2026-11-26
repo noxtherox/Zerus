@@ -88,21 +88,21 @@ private struct MacNotePreviewView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(snapshot.note.title).font(.headline).lineLimit(2)
+                Text(snapshot.note.title).macFont(.headline).lineLimit(2)
                 Spacer()
                 Button(action: close) { Image(systemName: "xmark") }.buttonStyle(MacBoxButtonStyle()).help("Close preview").accessibilityLabel("Close preview").keyboardShortcut(.cancelAction)
             }
-            Text(snapshot.note.path).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Text(snapshot.note.path).macFont(.caption).foregroundStyle(.secondary).lineLimit(1)
             if let heading = snapshot.heading, MacHeadings.target(heading, in: snapshot.note.parts.body) == nil {
-                Label("Heading no longer exists", systemImage: "exclamationmark.triangle").font(.caption)
+                Label("Heading no longer exists", systemImage: "exclamationmark.triangle").macFont(.caption)
             }
             Divider()
             ScrollView {
                 Text(AttributedString(MacMarkdown.render(snapshot.excerpt)))
-                    .font(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                    .macFont(.callout).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
                     .environment(\.openURL, OpenURLAction { _ in .handled })
             }
-            HStack { Text("Note preview").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Open note", action: open) }
+            HStack { Text("Note preview").macFont(.caption).foregroundStyle(.secondary); Spacer(); Button("Open note", action: open) }
         }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10)).overlay { RoundedRectangle(cornerRadius: 10).stroke(.quaternary) }
     }
 }

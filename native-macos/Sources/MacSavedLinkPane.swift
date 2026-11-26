@@ -16,7 +16,7 @@ struct MacSavedLinkPane<Notes: View>: View {
             if let link = note.savedLink {
                 HStack(spacing: 12) {
                     Image(systemName: "link").foregroundStyle(.secondary)
-                    Text(link.address).font(.caption).lineLimit(1).truncationMode(.middle).help(link.address)
+                    Text(link.address).macFont(.caption).lineLimit(1).truncationMode(.middle).help(link.address)
                     Spacer()
                     Button("Edit URL") { Task { if await store.save(), let fresh = store.current { edit = .init(note: fresh, workspaceID: store.workspaceID) } } }
                     Button(rendersPage ? "Hide page" : "Render page") { rendersPage.toggle(); expanded = false; UserDefaults.standard.set(rendersPage ? link.address : nil, forKey: preferenceKey) }
@@ -38,7 +38,7 @@ struct MacSavedLinkPane<Notes: View>: View {
     private func page(_ link: NativeSavedLink) -> some View {
         VStack(spacing: 0) {
             HStack {
-                Text("Live page").font(.caption).foregroundStyle(.secondary)
+                Text("Live page").macFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Reload") { reload = UUID() }
                 Button(expanded ? "Show notes" : "Expand page") { expanded.toggle() }
@@ -62,9 +62,9 @@ private struct MacLinkEditView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Edit saved link").font(.title2.bold())
+            Text("Edit saved link").macFont(.title2.bold())
             TextField("Web address", text: $address).textFieldStyle(.roundedBorder)
-            if let error { Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled) }
+            if let error { Text(error).foregroundStyle(.red).macFont(.caption).textSelection(.enabled) }
             HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Save URL") {
                 saving = true
                 Task { do { try await store.updateLink(edit.note, address: address, workspaceID: edit.workspaceID); dismiss() } catch { self.error = error.localizedDescription }; saving = false }
@@ -80,7 +80,7 @@ private struct MacLivePageReader: View {
     @StateObject private var status = MacPageStatus()
     var body: some View {
         VStack(spacing: 0) {
-            if !status.message.isEmpty { Text(status.message).font(.caption).foregroundStyle(.secondary).padding(8).frame(maxWidth: .infinity) }
+            if !status.message.isEmpty { Text(status.message).macFont(.caption).foregroundStyle(.secondary).padding(8).frame(maxWidth: .infinity) }
             MacLivePage(url: url, status: status)
         }
     }

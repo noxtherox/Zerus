@@ -42,12 +42,12 @@ struct MacInspectorPropertyRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: type.inspectorIcon).font(.system(size: 11)).foregroundStyle(.tertiary).frame(width: MacInspectorMetrics.iconWidth)
+                Image(systemName: type.inspectorIcon).macFont(.system(size: 11)).foregroundStyle(.tertiary).frame(width: MacInspectorMetrics.iconWidth)
                 Text(name).foregroundStyle(.secondary).lineLimit(1).truncationMode(.tail)
             }.frame(width: MacInspectorMetrics.keyWidth, alignment: .leading).help(name)
             valueView.frame(maxWidth: .infinity, alignment: .leading)
         }
-        .font(.system(size: 12.5))
+        .macFont(.system(size: 12.5))
         .padding(.horizontal, 6).frame(minHeight: MacInspectorMetrics.rowHeight)
         .background(hovering && !disabled ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: MacInspectorMetrics.rowRadius))
         .contentShape(Rectangle())
@@ -87,7 +87,7 @@ struct MacInspectorPropertyRow: View {
                 }
                 Spacer(minLength: 4)
                 if !disabled {
-                    Button(action: edit) { Image(systemName: "pencil").font(.system(size: 11)) }
+                    Button(action: edit) { Image(systemName: "pencil").macFont(.system(size: 11)) }
                         .buttonStyle(.plain).foregroundStyle(hovering ? Color.secondary : Color.secondary.opacity(0.4))
                         .help("Edit " + name).accessibilityLabel("Edit link")
                 }
@@ -109,7 +109,7 @@ struct MacInspectorChip: View {
     @Environment(\.macTheme) private var theme
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11.5, weight: .medium)).lineLimit(1)
+        Text(text).macFont(.system(size: 11.5, weight: .medium)).lineLimit(1)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(theme.color(.accent).opacity(0.14), in: Capsule())
             .foregroundStyle(theme.color(.text))
@@ -158,10 +158,10 @@ struct MacInspectorAction: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 11, weight: .medium)).frame(width: MacInspectorMetrics.iconWidth)
+                Image(systemName: icon).macFont(.system(size: 11, weight: .medium)).frame(width: MacInspectorMetrics.iconWidth)
                 Text(title)
                 Spacer(minLength: 0)
-            }.font(.system(size: 12.5)).padding(.horizontal, 6).frame(minHeight: MacInspectorMetrics.rowHeight)
+            }.macFont(.system(size: 12.5)).padding(.horizontal, 6).frame(minHeight: MacInspectorMetrics.rowHeight)
                 .foregroundStyle(hovering ? .primary : .secondary)
                 .background(hovering ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: MacInspectorMetrics.rowRadius))
                 .contentShape(Rectangle())
@@ -180,10 +180,10 @@ struct MacInspectorNoteLink: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 7) {
-                Image(systemName: available ? "doc.text" : "exclamationmark.triangle").font(.system(size: 11)).foregroundStyle(available ? AnyShapeStyle(theme.color(.link)) : AnyShapeStyle(.orange))
+                Image(systemName: available ? "doc.text" : "exclamationmark.triangle").macFont(.system(size: 11)).foregroundStyle(available ? AnyShapeStyle(theme.color(.link)) : AnyShapeStyle(.orange))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 12.5, weight: .medium)).foregroundStyle(available ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)).lineLimit(2)
-                    if let detail, !detail.isEmpty { Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle) }
+                    Text(title).macFont(.system(size: 12.5, weight: .medium)).foregroundStyle(available ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)).lineLimit(2)
+                    if let detail, !detail.isEmpty { Text(detail).macFont(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle) }
                 }
                 Spacer(minLength: 0)
             }
@@ -203,15 +203,15 @@ struct MacInspectorGroupHeader: View {
     var edit: (() -> Void)?
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10.5))
+            Image(systemName: icon).macFont(.system(size: 10.5))
             Text(title).fontWeight(.semibold)
             if count > 0 { Text(String(count)).monospacedDigit().foregroundStyle(.tertiary) }
             Spacer(minLength: 0)
             if let edit {
-                Button(action: edit) { Image(systemName: "plus").font(.system(size: 11, weight: .medium)).frame(width: 18, height: 18).contentShape(Rectangle()) }
+                Button(action: edit) { Image(systemName: "plus").macFont(.system(size: 11, weight: .medium)).frame(width: 18, height: 18).contentShape(Rectangle()) }
                     .buttonStyle(.plain).foregroundStyle(.secondary).help("Edit " + title).accessibilityLabel("Edit " + title)
             }
-        }.font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 4)
+        }.macFont(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 6).padding(.top, 4)
     }
 }
 
@@ -226,17 +226,17 @@ struct MacInspectorRevisionCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Button(action: browse) {
                 HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 13)).foregroundStyle(.secondary)
+                    Image(systemName: "clock.arrow.circlepath").macFont(.system(size: 13)).foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
-                            Text(current.map { "Revision \($0.number)" } ?? "No revisions yet").font(.system(size: 12.5, weight: .medium))
-                            if current != nil { Text("Current").font(.system(size: 10.5, weight: .semibold)).padding(.horizontal, 5).padding(.vertical, 1).background(Color.green.opacity(0.18), in: Capsule()).foregroundStyle(.green) }
+                            Text(current.map { "Revision \($0.number)" } ?? "No revisions yet").macFont(.system(size: 12.5, weight: .medium))
+                            if current != nil { Text("Current").macFont(.system(size: 10.5, weight: .semibold)).padding(.horizontal, 5).padding(.vertical, 1).background(Color.green.opacity(0.18), in: Capsule()).foregroundStyle(.green) }
                         }
-                        if let date = current?.date { Text(date.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 11)).foregroundStyle(.tertiary) }
+                        if let date = current?.date { Text(date.formatted(date: .abbreviated, time: .shortened)).macFont(.system(size: 11)).foregroundStyle(.tertiary) }
                     }
                     Spacer(minLength: 0)
-                    if count > 1 { Text("\(count)").font(.system(size: 11)).monospacedDigit().foregroundStyle(.tertiary) }
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
+                    if count > 1 { Text("\(count)").macFont(.system(size: 11)).monospacedDigit().foregroundStyle(.tertiary) }
+                    Image(systemName: "chevron.right").macFont(.system(size: 10, weight: .semibold)).foregroundStyle(.tertiary)
                 }
                 .padding(.horizontal, 9).padding(.vertical, 7)
                 .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
@@ -266,10 +266,10 @@ struct MacInspectorFileRow: View {
     var body: some View {
         Button(action: open) {
             HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: MacInspectorMetrics.iconWidth)
+                Image(systemName: icon).macFont(.system(size: 11)).foregroundStyle(.secondary).frame(width: MacInspectorMetrics.iconWidth)
                 Text(name).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
-            }.font(.system(size: 12.5)).padding(.horizontal, 6).frame(minHeight: MacInspectorMetrics.rowHeight)
+            }.macFont(.system(size: 12.5)).padding(.horizontal, 6).frame(minHeight: MacInspectorMetrics.rowHeight)
                 .background(hovering ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: MacInspectorMetrics.rowRadius))
                 .contentShape(Rectangle())
         }.buttonStyle(.plain).onHover { hovering = $0 }.help(name)
@@ -281,8 +281,8 @@ struct MacInspectorPathFooter: View {
     let path: String
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Image(systemName: "folder").font(.system(size: 10.5))
+            Image(systemName: "folder").macFont(.system(size: 10.5))
             Text(path).lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-        }.font(.system(size: 11)).foregroundStyle(.tertiary).padding(.horizontal, 6).help(path)
+        }.macFont(.system(size: 11)).foregroundStyle(.tertiary).padding(.horizontal, 6).help(path)
     }
 }

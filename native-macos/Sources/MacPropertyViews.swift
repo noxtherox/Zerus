@@ -22,7 +22,7 @@ struct MacPropertyEditor: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("Edit property").font(.headline)
+            Text("Edit property").macFont(.headline)
             TextField("Name", text: $name).disabled(!edit.name.isEmpty)
             if edit.definition == nil { Picker("Type", selection: $kind) { ForEach([NativePropertyType.text, .url, .number, .date, .checkbox, .list], id: \.self) { Text($0.label).tag($0) } } }
             if kind == .checkbox { Toggle("Checked", isOn: $checked) }
@@ -30,7 +30,7 @@ struct MacPropertyEditor: View {
                 ForEach(definition.options, id: \.self) { option in Toggle(option, isOn: Binding(get: { choices.contains(option) }, set: { checked in if checked { if !definition.multiple { choices = [] }; choices.insert(option) } else { choices.remove(option) } })) }
             } else if kind == .date { MacDateField("Date", value: $text, valid: $dateValid, allowEmpty: false) }
             else { TextField(kind == .list ? "Values, separated by commas" : "Value", text: $text) }
-            if let issue { Text(issue).foregroundStyle(.red).font(.caption) }
+            if let issue { Text(issue).foregroundStyle(.red).macFont(.caption) }
             HStack { if edit.value != nil { Button("Clear value") { Task { await commit(nil) } } }; Spacer(); Button("Cancel") { dismiss() }; Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(name.isEmpty || kind == .date && !dateValid) }
         }.padding(24).frame(width: 440).onAppear {
             name = edit.name; kind = edit.definition?.type ?? .inferred(edit.value); text = edit.value?.display ?? ""
@@ -80,18 +80,18 @@ struct MacRelationEditor: View {
     var definition: NativePropertyDefinition? { try? snapshot?.definition() }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(name).font(.title2.bold())
-            Text("Both sides of this relation are saved together.").font(.caption).foregroundStyle(.secondary)
+            Text(name).macFont(.title2.bold())
+            Text("Both sides of this relation are saved together.").macFont(.caption).foregroundStyle(.secondary)
             TextField("Find notes", text: $query).textFieldStyle(.roundedBorder)
             List {
                 if let snapshot, let definition {
                     ForEach(snapshot.notes.filter { !$0.trashed && $0.path != snapshot.sourcePath && (selected.contains($0.path) || NativeRelationSnapshot.eligible($0, for: definition)) && (query.isEmpty || $0.title.localizedCaseInsensitiveContains(query)) }) { note in
-                        Toggle(isOn: Binding(get: { selected.contains(note.path) }, set: { enabled in if enabled { if !definition.relationMultiple { selected = [] }; selected.insert(note.path) } else { selected.remove(note.path) } })) { VStack(alignment: .leading) { Text(note.title); Text(note.folder).font(.caption).foregroundStyle(.secondary) } }
+                        Toggle(isOn: Binding(get: { selected.contains(note.path) }, set: { enabled in if enabled { if !definition.relationMultiple { selected = [] }; selected.insert(note.path) } else { selected.remove(note.path) } })) { VStack(alignment: .leading) { Text(note.title); Text(note.folder).macFont(.caption).foregroundStyle(.secondary) } }
                     }
                 }
             }
-            if !unresolved.isEmpty { Text("Unresolved links are retained: " + unresolved.sorted().joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if !unresolved.isEmpty { Text("Unresolved links are retained: " + unresolved.sorted().joined(separator: ", ")).macFont(.caption).foregroundStyle(.secondary) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack { Spacer(); Button("Cancel") { dismiss() }; Button("Review changes") {
                 do { plan = try snapshot?.plan(selected: selected, unresolved: unresolved); review = plan != nil }
                 catch { issue = error.localizedDescription }
@@ -126,8 +126,8 @@ struct MacSchemaEditor: View {
     private var unsupported: Bool { form.kind == .unsupported }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Folder properties · " + (owner.isEmpty ? "Vault root" : owner)).font(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text("Review changes to definitions and note values before applying. Inherited child overrides and unknown settings are preserved.").font(.caption).foregroundStyle(.secondary)
+            HStack { Text("Folder properties · " + (owner.isEmpty ? "Vault root" : owner)).macFont(.title2.bold()); Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            Text("Review changes to definitions and note values before applying. Inherited child overrides and unknown settings are preserved.").macFont(.caption).foregroundStyle(.secondary)
             HStack(alignment: .top, spacing: 20) {
                 VStack(alignment: .leading, spacing: 12) {
                     ScrollView {
@@ -136,7 +136,7 @@ struct MacSchemaEditor: View {
                                 Button { select(definition) } label: {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(definition.name).fontWeight(selectedName == definition.name ? .semibold : .regular)
-                                        Text(definition.type.label).font(.caption).foregroundStyle(.secondary)
+                                        Text(definition.type.label).macFont(.caption).foregroundStyle(.secondary)
                                     }.frame(maxWidth: .infinity, alignment: .leading).padding(10).contentShape(Rectangle())
                                 }.buttonStyle(MacBoxButtonStyle()).background(selectedName == definition.name ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
                                     .accessibilityLabel(definition.name + " · " + definition.type.label)
@@ -153,7 +153,7 @@ struct MacSchemaEditor: View {
                             if unsupported { Text("Unsupported").tag(NativePropertyType.unsupported) }
                         }
                         if form.kind == .list {
-                            Text("Choices").font(.headline)
+                            Text("Choices").macFont(.headline)
                             ForEach($form.choices) { $choice in
                                 HStack {
                                     TextField("Choice", text: $choice.value)
@@ -161,7 +161,7 @@ struct MacSchemaEditor: View {
                                 }
                             }
                             Button("Add choice") { form.choices.append(.init(value: "")) }
-                            Text("Each row is one choice. Commas stay part of its name.").font(.caption).foregroundStyle(.secondary)
+                            Text("Each row is one choice. Commas stay part of its name.").macFont(.caption).foregroundStyle(.secondary)
                             Toggle("Multiple choices", isOn: $form.multiple)
                         }
                         if form.kind == .relation {
@@ -173,8 +173,8 @@ struct MacSchemaEditor: View {
                     }.disabled(unsupported).padding(4)
                 }.frame(width: 360, height: 360)
             }
-            if unsupported { Text("This definition uses an unsupported type and is preserved without changes.").font(.caption).foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if unsupported { Text("This definition uses an unsupported type and is preserved without changes.").macFont(.caption).foregroundStyle(.secondary) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Reload definitions") { Task { await reload() } }
                 if selectedName != nil { Button("Review removal…", role: .destructive) { prepare(removing: true) }.disabled(unsupported || snapshot == nil) }

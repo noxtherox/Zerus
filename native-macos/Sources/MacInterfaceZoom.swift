@@ -195,6 +195,7 @@ struct MacZoomPresentation<Content: View>: View {
     var body: some View {
         MacPresentationViewport(factor: MacInterfaceZoom.factor(percentage), availableSize: availableSize, resizesWindow: resizesWindow, content: content)
             .background(MacPresentationScreen { availableSize = $0 }.frame(width: 0, height: 0))
+            .modifier(MacInterfaceTextHost())
             .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
     }
 }

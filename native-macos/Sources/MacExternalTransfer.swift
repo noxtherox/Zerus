@@ -134,13 +134,13 @@ struct MacExternalTransferView: View {
     private var folders: [String] { Array(Set([""] + workspace.folders.filter { !$0.split(separator: "/").contains(where: { $0.hasPrefix(".") }) && $0.split(separator: "/").first != "assets" })).sorted() }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text(title).font(.title2.bold()); Spacer(); Button(outcome == nil ? "Cancel" : "Done") { work?.cancel(); dismiss() }.disabled(committing).keyboardShortcut(.cancelAction) }
+            HStack { Text(title).macFont(.title2.bold()); Spacer(); Button(outcome == nil ? "Cancel" : "Done") { work?.cancel(); dismiss() }.disabled(committing).keyboardShortcut(.cancelAction) }
             if let outcome {
-                Label(outcome.sourceRemoved ? "Moved into the vault" : "Vault copy saved", systemImage: "checkmark.circle").font(.headline)
+                Label(outcome.sourceRemoved ? "Moved into the vault" : "Vault copy saved", systemImage: "checkmark.circle").macFont(.headline)
                 Text(outcome.note.path).textSelection(.enabled)
                 Text(outcome.sourceRemoved ? "The original Markdown file was removed. Project attachments stay in place." : "The original Markdown file and its project attachments stay in place.").foregroundStyle(.secondary)
-                if let message = outcome.message { Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                if outcome.recoveryPending { Text("Pending moves in External notes keeps the original recovery bytes and the steps still to finish.").font(.caption).foregroundStyle(.secondary) }
+                if let message = outcome.message { Text(message).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                if outcome.recoveryPending { Text("Pending moves in External notes keeps the original recovery bytes and the steps still to finish.").macFont(.caption).foregroundStyle(.secondary) }
                 Button("Open vault copy") {
                     guard review?.transfer.workspaceID == workspace.workspaceID else { issue = "Reopen this copy from its destination vault."; return }
                     openCopy(outcome.note.path); dismiss()
@@ -151,15 +151,15 @@ struct MacExternalTransferView: View {
                 LabeledContent("Attachments", value: String(review.transfer.pendingMove.map { $0.hashes.count - 1 } ?? review.transfer.assets.count))
                 LabeledContent("Total size", value: ByteCountFormatter.string(fromByteCount: Int64(review.transfer.byteCount), countStyle: .file))
                 Text(mode == .copy ? "The copy gets its own note identity. Local images and linked files are copied into the vault; originals stay in place." : "After verifying the vault copy, Zerus removes the reviewed original Markdown file. Its note identity is preserved. Project images and linked files stay in place.").foregroundStyle(.secondary)
-                ForEach(review.transfer.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.secondary) }
-                DisclosureGroup("Preview Markdown") { ScrollView { Text(review.transfer.content).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 180) }
+                ForEach(review.transfer.warnings, id: \.self) { Text($0).macFont(.caption).foregroundStyle(.secondary) }
+                DisclosureGroup("Preview Markdown") { ScrollView { Text(review.transfer.content).macFont(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 180) }
                 HStack {
                     Button(pending == nil ? "Change destination" : "Review again") { self.review = nil; issue = nil }
                     Spacer()
                     Button(mode == .copy ? "Copy file" : pending == nil ? "Move file" : "Remove reviewed original", role: mode == .move ? .destructive : nil) { commit(review) }.buttonStyle(.borderedProminent)
                 }
             } else {
-                Text(session.snapshot.entry.name).font(.headline)
+                Text(session.snapshot.entry.name).macFont(.headline)
                 Text(mode == .copy ? "Create an independent note in the open vault, including its local images and linked files. Save changes to the original before preparing this copy." : "Move this Markdown file into the open vault. Review the destination and attachments before removing the original.").foregroundStyle(.secondary)
                 LabeledContent("Vault", value: workspace.vaultTitle)
                 if pending == nil {
@@ -168,7 +168,7 @@ struct MacExternalTransferView: View {
                 }
                 Button(mode == .copy ? "Review copy" : "Review move") { prepare() }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if busy { ProgressView(committing ? "Saving transfer…" : "Preparing review…").controlSize(.small) }
         }.padding(24).frame(width: 620).disabled(busy)
         .interactiveDismissDisabled(committing)

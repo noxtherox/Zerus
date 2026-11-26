@@ -45,14 +45,14 @@ private struct MacTaskDraftsView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Task drafts").font(.title2.bold()); Spacer(); Button("Refresh") { drafts.reload() }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-            Text("Unfinished task changes stay privately on this Mac. Save updates your vault; closing keeps the draft.").font(.callout).foregroundStyle(.secondary)
+            HStack { Text("Task drafts").macFont(.title2.bold()); Spacer(); Button("Refresh") { drafts.reload() }; Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
+            Text("Unfinished task changes stay privately on this Mac. Save updates your vault; closing keeps the draft.").macFont(.callout).foregroundStyle(.secondary)
             Divider()
             ScrollView { LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(drafts.records) { record in
                     HStack {
                         Button { opened = record } label: {
-                            VStack(alignment: .leading, spacing: 4) { Text(record.title).font(.headline); Text(record.task.baseline == nil ? "New task" : "Unsaved changes").font(.caption); Text(record.date, style: .relative).font(.caption) }.frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 4) { Text(record.title).macFont(.headline); Text(record.task.baseline == nil ? "New task" : "Unsaved changes").macFont(.caption); Text(record.date, style: .relative).macFont(.caption) }.frame(maxWidth: .infinity, alignment: .leading)
                         }.buttonStyle(MacBoxButtonStyle())
                         Button("Export…") { do { try MacTaskDraftExport.save(record.task.shareDraft) } catch { issue = error.localizedDescription } }
                         Button("Discard…") { discarding = record }
@@ -60,13 +60,13 @@ private struct MacTaskDraftsView: View {
                 }
                 if drafts.records.isEmpty && drafts.unreadable.isEmpty { ContentUnavailableView("No task drafts", systemImage: "doc.badge.clock", description: Text("Unfinished tasks appear here until you save or discard them.")) }
                 if !drafts.unreadable.isEmpty {
-                    Text("Preserved files need attention").font(.headline)
-                    Text("These drafts could not be opened. Their original files are preserved.").font(.caption).foregroundStyle(.secondary)
+                    Text("Preserved files need attention").macFont(.headline)
+                    Text("These drafts could not be opened. Their original files are preserved.").macFont(.caption).foregroundStyle(.secondary)
                     ForEach(drafts.unreadable, id: \.self) { file in Button("Reveal " + file.lastPathComponent) { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
                 }
             } }
-            if let warning = drafts.issue { Text(MacTaskDraftExport.message(warning)).font(.caption).foregroundStyle(.orange) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let warning = drafts.issue { Text(MacTaskDraftExport.message(warning)).macFont(.caption).foregroundStyle(.orange) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
         }.padding(24).frame(width: 660, height: 520)
         .onChange(of: workspace.workspaceID) { dismiss() }
         .macSheet(item: $opened) { record in MacTaskEditor(store: workspace, task: activated(record), recovered: record) }

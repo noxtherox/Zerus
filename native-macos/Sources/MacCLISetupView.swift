@@ -12,13 +12,13 @@ struct MacCLISetupView: View {
     @State private var message: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Set up this vault for CLI use").font(.title2.bold())
+            Text("Set up this vault for CLI use").macFont(.title2.bold())
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text(workspace.root?.path ?? "No vault selected").font(.callout.monospaced()).textSelection(.enabled)
+                    Text(workspace.root?.path ?? "No vault selected").macFont(.callout.monospaced()).textSelection(.enabled)
                     GroupBox("Register the vault") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Add this folder to the shared Zerus CLI vault list on this Mac. Registration keeps your notes unchanged.").font(.callout).foregroundStyle(.secondary)
+                            Text("Add this folder to the shared Zerus CLI vault list on this Mac. Registration keeps your notes unchanged.").macFont(.callout).foregroundStyle(.secondary)
                             TextField("Vault name", text: $name)
                             Toggle("Make this the default CLI vault", isOn: $makeDefault)
                             Button("Review registration…") { perform { registration = try await workspace.prepareCLIRegistration(name: name, makeDefault: makeDefault) } }
@@ -26,8 +26,8 @@ struct MacCLISetupView: View {
                     }
                     GroupBox("Prepare note metadata") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("Give notes stable IDs and update older reserved metadata. Review every changed note before applying. Note text and other properties stay in place.").font(.callout).foregroundStyle(.secondary)
-                            Text("Invalid, duplicate or noncanonical IDs block preparation. Open drafts are saved first; conflicts and retained recovery drafts must be resolved.").font(.caption).foregroundStyle(.secondary)
+                            Text("Give notes stable IDs and update older reserved metadata. Review every changed note before applying. Note text and other properties stay in place.").macFont(.callout).foregroundStyle(.secondary)
+                            Text("Invalid, duplicate or noncanonical IDs block preparation. Open drafts are saved first; conflicts and retained recovery drafts must be resolved.").macFont(.caption).foregroundStyle(.secondary)
                             Button("Review metadata changes…") { perform { metadata = try await workspace.prepareCLIMetadata() } }
                         }.padding(8)
                     }
@@ -72,9 +72,9 @@ private struct MacCLIMetadataReviewView: View {
     @State private var issue: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Review CLI metadata").font(.title2.bold())
+            Text("Review CLI metadata").macFont(.title2.bold())
             Text("\(review.noteChanges.count) of \(review.notes.count) notes change · \(review.idsAdded) IDs added · \(review.keysRenamed) legacy keys renamed.")
-            Text("Marks this vault as using stable CLI note IDs. Reserved true/false flags are normalized in the shown diffs. Other metadata and note bodies are preserved.").font(.callout).foregroundStyle(.secondary)
+            Text("Marks this vault as using stable CLI note IDs. Reserved true/false flags are normalized in the shown diffs. Other metadata and note bodies are preserved.").macFont(.callout).foregroundStyle(.secondary)
             ScrollView { LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(review.issues, id: \.self) { Text($0).foregroundStyle(.red).textSelection(.enabled) }
                 ForEach(review.noteChanges, id: \.path) { change in
@@ -86,7 +86,7 @@ private struct MacCLIMetadataReviewView: View {
                     DisclosureGroup("Vault identity and CLI readiness") { MacHistoryDifferenceView(before: manifest.before.map { String(decoding: $0, as: UTF8.self) } ?? "", after: manifest.after.map { String(decoding: $0, as: UTF8.self) } ?? "") }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 if busy { ProgressView().controlSize(.small) }

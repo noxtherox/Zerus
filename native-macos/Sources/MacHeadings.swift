@@ -98,7 +98,7 @@ enum MacHeadings {
         Group {
             if let headings = state.value {
                 if headings.isEmpty {
-                    SwiftUI.Text("No headings in this note.").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
+                    SwiftUI.Text("No headings in this note.").macFont(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
                 } else { list(headings) }
             } else { ProgressView().controlSize(.mini).accessibilityLabel("Updating outline") }
         }
@@ -156,7 +156,7 @@ private struct MacOutlineRow: View {
     }
     private var label: some View {
         SwiftUI.Text(title)
-            .font(.system(size: 12, weight: depth == 0 ? .semibold : .regular))
+            .macFont(.system(size: 12, weight: depth == 0 ? .semibold : .regular))
             .foregroundStyle(textStyle)
             .multilineTextAlignment(.leading).lineSpacing(1).fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 3.5)

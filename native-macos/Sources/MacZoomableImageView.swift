@@ -131,7 +131,7 @@ struct MacImagePreviewPanel: View {
                     .keyboardShortcut("=", modifiers: .command).help("Zoom in (⌘+)")
                 Button("Fit") { zoom.fit() }.keyboardShortcut("9", modifiers: .command).help("Fit to window (⌘9)")
                 Button("Actual Size") { zoom.actualSize() }.keyboardShortcut("0", modifiers: .command).help("Actual size (⌘0)")
-                Text("Pinch, ⌘-scroll or double-click to zoom").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Text("Pinch, ⌘-scroll or double-click to zoom").macFont(.caption).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
                 Button("Done", action: done).keyboardShortcut(.cancelAction)
             }.padding(.horizontal, 16).padding(.vertical, 10)

@@ -105,14 +105,14 @@ struct MacVaultIconView: View {
                 Image(nsImage: image).resizable().scaledToFill()
             } else if let value, value.hasPrefix("emoji:") {
                 Color.primary.opacity(0.08)
-                Text(String(value.dropFirst(6))).font(.system(size: size * 0.6))
+                Text(String(value.dropFirst(6))).macFont(.system(size: size * 0.6))
             } else if let value, value.hasPrefix("tabler:") {
                 tint
                 MacFolderIcon(value: value, size: size * 0.58).foregroundStyle(.white)
             } else {
                 tint
                 Text(value.flatMap { $0.hasPrefix("letter:") ? String($0.dropFirst(7)) : nil } ?? MacRecentVaults.letter(path))
-                    .font(.system(size: size * (((value?.count ?? 0) > 8) ? 0.36 : 0.46), weight: .bold, design: .rounded))
+                    .macFont(.system(size: size * (((value?.count ?? 0) > 8) ? 0.36 : 0.46), weight: .bold, design: .rounded))
                     .foregroundStyle(.white).minimumScaleFactor(0.5).lineLimit(1).padding(.horizontal, 2)
             }
         }
@@ -137,13 +137,13 @@ struct MacRecentVaultRow: View {
                     MacVaultIconView(path: path, value: icon, size: 30)
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 6) {
-                            Text(MacRecentVaults.name(path)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                            Text(MacRecentVaults.name(path)).macFont(.system(size: 13, weight: .semibold)).lineLimit(1)
                             if current {
-                                Text("Open").font(.caption2.weight(.semibold)).foregroundStyle(.green)
+                                Text("Open").macFont(.caption2.weight(.semibold)).foregroundStyle(.green)
                                     .padding(.horizontal, 5).padding(.vertical, 1).background(Color.green.opacity(0.15), in: Capsule())
                             }
                         }
-                        Text(MacRecentVaults.location(path)).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        Text(MacRecentVaults.location(path)).macFont(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
                     Spacer(minLength: 8)
                 }.contentShape(Rectangle())
@@ -192,7 +192,7 @@ struct MacVaultIconPicker: View {
             HStack(spacing: 14) {
                 MacVaultIconView(path: path, value: value, size: 52)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Icon for “" + MacRecentVaults.name(path) + "”").font(.title2.bold())
+                    Text("Icon for “" + MacRecentVaults.name(path) + "”").macFont(.title2.bold())
                     Text(MacRecentVaults.location(path)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                 }
             }
@@ -206,7 +206,7 @@ struct MacVaultIconPicker: View {
                             .onSubmit(useLetters)
                         Button("Use Letters", action: useLetters).disabled(letters.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    Text("Up to two characters on a colored tile. Leave empty to use the vault's first letter.").font(.caption).foregroundStyle(.secondary)
+                    Text("Up to two characters on a colored tile. Leave empty to use the vault's first letter.").macFont(.caption).foregroundStyle(.secondary)
                 case .emoji:
                     HStack {
                         TextField("One emoji", text: $emoji).textFieldStyle(.roundedBorder).frame(width: 90).onSubmit(useEmoji)
@@ -232,11 +232,11 @@ struct MacVaultIconPicker: View {
                 case .image:
                     HStack {
                         Button("Choose Image…", action: chooseImage)
-                        Text("PNG, JPEG, HEIC… cropped to a square.").font(.caption).foregroundStyle(.secondary)
+                        Text("PNG, JPEG, HEIC… cropped to a square.").macFont(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Reset to Letter") { letters = ""; workspace.setVaultIcon(path, nil) }.disabled(value == nil)
                 Spacer()

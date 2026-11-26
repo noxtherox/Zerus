@@ -14,7 +14,7 @@ struct MacCLISettingsView: View {
     @State private var message: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            if !embedded { Text("CLI and agent skills").font(.title2.bold()) }
+            if !embedded { Text("CLI and agent skills").macFont(.title2.bold()) }
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Use Zerus from a terminal or give an AI agent the same vault commands. Installation stays on this Mac.").foregroundStyle(.secondary)
@@ -22,21 +22,21 @@ struct MacCLISettingsView: View {
                         GroupBox("Zerus command line") {
                             VStack(alignment: .leading, spacing: 10) {
                                 Text("Bundled CLI " + status.version)
-                                Text(status.path.path).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                                Text(status.matches ? "The bundled version is installed." : status.installed ? "The installed version is not checked by running it. Its bytes differ from this bundled build; review before replacing it." : "The CLI is not installed here.").font(.callout)
-                                if let issue = status.issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
-                                if status.installed && !status.onPath { Text("Add this folder to your shell’s PATH, or use the full executable path.").font(.caption).foregroundStyle(.secondary) }
+                                Text(status.path.path).macFont(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                Text(status.matches ? "The bundled version is installed." : status.installed ? "The installed version is not checked by running it. Its bytes differ from this bundled build; review before replacing it." : "The CLI is not installed here.").macFont(.callout)
+                                if let issue = status.issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                                if status.installed && !status.onPath { Text("Add this folder to your shell’s PATH, or use the full executable path.").macFont(.caption).foregroundStyle(.secondary) }
                                 Button(status.matches ? "Reinstall CLI…" : status.installed ? "Update CLI…" : "Install CLI…") { prepare(.executable) }
                             }.frame(maxWidth: .infinity, alignment: .leading).padding(8)
                         }
                         GroupBox("AI agent skills") {
                             VStack(alignment: .leading, spacing: 12) {
-                                Text("Skill version " + status.skillVersion + " teaches agents the CLI’s read, review and revision checks.").font(.callout)
+                                Text("Skill version " + status.skillVersion + " teaches agents the CLI’s read, review and revision checks.").macFont(.callout)
                                 ForEach(status.skills) { skill in
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack { Text(skill.agent.label); Spacer(); Button(skill.matches ? "Reinstall…" : skill.installed ? "Update…" : "Install…") { prepare(.skill(skill.agent)) } }
-                                        Text(skill.path.path).font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
-                                        if let issue = skill.issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                                        Text(skill.path.path).macFont(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+                                        if let issue = skill.issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
                                     }
                                 }
                                 Button("Export skill…") { exportSkill() }
@@ -45,7 +45,7 @@ struct MacCLISettingsView: View {
                         if let workspace, workspace.root != nil {
                             Button("Set up this vault for CLI use…") { setup = true }
                         }
-                        Text("Pass --vault followed by a vault name or folder to choose explicitly; otherwise the CLI uses its registered default. Installing tools or skills does not change your notes.").font(.caption).foregroundStyle(.secondary)
+                        Text("Pass --vault followed by a vault name or folder to choose explicitly; otherwise the CLI uses its registered default. Installing tools or skills does not change your notes.").macFont(.caption).foregroundStyle(.secondary)
                     } else if issue == nil { ProgressView("Reading installed tools…") }
                     if let message { Text(message).foregroundStyle(.secondary).textSelection(.enabled) }
                     if let issue { Text(issue).foregroundStyle(.red).textSelection(.enabled) }

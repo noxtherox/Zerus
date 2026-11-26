@@ -185,7 +185,7 @@ struct MacThemeHost: ViewModifier {
         let preferences = try? MacThemePreferences.decode(serialized)
         let dark = appearance == "dark" || appearance != "light" && scheme == .dark
         let theme = MacTheme(palette: dark ? preferences?.darkTheme : preferences?.lightTheme)
-        content.environment(\.macTheme, theme).tint(theme.color(.accent))
+        content.environment(\.macTheme, theme).tint(theme.color(.accent)).modifier(MacInterfaceTextHost())
             // The workspace draws its own title bar; AppKit's stays transparent over it.
             .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .background(MacThemeWindowBackground(color: theme.nsColor(.sidebarBg)).frame(width: 0, height: 0))
@@ -227,12 +227,12 @@ struct MacThemeSettingsView: View {
     private var replacing: Bool { ((try? MacThemePreferences.decode(serialized))?.saved ?? []).contains { $0.id == name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() } }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Colours").font(.title2.bold())
+            Text("Colours").macFont(.title2.bold())
             Text("Light and dark palettes are separate. System appearance follows your Mac. Changes apply to all Zerus windows.").foregroundStyle(.secondary)
             Picker("Palette", selection: Binding(get: { dark }, set: { dark = $0; load() })) { Text("Light").tag(false); Text("Dark").tag(true) }.pickerStyle(.segmented).disabled(unreadable)
             HStack {
                 Menu("Load preset") { ForEach(MacThemePresets.all) { preset in Button(preset.name) { apply(preset.palette) } } }
-                Text("Presets also select light or dark appearance.").font(.caption).foregroundStyle(.secondary)
+                Text("Presets also select light or dark appearance.").macFont(.caption).foregroundStyle(.secondary)
             }.disabled(unreadable)
             Form {
                 ForEach(MacThemeRole.allCases) { role in
@@ -242,7 +242,7 @@ struct MacThemeSettingsView: View {
                             if let hex = MacThemePalette.hex(NSColor(color)) { change(role, input: hex) }
                             else { issue = "This colour cannot be represented in sRGB. Choose another colour." }
                         }), supportsOpacity: false).labelsHidden().frame(width: 36).accessibilityLabel(role.title)
-                        TextField("#RRGGBB", text: Binding(get: { draft.colors[role] ?? MacThemePalette.defaults(dark: dark).colors[role] ?? "" }, set: { change(role, input: $0) })).font(.system(.body, design: .monospaced)).accessibilityLabel(role.title).focused($focusedRole, equals: role).onSubmit { restoreField(role) }
+                        TextField("#RRGGBB", text: Binding(get: { draft.colors[role] ?? MacThemePalette.defaults(dark: dark).colors[role] ?? "" }, set: { change(role, input: $0) })).macFont(.system(.body, design: .monospaced)).accessibilityLabel(role.title).focused($focusedRole, equals: role).onSubmit { restoreField(role) }
                     }
                 }
             }.disabled(unreadable)
@@ -258,7 +258,7 @@ struct MacThemeSettingsView: View {
                     }
                 }
             }.frame(maxHeight: 100)
-            Text("Loading a preset or saved palette selects its matching appearance, including window controls. Incomplete hex text resets when you leave its field.").font(.caption).foregroundStyle(.secondary)
+            Text("Loading a preset or saved palette selects its matching appearance, including window controls. Incomplete hex text resets when you leave its field.").macFont(.caption).foregroundStyle(.secondary)
             if let issue { Text(issue).foregroundStyle(.red).textSelection(.enabled) }
             if unreadable { Button("Reset unreadable colour settings") { serialized = ""; load() } }
             HStack { Spacer(); Button("Done") { dismiss() }.keyboardShortcut(.defaultAction) }

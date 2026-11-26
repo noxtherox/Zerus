@@ -109,7 +109,7 @@ struct MacSettingsView: View {
     /// Embedded views keep their own controls; the pane supplies the title.
     private func framed<Content: View>(_ pane: MacSettingsPane, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(pane.title).font(.title2.bold())
+            Text(pane.title).macFont(.title2.bold())
             content()
         }.padding(.horizontal, 24).padding(.top, 20).padding(.bottom, 16).id(pane)
     }
@@ -124,7 +124,7 @@ private struct MacSettingsSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: pane.icon).font(.system(size: 12, weight: .medium)).frame(width: 22, height: 22)
+                Image(systemName: pane.icon).macFont(.system(size: 12, weight: .medium)).frame(width: 22, height: 22)
                     .background(RoundedRectangle(cornerRadius: 6).fill(selected ? Color.white.opacity(0.2) : Color.primary.opacity(0.08)))
                 Text(pane.title)
                 Spacer(minLength: 0)
@@ -143,7 +143,7 @@ private struct MacSettingsSidebarRow: View {
 private struct MacSettingsHelp: View {
     let text: String
     init(_ text: String) { self.text = text }
-    var body: some View { Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+    var body: some View { Text(text).macFont(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
 }
 
 private struct MacGeneralSettingsPane: View {
@@ -175,6 +175,7 @@ private struct MacGeneralSettingsPane: View {
 private struct MacAppearanceSettingsPane: View {
     @AppStorage("zerus.mac.appearance") private var appearance = "light"
     @AppStorage("zerus.mac.interfaceZoom") private var interfaceZoom = 100
+    @AppStorage(MacInterfaceText.key) private var interfaceTextSize = 100
     @Environment(\.macTheme) private var theme
     @State private var colours = false
     var body: some View {
@@ -185,6 +186,9 @@ private struct MacAppearanceSettingsPane: View {
                 Picker(selection: Binding(get: { MacInterfaceZoom.validated(interfaceZoom) }, set: { interfaceZoom = $0 })) {
                     ForEach(MacInterfaceZoom.options, id: \.self) { Text("\($0)%").tag($0) }
                 } label: { Text("Interface zoom"); MacSettingsHelp("Resize navigation, lists and controls on this Mac. Note content uses its own size.") }
+                Picker(selection: Binding(get: { MacInterfaceText.validated(interfaceTextSize) }, set: { interfaceTextSize = $0 })) {
+                    ForEach(MacInterfaceText.options, id: \.self) { Text("\($0)%").tag($0) }
+                } label: { Text("Interface text"); MacSettingsHelp("Resize text in navigation, lists, panes and settings without changing button or control sizes. Note content uses its own size.") }
             }
             Section("Colours") {
                 LabeledContent {

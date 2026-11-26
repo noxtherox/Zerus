@@ -77,8 +77,8 @@ struct MacHistoryDifferenceView: View {
         Group {
             if let report {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("\(report.added) added · \(report.removed) removed").font(.caption).foregroundStyle(.secondary)
-                    if report.coarse { Text("Large changed section shown as removed and added blocks.").font(.caption).foregroundStyle(.secondary) }
+                    Text("\(report.added) added · \(report.removed) removed").macFont(.caption).foregroundStyle(.secondary)
+                    if report.coarse { Text("Large changed section shown as removed and added blocks.").macFont(.caption).foregroundStyle(.secondary) }
                     ScrollView { LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(report.lines) { line in row(line, report: report) }
                     }.frame(maxWidth: .infinity, alignment: .leading) }
@@ -104,7 +104,7 @@ struct MacHistoryDifferenceView: View {
             Text(line.after.map(String.init) ?? "").frame(width: 32, alignment: .trailing).foregroundStyle(.secondary)
             Text(line.kind == .added ? "+" : line.kind == .removed ? "−" : " ").frame(width: 12)
             text.textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-        }.font(.system(size: 12, design: .monospaced)).padding(.vertical, 4).padding(.horizontal, 8)
+        }.macFont(.system(size: 12, design: .monospaced)).padding(.vertical, 4).padding(.horizontal, 8)
             .background(line.kind == .added ? Color.green.opacity(0.12) : line.kind == .removed ? Color.red.opacity(0.12) : .clear)
     }
 }

@@ -140,19 +140,19 @@ struct MacDesktopSettingsImportView: View {
     var body: some View {
         let s = review.snapshot.settings
         VStack(alignment: .leading, spacing: 16) {
-            Text("Import desktop settings").font(.title2.bold())
-            Text(review.name).font(.caption).foregroundStyle(.secondary)
+            Text("Import desktop settings").macFont(.title2.bold())
+            Text(review.name).macFont(.caption).foregroundStyle(.secondary)
             Text("Apply these preferences on this Mac. Current editor text and vault files are kept.")
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     if let vault = review.vaultReview {
-                        Text("Vault preferences: " + vault.source.name + " → " + vault.destination).font(.headline)
+                        Text("Vault preferences: " + vault.source.name + " → " + vault.destination).macFont(.headline)
                         LabeledContent("Default folder", value: vault.source.defaultNoteFolder)
-                        Text("Folder order: " + vault.source.folderOrder.joined(separator: ", ")).font(.caption)
-                        Text("Keep open: " + vault.source.keptOpenFolders.joined(separator: ", ")).font(.caption)
+                        Text("Folder order: " + vault.source.folderOrder.joined(separator: ", ")).macFont(.caption)
+                        Text("Keep open: " + vault.source.keptOpenFolders.joined(separator: ", ")).macFont(.caption)
                         LabeledContent("Hide subtype notes", value: vault.source.hideSubtypeNotes ? "On" : "Off")
-                        if !vault.missing.isEmpty { Text("Absent folders are skipped for order and keep-open: " + vault.missing.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary) }
-                        Text("Tabs, current filters and editor drafts are kept. The default folder may be created when you next make a note.").font(.caption).foregroundStyle(.secondary)
+                        if !vault.missing.isEmpty { Text("Absent folders are skipped for order and keep-open: " + vault.missing.joined(separator: ", ")).macFont(.caption).foregroundStyle(.secondary) }
+                        Text("Tabs, current filters and editor drafts are kept. The default folder may be created when you next make a note.").macFont(.caption).foregroundStyle(.secondary)
                         Divider()
                     }
                     LabeledContent("Appearance", value: s.appearance.capitalized)
@@ -167,11 +167,11 @@ struct MacDesktopSettingsImportView: View {
                             if let palette = try? MacDesktopSettingsSnapshot.palette(values) { Circle().fill(Color(nsColor: palette.color(role))).frame(width: 18, height: 18).help(role.title + ": " + (values[role.rawValue] ?? "")) }
                         } }
                     }
-                    Text("Saved themes: " + (s.savedThemes.isEmpty ? "None" : s.savedThemes.map(\.name).joined(separator: ", "))).font(.caption)
-                    Text("Matching saved theme names are replaced. Other saved themes are kept.").font(.caption).foregroundStyle(.secondary)
+                    Text("Saved themes: " + (s.savedThemes.isEmpty ? "None" : s.savedThemes.map(\.name).joined(separator: ", "))).macFont(.caption)
+                    Text("Matching saved theme names are replaced. Other saved themes are kept.").macFont(.caption).foregroundStyle(.secondary)
                 }.padding(.trailing, 8)
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack { Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Apply settings") { do { try review.apply(); dismiss() } catch { issue = error.localizedDescription } }.keyboardShortcut(.defaultAction) }
         }.padding(24).frame(width: 560, height: 550)
     }
