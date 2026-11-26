@@ -17,7 +17,7 @@ struct MacTasksView: View {
     private var taskPriorityPicker: some View {
         Picker("Priority", selection: Binding(get: { query.priority ?? "" }, set: { query.priority = $0.isEmpty ? nil : $0 })) { Text("All priorities").tag(""); ForEach(["none", "low", "medium", "high"], id: \.self) { Text($0.capitalized).tag($0) } }
     }
-    private var olderCompletedToggle: some View { Toggle("Show older completed", isOn: $query.showOlderCompleted).font(.caption) }
+    private var olderCompletedToggle: some View { Toggle("Show older completed", isOn: $query.showOlderCompleted).macFont(.caption) }
     var body: some View {
         // Sorting parses task timestamps. Share one result across rows, empty
         // state and totals instead of sorting again for each computed property.
@@ -28,7 +28,7 @@ struct MacTasksView: View {
         }
         let allPending = pendingCounts.values.reduce(0, +)
         VStack(spacing: 0) {
-            HStack { Text("Tasks").font(.title2.bold()); Spacer(); if store.tasksSaving { ProgressView().controlSize(.small) }; if let drafts = store.taskDraftStore { MacTaskDraftsEntry(workspace: store, drafts: drafts) }; Button("Lists & categories…") { managing = .init(id: store.workspaceID) }; Button { draft = store.newTask(listID: query.list ?? "") } label: { Label("New task", systemImage: "plus") } }.padding(20)
+            HStack { Text("Tasks").macFont(.title2.bold()); Spacer(); if store.tasksSaving { ProgressView().controlSize(.small) }; if let drafts = store.taskDraftStore { MacTaskDraftsEntry(workspace: store, drafts: drafts) }; Button("Lists & categories…") { managing = .init(id: store.workspaceID) }; Button { draft = store.newTask(listID: query.list ?? "") } label: { Label("New task", systemImage: "plus") } }.padding(20)
             ScrollView(.horizontal) {
                 HStack(spacing: 10) {
                     listCard(name: "All lists", id: nil, pending: allPending)
@@ -44,17 +44,17 @@ struct MacTasksView: View {
                 HStack(spacing: 18) { taskCategoryPicker.frame(width: 250); taskPriorityPicker.frame(width: 220); Spacer(); olderCompletedToggle }
                 VStack(alignment: .leading, spacing: 10) { taskCategoryPicker; taskPriorityPicker; olderCompletedToggle }
             }.padding(20)
-            if let issue = store.taskDraftIssue { Text(MacTaskDraftExport.message(issue)).font(.caption).foregroundStyle(.orange).padding(.horizontal, 20) }
-            if let warning = store.taskWarning { Text(warning).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20) }
+            if let issue = store.taskDraftIssue { Text(MacTaskDraftExport.message(issue)).macFont(.caption).foregroundStyle(.orange).padding(.horizontal, 20) }
+            if let warning = store.taskWarning { Text(warning).macFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 20) }
             Divider()
             ScrollView { LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(pending) { task in taskRow(task); Divider() }
                 if !completed.isEmpty {
-                    DisclosureGroup(isExpanded: Binding(get: { query.view == .completed || completedOpen }, set: { completedOpen = $0 })) { ForEach(completed) { taskRow($0) } } label: { Text("Completed · \(completed.count)").font(.headline) }
+                    DisclosureGroup(isExpanded: Binding(get: { query.view == .completed || completedOpen }, set: { completedOpen = $0 })) { ForEach(completed) { taskRow($0) } } label: { Text("Completed · \(completed.count)").macFont(.headline) }
                 }
                 if visible.isEmpty { ContentUnavailableView("No tasks", systemImage: "checkmark.circle", description: Text("Try another list or filter, or add a task.")) }
             }.padding(.horizontal, 20) }.frame(maxHeight: .infinity)
-            HStack { Text("\(pending.count) pending · \(completed.count) completed"); Spacer() }.font(.caption).foregroundStyle(.secondary).padding(12)
+            HStack { Text("\(pending.count) pending · \(completed.count) completed"); Spacer() }.macFont(.caption).foregroundStyle(.secondary).padding(12)
         }
         .onAppear { query.list = "" }
         .onChange(of: store.taskLists.map(\.id)) { _, ids in if let id = query.list, !id.isEmpty, !ids.contains(id) { query.list = "" } }
@@ -64,7 +64,7 @@ struct MacTasksView: View {
     }
     private func listCard(name: String, id: String?, pending: Int) -> some View {
         Button { query.list = id } label: {
-            VStack(alignment: .leading, spacing: 6) { Text(name).font(.headline).lineLimit(1); Text("\(pending) pending").font(.caption).foregroundStyle(.secondary) }.padding(13).frame(width: 160, alignment: .leading).background(query.list == id ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 6) { Text(name).macFont(.headline).lineLimit(1); Text("\(pending) pending").macFont(.caption).foregroundStyle(.secondary) }.padding(13).frame(width: 160, alignment: .leading).background(query.list == id ? Color.accentColor.opacity(0.12) : Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(MacBoxButtonStyle()).accessibilityLabel(name + " task list")
     }
     private func taskRow(_ task: NativeTask) -> some View {
@@ -76,10 +76,10 @@ struct MacTasksView: View {
                     HStack { MacDateLabel(value: task.date, prefix: "Scheduled "); if !task.dueDate.isEmpty { MacDateLabel(value: task.dueDate, prefix: "Due ") } }
                     if task.completed, let completed = task.raw["completedAt"] as? String { MacDateLabel(value: completed, prefix: "Completed ") }
                     HStack { if !task.category.isEmpty { Text(task.category).lineLimit(1) }; if !task.linkedNoteIDs.isEmpty { Label("\(task.linkedNoteIDs.count)", systemImage: "link") } }
-                }.font(.caption).foregroundStyle(.secondary)
+                }.macFont(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if task.priority != "none" { Text(task.priority.capitalized).font(.caption).foregroundStyle(task.priority == "high" ? .red : .secondary) }
+            if task.priority != "none" { Text(task.priority.capitalized).macFont(.caption).foregroundStyle(task.priority == "high" ? .red : .secondary) }
             Button("Edit…") { draft = task }.buttonStyle(.borderless).accessibilityLabel("Edit " + task.title)
         }.padding(.vertical, 8).accessibilityElement(children: .contain)
     }
@@ -129,7 +129,7 @@ private struct MacTaskForm: View {
     private var datesValid: Bool { scheduledValid && (!(dueVisibility ?? !task.dueDate.isEmpty) || dueValid) }
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            HStack { Text(task.baseline == nil ? "New task" : "Edit task").font(.title2.bold()); Spacer(); if saving { ProgressView().controlSize(.small) } }
+            HStack { Text(task.baseline == nil ? "New task" : "Edit task").macFont(.title2.bold()); Spacer(); if saving { ProgressView().controlSize(.small) } }
             Form {
                 TextField("Title", text: $session.task.title)
                 Toggle("Completed", isOn: $session.task.completed)
@@ -147,13 +147,13 @@ private struct MacTaskForm: View {
                 }
             }
             Divider()
-            HStack { Text("Supporting notes").font(.headline); Spacer(); Button(linkPicker ? "Hide picker" : "Link a note…") { linkPicker.toggle() } }
+            HStack { Text("Supporting notes").macFont(.headline); Spacer(); Button(linkPicker ? "Hide picker" : "Link a note…") { linkPicker.toggle() } }
             ScrollView { VStack(alignment: .leading, spacing: 9) {
                 ForEach(Array(task.linkedNoteIDs.enumerated()), id: \.offset) { _, token in
                     let matches = MacTaskNotes.matches(token, notes: store.notes)
                     HStack { if matches.count == 1, let note = matches.first { Button(note.title) { Task { if await commit() { await store.openNote(note.path) } } }.buttonStyle(.link) } else { Label("Unavailable linked note", systemImage: "link.badge.plus").foregroundStyle(.secondary) }; Spacer(); Button("Unlink") { task.linkedNoteIDs.removeAll { $0 == token } } }
                 }
-                if task.linkedNoteIDs.isEmpty { Text("No supporting notes").font(.caption).foregroundStyle(.secondary) }
+                if task.linkedNoteIDs.isEmpty { Text("No supporting notes").macFont(.caption).foregroundStyle(.secondary) }
             } }.frame(maxHeight: 100)
             if linkPicker {
                 HStack { TextField("Search notes…", text: $query); Picker("Folder", selection: $folder) { Text("All folders").tag(String?.none); Text("No folder").tag(Optional("")); ForEach(store.folders, id: \.self) { Text($0).tag(Optional($0)) } }.frame(width: 210) }
@@ -162,22 +162,22 @@ private struct MacTaskForm: View {
                         Toggle(isOn: Binding(get: { MacTaskNotes.isLinked(note, ids: task.linkedNoteIDs, notes: store.notes) }, set: { enabled in
                             if enabled { task.linkedNoteIDs.append(MacTaskNotes.token(note, notes: store.notes)) }
                             else { task.linkedNoteIDs.removeAll { token in let matches = MacTaskNotes.matches(token, notes: store.notes); return matches.count == 1 && matches[0].path == note.path } }
-                        })) { VStack(alignment: .leading) { Text(note.title); Text(note.folder).font(.caption2).foregroundStyle(.secondary) } }
+                        })) { VStack(alignment: .leading) { Text(note.title); Text(note.folder).macFont(.caption2).foregroundStyle(.secondary) } }
                     }
                 } }.frame(height: 160)
             }
-            if !connected { Text("The vault changed. Close this form and reopen its task.").foregroundStyle(.red).font(.caption) }
-            if let issue { Text(issue).foregroundStyle(.red).font(.caption) }
+            if !connected { Text("The vault changed. Close this form and reopen its task.").foregroundStyle(.red).macFont(.caption) }
+            if let issue { Text(issue).foregroundStyle(.red).macFont(.caption) }
             HStack {
-                Label(session.recovered ? "Recovered task draft" : session.record != nil ? "Draft kept on this Mac" : "Changes are kept privately", systemImage: "doc.badge.clock").font(.caption).foregroundStyle(.secondary)
+                Label(session.recovered ? "Recovered task draft" : session.record != nil ? "Draft kept on this Mac" : "Changes are kept privately", systemImage: "doc.badge.clock").macFont(.caption).foregroundStyle(.secondary)
                 Spacer(); Button("Export draft…") { do { try MacTaskDraftExport.save(task.shareDraft) } catch { issue = error.localizedDescription } }
             }
-            if let warning = session.issue { Text(MacTaskDraftExport.message(warning)).font(.caption).foregroundStyle(.orange) }
+            if let warning = session.issue { Text(MacTaskDraftExport.message(warning)).macFont(.caption).foregroundStyle(.orange) }
             HStack {
                 Button("Discard draft…") { review = .discard }
                 if task.baseline != nil { Button("Reload…") { review = .reload } }
                 Button("Save as new…") { review = .copy }.disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !datesValid)
-            }.font(.caption).disabled(!connected)
+            }.macFont(.caption).disabled(!connected)
             HStack { if task.baseline != nil { Button("Delete…", role: .destructive) { deleting = true }.disabled(!connected) }; Spacer(); Button("Close") { session.keep(); dismiss() }.keyboardShortcut(.cancelAction); Button("Save") { Task { _ = await commit() } }.keyboardShortcut(.defaultAction).disabled(task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !connected || !datesValid) }.disabled(saving)
         }.padding(24).frame(width: 620).disabled(saving).interactiveDismissDisabled(saving)
         .onDisappear { session.keep() }

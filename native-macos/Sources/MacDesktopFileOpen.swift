@@ -114,7 +114,7 @@ struct MacPendingDesktopFiles: View {
     var body: some View {
         if !opener.pending.isEmpty {
             Text("Open a vault to finish opening \(opener.pending.count) desktop \(opener.pending.count == 1 ? "file" : "files").")
-                .font(.callout).foregroundStyle(.secondary)
+                .macFont(.callout).foregroundStyle(.secondary)
         }
     }
 }

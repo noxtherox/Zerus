@@ -13,7 +13,7 @@ struct MacLocalAISettingsPane: View {
         Form {
             Section {
                 Text("Search by meaning, ask questions about your notes, summarize and edit with a model that runs entirely on this Mac. Notes and questions never leave it; the models download once from Hugging Face.")
-                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .macFont(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let limitation = ai.capabilities.limitation, ai.installed {
                     Label(limitation, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                 }
@@ -25,7 +25,7 @@ struct MacLocalAISettingsPane: View {
                     } label: {
                         Text(spec.displayName)
                         Text("\(spec.role == .language ? "Ask, summaries and edits" : "Semantic search") · \(ByteCountFormatter.string(fromByteCount: spec.totalBytes, countStyle: .file)) · \(spec.license)")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .macFont(.caption).foregroundStyle(.secondary)
                     }
                 }
                 HStack {
@@ -40,10 +40,10 @@ struct MacLocalAISettingsPane: View {
                         Button("Delete Models…", role: .destructive) { confirmDelete = true }.disabled(ai.downloading)
                     }
                 }
-                if let issue = ai.downloadIssue { Text(issue).font(.caption).foregroundStyle(.red) }
+                if let issue = ai.downloadIssue { Text(issue).macFont(.caption).foregroundStyle(.red) }
                 Toggle(isOn: Binding(get: { ai.allowExpensiveNetwork }, set: { ai.allowExpensiveNetwork = $0 })) {
                     Text("Download on any network")
-                    Text("Off: downloads only over Wi-Fi or Ethernet, not over personal hotspot or Low Data Mode.").font(.caption).foregroundStyle(.secondary)
+                    Text("Off: downloads only over Wi-Fi or Ethernet, not over personal hotspot or Low Data Mode.").macFont(.caption).foregroundStyle(.secondary)
                 }
             }
             if let workspace, workspace.root != nil, ai.installed {
@@ -52,10 +52,10 @@ struct MacLocalAISettingsPane: View {
                         if ai.index.running { HStack { ProgressView().controlSize(.small); Text("\(ai.index.indexed) of \(ai.index.total) notes") } }
                         else { Text(ai.index.total == 0 ? "Not built yet" : "\(ai.index.indexed) of \(ai.index.total) notes") }
                     }
-                    if let issue = ai.index.issue { Text(issue).font(.caption).foregroundStyle(.red) }
+                    if let issue = ai.index.issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
                     Button("Rebuild Index") { Task { await ai.rebuildIndex(workspace) } }.disabled(ai.index.running)
                     Text("The index is stored only on this Mac (Application Support) and is never synced. Keyword search works while it builds.")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .macFont(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -131,9 +131,9 @@ struct MacLocalAIActionView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label(initial.kind.title, systemImage: "sparkles").font(.title3.bold())
+                Label(initial.kind.title, systemImage: "sparkles").macFont(.title3.bold())
                 Spacer()
-                Text("On this Mac").font(.caption).foregroundStyle(.secondary)
+                Text("On this Mac").macFont(.caption).foregroundStyle(.secondary)
             }
             content
         }
@@ -151,10 +151,10 @@ struct MacLocalAIActionView: View {
         switch phase {
         case .input:
             if let selection = initial.selection, initial.kind == .rewrite {
-                Text(selection).lineLimit(4).font(.callout).foregroundStyle(.secondary).padding(8)
+                Text(selection).lineLimit(4).macFont(.callout).foregroundStyle(.secondary).padding(8)
                     .frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
             }
-            Text(initial.kind.prompt).font(.headline)
+            Text(initial.kind.prompt).macFont(.headline)
             TextField("Instruction", text: $instruction, axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder).onSubmit(run)
             if !initial.kind.presets.isEmpty {
                 HStack { ForEach(initial.kind.presets, id: \.self) { preset in Button(preset) { instruction = preset; run() }.controlSize(.small) } }
@@ -172,7 +172,7 @@ struct MacLocalAIActionView: View {
                 Button("Add to Note…") { phase = .textReview(after: LocalAIPipelines.appending("## Summary\n\n" + text, to: initial.markdown)) }.disabled(!done || initial.path == nil)
             }
         case .textReview(let after):
-            Text("Review the change. Apply saves it to the note; Edit ▸ Undo reverts it.").font(.caption).foregroundStyle(.secondary)
+            Text("Review the change. Apply saves it to the note; Edit ▸ Undo reverts it.").macFont(.caption).foregroundStyle(.secondary)
             MacHistoryDifferenceView(before: initial.markdown, after: after).frame(minHeight: 220, maxHeight: 440)
             footer { Button("Discard") { dismiss() }; Button("Try Again") { run() }; Button("Apply") { applyText(after) }.keyboardShortcut(.defaultAction) }
         case .propertyReview(let ops, let before):
@@ -189,7 +189,7 @@ struct MacLocalAIActionView: View {
             }.padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 6))
             footer { Button("Discard") { dismiss() }; Button("Try Again") { run() }; Button("Apply") { applyProperties(ops, before: before) }.keyboardShortcut(.defaultAction) }
         case .createReview(let title, let body):
-            Text(title.isEmpty ? "Untitled" : title).font(.headline)
+            Text(title.isEmpty ? "Untitled" : title).macFont(.headline)
             ScrollView { Text(body).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(minHeight: 120, maxHeight: 360)
             footer { Button("Discard") { dismiss() }; Button("Try Again") { run() }; Button("Create Note") { create(title: title, body: body) }.keyboardShortcut(.defaultAction) }
         case .propertiesApplied(let before, let after):
@@ -357,9 +357,9 @@ struct MacLocalAskView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Label("Ask your notes", systemImage: "sparkles").font(.title3.bold())
+                Label("Ask your notes", systemImage: "sparkles").macFont(.title3.bold())
                 Spacer()
-                Text("Answers come only from your notes, on this Mac").font(.caption).foregroundStyle(.secondary)
+                Text("Answers come only from your notes, on this Mac").macFont(.caption).foregroundStyle(.secondary)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) { ForEach(turns) { turn in view(turn) } }.frame(maxWidth: .infinity, alignment: .leading)
@@ -379,14 +379,14 @@ struct MacLocalAskView: View {
 
     @ViewBuilder private func view(_ turn: Turn) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(turn.question).font(.headline)
+            Text(turn.question).macFont(.headline)
             switch turn.state {
             case .thinking(let message):
                 HStack { ProgressView().controlSize(.small); Text(message).foregroundStyle(.secondary) }
             case .answer(let answer, let titles):
                 Text(answer.answer).textSelection(.enabled)
                 if answer.found, !answer.verified {
-                    Label("Check the cited notes: some quoted text wasn't found verbatim.", systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    Label("Check the cited notes: some quoted text wasn't found verbatim.", systemImage: "exclamationmark.triangle").macFont(.caption).foregroundStyle(.orange)
                 }
                 if !answer.sources.isEmpty {
                     HStack { ForEach(answer.sources, id: \.self) { path in Button(titles[path] ?? path) { open(path) }.controlSize(.small) } }

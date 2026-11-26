@@ -32,12 +32,12 @@ struct MacRecoveryView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack { Text(review == nil ? "Revisions & history" : "Review recovery").font(.title2.bold()); Spacer(); if busy { ProgressView().controlSize(.small) }; Button("Done") { dismiss() }.disabled(busy) }
+            HStack { Text(review == nil ? "Revisions & history" : "Review recovery").macFont(.title2.bold()); Spacer(); if busy { ProgressView().controlSize(.small) }; Button("Done") { dismiss() }.disabled(busy) }
             if let review { reviewPane(review) }
             else if let snapshot { browser(snapshot) }
             else { ContentUnavailableView("Loading recovery", systemImage: "clock.arrow.circlepath", description: Text("Save the current note and read its saved versions.")) }
-            if let notice { Text(notice).font(.caption).foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let notice { Text(notice).macFont(.caption).foregroundStyle(.secondary) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(20).frame(width: 1080, height: 720).disabled(busy).interactiveDismissDisabled(busy)
         .task { await reload() }
         .onChange(of: workspace.workspaceID) { snapshot = nil; review = nil; issue = "The vault changed. Close and reopen recovery." }
@@ -51,16 +51,16 @@ struct MacRecoveryView: View {
                 Picker("Saved versions", selection: $history) { Text("Revisions").tag(false); Text("Automatic history").tag(true) }.pickerStyle(.segmented).frame(width: 370).onChange(of: history) { selected = history ? snapshot.history?.versions.first?.id : snapshot.revisions?.index.currentID; loadAnnotation(); issue = nil }
                 Spacer(); Button("Refresh") { Task { await reload() } }
             }
-            Text(snapshot.note.title).font(.headline)
-            if let unavailable = history ? snapshot.historyIssue : snapshot.revisionIssue { Text(unavailable).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-            if let other = history ? snapshot.revisionIssue : snapshot.historyIssue { Text((history ? "Revisions are unavailable: " : "Automatic history is unavailable: ") + other).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+            Text(snapshot.note.title).macFont(.headline)
+            if let unavailable = history ? snapshot.historyIssue : snapshot.revisionIssue { Text(unavailable).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if let other = history ? snapshot.revisionIssue : snapshot.historyIssue { Text((history ? "Revisions are unavailable: " : "Automatic history is unavailable: ") + other).macFont(.caption).foregroundStyle(.secondary).lineLimit(2) }
             MacZoomSplitView {
                 ScrollView { VStack(alignment: .leading, spacing: 5) {
                     if history {
                         ForEach(snapshot.history?.versions ?? []) { version in
                             versionButton(version.id, title: version.label ?? version.timestamp, detail: (version.source == "mobile" ? "Apple app" : version.source) + (version.kept ? " · kept" : "") + (version.incomplete ? " · incomplete" : ""))
                         }
-                        if snapshot.history?.versions.isEmpty == true { Text("No automatic versions yet.").font(.caption).foregroundStyle(.secondary).padding() }
+                        if snapshot.history?.versions.isEmpty == true { Text("No automatic versions yet.").macFont(.caption).foregroundStyle(.secondary).padding() }
                     } else {
                         ForEach((snapshot.revisions?.index.revisions ?? []).filter { $0.deletedAt == nil }) { revision in
                             versionButton(revision.id, title: "v\(revision.number)" + (revision.id == snapshot.revisions?.index.currentID ? " · current" : ""), detail: revision.createdAt)
@@ -86,8 +86,8 @@ struct MacRecoveryView: View {
                 if let version {
                     HStack { Toggle("Keep version", isOn: $kept).toggleStyle(.checkbox); TextField("Version label (optional)", text: $label).textFieldStyle(.roundedBorder); Button("Save label & keep") { saveAnnotation(snapshot, version: version) }.disabled(kept == version.kept && label.trimmingCharacters(in: .whitespacesAndNewlines) == (version.label ?? "")) }
                 }
-                if let problems = snapshot.history?.problems, !problems.isEmpty { Text(problems.joined(separator: "\n")).font(.caption).foregroundStyle(.orange).lineLimit(3) }
-                HStack { Button("History settings…") { management = true }; Text("Restoring requires a review first.").font(.caption).foregroundStyle(.secondary); Spacer(); Button("Review restore…") { prepareHistory(snapshot) }.disabled(version == nil || version?.incomplete == true) }
+                if let problems = snapshot.history?.problems, !problems.isEmpty { Text(problems.joined(separator: "\n")).macFont(.caption).foregroundStyle(.orange).lineLimit(3) }
+                HStack { Button("History settings…") { management = true }; Text("Restoring requires a review first.").macFont(.caption).foregroundStyle(.secondary); Spacer(); Button("Review restore…") { prepareHistory(snapshot) }.disabled(version == nil || version?.incomplete == true) }
             } else {
                 HStack {
                     Button("New revision…") { prepare(snapshot, action: .create) }.disabled(snapshot.revisions == nil)
@@ -103,39 +103,39 @@ struct MacRecoveryView: View {
             if let id = version.parentID {
                 let parents = snapshot.history?.versions.filter { $0.id == id } ?? []
                 if parents.count == 1, let parent = parents.first, let before = parent.content {
-                    Text("Compared with " + (parent.label ?? parent.timestamp)).font(.caption).foregroundStyle(.secondary)
+                    Text("Compared with " + (parent.label ?? parent.timestamp)).macFont(.caption).foregroundStyle(.secondary)
                     MacHistoryDifferenceView(before: source ? before : NativeHistory.stripped(before), after: source ? content : NativeHistory.stripped(content))
                 } else { ContentUnavailableView("Parent version unavailable", systemImage: "doc.badge.exclamationmark", description: Text("Restore the missing or incomplete parent record to compare these versions. Its saved data is preserved.")) }
             } else {
-                Text("Initial version · compared with an empty note").font(.caption).foregroundStyle(.secondary)
+                Text("Initial version · compared with an empty note").macFont(.caption).foregroundStyle(.secondary)
                 MacHistoryDifferenceView(before: "", after: source ? content : NativeHistory.stripped(content))
             }
         } else { ContentUnavailableView("Saved text unavailable", systemImage: "doc.badge.exclamationmark", description: Text("This version has missing text. Restore its required history records before comparing.")) }
     }
     private func versionButton(_ id: String, title: String, detail: String) -> some View {
         Button { selected = id; issue = nil; notice = nil } label: {
-            VStack(alignment: .leading, spacing: 4) { Text(title).font(.headline); Text(detail).font(.caption).foregroundStyle(.secondary) }
+            VStack(alignment: .leading, spacing: 4) { Text(title).macFont(.headline); Text(detail).macFont(.caption).foregroundStyle(.secondary) }
                 .padding(10).frame(maxWidth: .infinity, alignment: .leading).background(selected == id ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
         }.buttonStyle(MacBoxButtonStyle()).accessibilityLabel(title + ", " + detail).accessibilityAddTraits(selected == id ? .isSelected : [])
     }
     private func reviewPane(_ review: MacRecoveryReview) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(review.label + " · " + review.note.title).font(.headline)
-            Text(review.explanation).font(.callout).foregroundStyle(.secondary)
+            Text(review.label + " · " + review.note.title).macFont(.headline)
+            Text(review.explanation).macFont(.callout).foregroundStyle(.secondary)
             Toggle("Show Markdown & properties", isOn: $source).toggleStyle(.checkbox)
             MacZoomSplitView {
                 comparison("Current note", content: review.note.content, root: workspace.root, images: [:])
                 comparison("Result after confirmation", content: review.content, root: nil, images: review.images)
             }
             if !review.resources.isEmpty {
-                Text("New saved file snapshots: \(review.resources.filter { $0.before == nil }.count)").font(.caption.bold())
+                Text("New saved file snapshots: \(review.resources.filter { $0.before == nil }.count)").macFont(.caption.bold())
                 ScrollView(.horizontal) { HStack { ForEach(review.resources.filter { $0.before == nil }, id: \.path) { item in Button(resourceLabel(item, review: review)) { do { file = try workspace.recoveryResource(item, review: review) } catch { issue = error.localizedDescription } }.help(item.path) } } }.frame(maxHeight: 32)
             }
             HStack { Button("Back") { self.review = nil; issue = nil }; Spacer(); Button("Cancel") { self.review = nil; issue = nil }; Button(review.label) { commit(review) }.keyboardShortcut(.defaultAction) }
         }
     }
     private func comparison(_ title: String, content: String, root: URL?, images: [String: NSImage]) -> some View {
-        VStack(alignment: .leading) { Text(title).font(.caption.bold()); MacRecoveryText(content: content, source: source, root: root, path: request.path, images: images, onLink: { previewLink($0, content: content, review: review) }) }.frame(minWidth: 450, maxWidth: .infinity)
+        VStack(alignment: .leading) { Text(title).macFont(.caption.bold()); MacRecoveryText(content: content, source: source, root: root, path: request.path, images: images, onLink: { previewLink($0, content: content, review: review) }) }.frame(minWidth: 450, maxWidth: .infinity)
     }
     private func resourceLabel(_ item: VaultFileChange, review: MacRecoveryReview) -> String {
         let name = (item.path as NSString).lastPathComponent.replacingOccurrences(of: #"^\d+-"#, with: "", options: .regularExpression)
@@ -208,9 +208,9 @@ private struct MacHistoryVersionBody: View {
         VStack(alignment: .leading, spacing: 8) {
             MacRecoveryText(content: source ? (version.content ?? "") : (preview?.content ?? version.content ?? ""), source: source, root: nil, path: snapshot.note.path, images: loadedPage == page ? preview?.images ?? [:] : [:], onLink: onLink)
             HStack {
-                if loading { ProgressView().controlSize(.mini); Text("Loading saved images…").font(.caption) }
+                if loading { ProgressView().controlSize(.mini); Text("Loading saved images…").macFont(.caption) }
                 if let preview, preview.imageCount > 0 {
-                    Text("Saved images \(preview.page * MacHistoryPreview.pageSize + 1)–\(min(preview.imageCount, (preview.page + 1) * MacHistoryPreview.pageSize)) of \(preview.imageCount)").font(.caption).foregroundStyle(.secondary)
+                    Text("Saved images \(preview.page * MacHistoryPreview.pageSize + 1)–\(min(preview.imageCount, (preview.page + 1) * MacHistoryPreview.pageSize)) of \(preview.imageCount)").macFont(.caption).foregroundStyle(.secondary)
                     if preview.pages > 1 {
                         Button("Previous images") { page = max(0, page - 1) }.disabled(loading || page == 0)
                         Button("Next images") { page += 1 }.disabled(loading || page + 1 >= preview.pages)
@@ -218,8 +218,8 @@ private struct MacHistoryVersionBody: View {
                 }
                 Spacer(); Button("Reload saved images") { retry = UUID() }.disabled(loading)
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-            if loadedPage == page, let preview, !preview.warnings.isEmpty { Text(preview.warnings.joined(separator: "\n")).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            if loadedPage == page, let preview, !preview.warnings.isEmpty { Text(preview.warnings.joined(separator: "\n")).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
         }
         .task(id: "\(page):\(retry)") {
             let requestedPage = page, request = retry

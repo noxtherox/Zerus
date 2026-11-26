@@ -83,7 +83,7 @@ struct MacChatConnection: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("AI connection").font(.title2.bold()); Spacer(); if connection.loading || connection.saving { ProgressView().controlSize(.small) } }
+            HStack { Text("AI connection").macFont(.title2.bold()); Spacer(); if connection.loading || connection.saving { ProgressView().controlSize(.small) } }
             Picker("Connection", selection: $connection.usingChatGPT) { Text("API key").tag(false); Text("ChatGPT account").tag(true) }.pickerStyle(.segmented)
             ScrollView {
             VStack(alignment: .leading, spacing: 14) {
@@ -97,21 +97,21 @@ struct MacChatConnection: View {
                 HStack {
                     Button(connection.discovering ? "Cancel model discovery" : "Load models") { if connection.discovering { connection.cancelDiscovery() } else { connection.discover() } }
                     if connection.discovering { ProgressView().controlSize(.small) }
-                    if !connection.models.isEmpty { Text("\(connection.models.count) models returned").font(.caption).foregroundStyle(.secondary) }
+                    if !connection.models.isEmpty { Text("\(connection.models.count) models returned").macFont(.caption).foregroundStyle(.secondary) }
                     Spacer()
                 }
                 if !connection.models.isEmpty {
                     TextField("Filter models", text: $connection.modelQuery).textFieldStyle(.roundedBorder)
-                    ScrollView { LazyVStack(alignment: .leading, spacing: 8) { ForEach(connection.visibleModels) { model in Button { connection.select(model) } label: { HStack { VStack(alignment: .leading) { Text(model.name).font(.callout); Text(model.id).font(.caption).foregroundStyle(.secondary) }; Spacer(); if let capacity = model.contextWindow { Text("\(capacity) tokens").font(.caption).foregroundStyle(.secondary) } }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }.buttonStyle(MacBoxButtonStyle()).accessibilityLabel("Choose model " + model.id) } } }.frame(height: 130)
+                    ScrollView { LazyVStack(alignment: .leading, spacing: 8) { ForEach(connection.visibleModels) { model in Button { connection.select(model) } label: { HStack { VStack(alignment: .leading) { Text(model.name).macFont(.callout); Text(model.id).macFont(.caption).foregroundStyle(.secondary) }; Spacer(); if let capacity = model.contextWindow { Text("\(capacity) tokens").macFont(.caption).foregroundStyle(.secondary) } }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }.buttonStyle(MacBoxButtonStyle()).accessibilityLabel("Choose model " + model.id) } } }.frame(height: 130)
                 }
                 HStack { Text("Model context window (tokens)"); TextField("Context window", value: $connection.profile.contextWindow, format: .number.grouping(.never)).textFieldStyle(.roundedBorder).frame(width: 130) }
-                Text("Profiles and favorite model IDs are shared with this vault. Keys stay in this Mac’s Keychain. Leave the key blank to use this endpoint’s saved key. Loading models contacts the selected provider; a model is changed only when you choose one.").font(.caption).foregroundStyle(.secondary)
-                if connection.profile.provider == .openrouter { Text("OpenRouter’s public model catalog needs no key. Sending messages still requires your saved API key.").font(.caption).foregroundStyle(.secondary) }
-                Text("Set context capacity for your model. File context reserves room for output and images; Anthropic replies use up to 4,096 output tokens. Native tool execution is still being connected.").font(.caption).foregroundStyle(.secondary)
+                Text("Profiles and favorite model IDs are shared with this vault. Keys stay in this Mac’s Keychain. Leave the key blank to use this endpoint’s saved key. Loading models contacts the selected provider; a model is changed only when you choose one.").macFont(.caption).foregroundStyle(.secondary)
+                if connection.profile.provider == .openrouter { Text("OpenRouter’s public model catalog needs no key. Sending messages still requires your saved API key.").macFont(.caption).foregroundStyle(.secondary) }
+                Text("Set context capacity for your model. File context reserves room for output and images; Anthropic replies use up to 4,096 output tokens. Native tool execution is still being connected.").macFont(.caption).foregroundStyle(.secondary)
             }
             }
             }.frame(maxHeight: 480)
-            if let issue = connection.issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue = connection.issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { Button("Cancel") { connection.cancelDiscovery(); dismiss() }; Button("Reload profiles") { Task { await connection.load(workspace) } }; Spacer(); Button("Save connection") { Task { do { let profile = try await connection.save(workspace); saved(profile.endpoint, profile.model, profile.contextWindow, connection.usingChatGPT, profile.provider.format); dismiss() } catch {} } } }
         }.padding(24).frame(width: 650).disabled(connection.loading || connection.saving).interactiveDismissDisabled(connection.saving)
         .task { await connection.load(workspace) }.onDisappear { connection.cancelDiscovery() }

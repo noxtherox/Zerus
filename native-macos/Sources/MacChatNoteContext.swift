@@ -74,9 +74,9 @@ struct MacChatContextPicker: View {
     @State private var loading = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Note context").font(.title2.bold())
-            Text("Choose the exact notes included with your next message. Note identities are checked again before Send; their text is saved as a conversation snapshot.").font(.callout).foregroundStyle(.secondary)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+            Text("Note context").macFont(.title2.bold())
+            Text("Choose the exact notes included with your next message. Note identities are checked again before Send; their text is saved as a conversation snapshot.").macFont(.callout).foregroundStyle(.secondary)
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
             if loading { ProgressView("Checking notes…") }
             ScrollView { LazyVStack(alignment: .leading) {
                 ForEach(snapshot?.notes.filter { !$0.trashed } ?? []) { note in

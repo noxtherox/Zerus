@@ -14,20 +14,20 @@ struct MacExternalNotesView: View {
     var body: some View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
-                HStack { Text("External notes").font(.title2.bold()); Spacer(); connectionActions }
-                VStack(alignment: .leading, spacing: 12) { Text("External notes").font(.title2.bold()); connectionActions }
+                HStack { Text("External notes").macFont(.title2.bold()); Spacer(); connectionActions }
+                VStack(alignment: .leading, spacing: 12) { Text("External notes").macFont(.title2.bold()); connectionActions }
             }.padding(20)
             HStack { TextField("Search filenames or paths", text: $query).textFieldStyle(.roundedBorder); Button("Refresh") { Task { await library.restore() } } }.padding(.horizontal, 20).padding(.bottom, 14)
             Divider()
-            if let issue = library.moveIssue { Text(issue).font(.caption).foregroundStyle(.red).padding(14) }
-            if let issue = library.issue { HStack { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled); Spacer() }.padding(14) }
+            if let issue = library.moveIssue { Text(issue).macFont(.caption).foregroundStyle(.red).padding(14) }
+            if let issue = library.issue { HStack { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled); Spacer() }.padding(14) }
             ScrollView {
                 LazyVStack(spacing: 0) {
                     if !library.pendingMoves.isEmpty {
-                        HStack { Text("Pending moves").font(.headline); Spacer() }.padding(18)
+                        HStack { Text("Pending moves").macFont(.headline); Spacer() }.padding(18)
                         ForEach(library.pendingMoves) { record in
                             Button { pendingMove = record } label: {
-                                HStack { Image(systemName: "arrow.right.doc.on.clipboard"); VStack(alignment: .leading) { Text(record.sourceName).font(.headline); Text(record.destinationPath).font(.caption).foregroundStyle(.secondary) }; Spacer(); Text("Review…") }.padding(18).contentShape(Rectangle())
+                                HStack { Image(systemName: "arrow.right.doc.on.clipboard"); VStack(alignment: .leading) { Text(record.sourceName).macFont(.headline); Text(record.destinationPath).macFont(.caption).foregroundStyle(.secondary) }; Spacer(); Text("Review…") }.padding(18).contentShape(Rectangle())
                             }.buttonStyle(MacBoxButtonStyle())
                         }
                         Divider()
@@ -36,8 +36,8 @@ struct MacExternalNotesView: View {
                         HStack(alignment: .top, spacing: 12) {
                             Button { Task { await library.open(entry) } } label: {
                                 HStack(alignment: .top, spacing: 12) {
-                                    Image(systemName: "doc.text").font(.title2).foregroundStyle(.secondary)
-                                    VStack(alignment: .leading, spacing: 5) { Text(entry.name).font(.headline); Text(URL(string: entry.location)?.path ?? entry.location).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                                    Image(systemName: "doc.text").macFont(.title2).foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 5) { Text(entry.name).macFont(.headline); Text(URL(string: entry.location)?.path ?? entry.location).macFont(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                                     Spacer()
                                 }.contentShape(Rectangle())
                             }.buttonStyle(MacBoxButtonStyle())
@@ -53,7 +53,7 @@ struct MacExternalNotesView: View {
                     if library.entries.isEmpty { ContentUnavailableView("Your files, in place", systemImage: "doc.text", description: Text("Connect a Markdown file to edit its original. Connections and recovery drafts stay on this Mac; your file stays where it is.")).padding(30) }
                 }
             }
-            HStack { Text("Original files stay outside the vault. Stop tracking keeps the file.").font(.caption).foregroundStyle(.secondary); Spacer(); if library.busy { ProgressView().controlSize(.small) } }.padding(14)
+            HStack { Text("Original files stay outside the vault. Stop tracking keeps the file.").macFont(.caption).foregroundStyle(.secondary); Spacer(); if library.busy { ProgressView().controlSize(.small) } }.padding(14)
         }.disabled(library.busy)
         .task { await library.restore() }
         .macSheet(item: $recovery) { MacExternalRecoveryView(recovery: $0) }
@@ -122,7 +122,7 @@ struct MacExternalEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 4) { Text(session.snapshot.entry.name).font(.headline); Text(session.snapshot.access.canonical.path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+                VStack(alignment: .leading, spacing: 4) { Text(session.snapshot.entry.name).macFont(.headline); Text(session.snapshot.access.canonical.path).macFont(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                 Spacer()
                 Button(session.exporting ? "Exporting…" : "Export draft…") { exportDraft() }.disabled(session.exporting || clipboardBusy || !session.active)
                 Menu("Import into vault") {
@@ -136,7 +136,7 @@ struct MacExternalEditor: View {
             }.padding(16)
             Divider()
             if let message = error ?? session.failure ?? session.projectFailure ?? imagePreview.issue {
-                HStack { Image(systemName: "exclamationmark.triangle"); Text(message).font(.caption).textSelection(.enabled); Spacer(); Button("Retry") { Task { error = nil; await session.retry(); await session.restoreProject(); await imagePreview.load(project: session.project, markdown: session.document.parts.body) } } }.foregroundStyle(.red).padding(12)
+                HStack { Image(systemName: "exclamationmark.triangle"); Text(message).macFont(.caption).textSelection(.enabled); Spacer(); Button("Retry") { Task { error = nil; await session.retry(); await session.restoreProject(); await imagePreview.load(project: session.project, markdown: session.document.parts.body) } } }.foregroundStyle(.red).padding(12)
             }
             HStack(spacing: 14) {
                 ForEach([("bold", "bold"), ("italic", "italic"), ("underline", "underline"), ("code", "chevron.left.forwardslash.chevron.right"), ("bullet", "list.bullet"), ("checklist", "checklist")], id: \.0) { action, icon in Button { sendEditor(action) } label: { Image(systemName: icon) }.help(action.capitalized) }
@@ -166,19 +166,19 @@ struct MacExternalEditor: View {
                 .fixedSize()
                 Button(session.project == nil ? "Choose project folder…" : "Change project folder…") { Task { await chooseProject() } }.disabled(clipboardBusy)
                     .help("Read local images and add pasted image files inside the chosen project folder")
-                if let project = session.project { Text(project.root.lastPathComponent).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if let project = session.project { Text(project.root.lastPathComponent).macFont(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 if imagePreview.loading { ProgressView().controlSize(.small) }
                 Spacer()
                 Button(usesSource ? "Show rich text" : "Edit full source") { if MacMarkdown.requiresSource(session.document.parts.body) { error = "This file uses structures currently edited as Markdown source." } else { source.toggle() } }
             }.buttonStyle(MacBoxButtonStyle()).padding(12)
             Divider()
             MacRichEditor(markdown: editorMarkdown, source: usesSource, editable: session.active && !session.transferring && !session.agentLocked, path: session.snapshot.entry.name, project: session.project, images: imagePreview.images, onChange: { value in if usesSource { session.changeContent(value) } else { session.changeBody(value) } }, onLink: { value in Task { await workspace.follow(value) } }, onSourceChange: { source = $0 }, onPasteError: { error = $0 }, onPasteBusy: { clipboardBusy = $0 }, sourceHeader: session.document.parts.header, onModeChange: { value, full in if full { session.changeContent(value) } else { session.changeBody(value) } }, linkNotes: { [notes = workspace.notes] in notes }, commandScope: session.presentationID,
-                          isCurrent: { current }, readDocument: { (editorMarkdown, usesSource) }, chooseImageProject: { await chooseProject() }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(session.presentationID)
+                          isCurrent: { current }, readDocument: { (editorMarkdown, usesSource) }, chooseImageProject: { await chooseProject() }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").macFont(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(session.presentationID)
             Divider()
             HStack {
                 Text(session.moved ? "Moved into vault" : !session.active ? "Connection closed" : session.saving ? "Saving original…" : !session.dirty ? "Saved to original" : session.exportReady ? "Exported draft verified" : session.draftKept ? "Draft kept on this Mac" : "Keeping recovery draft…")
                 Spacer(); Text(usesSource ? "Full Markdown source" : "Rich text · frontmatter preserved")
-            }.font(.caption).foregroundStyle(.secondary).padding(12)
+            }.macFont(.caption).foregroundStyle(.secondary).padding(12)
         }.frame(minWidth: 900, minHeight: 680).disabled(session.transferring || session.agentLocked)
         .onAppear { if MacMarkdown.requiresSource(session.document.parts.body) { source = true } }
         .interactiveDismissDisabled(session.dirty || session.agentLocked || workspace.externalCopySaving)
@@ -255,12 +255,12 @@ private struct MacExternalRecoveryView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { Text("Recovery draft — " + recovery.entry.name).font(.headline); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text("Recovery draft — " + recovery.entry.name).macFont(.headline); Spacer(); Button("Done") { dismiss() } }
             if let draft = recovery.draft {
-                Text(draft.hasUnsavedChanges ? "Unsaved text kept on this Mac. Export it even when the original is unavailable." : "Last saved checkpoint. No unsaved changes were recorded.").font(.caption).foregroundStyle(.secondary)
-                ScrollView { Text(draft.content).font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.background(.quaternary.opacity(0.3))
-                if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
-                HStack { Text(draft.updated, style: .date).font(.caption).foregroundStyle(.secondary); Spacer(); Button("Export draft…") { export(draft) } }
+                Text(draft.hasUnsavedChanges ? "Unsaved text kept on this Mac. Export it even when the original is unavailable." : "Last saved checkpoint. No unsaved changes were recorded.").macFont(.caption).foregroundStyle(.secondary)
+                ScrollView { Text(draft.content).macFont(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12) }.background(.quaternary.opacity(0.3))
+                if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
+                HStack { Text(draft.updated, style: .date).macFont(.caption).foregroundStyle(.secondary); Spacer(); Button("Export draft…") { export(draft) } }
             } else { ContentUnavailableView("No recovery draft", systemImage: "doc", description: Text("The original file is unchanged.")) }
         }.padding(22).frame(width: 700, height: 500)
     }

@@ -69,7 +69,7 @@ struct MacWorkspaceView: View {
                             Text(store.startupIssue == nil ? "Showing cached notes · Checking vault…" : "Showing cached notes · Could not refresh")
                             Spacer()
                             if !store.startupRefreshing { Button("Retry") { Task { await store.refresh() } } }
-                        }.font(.caption).padding(.horizontal, 12).padding(.vertical, 7).background(.quaternary.opacity(0.3)).help(store.startupIssue ?? "Saved files are being checked. Your edits keep their normal conflict protection.")
+                        }.macFont(.caption).padding(.horizontal, 12).padding(.vertical, 7).background(.quaternary.opacity(0.3)).help(store.startupIssue ?? "Saved files are being checked. Your edits keep their normal conflict protection.")
                     }
                     workspaceContent(layout)
                 }.accessibilityHidden(compactLibrary || compactInspector).environment(\.macEditorInteractionEnabled, !compactLibrary && !compactInspector && !store.busy).disabled(compactLibrary || compactInspector || store.busy)
@@ -78,7 +78,7 @@ struct MacWorkspaceView: View {
                     HStack(spacing: 0) {
                         if compactInspector { Spacer(minLength: 0) }
                         VStack(spacing: 0) {
-                            HStack { Text(compactLibrary ? "Library" : "Inspector").font(.headline); Spacer(); Button("Done") { compactLibrary = false; compactInspector = false }.keyboardShortcut(.cancelAction) }.padding(14)
+                            HStack { Text(compactLibrary ? "Library" : "Inspector").macFont(.headline); Spacer(); Button("Done") { compactLibrary = false; compactInspector = false }.keyboardShortcut(.cancelAction) }.padding(14)
                             Divider()
                             Group { if compactLibrary { sidebarView } else { inspectorView } }.disabled(store.busy)
                         }.frame(width: min(compactLibrary ? 280 : 320, geometry.size.width)).frame(maxHeight: .infinity).background(theme.color(.surface)).shadow(radius: 10)
@@ -253,15 +253,15 @@ struct MacWorkspaceView: View {
                 ForEach(store.recentVaults.filter { $0 != store.root?.path }, id: \.self) { path in
                     Button(MacRecentVaults.menuTitle(path, among: store.recentVaults)) { Task { await store.openRecentVault(path) } }
                 }
-            } label: { Label(store.vaultTitle, systemImage: "books.vertical.fill").font(.system(size: 14, weight: .semibold)) }.menuStyle(.borderlessButton).padding(.horizontal, 8).padding(.top, 14)
+            } label: { Label(store.vaultTitle, systemImage: "books.vertical.fill").macFont(.system(size: 14, weight: .semibold)) }.menuStyle(.borderlessButton).padding(.horizontal, 8).padding(.top, 14)
             Button { store.showSearch = true } label: {
-                HStack { Image(systemName: "magnifyingglass"); Text("Search everything"); Spacer(); Text("⌘F").font(.caption) }.foregroundStyle(theme.color(.sidebarFg).opacity(0.72)).padding(8).background(theme.color(.sidebarFg).opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+                HStack { Image(systemName: "magnifyingglass"); Text("Search everything"); Spacer(); Text("⌘F").macFont(.caption) }.foregroundStyle(theme.color(.sidebarFg).opacity(0.72)).padding(8).background(theme.color(.sidebarFg).opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
             }.buttonStyle(MacBoxButtonStyle()).padding(.vertical, 8)
             ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach([("All Notes", "doc.text"), ("Tasks", "checkmark.square"), ("Links", "link"), ("Files", "doc.on.doc"), ("External Notes", "arrow.up.right.square")], id: \.0) { name, icon in navigationRow(name, icon: icon) }
-                    HStack { Text("Types").font(.caption).foregroundStyle(.secondary); Spacer(); Button { ask(.folder) } label: { Image(systemName: "plus") }.buttonStyle(MacBoxButtonStyle()).help("Create folder") }.padding(.horizontal, 8).padding(.top, 15)
-                    if let message = store.folderIconIssue { Text(message).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 8) }
+                    HStack { Text("Types").macFont(.caption).foregroundStyle(.secondary); Spacer(); Button { ask(.folder) } label: { Image(systemName: "plus") }.buttonStyle(MacBoxButtonStyle()).help("Create folder") }.padding(.horizontal, 8).padding(.top, 15)
+                    if let message = store.folderIconIssue { Text(message).macFont(.caption).foregroundStyle(.secondary).padding(.horizontal, 8) }
                     LazyVStack(spacing: 2) {
                         ForEach(store.visibleFolders.map { MacSidebarFolder(path: $0) }) { folder in folderRow(folder.path) }
                     }
@@ -279,7 +279,7 @@ struct MacWorkspaceView: View {
         let transfer = MacFolderOrderTransfer(scope: scope, source: folder)
         let children = store.folders.contains { $0.hasPrefix(folder + "/") }
         return HStack(spacing: 0) {
-            Button { store.toggleFolder(folder) } label: { Image(systemName: store.collapsedFolders.contains(folder) ? "chevron.right" : "chevron.down").font(.system(size: 9, weight: .semibold)).frame(width: 20).frame(maxHeight: .infinity).contentShape(Rectangle()) }
+            Button { store.toggleFolder(folder) } label: { Image(systemName: store.collapsedFolders.contains(folder) ? "chevron.right" : "chevron.down").macFont(.system(size: 9, weight: .semibold)).frame(width: 20).frame(maxHeight: .infinity).contentShape(Rectangle()) }
                 .buttonStyle(MacBoxButtonStyle()).disabled(!children).opacity(children ? 1 : 0)
                 .accessibilityLabel((store.collapsedFolders.contains(folder) ? "Expand " : "Collapse ") + folder)
             Button { compactLibrary = false; store.navigateFolder(folder) } label: {
@@ -287,8 +287,8 @@ struct MacWorkspaceView: View {
                     MacFolderIcon(value: store.folderIcon(folder)).foregroundStyle(store.folderCollection && store.destination == folder ? macAccent : .secondary).accessibilityHidden(true)
                     Text((folder as NSString).lastPathComponent).lineLimit(1)
                     Spacer()
-                    if store.keptFolders.contains(folder) { Image(systemName: "pin.fill").font(.system(size: 8)).foregroundStyle(.tertiary) }
-                    Text("\(store.noteCount(in: folder))").font(.caption).foregroundStyle(.tertiary)
+                    if store.keptFolders.contains(folder) { Image(systemName: "pin.fill").macFont(.system(size: 8)).foregroundStyle(.tertiary) }
+                    Text("\(store.noteCount(in: folder))").macFont(.caption).foregroundStyle(.tertiary)
                 }.padding(.vertical, 6).padding(.trailing, 6).contentShape(Rectangle())
             }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.folderCollection && store.destination == folder ? .isSelected : [])
         }.padding(.leading, CGFloat(folder.filter { $0 == "/" }.count) * 12)
@@ -342,15 +342,15 @@ struct MacWorkspaceView: View {
             else {
                 MacProgressiveNoteList(notes: notes, scope: .init(workspace: store.workspaceID, destination: store.destination, folder: store.folderCollection, query: store.query, filters: store.filters, hideSubtypes: store.hideSubtypes), row: noteRow)
                     .modifier(MacCollectionKeyboard(store: store))
-                if notes.isEmpty { ContentUnavailableView.search(text: store.query).font(.caption).frame(maxHeight: .infinity) }
+                if notes.isEmpty { ContentUnavailableView.search(text: store.query).macFont(.caption).frame(maxHeight: .infinity) }
             }
-            HStack { Text("\(notes.count) notes"); if store.filters.activeCount > 0 { Text("· \(store.filters.sort.rawValue) · \(store.filters.activeCount) filter\(store.filters.activeCount == 1 ? "" : "s")") }; Spacer() }.font(.caption2).foregroundStyle(.secondary).padding(9)
+            HStack { Text("\(notes.count) notes"); if store.filters.activeCount > 0 { Text("· \(store.filters.sort.rawValue) · \(store.filters.activeCount) filter\(store.filters.activeCount == 1 ? "" : "s")") }; Spacer() }.macFont(.caption2).foregroundStyle(.secondary).padding(9)
         }.background(theme.color(.surface))
     }
     private var narrowCollectionHeader: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Text(store.destination).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(store.destination).macFont(.system(size: 15, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 0)
                 MacViewModeMenu(store: store)
                 emptyTrashButton
@@ -367,8 +367,8 @@ struct MacWorkspaceView: View {
     private var wideCollectionHeader: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text(store.destination).font(.system(size: 20, weight: .bold)).lineLimit(1)
-                Text("\(store.collection.count)").font(.system(size: 13)).foregroundStyle(.secondary).monospacedDigit()
+                Text(store.destination).macFont(.system(size: 20, weight: .bold)).lineLimit(1)
+                Text("\(store.collection.count)").macFont(.system(size: 13)).foregroundStyle(.secondary).monospacedDigit()
                 Spacer(minLength: 12)
                 collectionSearch.frame(minWidth: 160, idealWidth: 240, maxWidth: 260)
                 filterButton(expanded: false)
@@ -384,7 +384,7 @@ struct MacWorkspaceView: View {
     }
     private func filterButton(expanded: Bool) -> some View {
         Button { filtersOpen.toggle() } label: {
-            HStack { Image(systemName: "line.3.horizontal.decrease"); Text("Sort & filter"); if expanded { Spacer() }; if store.filters.activeCount > 0 { Text("\(store.filters.activeCount)").font(.caption).foregroundStyle(.white).padding(.horizontal, 5).background(macAccent, in: Capsule()) }; Image(systemName: "chevron.down").font(.caption) }.padding(7).contentShape(Rectangle())
+            HStack { Image(systemName: "line.3.horizontal.decrease"); Text("Sort & filter"); if expanded { Spacer() }; if store.filters.activeCount > 0 { Text("\(store.filters.activeCount)").macFont(.caption).foregroundStyle(.white).padding(.horizontal, 5).background(macAccent, in: Capsule()) }; Image(systemName: "chevron.down").macFont(.caption) }.padding(7).contentShape(Rectangle())
         }.buttonStyle(MacBoxButtonStyle()).overlay(RoundedRectangle(cornerRadius: 7).stroke(.quaternary)).fixedSize(horizontal: !expanded, vertical: false).macPopover(isPresented: $filtersOpen) { filterView }
     }
     private var selectButton: some View {
@@ -429,7 +429,7 @@ struct MacWorkspaceView: View {
             Divider().frame(height: 16)
             Button { store.clearCollectionSelection() } label: { Image(systemName: "xmark") }.help("Clear selection").accessibilityLabel("Clear selection")
         }
-        .buttonStyle(MacBoxButtonStyle()).font(.system(size: 12.5))
+        .buttonStyle(MacBoxButtonStyle()).macFont(.system(size: 12.5))
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.color(.text).opacity(0.12)))
@@ -447,12 +447,12 @@ struct MacWorkspaceView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     if store.selecting { Image(systemName: store.selectedPaths.contains(note.path) ? "checkmark.circle.fill" : "circle").foregroundStyle(macAccent) }
-                    if note.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(macAccent) }
-                    Text(note.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    if note.pinned { Image(systemName: "pin.fill").macFont(.caption2).foregroundStyle(macAccent) }
+                    Text(note.title).macFont(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Spacer(minLength: 3)
-                    Text(note.modified, format: .dateTime.month(.abbreviated).day()).font(.system(size: 10)).foregroundStyle(.tertiary)
+                    Text(note.modified, format: .dateTime.month(.abbreviated).day()).macFont(.system(size: 10)).foregroundStyle(.tertiary)
                 }
-                MacCollectionExcerpt(note: note, workspaceID: store.workspaceID, lines: 2).font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                MacCollectionExcerpt(note: note, workspaceID: store.workspaceID, lines: 2).macFont(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.leading)
             }.padding(.horizontal, 15).padding(.vertical, 11).frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(store.selectedPaths.contains(note.path) ? macAccent.opacity(0.13) : store.selection == note.path ? theme.color(.editorBg) : .clear)
@@ -529,7 +529,7 @@ struct MacWorkspaceView: View {
             Button("Move to folder…") { bulkMove = true }.disabled(store.selectedPaths.isEmpty)
             Button("Edit properties…") { bulkProperties = true }.disabled(store.selectedPaths.isEmpty)
             Button("Organization history…") { bulkHistory = true }
-        }; Spacer() }.font(.caption).padding(9)
+        }; Spacer() }.macFont(.caption).padding(9)
     }
     private var filterView: some View { MacFilterPanel(filters: Binding(get: { store.filters }, set: store.changeCollectionFilters), notes: store.notes, schema: store.schema, showsFolders: !store.folderCollection) }
     private var editorView: some View {
@@ -571,7 +571,7 @@ struct MacWorkspaceView: View {
             MacBlockMenu(workspace: store, codeBlocks: codeBlocks, openTable: { tableRequest = $0 }, openCode: { codeRequest = $0 })
                 .frame(width: 32, height: 20)
             Spacer(minLength: 0)
-        }.buttonStyle(MacBoxButtonStyle()).font(.system(size: 12)).padding(.horizontal, 14) }.frame(height: 35)
+        }.buttonStyle(MacBoxButtonStyle()).macFont(.system(size: 12)).padding(.horizontal, 14) }.frame(height: 35)
     }
     private func editorButton(_ action: String, icon: String, help: String) -> some View { Button { sendEditor(action) } label: { Image(systemName: icon) }.help(help) }
     private func sendEditor(_ action: String) {
@@ -583,7 +583,7 @@ struct MacWorkspaceView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if let issue = store.paneLayoutIssue {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(issue).font(.system(size: 12)).foregroundStyle(.red)
+                        Text(issue).macFont(.system(size: 12)).foregroundStyle(.red)
                         Button("Refresh pane layout") { Task { await store.refreshPaneLayout() } }.controlSize(.small)
                     }.padding(.horizontal, 6).padding(.bottom, 10)
                 }
@@ -645,13 +645,13 @@ struct MacWorkspaceView: View {
             MacInspectorRecoveryContent(state: store.inspectorRecovery) {
                 let live = store.revisions.map { snapshot in snapshot.index.revisions.filter { $0.deletedAt == nil } } ?? []
                 let current = store.revisions.flatMap { snapshot in live.first { $0.id == snapshot.index.currentID } }
-                if store.revisionIssue != nil { Label("Revisions unavailable — browse for details", systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 6) }
+                if store.revisionIssue != nil { Label("Revisions unavailable — browse for details", systemImage: "exclamationmark.triangle").macFont(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 6) }
                 MacInspectorRevisionCard(current: current, count: live.count, browse: {
                     if let path = store.selection { recoveryRequest = .init(workspaceID: store.workspaceID, path: path, selectedID: current?.id) }
                 }, history: {
                     if let path = store.selection { recoveryRequest = .init(workspaceID: store.workspaceID, path: path, history: true) }
                 })
-                if store.historyIssue != nil { Label("History unavailable — browse for details", systemImage: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 6) }
+                if store.historyIssue != nil { Label("History unavailable — browse for details", systemImage: "exclamationmark.triangle").macFont(.system(size: 12)).foregroundStyle(.orange).padding(.horizontal, 6) }
             }
         case .relations:
             relationsContent
@@ -682,7 +682,7 @@ struct MacWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     MacInspectorGroupHeader(title: definition.name, count: targets.count) { relationName = definition.name }
                     if targets.isEmpty {
-                        Text("None linked").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
+                        Text("None linked").macFont(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6)
                     }
                     ForEach(Array(targets.enumerated()), id: \.offset) { _, text in
                         let reference = NoteReference(wikilink: "[[" + text + "]]")
@@ -696,7 +696,7 @@ struct MacWorkspaceView: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 MacInspectorGroupHeader(title: "Backlinks", count: store.backlinks.count, icon: "arrow.uturn.left")
-                if store.backlinks.isEmpty { Text("No notes link here yet").font(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6) }
+                if store.backlinks.isEmpty { Text("No notes link here yet").macFont(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6) }
                 ForEach(store.backlinks) { linked in
                     MacInspectorNoteLink(title: linked.title, detail: linked.folder) { Task { await store.openNote(linked.path) } }
                 }
@@ -714,7 +714,7 @@ struct MacWorkspaceView: View {
     private var filesView: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                HStack { Button("Add document…") { addDocument() }; Spacer(); Button("Locations…") { fileLocations = true } }.font(.caption).padding(12)
+                HStack { Button("Add document…") { addDocument() }; Spacer(); Button("Locations…") { fileLocations = true } }.macFont(.caption).padding(12)
                 ForEach(store.collection) { note in noteRow(note) }
             }
         }
@@ -732,8 +732,8 @@ struct MacWorkspaceView: View {
                             .buttonStyle(.plain).foregroundStyle(.secondary).keyboardShortcut(.cancelAction)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 24)
                     }
-                    Image(systemName: "books.vertical").font(.system(size: 44)).foregroundStyle(macAccent)
-                    Text("A little space for everything").font(.largeTitle.bold()).multilineTextAlignment(.center).padding(.top, 14)
+                    Image(systemName: "books.vertical").macFont(.system(size: 44)).foregroundStyle(macAccent)
+                    Text("A little space for everything").macFont(.largeTitle.bold()).multilineTextAlignment(.center).padding(.top, 14)
                     Text("Open a folder of Markdown files to start writing.").foregroundStyle(.secondary).padding(.top, 6)
                     MacPendingDesktopFiles(opener: store.desktopFiles).padding(.top, 12)
                     HStack(spacing: 10) {
@@ -741,7 +741,7 @@ struct MacWorkspaceView: View {
                         Button("New Vault…") { store.createVault() }
                     }.controlSize(.large).padding(.top, 18)
                     if !recents.isEmpty {
-                        Text("Recent").font(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4).padding(.top, 30).padding(.bottom, 6)
+                        Text("Recent").macFont(.caption.weight(.semibold)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 4).padding(.top, 30).padding(.bottom, 6)
                         VStack(spacing: 0) {
                             ForEach(Array(shown.enumerated()), id: \.element) { index, path in
                                 MacRecentVaultRow(path: path, icon: store.vaultIcons[path], current: store.root?.path == path,
@@ -756,7 +756,7 @@ struct MacWorkspaceView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         if recents.count > 5 {
                             Button(showAllRecents ? "Show Fewer" : "Show All \(recents.count) Recent Vaults…") { withAnimation(.snappy) { showAllRecents.toggle() } }
-                                .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary).padding(.top, 10)
+                                .buttonStyle(.plain).macFont(.callout).foregroundStyle(.secondary).padding(.top, 10)
                         }
                     }
                 }
@@ -768,7 +768,7 @@ struct MacWorkspaceView: View {
     private func ask(_ value: MacPrompt, value text: String = "") { input = text; secondInput = ""; prompt = value }
     private func promptView(_ kind: MacPrompt) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(kind.title).font(.headline)
+            Text(kind.title).macFont(.headline)
             if kind == .property { TextField("Property name", text: $propertyName); TextField("Value", text: $propertyValue) }
             else { TextField(kind == .link ? "Title" : "Name", text: $input); if kind == .link { TextField("https://…", text: $secondInput) } }
             HStack { Spacer(); Button("Cancel") { prompt = nil }.keyboardShortcut(.cancelAction); Button("Save") {
@@ -862,8 +862,8 @@ extension URL: @retroactive Identifiable { public var id: String { absoluteStrin
             if let change = store.noteDiskChange { MacRetainedNoteBanner(workspace: store, change: change) }
             toolbar
             Divider()
-            if store.sourceMode { HStack { Image(systemName: "doc.plaintext"); Text("Markdown source"); Spacer(); Button("Rich text") { store.sourceMode = false } }.font(.caption).foregroundStyle(.secondary).padding(8).background(.quaternary.opacity(0.4)) }
-            MacRichEditor(markdown: editorBody, source: store.sourceMode, editable: !note.trashed && !store.busy && !store.preparingToClose && !store.schemaMaintenanceSaving && !store.noteMovesSaving, root: store.root, path: note.path, onChange: { if current() { store.changedEditor($0) } }, onEditingIntent: { if current() { store.editingIntent() } }, onLink: { value in Task { if current() { await store.follow(value) } } }, onSourceChange: { if current() { store.sourceMode = $0 } }, onPasteError: { if current() { store.issue = $0 } }, onPasteBusy: { if current() { clipboard.wrappedValue = $0 } }, linkNotes: { store.workspaceID == origin ? store.noteSearchSources().notes : [] }, headingRequest: store.headingRequest, focusRequest: store.editorFocusRequest, onVisibleHeading: { index in if current(), store.draftState.visibleHeading != index { store.draftState.visibleHeading = index } }, commandScope: origin, isCurrent: current, readDocument: { (store.editorBody(store.body), store.sourceMode) }, sessions: sessions, createLink: { title in try await store.createLinkedNote(title: title, folder: (note.path as NSString).deletingLastPathComponent, workspaceID: origin) }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(note.path + store.workspaceID.uuidString)
+            if store.sourceMode { HStack { Image(systemName: "doc.plaintext"); Text("Markdown source"); Spacer(); Button("Rich text") { store.sourceMode = false } }.macFont(.caption).foregroundStyle(.secondary).padding(8).background(.quaternary.opacity(0.4)) }
+            MacRichEditor(markdown: editorBody, source: store.sourceMode, editable: !note.trashed && !store.busy && !store.preparingToClose && !store.schemaMaintenanceSaving && !store.noteMovesSaving, root: store.root, path: note.path, onChange: { if current() { store.changedEditor($0) } }, onEditingIntent: { if current() { store.editingIntent() } }, onLink: { value in Task { if current() { await store.follow(value) } } }, onSourceChange: { if current() { store.sourceMode = $0 } }, onPasteError: { if current() { store.issue = $0 } }, onPasteBusy: { if current() { clipboard.wrappedValue = $0 } }, linkNotes: { store.workspaceID == origin ? store.noteSearchSources().notes : [] }, headingRequest: store.headingRequest, focusRequest: store.editorFocusRequest, onVisibleHeading: { index in if current(), store.draftState.visibleHeading != index { store.draftState.visibleHeading = index } }, commandScope: origin, isCurrent: current, readDocument: { (store.editorBody(store.body), store.sourceMode) }, sessions: sessions, createLink: { title in try await store.createLinkedNote(title: title, folder: (note.path as NSString).deletingLastPathComponent, workspaceID: origin) }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").macFont(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(note.path + store.workspaceID.uuidString)
         }
     }
 }
@@ -880,7 +880,7 @@ extension URL: @retroactive Identifiable { public var id: String { absoluteStrin
             Spacer(minLength: 4)
             MacWordCountLabel(markdown: store.editorBody(draft.body)).id(note.path + store.workspaceID.uuidString)
             Button(store.sourceMode ? "Source" : "Rich text") { store.sourceMode.toggle() }.buttonStyle(MacBoxButtonStyle())
-        }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 30)
+        }.macFont(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 30)
     }
 }
 
@@ -949,7 +949,7 @@ private struct MacTitleBarButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15))
+            .macFont(.system(size: 15))
             .frame(minWidth: 34, minHeight: 34)
             .contentShape(Capsule())
             .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.35)

@@ -24,7 +24,7 @@ struct MacChatIconButton: View {
     @Environment(\.isEnabled) private var enabled
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage).font(.system(size: size * 0.48, weight: .medium))
+            Image(systemName: systemImage).macFont(.system(size: size * 0.48, weight: .medium))
                 .frame(width: size, height: size).foregroundStyle(palette.muted)
                 .background(hovering && enabled ? palette.hover : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
@@ -45,7 +45,7 @@ struct MacChatChip: View {
         HStack(spacing: 5) {
             label
             if let remove {
-                Button(action: remove) { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(palette.muted).frame(width: 14, height: 14).contentShape(Rectangle()) }
+                Button(action: remove) { Image(systemName: "xmark").macFont(.system(size: 8, weight: .bold)).foregroundStyle(palette.muted).frame(width: 14, height: 14).contentShape(Rectangle()) }
                     .buttonStyle(.plain).accessibilityLabel("Remove " + title).help("Remove " + title)
             }
         }
@@ -55,8 +55,8 @@ struct MacChatChip: View {
     }
     @ViewBuilder private var label: some View {
         let content = HStack(spacing: 4) {
-            Image(systemName: systemImage).font(.system(size: 10)).foregroundStyle(emphasized ? palette.accent : palette.muted)
-            Text(title).font(.caption).lineLimit(1).foregroundStyle(palette.text)
+            Image(systemName: systemImage).macFont(.system(size: 10)).foregroundStyle(emphasized ? palette.accent : palette.muted)
+            Text(title).macFont(.caption).lineLimit(1).foregroundStyle(palette.text)
         }
         if let action { Button(action: action) { content.contentShape(Rectangle()) }.buttonStyle(.plain) } else { content }
     }
@@ -72,12 +72,12 @@ struct MacChatConversationRow: View {
     @State private var hovering = false
     var body: some View {
         HStack(spacing: 6) {
-            Text(item.title).lineLimit(1).truncationMode(.tail).font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+            Text(item.title).lineLimit(1).truncationMode(.tail).macFont(.system(size: 12.5, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? palette.text : palette.sidebarText)
             Spacer(minLength: 4)
             if !ownedHere {
                 Image(systemName: item.owner.name.localizedCaseInsensitiveContains("iphone") ? "iphone" : item.owner.name.localizedCaseInsensitiveContains("ipad") ? "ipad" : "desktopcomputer")
-                    .font(.system(size: 10)).foregroundStyle(palette.sidebarMuted).help("Owned by " + item.owner.name)
+                    .macFont(.system(size: 10)).foregroundStyle(palette.sidebarMuted).help("Owned by " + item.owner.name)
             }
         }
         .padding(.horizontal, 9).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
@@ -135,8 +135,8 @@ struct MacChatEmptyState: View {
     let choose: (MacChatStarter) -> Void
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: "sparkles").font(.system(size: 26)).foregroundStyle(palette.accent)
-            Text("Think it through.").font(.title3.bold()).foregroundStyle(palette.text)
+            Image(systemName: "sparkles").macFont(.system(size: 26)).foregroundStyle(palette.accent)
+            Text("Think it through.").macFont(.title3.bold()).foregroundStyle(palette.text)
             if contextTitles.isEmpty { Text("Ask a question, or add notes to share as context.").foregroundStyle(palette.muted) }
             else {
                 HStack(spacing: 6) {
@@ -158,8 +158,8 @@ private struct MacChatStarterCard: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(starter.title).font(.callout.weight(.semibold)).foregroundStyle(palette.text)
-                Text(starter.detail).font(.caption).foregroundStyle(palette.muted)
+                Text(starter.title).macFont(.callout.weight(.semibold)).foregroundStyle(palette.text)
+                Text(starter.detail).macFont(.caption).foregroundStyle(palette.muted)
             }
             .padding(.horizontal, 12).padding(.vertical, 10).frame(maxWidth: .infinity, alignment: .leading)
             .background(hovering ? palette.hover : palette.surface, in: RoundedRectangle(cornerRadius: 10))
@@ -178,7 +178,7 @@ struct MacChatBanner<Action: View>: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage).foregroundStyle(palette.muted)
-            Text(message).font(.callout).foregroundStyle(palette.muted).frame(maxWidth: .infinity, alignment: .leading)
+            Text(message).macFont(.callout).foregroundStyle(palette.muted).frame(maxWidth: .infinity, alignment: .leading)
             action()
         }
         .padding(12).background(palette.surface, in: RoundedRectangle(cornerRadius: 12))
@@ -201,23 +201,23 @@ struct MacChatPendingProposals: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: "doc.badge.ellipsis").foregroundStyle(palette.accent)
-                    Text(record.run.pending.count == 1 ? "Proposed change" : "\(record.run.pending.count) proposed changes").font(.callout.weight(.semibold)).foregroundStyle(palette.text)
-                    Text("NOT SAVED").font(.system(size: 9.5, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                    Text(record.run.pending.count == 1 ? "Proposed change" : "\(record.run.pending.count) proposed changes").macFont(.callout.weight(.semibold)).foregroundStyle(palette.text)
+                    Text("NOT SAVED").macFont(.system(size: 9.5, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
                         .foregroundStyle(Color.orange).background(Color.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 4))
                     Spacer()
                 }.padding(.horizontal, 12).padding(.vertical, 9)
                 Divider().overlay(palette.line)
                 ForEach(record.run.pending) { proposal in
                     HStack {
-                        Image(systemName: "doc.text").font(.caption).foregroundStyle(palette.muted)
-                        Text(proposal.label).font(.callout).foregroundStyle(palette.text).lineLimit(2)
+                        Image(systemName: "doc.text").macFont(.caption).foregroundStyle(palette.muted)
+                        Text(proposal.label).macFont(.callout).foregroundStyle(palette.text).lineLimit(2)
                         Spacer()
-                        Button("Discard") { reject(record, proposal.id) }.buttonStyle(.borderless).foregroundStyle(palette.muted).font(.caption).disabled(disabled)
+                        Button("Discard") { reject(record, proposal.id) }.buttonStyle(.borderless).foregroundStyle(palette.muted).macFont(.caption).disabled(disabled)
                     }.padding(.horizontal, 12).padding(.vertical, 6)
                 }
                 Divider().overlay(palette.line)
                 HStack {
-                    Text("Review shows the exact before and after for each file.").font(.caption).foregroundStyle(palette.muted)
+                    Text("Review shows the exact before and after for each file.").macFont(.caption).foregroundStyle(palette.muted)
                     Spacer()
                     Button("Review…") { review(record, Set(record.run.pending.map(\.id))) }.buttonStyle(.borderedProminent).controlSize(.small).disabled(disabled)
                 }.padding(.horizontal, 12).padding(.vertical, 8)

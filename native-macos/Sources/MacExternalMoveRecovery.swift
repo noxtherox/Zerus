@@ -27,8 +27,8 @@ struct MacExternalMoveRecoveryView: View {
     @State private var discard = false
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Pending move").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
-            Text(record.sourceName).font(.headline)
+            HStack { Text("Pending move").macFont(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            Text(record.sourceName).macFont(.headline)
             LabeledContent("Vault copy", value: record.destinationPath).textSelection(.enabled)
             Text(record.phase == .removed ? "The original was removed. Finish the saved connection after checking the vault copy." : "Original recovery bytes are kept on this Mac. Review the current original before removing it, or keep both files and close the connection.").foregroundStyle(.secondary)
             Button("Open destination vault") { run {
@@ -39,13 +39,13 @@ struct MacExternalMoveRecoveryView: View {
                 Button("Review original removal…") { reviewOriginal(entry); dismiss() }
             }
             Button(record.phase == .removed ? "Finish saved connection" : "Keep vault copy and close connection") { run { try await workspace.finishPendingExternalMove(record); dismiss() } }
-            Text("The vault note and every copied attachment are checked before the connection is closed. Any remaining original file stays in place.").font(.caption).foregroundStyle(.secondary)
+            Text("The vault note and every copied attachment are checked before the connection is closed. Any remaining original file stays in place.").macFont(.caption).foregroundStyle(.secondary)
             Button("Save original recovery copy…") { export() }
             DisclosureGroup("Retained original Markdown") {
-                ScrollView { Text(String(data: record.sourceBytes, encoding: .utf8) ?? "Unreadable UTF-8").font(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
+                ScrollView { Text(String(data: record.sourceBytes, encoding: .utf8) ?? "Unreadable UTF-8").macFont(.system(.body, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
             }
             Button("Discard recovery record…", role: .destructive) { discard = true }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if busy { ProgressView().controlSize(.small) }
         }.padding(24).frame(width: 640).disabled(busy).interactiveDismissDisabled(busy)
         .alert("Discard the retained original?", isPresented: $discard) {

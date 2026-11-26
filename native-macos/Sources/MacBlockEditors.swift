@@ -22,7 +22,7 @@ struct MacTableEditor: View {
     init(request: MacTableRequest, save: @escaping (String) throws -> Void) { self.request = request; self.save = save; _table = State(initialValue: request.table) }
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            HStack { Text("Edit table").font(.title2.bold()); Spacer(); Text("\(table.rows.count - 1) rows · \(table.columns) columns").font(.caption).foregroundStyle(.secondary) }
+            HStack { Text("Edit table").macFont(.title2.bold()); Spacer(); Text("\(table.rows.count - 1) rows · \(table.columns) columns").macFont(.caption).foregroundStyle(.secondary) }
             HStack {
                 Button("Add row") { finishCellEditing(); table.insertRow(at: table.rows.count) }
                 Button("Add column") { finishCellEditing(); table.insertColumn(at: table.columns) }
@@ -54,7 +54,7 @@ struct MacTableEditor: View {
                         HStack(spacing: 0) {
                             ForEach(0..<table.columns, id: \.self) { column in
                                 TextField("", text: Binding(get: { table.rows[row][column] }, set: { table.rows[row][column] = $0 }))
-                                    .font(.system(size: 13, weight: row == 0 ? .semibold : .regular)).textFieldStyle(.plain).padding(9)
+                                    .macFont(.system(size: 13, weight: row == 0 ? .semibold : .regular)).textFieldStyle(.plain).padding(9)
                                     .frame(width: CGFloat(table.widths?[column] ?? 180), alignment: .leading)
                                     .background(selectedRow == row && selectedColumn == column ? Color.accentColor.opacity(0.09) : row == 0 ? Color.secondary.opacity(0.07) : .clear)
                                     .border(.quaternary, width: 0.5)
@@ -65,8 +65,8 @@ struct MacTableEditor: View {
                     }
                 }
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
-            Text("Cells use inline Markdown. Widths and alignment remain portable in the saved table.").font(.caption).foregroundStyle(.secondary)
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
+            Text("Cells use inline Markdown. Widths and alignment remain portable in the saved table.").macFont(.caption).foregroundStyle(.secondary)
             HStack {
                 Button("Copy Markdown") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(table.markdown, forType: .string) }
                 Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -152,10 +152,10 @@ struct MacCodeEditor: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Code block").font(.headline)
+            Text("Code block").macFont(.headline)
             TextField("Language (optional)", text: $language)
-            TextEditor(text: $code).font(.system(.body, design: .monospaced)).autocorrectionDisabled(true).frame(minHeight: 250, maxHeight: .infinity)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            TextEditor(text: $code).macFont(.system(.body, design: .monospaced)).autocorrectionDisabled(true).frame(minHeight: 250, maxHeight: .infinity)
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Copy code") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(code, forType: .string) }
                 Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Save code") {

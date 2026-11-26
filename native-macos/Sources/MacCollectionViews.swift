@@ -53,7 +53,7 @@ private struct MacCollectionBody: View {
             let snapshot = MacCollectionValues.calendar(notes: store.collection, name: day.name, month: month)
             let order = day.name == calendarProperty?.name ? snapshot.order : calendarOrder
             VStack(alignment: .leading, spacing: 16) {
-                HStack { Text(day.date, format: .dateTime.weekday(.wide).month(.wide).day().year()).font(.title2); Spacer(); Button("Done") { selectedDay = nil } }
+                HStack { Text(day.date, format: .dateTime.weekday(.wide).month(.wide).day().year()).macFont(.title2); Spacer(); Button("Done") { selectedDay = nil } }
                 ScrollView { LazyVStack(spacing: 10) { ForEach(snapshot.dated[MacCollectionValues.wireDate(day.date)] ?? []) { note in
                     HStack { Button { selectedDay = nil; activate(note, order: order) } label: { VStack(alignment: .leading, spacing: 5) { Text(note.title); propertySummary(note) }.frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selectedPaths.contains(note.path) ? .isSelected : []).overlay(MacAlternateOpen { selectedDay = nil; openInTab(note) }.accessibilityHidden(true)); Spacer(); Button("Edit date…") { selectedDay = nil; if let field = fields.first(where: { $0.name == day.name }) { editCell(note, field) } } }.padding(12).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 8))
                 } } }
@@ -103,9 +103,9 @@ private struct MacCollectionBody: View {
     private func card(_ note: NoteDocument, order: [String]? = nil, boardColumns: [String?] = []) -> some View {
         Button { activate(note, order: order) } label: {
             VStack(alignment: .leading, spacing: 7) {
-                HStack { if store.selecting { Image(systemName: store.selectedPaths.contains(note.path) ? "checkmark.circle.fill" : "circle") }; Text(note.title).font(.headline).lineLimit(2); Spacer(minLength: 0) }
+                HStack { if store.selecting { Image(systemName: store.selectedPaths.contains(note.path) ? "checkmark.circle.fill" : "circle") }; Text(note.title).macFont(.headline).lineLimit(2); Spacer(minLength: 0) }
                 MacCollectionCover(note: note, io: store.io, workspaceID: store.workspaceID, fileDates: store.collectionFileDates)
-                MacCollectionExcerpt(note: note, workspaceID: store.workspaceID, lines: 3).font(.caption).foregroundStyle(.secondary)
+                MacCollectionExcerpt(note: note, workspaceID: store.workspaceID, lines: 3).macFont(.caption).foregroundStyle(.secondary)
                 propertySummary(note)
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading).background(store.selectedPaths.contains(note.path) ? Color.accentColor.opacity(0.1) : Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(.quaternary))
@@ -123,7 +123,7 @@ private struct MacCollectionBody: View {
         ForEach(visibleFields) { field in
             if let value = MacCollectionValues.value(note, name: field.name) {
                 let text = field.name + ": " + display(value, field: field)
-                Text(text).font(.caption2).foregroundStyle(.secondary).lineLimit(lineLimit).help(text)
+                Text(text).macFont(.caption2).foregroundStyle(.secondary).lineLimit(lineLimit).help(text)
             }
         }
     }
@@ -147,8 +147,8 @@ private struct MacCollectionBody: View {
                                     } label: {
                                         HStack(alignment: .top, spacing: 8) {
                                             Image(systemName: collapsedGroups.contains(group.id) ? "chevron.right" : "chevron.down").frame(width: 12)
-                                            Text(galleryLabel(group, field: grouping)).font(.headline)
-                                            Text("\(group.notes.count)").font(.caption).foregroundStyle(.secondary)
+                                            Text(galleryLabel(group, field: grouping)).macFont(.headline)
+                                            Text("\(group.notes.count)").macFont(.caption).foregroundStyle(.secondary)
                                             Spacer(minLength: 0)
                                         }.contentShape(Rectangle())
                                     }.buttonStyle(MacBoxButtonStyle()).accessibilityValue(collapsedGroups.contains(group.id) ? "Collapsed" : "Expanded")
@@ -186,7 +186,7 @@ private struct MacCollectionBody: View {
                             let column = groups[index].value, notes = groups[index].notes
                             let order = notes.map(\.path)
                             LazyVStack(alignment: .leading, spacing: 10) {
-                                HStack { Text(columnTitle(column, field: field)).font(.headline); Text("\(notes.count)").foregroundStyle(.secondary); Spacer(); Button { reorder(field, index, -1) } label: { Image(systemName: "chevron.left") }.disabled(index == 0).help("Move column left"); Button { reorder(field, index, 1) } label: { Image(systemName: "chevron.right") }.disabled(index == groups.count - 1).help("Move column right") }.buttonStyle(MacBoxButtonStyle()).disabled(moving || store.busy)
+                                HStack { Text(columnTitle(column, field: field)).macFont(.headline); Text("\(notes.count)").foregroundStyle(.secondary); Spacer(); Button { reorder(field, index, -1) } label: { Image(systemName: "chevron.left") }.disabled(index == 0).help("Move column left"); Button { reorder(field, index, 1) } label: { Image(systemName: "chevron.right") }.disabled(index == groups.count - 1).help("Move column right") }.buttonStyle(MacBoxButtonStyle()).disabled(moving || store.busy)
                                     .draggable(MacBoardTransfer(scope: scope, item: .column(column)))
                                     .accessibilityLabel(columnTitle(column, field: field) + " column, \(notes.count) notes")
                                 ForEach(notes) { note in
@@ -306,14 +306,14 @@ private struct MacCollectionBody: View {
         .overlay(alignment: .bottom) { Rectangle().fill(gridLine).frame(height: 1) }
     }
     private func headerLabel(_ text: String) -> some View {
-        Text(text).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 8)
+        Text(text).macFont(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 8)
     }
     private func sortHeader(_ title: String, width: CGFloat, trailing: Bool = false, arrow: String?, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
                 if trailing { Spacer(minLength: 0) }
-                Text(title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-                if let arrow { Image(systemName: arrow).font(.system(size: 9, weight: .bold)).foregroundStyle(theme.color(.text)) }
+                Text(title).macFont(.system(size: 11.5, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                if let arrow { Image(systemName: arrow).macFont(.system(size: 9, weight: .bold)).foregroundStyle(theme.color(.text)) }
                 if !trailing { Spacer(minLength: 0) }
             }.padding(.horizontal, 10).padding(.vertical, 8).frame(width: width)
         }.buttonStyle(MacBoxButtonStyle()).help("Sort by \(title.lowercased())")
@@ -330,14 +330,14 @@ private struct MacCollectionBody: View {
             columnDivider
             Button { activate(note) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    if note.pinned { Image(systemName: "pin.fill").font(.system(size: 10)).foregroundStyle(theme.color(.accent)).accessibilityLabel("Pinned") }
-                    Text(note.title).font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                    if note.pinned { Image(systemName: "pin.fill").macFont(.system(size: 10)).foregroundStyle(theme.color(.accent)).accessibilityLabel("Pinned") }
+                    Text(note.title).macFont(.system(size: 13, weight: .semibold)).lineLimit(2)
                     Spacer(minLength: 0)
                 }.padding(.horizontal, 10).padding(.vertical, 9).frame(width: layout.name, alignment: .leading).frame(maxHeight: .infinity, alignment: .top).contentShape(Rectangle())
             }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(selected ? .isSelected : []).overlay(MacAlternateOpen { openInTab(note) }.accessibilityHidden(true))
             if layout.showsFolder {
                 columnDivider
-                Text(note.folder.isEmpty ? "Inbox" : note.folder).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                Text(note.folder.isEmpty ? "Inbox" : note.folder).macFont(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
                     .padding(.horizontal, 10).padding(.vertical, 10).frame(width: TableLayout.folder, alignment: .leading).frame(maxHeight: .infinity, alignment: .top)
             }
             ForEach(visibleFields) { field in
@@ -348,7 +348,7 @@ private struct MacCollectionBody: View {
                 }.buttonStyle(MacBoxButtonStyle()).disabled(note.trashed).help("Edit \(field.name) for \(note.title)")
             }
             columnDivider
-            Text(note.modified, format: .dateTime.day().month(.abbreviated)).font(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
+            Text(note.modified, format: .dateTime.day().month(.abbreviated)).macFont(.system(size: 12)).monospacedDigit().foregroundStyle(.secondary)
                 .padding(.horizontal, 10).padding(.vertical, 10).frame(width: TableLayout.modified, alignment: .trailing).frame(maxHeight: .infinity, alignment: .top)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -371,19 +371,19 @@ private struct MacCollectionBody: View {
                 let labels = field.type == .relation ? value.selections.map(relationTitle) : value.selections
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(labels.prefix(6).enumerated()), id: \.offset) { _, label in
-                        Text(label).font(.system(size: 12)).lineLimit(1).padding(.horizontal, 7).padding(.vertical, 2)
+                        Text(label).macFont(.system(size: 12)).lineLimit(1).padding(.horizontal, 7).padding(.vertical, 2)
                             .background(theme.color(.text).opacity(0.09), in: RoundedRectangle(cornerRadius: 5))
                     }
-                    if labels.count > 6 { Text("+\(labels.count - 6) more").font(.system(size: 11)).foregroundStyle(.secondary) }
+                    if labels.count > 6 { Text("+\(labels.count - 6) more").macFont(.system(size: 11)).foregroundStyle(.secondary) }
                 }
             case .checkbox:
                 Image(systemName: value.display == "true" ? "checkmark.square.fill" : "square").foregroundStyle(value.display == "true" ? AnyShapeStyle(theme.color(.accent)) : AnyShapeStyle(.secondary))
                     .accessibilityLabel(value.display == "true" ? "Checked" : "Unchecked")
             default:
-                Text(display(value, field: field)).font(.system(size: 12.5)).lineLimit(3).multilineTextAlignment(.leading)
+                Text(display(value, field: field)).macFont(.system(size: 12.5)).lineLimit(3).multilineTextAlignment(.leading)
             }
         } else {
-            Text("No value").font(.system(size: 12.5)).foregroundStyle(.tertiary)
+            Text("No value").macFont(.system(size: 12.5)).foregroundStyle(.tertiary)
         }
     }
     private func relationTitle(_ text: String) -> String {
@@ -412,13 +412,13 @@ private struct MacCollectionBody: View {
                 let dated = snapshot.dated, order = snapshot.order
                 ScrollView([.horizontal, .vertical]) {
                     VStack(alignment: .leading, spacing: 16) {
-                        HStack { Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }; Text(month, format: .dateTime.month(.wide).year()).font(.headline); Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }; Button("Today") { month = Date() } }.buttonStyle(MacBoxButtonStyle())
+                        HStack { Button { shiftMonth(-1) } label: { Image(systemName: "chevron.left") }; Text(month, format: .dateTime.month(.wide).year()).macFont(.headline); Button { shiftMonth(1) } label: { Image(systemName: "chevron.right") }; Button("Today") { month = Date() } }.buttonStyle(MacBoxButtonStyle())
                         HStack(alignment: .top, spacing: 16) {
                             VStack(spacing: 0) {
-                                HStack(spacing: 0) { ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { Text($0).font(.caption.bold()).frame(width: 130, height: 32) } }
+                                HStack(spacing: 0) { ForEach(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], id: \.self) { Text($0).macFont(.caption.bold()).frame(width: 130, height: 32) } }
                                 ForEach(0..<6, id: \.self) { row in HStack(spacing: 0) { ForEach(0..<7, id: \.self) { column in dayCell(index: row * 7 + column, name: name, dated: dated, order: order) } }.fixedSize(horizontal: false, vertical: true) }
                             }.frame(width: 910)
-                            LazyVStack(alignment: .leading, spacing: 10) { Text("Undated").font(.headline); ForEach(dated[""] ?? []) { card($0, order: order) } }.padding(12).frame(width: 220).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 9))
+                            LazyVStack(alignment: .leading, spacing: 10) { Text("Undated").macFont(.headline); ForEach(dated[""] ?? []) { card($0, order: order) } }.padding(12).frame(width: 220).background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 9))
                         }
                     }.padding(16)
                 }
@@ -433,9 +433,9 @@ private struct MacCollectionBody: View {
         let notes = dated[MacCollectionValues.wireDate(date)] ?? []
         return VStack(alignment: .leading, spacing: 4) {
             if inMonth {
-                Button { selectedDay = .init(date: date, name: name) } label: { HStack { Text(date, format: .dateTime.day()); Spacer(); if notes.count > 2 { Text("\(notes.count) notes").font(.caption2) } } }.buttonStyle(MacBoxButtonStyle()).font(.caption).foregroundStyle(calendar.isDateInToday(date) ? Color.accentColor : .secondary)
+                Button { selectedDay = .init(date: date, name: name) } label: { HStack { Text(date, format: .dateTime.day()); Spacer(); if notes.count > 2 { Text("\(notes.count) notes").macFont(.caption2) } } }.buttonStyle(MacBoxButtonStyle()).macFont(.caption).foregroundStyle(calendar.isDateInToday(date) ? Color.accentColor : .secondary)
                 ForEach(Array(notes.prefix(2))) { note in
-                    Button { activate(note, order: order) } label: { VStack(alignment: .leading, spacing: 3) { Text(note.title).font(.caption2).lineLimit(2); propertySummary(note, lineLimit: 1) }.padding(5).frame(maxWidth: .infinity, alignment: .leading).background(Color.accentColor.opacity(store.selectedPaths.contains(note.path) ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selectedPaths.contains(note.path) ? .isSelected : [])
+                    Button { activate(note, order: order) } label: { VStack(alignment: .leading, spacing: 3) { Text(note.title).macFont(.caption2).lineLimit(2); propertySummary(note, lineLimit: 1) }.padding(5).frame(maxWidth: .infinity, alignment: .leading).background(Color.accentColor.opacity(store.selectedPaths.contains(note.path) ? 0.25 : 0.1), in: RoundedRectangle(cornerRadius: 4)) }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(store.selectedPaths.contains(note.path) ? .isSelected : [])
                         .overlay(MacAlternateOpen { openInTab(note) }.accessibilityHidden(true))
                         .contextMenu { noteMenu(note); Button("Edit date…") { if let field = fields.first(where: { $0.name == name }) { editCell(note, field) } } }
                 }

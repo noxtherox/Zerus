@@ -104,7 +104,7 @@ struct MacFolderIconPicker: View {
     var body: some View {
         let matches = catalog.matches(query)
         VStack(alignment: .leading, spacing: 14) {
-            Text("Icon for “" + (request.folder as NSString).lastPathComponent + "”").font(.title2.bold())
+            Text("Icon for “" + (request.folder as NSString).lastPathComponent + "”").macFont(.title2.bold())
             Text("Search the offline Tabler catalog or use an emoji.").foregroundStyle(.secondary)
             TextField("Search icons…", text: $query).textFieldStyle(.roundedBorder).onChange(of: query) { _, _ in count = 160 }
             ScrollView {
@@ -123,9 +123,9 @@ struct MacFolderIconPicker: View {
             HStack {
                 TextField("One emoji", text: $emoji).textFieldStyle(.roundedBorder).frame(width: 120)
                 Button("Use emoji") { save(emoji) }.disabled(emoji.count != 1 || !emoji.unicodeScalars.contains { !$0.isASCII } || snapshot == nil || !connected || busy)
-                Spacer(); Text("\(matches.count) icons").font(.caption).foregroundStyle(.secondary)
+                Spacer(); Text("\(matches.count) icons").macFont(.caption).foregroundStyle(.secondary)
             }
-            if let message = issue ?? catalog.issue { HStack { Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled); Button("Reload") { Task { await reload() } } } }
+            if let message = issue ?? catalog.issue { HStack { Text(message).macFont(.caption).foregroundStyle(.red).textSelection(.enabled); Button("Reload") { Task { await reload() } } } }
             if !connected { Text("The vault or folder changed. Reopen the icon picker.").foregroundStyle(.secondary) }
             HStack {
                 Button("Reset to folder") { save(nil) }.disabled(snapshot == nil || !connected || busy)

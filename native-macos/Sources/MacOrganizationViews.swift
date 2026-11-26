@@ -18,18 +18,18 @@ struct MacFolderReview: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(request.action == .rename ? "Rename folder" : "Move folder to Trash").font(.title2.bold())
+            Text(request.action == .rename ? "Rename folder" : "Move folder to Trash").macFont(.title2.bold())
             Text(request.folder).foregroundStyle(.secondary)
             if request.action == .rename { TextField("New folder path", text: $destination).disabled(renamePlan != nil) }
             if let plan = renamePlan {
-                Text("Move to “\(plan.destination)”").font(.headline)
+                Text("Move to “\(plan.destination)”").macFont(.headline)
                 Text("\(plan.tree.files.count) files and \(plan.tree.directories.count) folders. References, task links and folder settings are updated together.")
-                ScrollView { Text(plan.updatedNotes.joined(separator: "\n")).font(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
+                ScrollView { Text(plan.updatedNotes.joined(separator: "\n")).macFont(.caption).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 160)
             } else if let plan = trashPlan {
                 Text("\(plan.entry.record.tree.files.count) files will move into recoverable folder trash. Notes, attachments, empty folders and shared settings are kept together.")
-                Text("Restore the whole folder from Trash → Deleted folders & revisions.").font(.caption).foregroundStyle(.secondary)
+                Text("Restore the whole folder from Trash → Deleted folders & revisions.").macFont(.caption).foregroundStyle(.secondary)
             } else { Text(request.action == .rename ? "Review the files and references affected before applying this rename." : "Review the complete folder before moving it. You can restore it later.").foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack {
                 if busy { ProgressView().controlSize(.small) }
                 Spacer(); Button("Cancel") { dismiss() }.disabled(busy)
@@ -81,12 +81,12 @@ struct MacTrashBrowser: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Recently deleted").font(.title2.bold()); Spacer(); Button("Images…") { images = true }; if busy { ProgressView().controlSize(.small) }; Button("Refresh") { Task { await reload() } }; Button("Done") { dismiss() } }
+            HStack { Text("Recently deleted").macFont(.title2.bold()); Spacer(); Button("Images…") { images = true }; if busy { ProgressView().controlSize(.small) }; Button("Refresh") { Task { await reload() } }; Button("Done") { dismiss() } }
             Picker("Deleted items", selection: $page) { Text("Notes").tag("Notes"); Text("Revisions").tag("Revisions"); Text("Folders").tag("Folders") }.pickerStyle(.segmented)
             List {
                 if page == "Notes" {
                     ForEach(store.notes.filter(\.trashed)) { note in
-                        HStack { VStack(alignment: .leading) { Text(note.title); Text(note.folder).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.trash(note); await reload() } }; Button("Delete permanently…", role: .destructive) { Task { await prepareNotePurge([note.path]) } } }
+                        HStack { VStack(alignment: .leading) { Text(note.title); Text(note.folder).macFont(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await store.trash(note); await reload() } }; Button("Delete permanently…", role: .destructive) { Task { await prepareNotePurge([note.path]) } } }
                     }
                 } else if page == "Revisions" {
                     ForEach(revisions?.entries ?? []) { entry in
@@ -94,11 +94,11 @@ struct MacTrashBrowser: View {
                     }
                 } else {
                     ForEach(folders?.entries ?? []) { entry in
-                        HStack { VStack(alignment: .leading) { Text(entry.record.folder); Text(entry.record.deletedAt, format: .dateTime).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await restoreFolder(entry) } }; Button("Delete permanently…", role: .destructive) { Task { await prepareFolderPurge(entry) } } }
+                        HStack { VStack(alignment: .leading) { Text(entry.record.folder); Text(entry.record.deletedAt, format: .dateTime).macFont(.caption).foregroundStyle(.secondary) }; Spacer(); Button("Restore") { Task { await restoreFolder(entry) } }; Button("Delete permanently…", role: .destructive) { Task { await prepareFolderPurge(entry) } } }
                     }
                 }
             }.disabled(busy)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if page == "Revisions", !(revisions?.entries.isEmpty ?? true) { Button("Delete all deleted revisions permanently…", role: .destructive) { Task { await prepareRevisionPurge() } }.disabled(busy) }
         }.padding(24).frame(width: 760, height: 520).task { await reload() }
         .macSheet(isPresented: $images) { MacImagesView(workspace: store) }

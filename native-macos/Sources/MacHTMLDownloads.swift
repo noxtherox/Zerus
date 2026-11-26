@@ -118,11 +118,11 @@ private struct MacHTMLDownloadsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("HTML downloads").font(.title2.bold())
-                Text("Accepted downloads continue when you leave a preview. Files are saved only after the transfer finishes.").font(.callout).foregroundStyle(.secondary)
+                Text("HTML downloads").macFont(.title2.bold())
+                Text("Accepted downloads continue when you leave a preview. Files are saved only after the transfer finishes.").macFont(.callout).foregroundStyle(.secondary)
                 ForEach(downloads.active) { MacHTMLTransferRow(transfer: $0) }
                 ForEach(downloads.recent) { item in HStack {
-                    VStack(alignment: .leading) { Text(item.name).font(.headline); Text(item.status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                    VStack(alignment: .leading) { Text(item.name).macFont(.headline); Text(item.status).macFont(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                     Spacer(); if let url = item.url { Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) } }
                 } }
                 if downloads.active.isEmpty && downloads.recent.isEmpty { ContentUnavailableView("No HTML downloads", systemImage: "arrow.down.circle") }
@@ -135,7 +135,7 @@ private struct MacHTMLTransferRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 5) {
-                Text(transfer.name).font(.headline); Text(transfer.status).font(.caption).foregroundStyle(.secondary)
+                Text(transfer.name).macFont(.headline); Text(transfer.status).macFont(.caption).foregroundStyle(.secondary)
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in ProgressView(value: min(1, max(0, transfer.download.progress.fractionCompleted))) }
             }
             Spacer(); Button("Cancel") { transfer.cancel() }.disabled(transfer.saving)

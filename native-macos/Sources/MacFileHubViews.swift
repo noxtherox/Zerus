@@ -23,17 +23,17 @@ struct MacFileHubEditor: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(request.note == nil ? "Add document" : request.note?.fileHub == nil ? "Link document" : "Replace document").font(.title2.bold())
-            Text("Keep your notes beside a document. Replacing its connection keeps the note’s content.").font(.callout).foregroundStyle(.secondary)
-            HStack { VStack(alignment: .leading, spacing: 4) { Text(source?.url.lastPathComponent ?? "Choose a document").font(.headline); if let source { Text(source.url.path).font(.caption).foregroundStyle(.secondary).lineLimit(2) } }; Spacer(); Button("Choose file…") { choose() } }
+            Text(request.note == nil ? "Add document" : request.note?.fileHub == nil ? "Link document" : "Replace document").macFont(.title2.bold())
+            Text("Keep your notes beside a document. Replacing its connection keeps the note’s content.").macFont(.callout).foregroundStyle(.secondary)
+            HStack { VStack(alignment: .leading, spacing: 4) { Text(source?.url.lastPathComponent ?? "Choose a document").macFont(.headline); if let source { Text(source.url.path).macFont(.caption).foregroundStyle(.secondary).lineLimit(2) } }; Spacer(); Button("Choose file…") { choose() } }
             Picker("Storage", selection: $storage) { ForEach(NativeFileStorage.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-            Text(storage.detail).font(.caption).foregroundStyle(.secondary)
+            Text(storage.detail).macFont(.caption).foregroundStyle(.secondary)
             if request.note == nil {
                 TextField("Note title", text: $title).textFieldStyle(.roundedBorder)
                 Picker("Folder", selection: $folder) { Text("Files (unfiled)").tag(".zerus/files"); ForEach(Array(Set([request.defaultFolder] + workspace.defaultNoteFolderOptions)).sorted(), id: \.self) { MacFolderLabel(path: $0, icon: workspace.folderIcon($0)).tag($0) } }
             }
-            if let locationIssue = request.locationIssue { Text(locationIssue).font(.caption).foregroundStyle(.secondary) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let locationIssue = request.locationIssue { Text(locationIssue).macFont(.caption).foregroundStyle(.secondary) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { if busy { ProgressView().controlSize(.small) }; Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button("Save document") {
                 busy = true
                 Task { defer { busy = false }; do { let note = try await workspace.saveFileHub(request, source: source, storage: storage, title: title, folder: folder); saved(note); dismiss() } catch { issue = error.localizedDescription } }
@@ -88,20 +88,20 @@ struct MacFileHubPane<Notes: View>: View {
                         .resizable().scaledToFit().frame(width: 36, height: 36).accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 3) {
                         MacNoteBreadcrumb(folder: note.folder, vault: workspace.vaultTitle)
-                        Text(hub.name).font(.headline).lineLimit(1)
+                        Text(hub.name).macFont(.headline).lineLimit(1)
                         HStack(spacing: 5) {
                             Text(hub.kind == .vault ? (hub.managed ? "Vault copy" : "Vault file connection") : hub.kind == .location ? "Folder connection" : "Original connection on this Mac").lineLimit(1)
                             if let lease { Text("· " + ByteCountFormatter.string(fromByteCount: lease.size, countStyle: .file)) }
                             else { Text("· File unavailable") }
                             if preview.refreshing { ProgressView().controlSize(.mini) }
-                        }.font(.callout).foregroundStyle(.secondary)
-                        if let lease { Text(lease.url.path).font(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(lease.url.path).textSelection(.enabled) }
+                        }.macFont(.callout).foregroundStyle(.secondary)
+                        if let lease { Text(lease.url.path).macFont(.callout).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).help(lease.url.path).textSelection(.enabled) }
                     }
                     Spacer()
                     fileMenu(hub)
                 }.padding(12)
                 Divider()
-                if let problem = issue ?? (preview.source == request.source ? preview.issue : nil) { HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).font(.caption).textSelection(.enabled); Spacer(); Button("Locate file…") { locate() } }.foregroundStyle(.secondary).padding(10) }
+                if let problem = issue ?? (preview.source == request.source ? preview.issue : nil) { HStack { Image(systemName: "exclamationmark.triangle"); Text(problem).macFont(.caption).textSelection(.enabled); Spacer(); Button("Locate file…") { locate() } }.foregroundStyle(.secondary).padding(10) }
                 if showsDocument, let lease, canPreview(hub) {
                     if ["html", "htm"].contains(lease.url.pathExtension.lowercased()) || ["html", "htm"].contains((hub.name as NSString).pathExtension.lowercased()) {
                         MacHTMLPreviewView(lease: lease, preferenceKey: MacHTMLPreviewSession.key(root: workspace.root, identity: hub.id), expanded: $expanded, notes: notes)
@@ -175,7 +175,7 @@ struct MacFileHubPane<Notes: View>: View {
                 Button("Detach from Note…", systemImage: "scissors", role: .destructive) { Task { do { guard workspaceID == workspace.workspaceID else { throw CancellationError() }; detaching = try await workspace.prepareFileHub(note) } catch { issue = error.localizedDescription } } }
             }
             }.labelStyle(.titleAndIcon)
-            } label: { Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
+            } label: { Image(systemName: "chevron.down").macFont(.system(size: 11, weight: .semibold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More file actions").accessibilityLabel("Document actions")
         }.padding(2).background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: 8)).fixedSize()
     }
@@ -194,7 +194,7 @@ struct MacFileHubPane<Notes: View>: View {
     }
     private func document(_ lease: NativeFileLease) -> some View {
         VStack(spacing: 0) {
-            HStack { Text("Document preview").font(.callout).foregroundStyle(.secondary); Spacer(); Button(expanded ? "Show notes" : "Expand document") { expanded.toggle() } }.padding(8)
+            HStack { Text("Document preview").macFont(.callout).foregroundStyle(.secondary); Spacer(); Button(expanded ? "Show notes" : "Expand document") { expanded.toggle() } }.padding(8)
             MacDocumentSurface(lease: lease).id(lease.id)
         }
     }
@@ -226,7 +226,7 @@ struct MacLeasedPreview: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(spacing: 0) {
-            HStack { Text(lease.url.lastPathComponent).font(.headline); Spacer(); Button("Open externally") { NSWorkspace.shared.open(lease.url) }; Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([lease.url]) }; Button("Done") { dismiss() } }.padding(15)
+            HStack { Text(lease.url.lastPathComponent).macFont(.headline); Spacer(); Button("Open externally") { NSWorkspace.shared.open(lease.url) }; Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([lease.url]) }; Button("Done") { dismiss() } }.padding(15)
             Divider(); MacDocumentSurface(lease: lease)
         }.frame(minWidth: 850, minHeight: 680).onDisappear { withExtendedLifetime(lease) {} }
     }
@@ -263,7 +263,7 @@ private struct MacOfficeDocumentCard: View {
                     Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().scaledToFit().frame(width: 96, height: 96)
                 } else { ProgressView().controlSize(.small) }
             }.frame(maxWidth: 320, maxHeight: 360).onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
-            Text(url.lastPathComponent).font(.headline).lineLimit(2).multilineTextAlignment(.center)
+            Text(url.lastPathComponent).macFont(.headline).lineLimit(2).multilineTextAlignment(.center)
             Button("Open externally") { NSWorkspace.shared.open(url) }
             Spacer(minLength: 0)
         }
@@ -331,7 +331,7 @@ struct MacNoteBreadcrumb: View {
     var body: some View {
         let parts = folder.split(separator: "/").map(String.init)
         Label((parts.isEmpty ? [vault] : parts).joined(separator: " › "), systemImage: "folder")
-            .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+            .macFont(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
             .frame(maxWidth: .infinity, alignment: .leading).help(folder.isEmpty ? vault : folder)
     }
 }

@@ -69,7 +69,7 @@ struct MacImageEditView: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack { SwiftUI.Text("Edit image").font(.title2.bold()); Spacer() }
+            HStack { SwiftUI.Text("Edit image").macFont(.title2.bold()); Spacer() }
             Image(nsImage: request.image).resizable().scaledToFit().frame(maxWidth: .infinity).frame(height: 140)
             Form {
                 TextField("Image address", text: $reference)
@@ -77,9 +77,9 @@ struct MacImageEditView: View {
                 TextField("Title", text: $title)
                 HStack { TextField("Width", text: $width).accessibilityLabel("Image width"); SwiftUI.Text("px"); TextField("Height", text: $height).disabled(keepRatio).accessibilityLabel("Image height"); SwiftUI.Text("px") }
                 Toggle("Keep aspect ratio", isOn: $keepRatio)
-                SwiftUI.Text("Leave size blank for automatic sizing. The original image file is kept.").font(.caption).foregroundStyle(.secondary)
+                SwiftUI.Text("Leave size blank for automatic sizing. The original image file is kept.").macFont(.caption).foregroundStyle(.secondary)
             }
-            if let issue { SwiftUI.Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { SwiftUI.Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack {
                 Button("Automatic size") { width = ""; height = ""; keepRatio = true }
                 Spacer(); Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
@@ -213,10 +213,10 @@ struct MacImageInsertView: View {
     @FocusState private var focused: Bool
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SwiftUI.Text("Insert image").font(.headline)
+            SwiftUI.Text("Insert image").macFont(.headline)
             Picker("Image source", selection: $fromFile) { SwiftUI.Text("Image address").tag(false); SwiftUI.Text("Local file").tag(true) }.pickerStyle(.segmented).disabled(busy)
             if fromFile {
-                HStack { Button("Choose image…") { chooseFile() }.disabled(busy); SwiftUI.Text(file?.name ?? "No image selected").font(.caption).lineLimit(1) }
+                HStack { Button("Choose image…") { chooseFile() }.disabled(busy); SwiftUI.Text(file?.name ?? "No image selected").macFont(.caption).lineLimit(1) }
                 if let file { Image(nsImage: NSImage(cgImage: file.preview.image, size: .zero)).resizable().scaledToFit().frame(height: 120) }
                 if let chooseProject { Button("Choose project folder…") { busy = true; operation = Task { await chooseProject(); busy = false } }.disabled(busy) }
             } else { TextField("Image address", text: $reference).focused($focused).disabled(busy) }
@@ -224,8 +224,8 @@ struct MacImageInsertView: View {
             TextField("Title", text: $title).disabled(busy)
             HStack { TextField("Width", text: $width).accessibilityLabel("Image width"); TextField("Height", text: $height).disabled(keepRatio).accessibilityLabel("Image height") }.disabled(busy)
             Toggle("Keep aspect ratio", isOn: $keepRatio).disabled(busy)
-            SwiftUI.Text("Leave size blank for automatic sizing. Local files are copied only when you insert the image.").font(.caption).foregroundStyle(.secondary)
-            if let issue { SwiftUI.Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            SwiftUI.Text("Leave size blank for automatic sizing. Local files are copied only when you insert the image.").macFont(.caption).foregroundStyle(.secondary)
+            if let issue { SwiftUI.Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { Spacer(); if busy { ProgressView().controlSize(.small) }; Button("Cancel") { operation?.cancel(); cancel() }.keyboardShortcut(.cancelAction)
                 Button("Insert image") {
                     do {

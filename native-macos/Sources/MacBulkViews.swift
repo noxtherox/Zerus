@@ -21,8 +21,8 @@ struct MacBulkEditor: View {
     var field: NativePropertyDefinition? { fields.first { $0.name == fieldName } }
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Update \(paths.count) notes").font(.title2.bold())
-            Text("Only properties shared by every selected note are available. Relations keep their paired links synchronized.").font(.caption).foregroundStyle(.secondary)
+            Text("Update \(paths.count) notes").macFont(.title2.bold())
+            Text("Only properties shared by every selected note are available. Relations keep their paired links synchronized.").macFont(.caption).foregroundStyle(.secondary)
             if fields.isEmpty && snapshot != nil { Text("These notes have no shared editable property definitions. Add folder definitions first.").foregroundStyle(.secondary) }
             else {
                 Picker("Property", selection: $fieldName) { Text("Choose property").tag(""); ForEach(fields) { Text($0.name).tag($0.name) } }
@@ -42,9 +42,9 @@ struct MacBulkEditor: View {
             }
             if !changes.isEmpty {
                 Divider()
-                ForEach(changes) { change in HStack { Text(change.name).fontWeight(.medium); Text(change.operation.rawValue).foregroundStyle(.secondary); Spacer(); Button { changes.removeAll { $0.id == change.id } } label: { Image(systemName: "xmark.circle") }.buttonStyle(MacBoxButtonStyle()).help("Remove change") }.font(.caption) }
+                ForEach(changes) { change in HStack { Text(change.name).fontWeight(.medium); Text(change.operation.rawValue).foregroundStyle(.secondary); Spacer(); Button { changes.removeAll { $0.id == change.id } } label: { Image(systemName: "xmark.circle") }.buttonStyle(MacBoxButtonStyle()).help("Remove change") }.macFont(.caption) }
             }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
             HStack { if busy { ProgressView().controlSize(.small) }; Spacer(); Button("Cancel") { dismiss() }; Button("Review changes") { prepare() }.disabled(changes.isEmpty || busy) }
         }.padding(24).frame(width: 540).task { await load() }.onChange(of: fieldName) { _, _ in operation = .set; text = ""; choices = []; targets = []; checked = false }
         .confirmationDialog("Apply property changes?", isPresented: $reviewing) {
@@ -102,18 +102,18 @@ struct MacBulkHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack { Text("Organization history").font(.title2.bold()); Spacer(); Button("Refresh") { Task { await load() } }; Button("Done") { dismiss() } }
-            Text("Review Undo and Redo for note moves, pin, archive and property changes. Later changes to affected notes, settings or incoming references can block older move receipts. Unrelated notes are preserved.").font(.caption).foregroundStyle(.secondary)
+            HStack { Text("Organization history").macFont(.title2.bold()); Spacer(); Button("Refresh") { Task { await load() } }; Button("Done") { dismiss() } }
+            Text("Review Undo and Redo for note moves, pin, archive and property changes. Later changes to affected notes, settings or incoming references can block older move receipts. Unrelated notes are preserved.").macFont(.caption).foregroundStyle(.secondary)
             if !moveRecords.isEmpty {
-                Text("Note moves").font(.headline)
+                Text("Note moves").macFont(.headline)
                 ScrollView { VStack(alignment: .leading, spacing: 10) { ForEach(moveRecords) { record in
-                    HStack { VStack(alignment: .leading, spacing: 3) { Text("\(record.moves.count) notes moved"); Text(record.date, format: .dateTime).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button(record.undone ? "Review move Redo" : "Review move Undo") { prepareMoveHistory(record) } }
+                    HStack { VStack(alignment: .leading, spacing: 3) { Text("\(record.moves.count) notes moved"); Text(record.date, format: .dateTime).macFont(.caption).foregroundStyle(.secondary) }; Spacer(); Button(record.undone ? "Review move Redo" : "Review move Undo") { prepareMoveHistory(record) } }
                 } } }.frame(maxHeight: 140).disabled(busy)
             }
             List(snapshot?.records ?? []) { record in
-                HStack { VStack(alignment: .leading, spacing: 4) { Text(record.label); Text(record.date, format: .dateTime).font(.caption).foregroundStyle(.secondary); Text(record.status).font(.caption2).foregroundStyle(.tertiary) }; Spacer(); Button(record.appliedCount == 0 ? "Review redo" : "Review undo") { prepare(record, undo: record.appliedCount > 0) } }
+                HStack { VStack(alignment: .leading, spacing: 4) { Text(record.label); Text(record.date, format: .dateTime).macFont(.caption).foregroundStyle(.secondary); Text(record.status).macFont(.caption2).foregroundStyle(.tertiary) }; Spacer(); Button(record.appliedCount == 0 ? "Review redo" : "Review undo") { prepare(record, undo: record.appliedCount > 0) } }
             }.disabled(busy)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red) }
         }.padding(24).frame(width: 680, height: 470).task { await load() }
         .macSheet(item: $moveHistoryReview) { review in MacNoteMoveHistoryView(workspace: store, review: review) { Task { await load() } } }
         .confirmationDialog(plan?.label ?? "Apply change?", isPresented: $reviewing) {

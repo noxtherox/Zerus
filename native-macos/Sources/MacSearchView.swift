@@ -112,8 +112,8 @@ struct MacSearchView: View {
 
     private func header(_ p: MacSearchPalette) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").font(.system(size: 15)).foregroundStyle(p.muted)
-            TextField(CloudAIFeature.enabled ? "Search notes, tasks, links, files, chats…" : "Search notes, tasks, links, files…", text: $model.query).textFieldStyle(.plain).font(.system(size: 18)).focused($focused).disabled(opening)
+            Image(systemName: "magnifyingglass").macFont(.system(size: 15)).foregroundStyle(p.muted)
+            TextField(CloudAIFeature.enabled ? "Search notes, tasks, links, files, chats…" : "Search notes, tasks, links, files…", text: $model.query).textFieldStyle(.plain).macFont(.system(size: 18)).focused($focused).disabled(opening)
                 .onSubmit { if let item = selected { open(item) } }
                 .onKeyPress(.downArrow) { moveSelection(1); return .handled }
                 .onKeyPress(.upArrow) { moveSelection(-1); return .handled }
@@ -148,7 +148,7 @@ struct MacSearchView: View {
                 Picker("Property", selection: $model.filters.property) { Text("Any property").tag(""); ForEach(model.result?.properties ?? [], id: \.self) { Text($0).tag($0) } }.pickerStyle(.inline)
             }
             if !model.filters.property.isEmpty {
-                TextField("Exact value", text: $model.filters.value).textFieldStyle(.plain).font(.system(size: 11.5)).frame(width: 110)
+                TextField("Exact value", text: $model.filters.value).textFieldStyle(.plain).macFont(.system(size: 11.5)).frame(width: 110)
                     .padding(.horizontal, 9).padding(.vertical, 3).overlay(Capsule().stroke(p.line))
             }
             if model.filters.collection == .tasks {
@@ -162,7 +162,7 @@ struct MacSearchView: View {
             Button { model.filters.archived.toggle() } label: { MacSearchChip(title: "Archived", active: model.filters.archived, palette: p) }.buttonStyle(.plain)
                 .accessibilityAddTraits(model.filters.archived ? .isSelected : []).help("Include archived results")
             Spacer(minLength: 0)
-            if !model.filters.isEmpty { Button("Reset") { model.filters = .init() }.buttonStyle(.plain).font(.system(size: 11.5)).foregroundStyle(p.accent) }
+            if !model.filters.isEmpty { Button("Reset") { model.filters = .init() }.buttonStyle(.plain).macFont(.system(size: 11.5)).foregroundStyle(p.accent) }
         }.disabled(opening).padding(.horizontal, 14).padding(.vertical, 8).overlay(alignment: .bottom) { Rectangle().fill(p.line).frame(height: 1) }
     }
     private var daysTitle: String { switch model.filters.days { case 7: "Last 7 days"; case 30: "Last 30 days"; case 365: "Last year"; default: "Any time" } }
@@ -176,7 +176,7 @@ struct MacSearchView: View {
         if !messages.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(messages, id: \.0) { Text($0.0).foregroundStyle($0.1).textSelection(.enabled) }
-            }.font(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 8)
+            }.macFont(.caption).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 8)
                 .background(p.surface).overlay(alignment: .bottom) { Rectangle().fill(p.line).frame(height: 1) }
         }
     }
@@ -193,7 +193,7 @@ struct MacSearchView: View {
                             Spacer()
                             if browsingRecent { Button("Clear") { Task { await model.clearRecent() } }.buttonStyle(.plain).foregroundStyle(p.accent).textCase(nil) }
                             else { Text("\(group.items.count)") }
-                        }.font(.system(size: 10.5, weight: .medium)).foregroundStyle(p.muted).padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 3)
+                        }.macFont(.system(size: 10.5, weight: .medium)).foregroundStyle(p.muted).padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 3)
                         ForEach(group.items) { item in
                             MacSearchRow(item: item, query: browsingRecent ? "" : model.query, selected: selected?.id == item.id, palette: p) { activate(item) }
                                 .id(item.id).disabled(opening)
@@ -201,7 +201,7 @@ struct MacSearchView: View {
                     }
                     if result.items.isEmpty { emptyState(p) }
                     if result.total > result.items.count {
-                        Button("Show more results") { Task { await model.more() } }.buttonStyle(.plain).foregroundStyle(p.accent).font(.caption).padding(.horizontal, 16).padding(.vertical, 10)
+                        Button("Show more results") { Task { await model.more() } }.buttonStyle(.plain).foregroundStyle(p.accent).macFont(.caption).padding(.horizontal, 16).padding(.vertical, 10)
                     }
                     if CloudAIFeature.enabled, !trimmedQuery.isEmpty { askRow(p) }
                     if localAsk { localAskRow(p) }
@@ -212,10 +212,10 @@ struct MacSearchView: View {
 
     private func emptyState(_ p: MacSearchPalette) -> some View {
         VStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").font(.system(size: 26)).foregroundStyle(p.muted)
-            Text(browsingRecent ? "Search across your workspace" : "No results").font(.headline)
+            Image(systemName: "magnifyingglass").macFont(.system(size: 26)).foregroundStyle(p.muted)
+            Text(browsingRecent ? "Search across your workspace" : "No results").macFont(.headline)
             Text(browsingRecent ? (CloudAIFeature.enabled ? "Notes, tasks, saved links, AI conversations, PDF/text file contents and connected external Markdown." : "Notes, tasks, saved links, PDF/text file contents and connected external Markdown.") : "Try fewer words or remove a filter.")
-                .font(.callout).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                .macFont(.callout).foregroundStyle(p.muted).multilineTextAlignment(.center)
         }.frame(maxWidth: .infinity).padding(.horizontal, 40).padding(.vertical, 60)
     }
 
@@ -228,11 +228,11 @@ struct MacSearchView: View {
             if let selected {
                 Button { includeResult.toggle() } label: {
                     HStack(spacing: 4) { Image(systemName: includeResult ? "checkmark.square.fill" : "square"); Text("with " + selected.title).lineLimit(1) }
-                        .font(.system(size: 11)).foregroundStyle(includeResult ? p.accent : p.muted)
+                        .macFont(.system(size: 11)).foregroundStyle(includeResult ? p.accent : p.muted)
                 }.buttonStyle(.plain).help("Use the selected result as context").frame(maxWidth: 220, alignment: .trailing)
             }
             MacSearchKey(label: "⌘↵", palette: p)
-        }.font(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
+        }.macFont(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(p.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 6)
     }
@@ -244,7 +244,7 @@ struct MacSearchView: View {
                 Text("Ask your notes: “\(trimmedQuery)”").lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                 MacSearchKey(label: "⌘↵", palette: p)
             }.contentShape(Rectangle())
-        }.buttonStyle(.plain).font(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
+        }.buttonStyle(.plain).macFont(.system(size: 12.5)).padding(.horizontal, 12).padding(.vertical, 9)
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(p.line, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 6)
     }
@@ -263,30 +263,30 @@ struct MacSearchView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(item.collection.rawValue + (item.location.isEmpty || item.location == item.collection.rawValue ? "" : " · " + item.location), systemImage: item.collection.icon)
-                        .font(.caption).foregroundStyle(p.muted).lineLimit(1)
-                    Text(item.title).font(.title3.bold()).textSelection(.enabled)
+                        .macFont(.caption).foregroundStyle(p.muted).lineLimit(1)
+                    Text(item.title).macFont(.title3.bold()).textSelection(.enabled)
                     let properties = item.properties.filter { !$0.value.isEmpty }.sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
                     if !properties.isEmpty {
                         MacSearchFlow(spacing: 5) {
                             ForEach(properties, id: \.key) { entry in
                                 HStack(spacing: 4) { Text(entry.key).foregroundStyle(p.muted); Text(entry.value.joined(separator: ", ")).lineLimit(1) }
-                                    .font(.system(size: 11)).padding(.horizontal, 7).padding(.vertical, 2).background(p.hover, in: RoundedRectangle(cornerRadius: 5))
+                                    .macFont(.system(size: 11)).padding(.horizontal, 7).padding(.vertical, 2).background(p.hover, in: RoundedRectangle(cornerRadius: 5))
                             }
                         }
                     }
-                    if let issue = item.issue { Text(issue).font(.caption).foregroundStyle(.orange).textSelection(.enabled) }
-                    if item.draft { Text("Includes an unsaved local draft.").font(.caption).foregroundStyle(.orange) }
+                    if let issue = item.issue { Text(issue).macFont(.caption).foregroundStyle(.orange).textSelection(.enabled) }
+                    if item.draft { Text("Includes an unsaved local draft.").macFont(.caption).foregroundStyle(.orange) }
                     MacSearchMarkdown(source: previewBody(item), title: item.title, palette: p)
                         .id(item.id + NativeHistory.hash(item.title + "\n" + String(item.text.prefix(16_000))))
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
             }
             HStack(spacing: 8) {
-                Button { open(item) } label: { Text("Open  ↵").font(.system(size: 12, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5).foregroundStyle(p.onAccent).background(p.accent, in: RoundedRectangle(cornerRadius: 6)) }
+                Button { open(item) } label: { Text("Open  ↵").macFont(.system(size: 12, weight: .semibold)).padding(.horizontal, 11).padding(.vertical, 5).foregroundStyle(p.onAccent).background(p.accent, in: RoundedRectangle(cornerRadius: 6)) }
                     .buttonStyle(.plain).disabled(opening)
-                if CloudAIFeature.enabled { Button(action: ask) { Text("Ask AI  ⌘↵").font(.system(size: 12)).padding(.horizontal, 11).padding(.vertical, 5).overlay(RoundedRectangle(cornerRadius: 6).stroke(p.line)) }
+                if CloudAIFeature.enabled { Button(action: ask) { Text("Ask AI  ⌘↵").macFont(.system(size: 12)).padding(.horizontal, 11).padding(.vertical, 5).overlay(RoundedRectangle(cornerRadius: 6).stroke(p.line)) }
                     .buttonStyle(.plain).disabled(trimmedQuery.isEmpty || model.loading || opening) }
                 Spacer()
-                Text("Click again to open").font(.caption).foregroundStyle(p.muted)
+                Text("Click again to open").macFont(.caption).foregroundStyle(p.muted)
             }.padding(.horizontal, 16).padding(.vertical, 10).overlay(alignment: .top) { Rectangle().fill(p.line).frame(height: 1) }
         }
     }
@@ -313,7 +313,7 @@ struct MacSearchView: View {
             if let result = model.result, !browsingRecent { Text("\(result.total) " + (result.total == 1 ? "result" : "results")) }
             Button { Task { await workspace.refresh(); refresh = UUID() } } label: { Image(systemName: "arrow.clockwise") }
                 .buttonStyle(.plain).disabled(opening).help("Refresh search index")
-        }.font(.system(size: 11)).foregroundStyle(p.muted).padding(.horizontal, 16).padding(.vertical, 8)
+        }.macFont(.system(size: 11)).foregroundStyle(p.muted).padding(.horizontal, 16).padding(.vertical, 8)
             .background(p.surface).overlay(alignment: .top) { Rectangle().fill(p.line).frame(height: 1) }
     }
 
@@ -399,8 +399,8 @@ private struct MacSearchChip: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(title).lineLimit(1)
-            if chevron { Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)) }
-        }.font(.system(size: 11.5)).foregroundStyle(active ? palette.accent : palette.muted)
+            if chevron { Image(systemName: "chevron.down").macFont(.system(size: 8, weight: .semibold)) }
+        }.macFont(.system(size: 11.5)).foregroundStyle(active ? palette.accent : palette.muted)
             .padding(.horizontal, 9).padding(.vertical, 3)
             .background(active ? palette.accentSoft : .clear, in: Capsule())
             .overlay(Capsule().stroke(active ? .clear : palette.line))
@@ -412,7 +412,7 @@ private struct MacSearchKey: View {
     let label: String
     let palette: MacSearchPalette
     var body: some View {
-        Text(label).font(.system(size: 10.5)).foregroundStyle(palette.muted).padding(.horizontal, 5).padding(.vertical, 1)
+        Text(label).macFont(.system(size: 10.5)).foregroundStyle(palette.muted).padding(.horizontal, 5).padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(palette.line)).fixedSize()
     }
 }
@@ -428,20 +428,20 @@ private struct MacSearchRow: View {
         let p = palette
         Button(action: action) {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: item.collection.icon).font(.system(size: 11)).frame(width: 22, height: 22)
+                Image(systemName: item.collection.icon).macFont(.system(size: 11)).frame(width: 22, height: 22)
                     .foregroundStyle(selected ? p.onAccent : p.muted)
                     .background(selected ? p.accent : p.hover, in: RoundedRectangle(cornerRadius: 6))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(MacSearchHighlight.apply(item.title, query: query, palette: p)).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
-                        if item.draft { Text("Draft").font(.caption2).foregroundStyle(.orange) }
-                        if item.archived { Text("Archived").font(.caption2).foregroundStyle(p.muted) }
+                        Text(MacSearchHighlight.apply(item.title, query: query, palette: p)).macFont(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                        if item.draft { Text("Draft").macFont(.caption2).foregroundStyle(.orange) }
+                        if item.archived { Text("Archived").macFont(.caption2).foregroundStyle(p.muted) }
                     }
-                    Text(MacSearchHighlight.apply(subtitle, query: query, palette: p)).font(.system(size: 11.5)).foregroundStyle(p.muted).lineLimit(1)
-                    if let problem = item.issue { Text(problem).font(.caption).foregroundStyle(.orange).lineLimit(1) }
+                    Text(MacSearchHighlight.apply(subtitle, query: query, palette: p)).macFont(.system(size: 11.5)).foregroundStyle(p.muted).lineLimit(1)
+                    if let problem = item.issue { Text(problem).macFont(.caption).foregroundStyle(.orange).lineLimit(1) }
                 }
                 Spacer(minLength: 8)
-                Text(Self.date(item.modified)).font(.system(size: 10.5)).foregroundStyle(p.muted).padding(.top, 2)
+                Text(Self.date(item.modified)).macFont(.system(size: 10.5)).foregroundStyle(p.muted).padding(.top, 2)
             }.padding(.horizontal, 10).padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
                 .background(selected ? p.accentSoft : hovering ? p.hover : .clear, in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(Rectangle())
@@ -488,7 +488,7 @@ private struct MacSearchMarkdown: View {
     let palette: MacSearchPalette
     var body: some View {
         let blocks = Self.blocks(source, title: title)
-        if blocks.isEmpty { Text("No body content.").font(.callout).foregroundStyle(palette.muted) }
+        if blocks.isEmpty { Text("No body content.").macFont(.callout).foregroundStyle(palette.muted) }
         else {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in view(block) }
@@ -499,7 +499,7 @@ private struct MacSearchMarkdown: View {
     @ViewBuilder private func view(_ block: Block) -> some View {
         switch block {
         case .heading(let level, let text):
-            Text(Self.inline(text)).font(.system(size: [17, 15, 13.5, 13, 13, 13][min(level, 6) - 1], weight: .semibold)).padding(.top, 4)
+            Text(Self.inline(text)).macFont(.system(size: [17, 15, 13.5, 13, 13, 13][min(level, 6) - 1], weight: .semibold)).padding(.top, 4)
         case .bullet(let text, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 6) { Text("•").foregroundStyle(palette.muted); Text(Self.inline(text)) }.padding(.leading, CGFloat(depth) * 14)
         case .check(let done, let text, let depth):
@@ -510,7 +510,7 @@ private struct MacSearchMarkdown: View {
         case .quote(let text):
             Text(Self.inline(text)).foregroundStyle(palette.muted).padding(.leading, 10).overlay(alignment: .leading) { Rectangle().fill(palette.line).frame(width: 2) }
         case .code(let text):
-            Text(text).font(.system(size: 11.5, design: .monospaced)).padding(8).frame(maxWidth: .infinity, alignment: .leading).background(palette.hover, in: RoundedRectangle(cornerRadius: 6))
+            Text(text).macFont(.system(size: 11.5, design: .monospaced)).padding(8).frame(maxWidth: .infinity, alignment: .leading).background(palette.hover, in: RoundedRectangle(cornerRadius: 6))
         case .rule: Rectangle().fill(palette.line).frame(height: 1).padding(.vertical, 4)
         case .paragraph(let text): Text(Self.inline(text))
         }

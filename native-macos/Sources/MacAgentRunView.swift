@@ -50,17 +50,17 @@ private struct MacAgentRunView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack { Button("Run settings…") { settings = true }.disabled(locked)
-                Label("Agent runs", systemImage: "sparkles").font(.title2.bold()); Spacer(); if controller.running || chat.isBusy { ProgressView().controlSize(.small); Button("Stop") { chat.stop(); controller.stop() } }; Button("Done") { perform { if await chat.prepareToLeave(), await controller.stopAndCheckpoint() { dismiss() } } }.disabled(busy) }
+                Label("Agent runs", systemImage: "sparkles").macFont(.title2.bold()); Spacer(); if controller.running || chat.isBusy { ProgressView().controlSize(.small); Button("Stop") { chat.stop(); controller.stop() } }; Button("Done") { perform { if await chat.prepareToLeave(), await controller.stopAndCheckpoint() { dismiss() } } }.disabled(busy) }
             HSplitView {
                 ScrollView { LazyVStack(alignment: .leading, spacing: 8) {
-                    Text("Saved in this vault").font(.headline)
+                    Text("Saved in this vault").macFont(.headline)
                     ForEach(controller.records) { record in
                         Button { perform { try await chat.select(record.run.chatID); try await controller.open(record) } } label: {
-                            VStack(alignment: .leading, spacing: 4) { Text(record.run.objective).lineLimit(2); Text(record.run.mode.rawValue + " · " + record.run.status).font(.caption).foregroundStyle(.secondary) }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(controller.current?.id == record.id ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            VStack(alignment: .leading, spacing: 4) { Text(record.run.objective).lineLimit(2); Text(record.run.mode.rawValue + " · " + record.run.status).macFont(.caption).foregroundStyle(.secondary) }.padding(8).frame(maxWidth: .infinity, alignment: .leading).background(controller.current?.id == record.id ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 7))
                         }.buttonStyle(MacBoxButtonStyle()).accessibilityElement(children: .combine).accessibilityAddTraits(controller.current?.id == record.id ? .isSelected : []).disabled(locked || controller.hasUnsavedState || record.run.owner != chat.device.id)
                     }
-                    ForEach(controller.unreadable, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
-                    if !webRuns.isEmpty { Text("Web runs in this conversation").font(.headline).padding(.top, 8) }
+                    ForEach(controller.unreadable, id: \.self) { Text($0).macFont(.caption).foregroundStyle(.orange) }
+                    if !webRuns.isEmpty { Text("Web runs in this conversation").macFont(.headline).padding(.top, 8) }
                     ForEach(webRuns) { record in
                         Button {
                             let activation = workspace.workspaceID, selected = chat.selectedID
@@ -72,80 +72,80 @@ private struct MacAgentRunView: View {
                             }
                         } label: { VStack(alignment: .leading, spacing: 4) {
                             Text(record.objectivePreview).lineLimit(2)
-                            Text(record.mode.rawValue + " · " + record.status).font(.caption).foregroundStyle(.secondary)
-                            Text("Review import…").font(.caption)
+                            Text(record.mode.rawValue + " · " + record.status).macFont(.caption).foregroundStyle(.secondary)
+                            Text("Review import…").macFont(.caption)
                         }.padding(8).frame(maxWidth: .infinity, alignment: .leading) }
                         .buttonStyle(MacBoxButtonStyle()).disabled(locked || !chat.writable || controller.hasUnsavedState)
                     }
-                    ForEach(webIssues, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                    ForEach(webIssues, id: \.self) { Text($0).macFont(.caption).foregroundStyle(.orange) }
                 } }.frame(minWidth: 200, idealWidth: 240, maxWidth: 280)
                 ScrollView { VStack(alignment: .leading, spacing: 14) {
                     GroupBox("New run") {
                         VStack(alignment: .leading, spacing: 9) {
                             Picker("Mode", selection: $defaults.mode) { ForEach(NativeAgentMode.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
-                            Text(defaults.mode.explanation).font(.caption).foregroundStyle(.secondary)
+                            Text(defaults.mode.explanation).macFont(.caption).foregroundStyle(.secondary)
                             Button("Use saved defaults") { defaults.useSaved() }.disabled(!defaults.ready)
                             Picker("Write scope", selection: $defaults.writeScope) { Text("Notes in read access").tag(NativeAgentPreferences.WriteScope.context); Text("Current note only").tag(NativeAgentPreferences.WriteScope.current) }
                             Picker("Read access", selection: $permissions.readScope) { ForEach(MacAgentPermissions.ReadScope.allCases) { Text($0.rawValue).tag($0) } }
                             if permissions.readScope == .folder {
                                 Picker("Read folder", selection: $permissions.folder) { ForEach(folders, id: \.self) { Text($0.isEmpty ? "Inbox" : $0).tag($0) } }
                             }
-                            Text(permissions.readScope == .selected ? "Only the \(paths.count) notes chosen with Context are readable." : permissions.readScope == .folder ? (permissions.folder.isEmpty ? "Only notes directly in Inbox are readable." : "Notes in this folder and its child folders are readable.") : "All readable notes in this vault are available to the agent.").font(.caption)
-                            if defaults.mode != .ask { Text(defaults.writeScope == .current ? "Only the current note can be changed." : permissions.readScope == .vault ? "Every ordinary, unarchived vault note can be changed." : permissions.readScope == .folder ? "Every ordinary, unarchived note in this folder and its child folders can be changed." : "Only the chosen context notes can be changed.").font(.caption).foregroundStyle(.secondary) }
-                            if defaults.mode != .ask { Text("Archived notes in the write scope can only be unarchived; their body stays protected until then.").font(.caption2).foregroundStyle(.secondary) }
+                            Text(permissions.readScope == .selected ? "Only the \(paths.count) notes chosen with Context are readable." : permissions.readScope == .folder ? (permissions.folder.isEmpty ? "Only notes directly in Inbox are readable." : "Notes in this folder and its child folders are readable.") : "All readable notes in this vault are available to the agent.").macFont(.caption)
+                            if defaults.mode != .ask { Text(defaults.writeScope == .current ? "Only the current note can be changed." : permissions.readScope == .vault ? "Every ordinary, unarchived vault note can be changed." : permissions.readScope == .folder ? "Every ordinary, unarchived note in this folder and its child folders can be changed." : "Only the chosen context notes can be changed.").macFont(.caption).foregroundStyle(.secondary) }
+                            if defaults.mode != .ask { Text("Archived notes in the write scope can only be unarchived; their body stays protected until then.").macFont(.caption2).foregroundStyle(.secondary) }
                             if defaults.mode != .ask && defaults.writeScope != .current {
                                 Toggle("Allow new notes", isOn: $permissions.create)
                                 if permissions.create {
                                     if permissions.readScope == .selected { Picker("Creation folder", selection: $permissions.creationFolder) { ForEach(folders, id: \.self) { Text($0.isEmpty ? "Inbox" : $0).tag($0) } } }
-                                    Text(permissions.readScope == .vault ? "New notes may be created in any ordinary folder." : "New notes may be created only in " + ((permissions.readScope == .folder ? permissions.folder : permissions.creationFolder).isEmpty ? "Inbox." : (permissions.readScope == .folder ? permissions.folder : permissions.creationFolder) + ".")).font(.caption)
+                                    Text(permissions.readScope == .vault ? "New notes may be created in any ordinary folder." : "New notes may be created only in " + ((permissions.readScope == .folder ? permissions.folder : permissions.creationFolder).isEmpty ? "Inbox." : (permissions.readScope == .folder ? permissions.folder : permissions.creationFolder) + ".")).macFont(.caption)
                                 }
-                            } else { Text("New-note creation is disabled for Ask and current-note-only writes.").font(.caption).foregroundStyle(.secondary) }
+                            } else { Text("New-note creation is disabled for Ask and current-note-only writes.").macFont(.caption).foregroundStyle(.secondary) }
                             if defaults.mode != .ask && defaults.writeScope != .current {
                                 Toggle("Allow filing notes into other folders", isOn: $permissions.fileNotes)
                                 if permissions.fileNotes {
                                     if permissions.readScope == .selected { Picker("Filing destination", selection: $permissions.filingFolder) { ForEach(folders, id: \.self) { Text($0.isEmpty ? "Inbox" : $0).tag($0) } } }
-                                    Text(permissions.readScope == .vault ? "Filing is permitted into ordinary vault folders." : "Filing is permitted into the chosen folder and its child folders; Inbox permits only root-level notes.").font(.caption).foregroundStyle(.secondary)
+                                    Text(permissions.readScope == .vault ? "Filing is permitted into ordinary vault folders." : "Filing is permitted into the chosen folder and its child folders; Inbox permits only root-level notes.").macFont(.caption).foregroundStyle(.secondary)
                                 }
                             }
-                            Text("Permissions apply to this saved run. Other clients choose permissions again for a new run.").font(.caption2).foregroundStyle(.secondary)
+                            Text("Permissions apply to this saved run. Other clients choose permissions again for a new run.").macFont(.caption2).foregroundStyle(.secondary)
                             Text(chat.draft.isEmpty ? "Enter your request in the conversation composer before starting." : chat.draft).lineLimit(4).textSelection(.enabled)
                             Button("Start \(defaults.mode.rawValue)") { start() }.disabled(locked || !chat.writable || chat.hasUnsavedReply || controller.hasUnsavedState || !defaults.ready || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && chat.selectedImages.isEmpty && chat.selectedDocuments.isEmpty)
                         }.padding(5)
                     }.disabled(locked || defaults.loading || defaults.snapshot == nil)
                     if let record = controller.current {
-                        Text(record.run.objective).font(.headline).textSelection(.enabled)
-                        Text("\(record.run.status) · \(record.run.steps) steps · \(record.run.inputTokens + record.run.outputTokens) tokens").font(.caption).foregroundStyle(.secondary)
-                        Text("Read access: " + record.run.scopeLabel).font(.caption)
+                        Text(record.run.objective).macFont(.headline).textSelection(.enabled)
+                        Text("\(record.run.status) · \(record.run.steps) steps · \(record.run.inputTokens + record.run.outputTokens) tokens").macFont(.caption).foregroundStyle(.secondary)
+                        Text("Read access: " + record.run.scopeLabel).macFont(.caption)
                         if let context = try? MacAgentCompaction.read(record) {
-                            Text("Saved context compaction: \(context.next) of \(context.ranges.count) summaries complete. Resume continues within this run's paid request limits; original messages remain archived.").font(.caption).foregroundStyle(.secondary)
+                            Text("Saved context compaction: \(context.next) of \(context.ranges.count) summaries complete. Resume continues within this run's paid request limits; original messages remain archived.").macFont(.caption).foregroundStyle(.secondary)
                         }
-                        Text(record.run.createFolders.isEmpty ? "New-note creation is disabled for this run." : "New notes: " + record.run.createFolders.map { $0 == "*" ? "Any ordinary folder" : $0.isEmpty ? "Inbox" : $0 }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
-                        Text((record.run.organizationFolders ?? []).isEmpty ? "Filing into other folders is disabled for this run." : "Filing destinations: " + (record.run.organizationFolders ?? []).map { $0 == "*" ? "Any ordinary folder" : $0.isEmpty ? "Inbox" : $0 + " and child folders" }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                        Text(record.run.createFolders.isEmpty ? "New-note creation is disabled for this run." : "New notes: " + record.run.createFolders.map { $0 == "*" ? "Any ordinary folder" : $0.isEmpty ? "Inbox" : $0 }.joined(separator: ", ")).macFont(.caption).foregroundStyle(.secondary)
+                        Text((record.run.organizationFolders ?? []).isEmpty ? "Filing into other folders is disabled for this run." : "Filing destinations: " + (record.run.organizationFolders ?? []).map { $0 == "*" ? "Any ordinary folder" : $0.isEmpty ? "Inbox" : $0 + " and child folders" }.joined(separator: ", ")).macFont(.caption).foregroundStyle(.secondary)
                         if !controller.live.isEmpty { Text(controller.live).textSelection(.enabled) }
-                        if let progress = controller.analysisProgress { Text(progress).font(.caption).foregroundStyle(.secondary) }
-                        if let progress = controller.contextProgress { Text(progress).font(.caption).foregroundStyle(.secondary) }
-                        if let question = record.run.question { Text(question).font(.headline); TextField("Your answer", text: $answer) }
+                        if let progress = controller.analysisProgress { Text(progress).macFont(.caption).foregroundStyle(.secondary) }
+                        if let progress = controller.contextProgress { Text(progress).macFont(.caption).foregroundStyle(.secondary) }
+                        if let question = record.run.question { Text(question).macFont(.headline); TextField("Your answer", text: $answer) }
                         if let review = controller.review {
-                            Text(review.label).font(.headline)
-                            Text("Approval saves these exact files. Changed files or a newer journal will be refused.").font(.caption).foregroundStyle(.secondary)
+                            Text(review.label).macFont(.headline)
+                            Text("Approval saves these exact files. Changed files or a newer journal will be refused.").macFont(.caption).foregroundStyle(.secondary)
                             ForEach(review.reviewedFiles, id: \.path) { change in
                                 GroupBox(change.path) { VStack(alignment: .leading, spacing: 8) {
-                                    DisclosureGroup("Current") { Text(change.before.map { String(decoding: $0, as: UTF8.self) } ?? "File does not exist").font(.system(.caption, design: .monospaced)).textSelection(.enabled) }
-                                    Text("After approval").font(.caption.bold())
-                                    Text(change.after.map { String(decoding: $0, as: UTF8.self) } ?? "Remove file").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                    DisclosureGroup("Current") { Text(change.before.map { String(decoding: $0, as: UTF8.self) } ?? "File does not exist").macFont(.system(.caption, design: .monospaced)).textSelection(.enabled) }
+                                    Text("After approval").macFont(.caption.bold())
+                                    Text(change.after.map { String(decoding: $0, as: UTF8.self) } ?? "Remove file").macFont(.system(.caption, design: .monospaced)).textSelection(.enabled)
                                 }.frame(maxWidth: .infinity, alignment: .leading) }
                             }
                             Button("Apply reviewed changes") { perform { try await chat.validateAgentConversation(review.record); try await controller.approve(review) } }.disabled(locked || !chat.writable)
                         }
                         if !record.run.pending.isEmpty {
-                            ForEach(record.run.pending) { proposal in HStack { Text(proposal.label).font(.caption); Spacer(); Button("Review") { perform { try await chat.validateAgentConversation(record); try await controller.reviewProposals([proposal.id]) } }.disabled(locked || !chat.writable); Button("Reject") { perform { try await chat.validateAgentConversation(record); try await controller.reject(proposal.id) } }.disabled(locked || !chat.writable) } }
+                            ForEach(record.run.pending) { proposal in HStack { Text(proposal.label).macFont(.caption); Spacer(); Button("Review") { perform { try await chat.validateAgentConversation(record); try await controller.reviewProposals([proposal.id]) } }.disabled(locked || !chat.writable); Button("Reject") { perform { try await chat.validateAgentConversation(record); try await controller.reject(proposal.id) } }.disabled(locked || !chat.writable) } }
                             if controller.review == nil, record.run.question == nil { Button("Rebuild review") { perform { try await controller.refreshReview() } }.disabled(locked || !chat.writable) }
                         }
                         if !record.run.receipts.isEmpty {
                             DisclosureGroup("Saved change receipts") {
                                 ForEach(record.run.receipts) { receipt in
                                     HStack {
-                                        VStack(alignment: .leading) { Text(receipt.date.formatted()).font(.caption); Text(receipt.undoneAt == nil ? "\(receipt.after.count) notes saved" : "Undone").font(.caption).foregroundStyle(.secondary) }
+                                        VStack(alignment: .leading) { Text(receipt.date.formatted()).macFont(.caption); Text(receipt.undoneAt == nil ? "\(receipt.after.count) notes saved" : "Undone").macFont(.caption).foregroundStyle(.secondary) }
                                         Spacer()
                                         if receipt.undoneAt == nil { Button("Review Undo") { perform { try await chat.validateAgentConversation(record); try await controller.reviewUndo(receipt.id) } }.disabled(locked || !chat.writable) }
                                     }
@@ -166,10 +166,10 @@ private struct MacAgentRunView: View {
                         Button("Discard unsaved local run state…", role: .destructive) { confirmingDiscard = true }.disabled(locked)
                     }
                     if defaults.issue != nil { Button("Retry run defaults") { Task { await loadDefaults() } }.disabled(locked || defaults.loading) }
-                    if let message = issue ?? defaults.issue ?? controller.issue { Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+                    if let message = issue ?? defaults.issue ?? controller.issue { Text(message).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
                 }.padding(.horizontal, 10) }.frame(minWidth: 460)
             }
-            Text("Uses your configured connection. Requests share the allowed note context and frozen attachments with that provider. Stop keeps the run journal and partial conversation reply.").font(.caption2).foregroundStyle(.secondary)
+            Text("Uses your configured connection. Requests share the allowed note context and frozen attachments with that provider. Stop keeps the run journal and partial conversation reply.").macFont(.caption2).foregroundStyle(.secondary)
         }.padding(20).frame(width: 940, height: 700).interactiveDismissDisabled(locked || controller.hasUnsavedState)
         .task { await loadDefaults() }
         .task(id: chat.selectedID) { await loadWebRuns() }

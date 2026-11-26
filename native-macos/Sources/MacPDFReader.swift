@@ -13,10 +13,10 @@ struct MacPDFView: View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 TextField("Find in PDF", text: $query).textFieldStyle(.roundedBorder).frame(maxWidth: 240).onSubmit { reader.moveMatch(1) }
-                Toggle("Match case", isOn: $matchCase).toggleStyle(.checkbox).font(.caption)
+                Toggle("Match case", isOn: $matchCase).toggleStyle(.checkbox).macFont(.caption)
                 Button { reader.moveMatch(-1) } label: { Image(systemName: "chevron.up") }.help("Previous match").disabled(reader.matches.isEmpty)
                 Button { reader.moveMatch(1) } label: { Image(systemName: "chevron.down") }.help("Next match").disabled(reader.matches.isEmpty)
-                Text(reader.searchStatus).font(.caption).foregroundStyle(.secondary)
+                Text(reader.searchStatus).macFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("−") { reader.view.zoomOut(nil) }.help("Zoom out")
                 Button("+") { reader.view.zoomIn(nil) }.help("Zoom in")
@@ -25,7 +25,7 @@ struct MacPDFView: View {
             HStack(spacing: 10) {
                 Button("Previous page") { reader.view.goToPreviousPage(nil) }.disabled(reader.currentPage <= 1)
                 TextField("Page", text: $page).frame(width: 45).textFieldStyle(.roundedBorder).onSubmit { reader.goToPage(page); page = String(reader.currentPage) }
-                Text("of \(reader.document?.pageCount ?? 0)").font(.caption)
+                Text("of \(reader.document?.pageCount ?? 0)").macFont(.caption)
                 Button("Next page") { reader.view.goToNextPage(nil) }.disabled(reader.currentPage >= (reader.document?.pageCount ?? 0))
                 Spacer()
 
@@ -33,13 +33,13 @@ struct MacPDFView: View {
             Divider()
             if reader.locked {
                 VStack(spacing: 14) {
-                    Image(systemName: "lock.doc").font(.largeTitle).foregroundStyle(.secondary)
-                    Text("This PDF requires a password").font(.headline)
+                    Image(systemName: "lock.doc").macFont(.largeTitle).foregroundStyle(.secondary)
+                    Text("This PDF requires a password").macFont(.headline)
                     SecureField("PDF password", text: $password).textFieldStyle(.roundedBorder)
                         .focused($passwordFocused).onSubmit { unlock() }
                     Button("Unlock PDF") { unlock() }.disabled(password.isEmpty)
-                    if let issue = reader.unlockIssue { Text(issue).font(.callout).foregroundStyle(.red) }
-                    Text("The password is used only for this open preview. The original PDF stays encrypted.").font(.caption).foregroundStyle(.secondary)
+                    if let issue = reader.unlockIssue { Text(issue).macFont(.callout).foregroundStyle(.red) }
+                    Text("The password is used only for this open preview. The original PDF stays encrypted.").macFont(.caption).foregroundStyle(.secondary)
                 }.padding(24).frame(maxWidth: 380).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onAppear { passwordFocused = true }
             } else if reader.document != nil { MacPDFSurface(reader: reader) }

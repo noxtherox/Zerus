@@ -15,9 +15,9 @@ struct MacSavedViewsMenu: View {
         } label: { Label("Views", systemImage: "rectangle.stack") }.menuStyle(.borderlessButton).fixedSize()
         .macSheet(isPresented: $saving) {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Save current view").font(.title2.bold())
+                Text("Save current view").macFont(.title2.bold())
                 TextField("View name", text: $name)
-                if store.savedViews.contains(where: { $0.name.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }) { Text("Saving replaces the existing view with this name.").font(.caption).foregroundStyle(.secondary) }
+                if store.savedViews.contains(where: { $0.name.caseInsensitiveCompare(name.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame }) { Text("Saving replaces the existing view with this name.").macFont(.caption).foregroundStyle(.secondary) }
                 HStack { Spacer(); Button("Cancel") { saving = false }; Button("Save") { busy = true; Task { if await store.saveCurrentView(name: name) { saving = false }; busy = false } }.keyboardShortcut(.defaultAction).disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || busy) }
             }.padding(24).frame(width: 410)
         }
@@ -36,7 +36,7 @@ private struct MacSavedViewsManager: View {
     private var connected: Bool { store.workspaceID == workspaceID && store.folderCollection && store.destination == owner }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack { Text("Saved views · " + owner).font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            HStack { Text("Saved views · " + owner).macFont(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
             if connected {
                 List(store.savedViews) { entry in
                     HStack { Text(entry.name); Spacer(); Button("Apply") { Task { await store.applySavedView(entry); dismiss() } }; Button("Rename…") { name = entry.name; renaming = entry }; Button("Delete…", role: .destructive) { deleting = entry } }

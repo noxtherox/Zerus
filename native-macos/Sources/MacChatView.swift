@@ -60,8 +60,8 @@ struct MacConversationChatView: View {
             if chat.issue != nil || !chat.warnings.isEmpty {
                 Rectangle().fill(palette.line).frame(height: 1)
                 VStack(alignment: .leading, spacing: 6) {
-                    if let issue = chat.issue { HStack { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red); Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled); Spacer(); Button("Export prompt…") { export(chat.draft) }.controlSize(.small) } }
-                    if !chat.warnings.isEmpty { DisclosureGroup("Preserved conversation data (\(chat.warnings.count))") { ForEach(chat.warnings, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) } }.font(.caption) }
+                    if let issue = chat.issue { HStack { Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red); Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled); Spacer(); Button("Export prompt…") { export(chat.draft) }.controlSize(.small) } }
+                    if !chat.warnings.isEmpty { DisclosureGroup("Preserved conversation data (\(chat.warnings.count))") { ForEach(chat.warnings, id: \.self) { Text($0).macFont(.caption).foregroundStyle(.orange) } }.macFont(.caption) }
                 }.padding(.horizontal, 16).padding(.vertical, 8).background(palette.sidebar)
             }
         }
@@ -94,7 +94,7 @@ struct MacConversationChatView: View {
     private func header(_ palette: MacChatPalette) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "sparkles").foregroundStyle(palette.accent)
-            Text("AI conversations").font(.headline).foregroundStyle(palette.text)
+            Text("AI conversations").macFont(.headline).foregroundStyle(palette.text)
             Spacer()
             if chat.isBusy { ProgressView().controlSize(.small) }
             MacChatChip(title: modelLabel.isEmpty ? "Set up connection" : modelLabel, systemImage: "cpu", palette: palette, action: { configuration = true })
@@ -109,8 +109,8 @@ struct MacConversationChatView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 4) {
                 HStack(spacing: 5) {
-                    Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(palette.sidebarMuted)
-                    TextField("Search", text: $query).textFieldStyle(.plain).font(.callout).foregroundStyle(palette.sidebarText)
+                    Image(systemName: "magnifyingglass").macFont(.caption).foregroundStyle(palette.sidebarMuted)
+                    TextField("Search", text: $query).textFieldStyle(.plain).macFont(.callout).foregroundStyle(palette.sidebarText)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(palette.hover, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).stroke(palette.line))
@@ -118,18 +118,18 @@ struct MacConversationChatView: View {
                 MacChatIconButton(systemImage: "square.and.pencil", help: "New conversation", palette: palette) { select(nil) }.disabled(locked)
             }
             Picker("Conversations", selection: $show) { ForEach(["Active", "Archived", "Trash"], id: \.self) { Text($0).tag($0) } }.pickerStyle(.segmented).labelsHidden()
-            if show == "Trash" { Text("Chats owned by this Mac are permanently removed after 30 days when history refreshes. Unsent drafts and active work delay cleanup.").font(.caption).foregroundStyle(palette.sidebarMuted) }
+            if show == "Trash" { Text("Chats owned by this Mac are permanently removed after 30 days when history refreshes. Unsent drafts and active work delay cleanup.").macFont(.caption).foregroundStyle(palette.sidebarMuted) }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
                     ForEach(MacChatListGroup.sections(filtered)) { section in
-                        Text(section.group.title.uppercased()).font(.system(size: 10, weight: .semibold)).tracking(0.4).foregroundStyle(palette.sidebarMuted)
+                        Text(section.group.title.uppercased()).macFont(.system(size: 10, weight: .semibold)).tracking(0.4).foregroundStyle(palette.sidebarMuted)
                             .padding(.horizontal, 9).padding(.top, 10).padding(.bottom, 3).accessibilityAddTraits(.isHeader)
                         ForEach(section.items) { item in
                             Button { select(item.id) } label: { MacChatConversationRow(item: item, selected: chat.selectedID == item.id, ownedHere: item.owner.id == chat.device.id, palette: palette) }
                                 .buttonStyle(MacBoxButtonStyle()).disabled(locked)
                         }
                     }
-                    if filtered.isEmpty { Text(query.isEmpty ? "No conversations" : "No matching conversations").font(.caption).foregroundStyle(palette.sidebarMuted).padding(9) }
+                    if filtered.isEmpty { Text(query.isEmpty ? "No conversations" : "No matching conversations").macFont(.caption).foregroundStyle(palette.sidebarMuted).padding(9) }
                 }
             }
         }
@@ -142,7 +142,7 @@ struct MacConversationChatView: View {
         VStack(spacing: 0) {
             if let item = chat.conversation {
                 HStack(spacing: 8) {
-                    Text(item.title).font(.headline).foregroundStyle(palette.text).lineLimit(1)
+                    Text(item.title).macFont(.headline).foregroundStyle(palette.text).lineLimit(1)
                     Spacer()
                     Menu {
                         Button("Rename…") { name = item.title; rename = true }
@@ -179,21 +179,21 @@ struct MacConversationChatView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if !chat.recoveryArchive.isEmpty || chat.hasUnsavedReply {
                     DisclosureGroup("Local reply recovery (\(chat.recoveryArchive.count))") {
-                        ScrollView { VStack(alignment: .leading, spacing: 10) { ForEach(chat.recoveryArchive) { recovery in VStack(alignment: .leading) { Text(recovery.text).font(.caption).textSelection(.enabled).lineLimit(5); Button("Export recovery…") { export(recovery.text) } } } } }.frame(maxHeight: 150)
+                        ScrollView { VStack(alignment: .leading, spacing: 10) { ForEach(chat.recoveryArchive) { recovery in VStack(alignment: .leading) { Text(recovery.text).macFont(.caption).textSelection(.enabled).lineLimit(5); Button("Export recovery…") { export(recovery.text) } } } } }.frame(maxHeight: 150)
                         if chat.hasUnsavedReply { Button("Keep recovery and continue") { do { try chat.keepRecoveryAndContinue() } catch { chat.issue = error.localizedDescription } } }
-                    }.font(.caption)
+                    }.macFont(.caption)
                 }
-                if let launchNotice { Text(launchNotice).font(.caption).foregroundStyle(palette.muted) }
-                if let status = chat.documentContextStatus { Text(status).font(.caption).foregroundStyle(palette.muted) }
+                if let launchNotice { Text(launchNotice).macFont(.caption).foregroundStyle(palette.muted) }
+                if let status = chat.documentContextStatus { Text(status).macFont(.caption).foregroundStyle(palette.muted) }
                 composer(palette)
                 HStack(spacing: 4) {
                     Spacer()
-                    Text("Sent to your AI provider: this conversation, attachments and selected notes.").font(.caption2).foregroundStyle(palette.muted)
-                    Button { privacyInfo.toggle() } label: { Image(systemName: "info.circle").font(.caption2).foregroundStyle(palette.muted) }
+                    Text("Sent to your AI provider: this conversation, attachments and selected notes.").macFont(.caption2).foregroundStyle(palette.muted)
+                    Button { privacyInfo.toggle() } label: { Image(systemName: "info.circle").macFont(.caption2).foregroundStyle(palette.muted) }
                         .buttonStyle(.plain).accessibilityLabel("What is shared").help("What is shared")
                         .popover(isPresented: $privacyInfo) {
                             Text("Paste images or drop image, PDF and text files into chat. Send shares this conversation, image attachments, document text or excerpts, and selected note snapshots with the configured provider. Images need a vision-capable model. Credentials stay in Keychain; saved conversations travel with the vault.")
-                                .font(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 320).padding(14)
+                                .macFont(.callout).fixedSize(horizontal: false, vertical: true).frame(width: 320).padding(14)
                         }
                     Spacer()
                 }
@@ -213,16 +213,16 @@ struct MacConversationChatView: View {
                         .frame(maxWidth: 520, alignment: .trailing)
                 }
                 if let id = chat.selectedID { MacChatMessageImages(root: chat.root, conversationID: id, message: message, version: chat.attachmentEpoch) }
-                if message.interrupted { Text("Interrupted").font(.caption).foregroundStyle(palette.muted) }
+                if message.interrupted { Text("Interrupted").macFont(.caption).foregroundStyle(palette.muted) }
             }
             .frame(maxWidth: .infinity, alignment: .trailing).accessibilityElement(children: .contain).accessibilityLabel("You")
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 if message.text.isEmpty {
                     if chat.running && message.id == chat.live?.id { HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Thinking…").foregroundStyle(palette.muted) } }
-                    else { Text("Stopped before text was received.").font(.caption).foregroundStyle(palette.muted) }
+                    else { Text("Stopped before text was received.").macFont(.caption).foregroundStyle(palette.muted) }
                 } else { MacChatMessageText(text: message.text).foregroundStyle(palette.text).frame(maxWidth: .infinity, alignment: .leading) }
-                if message.interrupted { Text("Interrupted").font(.caption).foregroundStyle(palette.muted) }
+                if message.interrupted { Text("Interrupted").macFont(.caption).foregroundStyle(palette.muted) }
                 if !message.text.isEmpty {
                     HStack(spacing: 2) {
                         MacChatIconButton(systemImage: "doc.on.doc", help: "Copy reply", palette: palette, size: 24) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(message.text, forType: .string) }
@@ -256,7 +256,7 @@ struct MacConversationChatView: View {
                             ZStack(alignment: .topTrailing) {
                                 MacChatPendingThumbnail(id: image.id, bytes: image.bytes, width: 40, height: 28).clipShape(RoundedRectangle(cornerRadius: 5))
                                 Button { do { try chat.removeImage(image.id) } catch { chat.issue = error.localizedDescription } } label: {
-                                    Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(palette.text, palette.surface)
+                                    Image(systemName: "xmark.circle.fill").macFont(.system(size: 11)).foregroundStyle(palette.text, palette.surface)
                                 }.buttonStyle(.plain).offset(x: 5, y: -5).accessibilityLabel("Remove " + image.name)
                             }.help(image.name)
                         }
@@ -269,7 +269,7 @@ struct MacConversationChatView: View {
                 }.disabled(chat.isBusy || busy)
                 ZStack(alignment: .topLeading) {
                     MacChatComposer(text: $chat.draft, enabled: !busy, acceptsAttachments: !chat.isBusy && chat.writable && !chat.hasUnsavedReply, textColor: theme.nsColor(.text), attach: importAttachments, issue: { chat.issue = $0 }).id(chat.selectedID ?? "new").frame(height: 54)
-                    if chat.draft.isEmpty { Text("Ask about your notes…").font(.system(size: 13)).foregroundStyle(palette.muted).padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true) }
+                    if chat.draft.isEmpty { Text("Ask about your notes…").macFont(.system(size: 13)).foregroundStyle(palette.muted).padding(.leading, 5).allowsHitTesting(false).accessibilityHidden(true) }
                 }
                 HStack(spacing: 2) {
                     Menu {
@@ -281,11 +281,11 @@ struct MacConversationChatView: View {
                     MacChatIconButton(systemImage: "at", help: "Choose notes to share", palette: palette) { contextPicker = true }.disabled(chat.isBusy || busy)
                     Spacer()
                     if chat.isBusy {
-                        Button { chat.stop() } label: { Image(systemName: "stop.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.white).frame(width: 26, height: 26).background(palette.accent, in: Circle()) }
+                        Button { chat.stop() } label: { Image(systemName: "stop.fill").macFont(.system(size: 10, weight: .bold)).foregroundStyle(.white).frame(width: 26, height: 26).background(palette.accent, in: Circle()) }
                             .buttonStyle(.plain).help("Stop").accessibilityLabel("Stop")
                     } else {
                         Button { send() } label: {
-                            Image(systemName: "arrow.up").font(.system(size: 12, weight: .bold)).foregroundStyle(canSend ? Color.white : palette.muted)
+                            Image(systemName: "arrow.up").macFont(.system(size: 12, weight: .bold)).foregroundStyle(canSend ? Color.white : palette.muted)
                                 .frame(width: 26, height: 26).background(canSend ? palette.accent : palette.hover, in: Circle())
                         }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).disabled(!canSend).help("Send (⌘↩)").accessibilityLabel("Send")
                     }

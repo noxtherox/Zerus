@@ -30,7 +30,7 @@ struct MacProgressiveNoteList<Row: View>: View {
                 if count < notes.count {
                     let shown = count
                     Button("Show more notes") { reveal(after: shown) }
-                        .font(.caption).padding(12)
+                        .macFont(.caption).padding(12)
                         .onAppear { reveal(after: shown) }
                 }
             }
@@ -65,7 +65,7 @@ struct MacProgressiveNoteGrid<Card: View>: View {
             if count < notes.count {
                 let shown = count
                 Button("Show more notes") { reveal(after: shown) }
-                    .font(.caption).padding(12)
+                    .macFont(.caption).padding(12)
                     .onScrollVisibilityChange(threshold: 0.1) { visible in
                         if visible { reveal(after: shown) }
                     }.id(shown)

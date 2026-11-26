@@ -20,9 +20,9 @@ struct MacRetainedNoteBanner: View {
     let change: MacNoteDiskChange
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(change.message, systemImage: "doc.badge.exclamationmark").font(.callout)
+            Label(change.message, systemImage: "doc.badge.exclamationmark").macFont(.callout)
             HStack {
-                Text(workspace.retainedExportReady ? "Your current text was exported." : "Export a copy before leaving this retained text.").font(.caption).foregroundStyle(.secondary)
+                Text(workspace.retainedExportReady ? "Your current text was exported." : "Export a copy before leaving this retained text.").macFont(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Export text…") { export() }
                 if change != .unavailable { Button(change == .missing ? "Close retained note" : "Use saved version") {

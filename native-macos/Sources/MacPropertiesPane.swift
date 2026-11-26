@@ -113,15 +113,15 @@ struct MacPaneHeader: View {
         HStack(spacing: 4) {
             Button { apply(.collapse(section, !collapsed), origin: origin) } label: {
                 HStack(spacing: 5) {
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    Image(systemName: "chevron.right").macFont(.system(size: 9, weight: .bold))
                         .rotationEffect(.degrees(collapsed ? 0 : 90)).frame(width: 10)
-                    Text(section.title.uppercased()).font(.system(size: 10.5, weight: .semibold)).tracking(0.8)
+                    Text(section.title.uppercased()).macFont(.system(size: 10.5, weight: .semibold)).tracking(0.8)
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(disabled)
                 .accessibilityLabel((collapsed ? "Expand " : "Collapse ") + section.title)
             Group {
-                Image(systemName: "line.3.horizontal").font(.system(size: 10)).help("Drag to reorder " + section.title)
+                Image(systemName: "line.3.horizontal").macFont(.system(size: 10)).help("Drag to reorder " + section.title)
                     .onDrag {
                         let provider = NSItemProvider()
                         provider.registerDataRepresentation(forTypeIdentifier: macPaneDragType, visibility: .ownProcess) { done in done(Data(section.rawValue.utf8), nil); return nil }
@@ -159,13 +159,13 @@ struct MacPaneSettingsView: View {
     var body: some View {
         let origin = workspace.workspaceID
         VStack(alignment: .leading, spacing: 16) {
-            if !embedded { Text("Properties pane").font(.title2.bold()) }
+            if !embedded { Text("Properties pane").macFont(.title2.bold()) }
             Text("Drag sections or use their menus to reorder them. Click a heading to collapse or expand it. Saved for all notes in this vault.").foregroundStyle(.secondary)
             ForEach(workspace.paneLayout.order) { section in
-                HStack { MacPaneHeader(workspace: workspace, section: section); Text(workspace.paneLayout.collapsed.contains(section) ? "Collapsed" : "Expanded").font(.caption).foregroundStyle(.secondary) }
+                HStack { MacPaneHeader(workspace: workspace, section: section); Text(workspace.paneLayout.collapsed.contains(section) ? "Collapsed" : "Expanded").macFont(.caption).foregroundStyle(.secondary) }
                 Divider()
             }
-            if let issue = workspace.paneLayoutIssue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue = workspace.paneLayoutIssue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack {
                 Button("Reset pane layout") { Task { do { try await workspace.changePane(.reset, workspaceID: origin) } catch { if workspace.workspaceID == origin { workspace.paneLayoutIssue = error.localizedDescription } } } }.disabled(workspace.paneLayoutSaving || !workspace.paneLayoutReady || workspace.busy || workspace.preparingToClose)
                 Button("Refresh") { Task { await workspace.refreshPaneLayout() } }.disabled(workspace.paneLayoutSaving)

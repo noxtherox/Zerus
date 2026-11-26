@@ -33,17 +33,17 @@ struct MacImagesView: View {
         let images = page == "Note" ? NativeInlineImage.occurrences(in: noteBody) : []
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Images").font(.title2.bold()); Spacer()
-                if busy || checking { ProgressView().controlSize(.small); if checking { Text("Checking vault…").font(.caption).foregroundStyle(.secondary) } }
+                Text("Images").macFont(.title2.bold()); Spacer()
+                if busy || checking { ProgressView().controlSize(.small); if checking { Text("Checking vault…").macFont(.caption).foregroundStyle(.secondary) } }
                 Button("Refresh") { snapshot = nil; loadTrash() }.disabled(busy)
                 Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
             }
             if notePath != nil { Picker("Images", selection: $page) { Text("In this note").tag("Note"); Text("Recently deleted").tag("Deleted") }.pickerStyle(.segmented) }
             if page == "Note" {
-                Text(noteTitle ?? notePath ?? "Note").font(.headline)
-                Text("Remove a single occurrence after review. Shared and retained image files stay available to saved notes and recovery data.").font(.caption).foregroundStyle(.secondary)
+                Text(noteTitle ?? notePath ?? "Note").macFont(.headline)
+                Text("Remove a single occurrence after review. Shared and retained image files stay available to saved notes and recovery data.").macFont(.caption).foregroundStyle(.secondary)
             } else {
-                Text("Restore deleted files to their original vault paths. Permanent deletion checks saved notes and recovery data again.").font(.caption).foregroundStyle(.secondary)
+                Text("Restore deleted files to their original vault paths. Permanent deletion checks saved notes and recovery data again.").macFont(.caption).foregroundStyle(.secondary)
             }
             Divider()
             ScrollView { LazyVStack(alignment: .leading, spacing: 14) {
@@ -51,7 +51,7 @@ struct MacImagesView: View {
                     ForEach(Array(images.enumerated()), id: \.element.id) { index, image in
                         HStack(alignment: .top) {
                             Image(systemName: "photo").foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 5) { Text(image.caption.isEmpty ? "Image" : image.caption).font(.headline); Text(image.reference).font(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
+                            VStack(alignment: .leading, spacing: 5) { Text(image.caption.isEmpty ? "Image" : image.caption).macFont(.headline); Text(image.reference).macFont(.caption).foregroundStyle(.secondary).textSelection(.enabled) }
                             Spacer()
                             Button("Preview") { open { try await workspace.imageLease(image.reference, notePath: notePath, workspaceID: workspaceID) } }.disabled(URL(string: image.reference)?.scheme != nil).accessibilityLabel("Preview " + (image.caption.isEmpty ? "image" : image.caption) + ", occurrence " + String(index + 1))
                             Button("Remove…") { if let notePath { prepareRemoval(notePath, index: index, image: image) } }.disabled(busy).accessibilityLabel("Remove " + (image.caption.isEmpty ? "image" : image.caption) + ", occurrence " + String(index + 1))
@@ -61,14 +61,14 @@ struct MacImagesView: View {
                 } else {
                     ForEach(entries) { entry in
                         VStack(alignment: .leading, spacing: 9) {
-                            Label(entry.name, systemImage: "photo").font(.headline)
-                            Text(entry.originalPath).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                            if let date = NativeRevisionIndex.date(entry.deletedAt) { Text(date, format: .dateTime).font(.caption).foregroundStyle(.secondary) }
+                            Label(entry.name, systemImage: "photo").macFont(.headline)
+                            Text(entry.originalPath).macFont(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            if let date = NativeRevisionIndex.date(entry.deletedAt) { Text(date, format: .dateTime).macFont(.caption).foregroundStyle(.secondary) }
                             HStack {
                                 Button("Preview") { open { try await workspace.imageLease(entry.trashPath, workspaceID: workspaceID) } }.accessibilityLabel("Preview deleted " + entry.name).accessibilityIdentifier("image.preview.deleted." + entry.id)
                                 Button("Restore…") { prepare(.restore(id: entry.id, reattach: reattach)) }.disabled(busy).accessibilityLabel("Restore " + entry.name).accessibilityIdentifier("image.restore." + entry.id)
                                 Spacer(); Button("Delete permanently…", role: .destructive) { prepare(.purge(ids: [entry.id])) }.disabled(busy)
-                            }.font(.caption)
+                            }.macFont(.caption)
                         }.padding(14).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
                     }
                     if (snapshot?.index ?? trash)?.entries.isEmpty == true { ContentUnavailableView("No deleted images", systemImage: "photo", description: Text("Unused local images moved to Recently Deleted appear here.")) }
@@ -77,8 +77,8 @@ struct MacImagesView: View {
             if let undo = workspace.imageUndo, undo.workspaceID == workspaceID {
                 Button("Review undo of last removal…") { run { review = try await workspace.prepareImageUndo(undo) } }.disabled(busy)
             }
-            if page == "Deleted", !entries.isEmpty { Toggle("Reattach restored images to their notes", isOn: $reattach).font(.caption) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if page == "Deleted", !entries.isEmpty { Toggle("Reattach restored images to their notes", isOn: $reattach).macFont(.caption) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
         }.padding(24).frame(width: 780, height: 570).interactiveDismissDisabled(busy)
         .task { loadTrash() }
         .onChange(of: workspace.workspaceID) { snapshot = nil; trash = nil; issue = "The vault changed. Close and reopen Images." }
@@ -128,15 +128,15 @@ private struct MacImageReviewView: View {
     @Environment(\.dismiss) private var dismiss
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(review.plan.title).font(.title2.bold())
+            Text(review.plan.title).macFont(.title2.bold())
             Text(review.plan.explanation).textSelection(.enabled)
             ScrollView { VStack(alignment: .leading, spacing: 8) {
                 let notes = review.plan.changes.map(\.path).filter { ["md", "markdown"].contains(($0 as NSString).pathExtension.lowercased()) }
-                if !notes.isEmpty { Text("Notes").font(.headline); ForEach(notes, id: \.self) { Text($0).font(.caption).textSelection(.enabled) } }
-                if !review.plan.files.isEmpty { Text("Vault files").font(.headline); ForEach(review.plan.files, id: \.self) { Text($0).font(.caption).textSelection(.enabled) } }
+                if !notes.isEmpty { Text("Notes").macFont(.headline); ForEach(notes, id: \.self) { Text($0).macFont(.caption).textSelection(.enabled) } }
+                if !review.plan.files.isEmpty { Text("Vault files").macFont(.headline); ForEach(review.plan.files, id: \.self) { Text($0).macFont(.caption).textSelection(.enabled) } }
             }.frame(maxWidth: .infinity, alignment: .leading) }
-            if review.plan.permanent { Toggle("I understand these deleted image files cannot be recovered after deletion.", isOn: $confirmed).font(.callout) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if review.plan.permanent { Toggle("I understand these deleted image files cannot be recovered after deletion.", isOn: $confirmed).macFont(.callout) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { if busy { ProgressView().controlSize(.small) }; Spacer(); Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction); Button(review.plan.permanent ? "Delete permanently" : "Confirm", role: review.plan.permanent ? .destructive : nil) {
                 busy = true; issue = nil
                 Task { defer { busy = false }; do { try await workspace.applyImageChange(review); applied(); dismiss() } catch { issue = error.localizedDescription } }

@@ -18,7 +18,7 @@ struct MacAgentSettingsView: View {
                 MacAgentGuidanceEditor(workspace: workspace, status: { update(1, $0) }).tabItem { Text("Instructions & memory") }.tag(1)
                 MacAgentWorkflowsEditor(workspace: workspace, status: { update(2, $0) }).tabItem { Text("Workflows") }.tag(2)
             }
-            if let notice { Text(notice).id(refusedSwitches).font(.caption).foregroundStyle(.orange) }
+            if let notice { Text(notice).id(refusedSwitches).macFont(.caption).foregroundStyle(.orange) }
         }.padding(16).frame(width: 740, height: 650).interactiveDismissDisabled(!blocked.isEmpty).onDisappear { workspace.setSettingsDraftHeld(false) }
     }
     private func update(_ tab: Int, _ value: Bool) {
@@ -52,8 +52,8 @@ private struct MacAgentLimitsEditor: View {
     private var dirty: Bool { snapshot != nil && value != snapshot?.limits }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Limits for new runs").font(.title2.bold())
-            Text("Existing runs keep the limits they started with. These settings travel with this vault.").font(.caption).foregroundStyle(.secondary)
+            Text("Limits for new runs").macFont(.title2.bold())
+            Text("Existing runs keep the limits they started with. These settings travel with this vault.").macFont(.caption).foregroundStyle(.secondary)
             Form {
                 TextField("Model steps · 2–100", text: $steps)
                 TextField("Active minutes · 1–30", text: $minutes)
@@ -62,9 +62,9 @@ private struct MacAgentLimitsEditor: View {
                 TextField("Output tokens per response · 1,024–32,768", text: $output)
                 Picker("Reasoning effort", selection: $effort) { ForEach(NativeAgentLimits.Effort.allCases) { Text($0.rawValue.capitalized).tag($0) } }
             }.disabled(busy || snapshot == nil)
-            Text("Context uses a local estimate, margin and image allowance. Providers may count differently. Compatible APIs receive an output cap; ChatGPT receives an approximate output target. Reasoning effort applies where supported.").font(.caption).foregroundStyle(.secondary)
+            Text("Context uses a local estimate, margin and image allowance. Providers may count differently. Compatible APIs receive an output cap; ChatGPT receives an approximate output target. Reasoning effort applies where supported.").macFont(.caption).foregroundStyle(.secondary)
             if dirty && value == nil { Text("Enter whole numbers within the displayed ranges.").foregroundStyle(.orange) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if saved && !dirty { Label("Saved", systemImage: "checkmark.circle") }
             Spacer()
             HStack {
@@ -97,14 +97,14 @@ private struct MacAgentGuidanceEditor: View {
     private var valid: Bool { (try? value.validate()) != nil }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Vault instructions & memory").font(.title2.bold())
-            Text("Saved text is shared with your provider for new runs. Existing runs keep their starting instructions; an explicit memory read can retrieve newer saved reference data. Guidance cannot grant note access or override your request.").font(.caption).foregroundStyle(.secondary)
-            Text("Vault instructions · \(value.instructions.utf16.count)/12,000").font(.headline)
-            TextEditor(text: $value.instructions).disabled(snapshot == nil).font(.system(.body, design: .monospaced)).accessibilityLabel("Vault instructions")
-            Text("Editable memory · \(value.memory.utf16.count)/8,000").font(.headline)
-            TextEditor(text: $value.memory).disabled(snapshot == nil).font(.system(.body, design: .monospaced)).accessibilityLabel("Editable memory")
-            Text("Memory is reference information. Only you edit these saved preferences.").font(.caption).foregroundStyle(.secondary)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            Text("Vault instructions & memory").macFont(.title2.bold())
+            Text("Saved text is shared with your provider for new runs. Existing runs keep their starting instructions; an explicit memory read can retrieve newer saved reference data. Guidance cannot grant note access or override your request.").macFont(.caption).foregroundStyle(.secondary)
+            Text("Vault instructions · \(value.instructions.utf16.count)/12,000").macFont(.headline)
+            TextEditor(text: $value.instructions).disabled(snapshot == nil).macFont(.system(.body, design: .monospaced)).accessibilityLabel("Vault instructions")
+            Text("Editable memory · \(value.memory.utf16.count)/8,000").macFont(.headline)
+            TextEditor(text: $value.memory).disabled(snapshot == nil).macFont(.system(.body, design: .monospaced)).accessibilityLabel("Editable memory")
+            Text("Memory is reference information. Only you edit these saved preferences.").macFont(.caption).foregroundStyle(.secondary)
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             if saved && !dirty { Label("Saved", systemImage: "checkmark.circle") }
             HStack {
                 ShareLink("Export draft", item: "Vault instructions\n\n" + value.instructions + "\n\nEditable memory\n\n" + value.memory)
@@ -138,8 +138,8 @@ private struct MacAgentWorkflowsEditor: View {
     private var dirty: Bool { workflowDirty || (catalog.map { selected != $0.selectedID } ?? false) }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Workflows").font(.title2.bold())
-            Text("Choose instructions for new runs or edit a Markdown workflow. Workflow text cannot expand note permissions.").font(.caption).foregroundStyle(.secondary)
+            Text("Workflows").macFont(.title2.bold())
+            Text("Choose instructions for new runs or edit a Markdown workflow. Workflow text cannot expand note permissions.").macFont(.caption).foregroundStyle(.secondary)
             ScrollView { VStack(alignment: .leading, spacing: 10) {
                 if let catalog {
                     Picker("New-run workflow", selection: $selected) { Text("General notes task").tag(""); ForEach(catalog.workflows) { Text($0.title).tag($0.id) }; if !selected.isEmpty && !catalog.workflows.contains(where: { $0.id == selected }) { Text("Unavailable saved workflow").tag(selected) } }
@@ -158,13 +158,13 @@ private struct MacAgentWorkflowsEditor: View {
                         } }
                     }
                     HStack { TextField("New workflow name", text: $title); Button("Create draft") { run { let new = try await workspace.newWorkflow(title: title); document = new; source = new.source } }.disabled(workflowDirty || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-                    ForEach(catalog.notices, id: \.self) { Text($0).font(.caption).foregroundStyle(.orange) }
+                    ForEach(catalog.notices, id: \.self) { Text($0).macFont(.caption).foregroundStyle(.orange) }
                 }
                 if let document {
-                    Text("Editing: " + URL(fileURLWithPath: document.id).lastPathComponent).font(.headline).textSelection(.enabled)
-                    Text("\(source.utf16.count)/12,000 characters").font(.caption).foregroundStyle(source.utf16.count > 12_000 ? .red : .secondary)
-                    if source.utf16.count > 12_000 { Text("Shorten the workflow before saving. You can export the full draft.").font(.caption).foregroundStyle(.orange) }
-                    TextEditor(text: $source).font(.system(.body, design: .monospaced)).frame(minHeight: 230).accessibilityLabel("Workflow Markdown")
+                    Text("Editing: " + URL(fileURLWithPath: document.id).lastPathComponent).macFont(.headline).textSelection(.enabled)
+                    Text("\(source.utf16.count)/12,000 characters").macFont(.caption).foregroundStyle(source.utf16.count > 12_000 ? .red : .secondary)
+                    if source.utf16.count > 12_000 { Text("Shorten the workflow before saving. You can export the full draft.").macFont(.caption).foregroundStyle(.orange) }
+                    TextEditor(text: $source).macFont(.system(.body, design: .monospaced)).frame(minHeight: 230).accessibilityLabel("Workflow Markdown")
                     HStack {
                         ShareLink("Export workflow draft", item: source)
                         Button("Discard workflow draft") { if workflowDirty { discardDraft = true } else { clearDraft() } }
@@ -180,7 +180,7 @@ private struct MacAgentWorkflowsEditor: View {
                     }
                 }
             }.frame(maxWidth: .infinity, alignment: .leading) }
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             HStack { Button("Reload") { if dirty { reload = true } else { load() } }; Spacer(); Button("Done") { if dirty { discard = true } else { dismiss() } } }
         }.padding(12).disabled(busy).onAppear { if !dirty { load() } }.onChange(of: busy || dirty, initial: true) { _, value in status(value) }.interactiveDismissDisabled(busy || dirty)
         .confirmationDialog("Discard unsaved workflow changes?", isPresented: $discard) { Button("Discard changes", role: .destructive) { dismiss() } }
@@ -205,18 +205,18 @@ private struct MacAgentPreferencesEditor: View {
     private var dirty: Bool { snapshot.map { $0.value != value } ?? false }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Defaults for new runs").font(.title2.bold())
-            Text("Defaults travel with this vault. Each run keeps the preferences it started with; its chosen mode and note permissions remain authoritative.").font(.caption).foregroundStyle(.secondary)
-            if snapshot?.needsNormalization == true { Text("Unsupported saved preference values use the web defaults shown here. Save defaults to apply those values; reading has kept the original file unchanged.").font(.caption).foregroundStyle(.orange) }
+            Text("Defaults for new runs").macFont(.title2.bold())
+            Text("Defaults travel with this vault. Each run keeps the preferences it started with; its chosen mode and note permissions remain authoritative.").macFont(.caption).foregroundStyle(.secondary)
+            if snapshot?.needsNormalization == true { Text("Unsupported saved preference values use the web defaults shown here. Save defaults to apply those values; reading has kept the original file unchanged.").macFont(.caption).foregroundStyle(.orange) }
             Form {
                 Picker("Default mode", selection: $value.mode) { ForEach(NativeAgentPreferences.Mode.allCases) { Text($0.native.rawValue).tag($0) } }
                 Picker("Write scope", selection: $value.writeScope) { Text("Notes in read access").tag(NativeAgentPreferences.WriteScope.context); Text("Current note only").tag(NativeAgentPreferences.WriteScope.current) }
                 Toggle("Text tool fallback", isOn: $value.textFallback)
-                Text("For connections without native tool calls. Text requests still use the selected mode, note permissions, read revisions and approval flow.").font(.caption).foregroundStyle(.secondary)
+                Text("For connections without native tool calls. Text requests still use the selected mode, note permissions, read revisions and approval flow.").macFont(.caption).foregroundStyle(.secondary)
                 Toggle("Independent note analysis workers", isOn: $value.workers)
-                Text("Allows additional read-only provider requests within a run's chosen note context and budget. Analysis cannot save changes or expand access.").font(.caption).foregroundStyle(.secondary)
+                Text("Allows additional read-only provider requests within a run's chosen note context and budget. Analysis cannot save changes or expand access.").macFont(.caption).foregroundStyle(.secondary)
             }.disabled(snapshot == nil)
-            if let issue { Text(issue).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
+            if let issue { Text(issue).macFont(.caption).foregroundStyle(.red).textSelection(.enabled) }
             Spacer()
             HStack { Button("Reload") { if dirty { reload = true } else { load() } }; Spacer(); Button("Done") { if dirty { discard = true } else { dismiss() } }; Button("Save defaults") { guard let snapshot else { return }; run { self.snapshot = try await workspace.savePreferences(value, expected: snapshot) } }.disabled(!dirty && snapshot?.needsNormalization != true) }
         }.padding(12).disabled(busy).onAppear { if !dirty { load() } }.onChange(of: busy || dirty, initial: true) { _, value in status(value) }.interactiveDismissDisabled(busy || dirty)

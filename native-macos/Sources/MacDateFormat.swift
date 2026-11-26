@@ -97,7 +97,7 @@ struct MacDateField: View {
     private var acceptable: Bool { draft.valid && (allowEmpty || !draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(title).macFont(.caption).foregroundStyle(.secondary)
             HStack {
                 TextField(title, text: Binding(get: { draft.text }, set: { text in
                     guard text != draft.text else { return }
@@ -115,9 +115,9 @@ struct MacDateField: View {
                         }), displayedComponents: .date).datePickerStyle(.graphical).labelsHidden().padding(12).frame(width: 280)
                     }
             }
-            if !acceptable { Text("Enter a valid date as " + draft.format.rawValue + (allowEmpty ? ", or clear the field." : ".")).font(.caption).foregroundStyle(.red) }
-            else if draft.editing && draft.format != format { Text("Finish this date as " + draft.format.rawValue + ".").font(.caption).foregroundStyle(.secondary) }
-            if draft.editing && !publishOnEdit && acceptable { Text("Press Return or leave the field to apply.").font(.caption).foregroundStyle(.secondary) }
+            if !acceptable { Text("Enter a valid date as " + draft.format.rawValue + (allowEmpty ? ", or clear the field." : ".")).macFont(.caption).foregroundStyle(.red) }
+            else if draft.editing && draft.format != format { Text("Finish this date as " + draft.format.rawValue + ".").macFont(.caption).foregroundStyle(.secondary) }
+            if draft.editing && !publishOnEdit && acceptable { Text("Press Return or leave the field to apply.").macFont(.caption).foregroundStyle(.secondary) }
         }
         .onAppear { refresh() }
         .onChange(of: value) { refresh() }
