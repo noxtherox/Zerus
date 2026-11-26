@@ -6,7 +6,7 @@ import Foundation
 /// offline maintenance command, not a vault writer or an automatic deletion job.
 @main struct NativeNavigationArchiveCommand {
     struct Entry { let key: String; let data: Data; let root: String }
-    static let domain = "com.zerus.notes.macos.native"
+    static let domain = "com.zerus.notes"
     static func hash(_ value: String) -> String { SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined() }
     static func aliases(_ path: String) -> Set<String> {
         let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL.path
@@ -30,7 +30,7 @@ import Foundation
     static func failure(_ message: String) -> NSError { NSError(domain: "ZerusNavigationArchive", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
     @MainActor static func requireStopped() throws {
         guard !NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == domain }) else {
-            throw failure("Quit every Zerus Native application before applying or restoring navigation archives.")
+            throw failure("Quit Zerus before applying or restoring navigation archives.")
         }
     }
     static func candidates(_ values: [String: Any], temporary: [String]) -> [Entry] {

@@ -232,7 +232,7 @@ for the verified flows and remaining native-device checks.
 
 | Platform | Status | Vault storage |
 | --- | --- | --- |
-| macOS Apple Silicon | Desktop release with signed automatic updates | Local filesystem |
+| macOS 26+ Apple Silicon | Native SwiftUI app with signed automatic updates | Local filesystem |
 | Windows 10/11 | Microsoft Store app; unsigned per-user EXE download | Local filesystem |
 | iOS 26+ | SwiftUI mobile app | Files selected through the mobile vault picker |
 | Browser | Development and interface preview | Browser local storage |
@@ -397,17 +397,15 @@ pnpm platform:verify # validate platform-specific packaging boundaries
 pnpm ios:native:verify # validate the independent SwiftUI app configuration
 pnpm ios:shared:test # test the shared Apple ChatGPT core
 pnpm ios:native:build # build the SwiftUI device app
-pnpm desktop:build   # build and verify the macOS DMG
+pnpm macos:native:dmg # build, notarize and verify the macOS DMG
 pnpm windows:build   # build the unsigned Windows NSIS EXE (run on Windows)
 pnpm windows:msix    # build an unsigned Store MSIX (Windows + Store identity)
 ```
 
-On macOS, `pnpm desktop:build` creates a distribution-signed, notarized, and
-verified DMG and requires the configured signing and notarization credentials.
-Use `pnpm desktop:build:local` for an explicitly ad-hoc local build that skips
-notarization. Both Tauri commands require the updater signing key described below. The
-separate SwiftUI commands and native Sparkle requirements are documented in
-[Native macOS migration preview](#native-macos-migration-preview).
+The macOS app is the SwiftUI app in `native-macos/`; see
+[Native macOS app](#native-macos-app). The Tauri desktop app now ships only on
+Windows. Its macOS build is retained for recovery as `pnpm macos:tauri:build`
+(tag `tauri-baseline` marks the last Tauri-only state) and is no longer released.
 
 Windows-specific prerequisites and commands are in
 [`docs/WINDOWS.md`](docs/WINDOWS.md). To create a new signed iOS archive and
@@ -420,11 +418,6 @@ See [`docs/ios-apps.md`](docs/ios-apps.md) for ownership and upgrade details.
 The legacy Tauri iOS build phase selects SwiftPM's native engine for compatibility with the
 current Rust-to-Swift bridge on Xcode 27, and checks the archived app's scene
 lifecycle and signature before export.
-
-Official tagged releases import the Developer ID Application certificate in
-GitHub Actions, authenticate to Apple's notary service with a Team App Store
-Connect API key, and require both Gatekeeper acceptance and stapled
-notarization tickets before the draft release is published.
 
 ## Releases and automatic updates
 
@@ -442,32 +435,42 @@ and run the command with the intended next semantic version:
 pnpm release <major.minor.patch>
 ```
 
-The release command verifies the build and tests, keeps the Tauri and Rust
-versions in sync, commits the version bump, creates the matching version tag,
-and pushes both atomically. GitHub Actions then builds the notarized Apple
-Silicon DMG, signed macOS updater bundle, and unsigned Windows NSIS EXE.
+The release command verifies the build and tests, keeps the Tauri, Rust and
+native macOS versions in sync (advancing the native macOS build number), commits
+the version bump, creates the matching version tag, and pushes both atomically.
+GitHub Actions then builds the unsigned Windows NSIS EXE and attaches it to the
+release.
 
-The verified macOS release is published first, after notarization and stapling.
-The Windows job then builds and attaches the NSIS installer. Microsoft Store
-MSIX packaging and Partner Center submission are separate, explicitly requested
-release operations documented in [the Windows packaging guide](docs/WINDOWS.md).
-A Windows packaging failure does not withdraw the already-verified macOS release.
-Installed macOS copies check `latest.json` on launch and every six hours. When an
-update is available, the user can install it or ask Zerus to remind them again
-in 24 hours.
+Then, on a Mac with the Developer ID identity, notarization credentials and the
+`zerus-native` Sparkle key in Keychain, run from the tagged commit:
 
-The updater private key is stored in the repository's
-`TAURI_SIGNING_PRIVATE_KEY` Actions secret. Back up the local key at
-`~/.tauri/zerus-updater.key`; losing it prevents existing installations from
-accepting future updates.
+```sh
+pnpm macos:release
+```
 
-## Native macOS migration preview
+It builds, notarizes, staples and verifies the native DMG, attaches it to the
+same versioned release, and replaces the signed single-release Sparkle appcast
+and ZIP on the `native-macos` release that installed Macs poll
+(`native-macos/update-channel.json`). Either side may create the release first.
+Microsoft Store MSIX packaging and Partner Center submission are separate,
+explicitly requested release operations documented in
+[the Windows packaging guide](docs/WINDOWS.md).
 
-The separate SwiftUI app in `native-macos/` requires **Apple Silicon and macOS
-26+**. Its **Zerus Native** identity lets it coexist with the current Tauri
-desktop release. It uses the same Markdown vault and shared Apple storage
-services. It is still a migration preview; the current GitHub desktop release
-has not been replaced. Current implementation and acceptance evidence are in
+The Sparkle private key lives only in the `zerus-native` Keychain account; back it
+up, because losing it prevents installed Macs from accepting future updates. The
+Tauri updater key at `~/.tauri/zerus-updater.key` remains only for the retained
+Tauri build.
+
+## Native macOS app
+
+**SwiftUI is the production macOS app.** It lives in `native-macos/`, requires
+**Apple Silicon and macOS 26+**, and ships as **Zerus** under the
+`com.zerus.notes` identity it took over from the retired Tauri desktop app. The
+native app installs over the old `Zerus.app`; on first launch it carries over
+preferences from earlier **Zerus Native** preview builds
+(`com.zerus.notes.macos.native`). Tauri desktop settings can be moved with
+**File → Import Desktop Settings…**. AI features are not yet at parity and stay
+deferred. Current implementation and acceptance evidence are in
 [the native macOS guide](docs/native-macos.md) and the
 [non-AI acceptance ledger](docs/native-macos-non-ai-acceptance.md).
 
@@ -564,21 +567,17 @@ pnpm macos:native:build           # optimized app, no DMG or version increment
 pnpm macos:native:test            # native macOS tests
 pnpm macos:native:channel        # inspect production feed/key defaults; no build
 pnpm macos:native:appcast --help  # prepare/verify signed native update artifacts
-pnpm desktop:build --native      # distribution-signed, notarized native DMG
-pnpm desktop:build --native --local # explicitly ad-hoc DMG, no notarization
+pnpm macos:native:dmg            # distribution-signed, notarized native DMG
+pnpm macos:native:dmg --local    # explicitly ad-hoc DMG, no notarization
+pnpm macos:release               # tagged release: DMG + Sparkle feed, published
 ```
 
 Intermediate QA uses the built app; another DMG is unnecessary unless a check
 needs packaging or the final handoff is ready. Artifacts are under
 `artifacts/native-macos/`. The canonical native Mac version is in
-`native-macos/project.yml`; the theme-correction build is 0.3.85/build126.
-Presets and saved palettes select their matching Light/Dark appearance, including
-native title bars, controls, sheets and popovers. Its implementation is newer
-than the last delivered Preview125 DMG. A separate
-configured Developer ID candidate has passed Apple notarization, ticket
-validation, Gatekeeper assessment and a controlled launch. It remains private;
-production update delivery remains separate. The corrected native build126 DMG
-is notarized, stapled and checked through its private download endpoint.
+`native-macos/project.yml`; `pnpm release` advances it together with the
+Windows version. Presets and saved palettes select their matching Light/Dark
+appearance, including native title bars, controls, sheets and popovers.
 
 Native distribution packaging needs a Developer ID Application identity and
 notarization credentials. Production packaging defaults to the approved separate
@@ -587,9 +586,8 @@ key stays in the `zerus-native` Keychain account. The public feed/key can be
 overridden together with `ZERUS_NATIVE_UPDATE_FEED_URL` and
 `ZERUS_NATIVE_UPDATE_PUBLIC_KEY`; a partial override is refused. Internal builds
 still omit the production defaults unless both values are supplied explicitly.
-The current internal app reports that its update channel is unavailable. This
-configuration does not publish a GitHub release or appcast and does not change
-the Tauri updater. Never put private signing keys in the vault or repository. See [native update configuration](docs/native-macos.md#native-update-channel-development).
+Development builds without these values report that their update channel is
+unavailable. Never put private signing keys in the vault or repository. See [native update configuration](docs/native-macos.md#native-update-channel-development).
 
 Packaging signs the CLI and Sparkle helpers before the app, verifies the actual
 bundle identity/version/deployment target/architecture and signing channel,

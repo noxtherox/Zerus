@@ -59,16 +59,20 @@ actor SpeechAudioSession {
         let session = AVAudioSession.sharedInstance()
         do {
           try session.setCategory(.record, mode: .measurement, options: [.duckOthers])
+          // The async activation API only exists in the iOS 27 SDK (Swift 6.4+).
+          // CI runners still ship Xcode 26, so keep the fallback compilable there.
+          #if compiler(>=6.4)
           if #available(iOS 27.0, *) {
             session.activate(options: []) { active, error in
               if let error { continuation.resume(throwing: error) }
               else if active { continuation.resume() }
               else { continuation.resume(throwing: SpeechRecognitionError.microphoneUnavailable) }
             }
-          } else {
-            try session.setActive(true)
-            continuation.resume()
+            return
           }
+          #endif
+          try session.setActive(true)
+          continuation.resume()
         } catch { continuation.resume(throwing: error) }
       }
     }
@@ -78,12 +82,14 @@ actor SpeechAudioSession {
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
       queue.async {
         let session = AVAudioSession.sharedInstance()
+        #if compiler(>=6.4)
         if #available(iOS 27.0, *) {
           session.deactivate(options: [.notifyOthersOnDeactivation]) { _, _ in continuation.resume() }
-        } else {
-          try? session.setActive(false, options: .notifyOthersOnDeactivation)
-          continuation.resume()
+          return
         }
+        #endif
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        continuation.resume()
       }
     }
   }

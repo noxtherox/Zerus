@@ -31,11 +31,11 @@ export function EditorSettings({ desktopTransfer = false, vaultLocation }: { des
     {desktopTransfer ? <div className="mt-3">
       <Button variant="outline" size="sm" disabled={exporting} onClick={async () => {
         setExporting(true); setMessage("");
-        try { const { exportDesktopSettings } = await import("@/lib/desktop-settings-transfer"); if (await exportDesktopSettings(vaultLocation) === "saved") setMessage("Settings exported. In Zerus Native, choose File → Import Desktop Settings…"); }
+        try { const { exportDesktopSettings } = await import("@/lib/desktop-settings-transfer"); if (await exportDesktopSettings(vaultLocation) === "saved") setMessage("Settings exported. In the native Zerus app, choose File → Import Desktop Settings…"); }
         catch { setMessage("Settings could not be exported. Try another destination."); }
         finally { setExporting(false); }
       }}>Export desktop settings…</Button>
-      <p className="mt-2 text-xs text-muted-foreground">Transfer appearance, colours, saved themes, dates, zoom and editor preferences to Zerus Native. {vaultLocation ? "Includes this vault’s default folder, folder order, keep-open choices and subtype visibility." : ""}</p>
+      <p className="mt-2 text-xs text-muted-foreground">Transfer appearance, colours, saved themes, dates, zoom and editor preferences to the native Zerus app. {vaultLocation ? "Includes this vault’s default folder, folder order, keep-open choices and subtype visibility." : ""}</p>
       {message && <p role="status" className="mt-2 text-xs text-muted-foreground">{message}</p>}
     </div> : null}
   </section>;

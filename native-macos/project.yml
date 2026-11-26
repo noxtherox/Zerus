@@ -26,8 +26,8 @@ settings:
     SWIFT_VERSION: '5.0'
     MACOSX_DEPLOYMENT_TARGET: '26.0'
     DEVELOPMENT_TEAM: TX9RYY52XR
-    MARKETING_VERSION: 0.3.85
-    CURRENT_PROJECT_VERSION: 126
+    MARKETING_VERSION: 0.3.86
+    CURRENT_PROJECT_VERSION: 127
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: '-'
     ZERUS_NATIVE_UPDATE_FEED_URL: ''
@@ -126,11 +126,13 @@ targets:
         product: Markdown
     settings:
       base:
-        PRODUCT_NAME: Zerus Native
-        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes.macos.native
+        PRODUCT_NAME: Zerus
+        # Keep the module name stable for @testable imports after the identity switch.
+        PRODUCT_MODULE_NAME: Zerus_Native
+        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Info.plist
-        INFOPLIST_KEY_CFBundleDisplayName: Zerus Native
+        INFOPLIST_KEY_CFBundleDisplayName: Zerus
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
         INFOPLIST_KEY_NSHumanReadableCopyright: Zerus contributors
         ENABLE_HARDENED_RUNTIME: YES
@@ -145,8 +147,8 @@ targets:
       - target: ZerusMac
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes.macos.native.tests
-        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Zerus Native.app/Contents/MacOS/Zerus Native
+        PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/Zerus.app/Contents/MacOS/Zerus
         BUNDLE_LOADER: $(TEST_HOST)
         GENERATE_INFOPLIST_FILE: YES
 schemes:
