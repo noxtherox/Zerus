@@ -935,7 +935,12 @@ import Markdown
         let firstSource = firstAttrs[.macBlock] as? String ?? ""
         let message = "This list needs Markdown source editing before this selection can preserve its item relationships."
         let markerSelection: Bool
-        switch bodySelection(in: original, range: range, forParagraphSplit: forParagraphSplit) {
+        // A selection ending at the next row's start joins that row to retained
+        // or typed text. AppKit would keep its presentation marker as literal
+        // body text, so map the endpoint to that item's body start, as a
+        // paragraph split does. Deleting whole rows leaves the next row intact.
+        let joinsNextRow = forParagraphSplit || range.location > first.location || replacement.length > 0
+        switch bodySelection(in: original, range: range, forParagraphSplit: joinsNextRow) {
         case .range(let checked, let marker):
             markerSelection = marker
             if !forParagraphSplit, marker, first == last, replacement.length == 0,
