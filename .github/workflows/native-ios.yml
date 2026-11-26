@@ -63,5 +63,19 @@ jobs:
           if (!device) throw new Error('The selected Xcode needs an iOS 26 or newer iPhone Simulator runtime.');
           appendFileSync(process.env.GITHUB_ENV, `NATIVE_IOS_SIMULATOR=${device.udid}\n`);
           JS
+      - name: Read Xcode version
+        id: xcode
+        run: echo "version=$(xcodebuild -version | tr '\n' ' ' | tr -s ' ' '-')" >> "$GITHUB_OUTPUT"
+      # Restores cloned Swift packages and Xcode's compilation cache. Without them every
+      # run re-clones the packages and recompiles the MLX stack from scratch (~6 minutes).
+      - name: Restore Swift package and compilation caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            artifacts/native-ios/simulator/SourcePackages
+            artifacts/native-ios/simulator/CompilationCache
+          key: native-ios-sim-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('native-ios/project.yml', 'packages/apple/**/Package.swift', 'packages/apple/**/Package.resolved') }}
+          restore-keys: |
+            native-ios-sim-${{ runner.os }}-${{ steps.xcode.outputs.version }}-
       - name: Build native Simulator app
         run: pnpm ios:native:build --simulator "$NATIVE_IOS_SIMULATOR"
