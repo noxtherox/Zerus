@@ -139,12 +139,26 @@ enum NativeHistory {
 extension VaultFiles {
     func historyData(_ path: String) throws -> Data? {
         let location = try url(for: path)
-        return FileManager.default.fileExists(atPath: location.path) ? try read(path) : nil
+        guard FileManager.default.fileExists(atPath: location.path) else { return nil }
+        if path.hasPrefix(".zerus/history/") { try Self.requireDownloadedHistory(location) }
+        return try read(path)
     }
-    /// iCloud "Optimize Mac Storage" evicts history records to dataless
-    /// placeholders. A coordinated read normally downloads them, but a
-    /// download can fail transiently; ask the provider for the file and retry once.
+    /// iCloud "Optimize Mac Storage" evicts history files to dataless
+    /// placeholders. A coordinated read of one blocks until iCloud downloads
+    /// it, which can take tens of seconds per file and stalls every other read
+    /// on this actor (opening notes, saving, search). Request the download in
+    /// the background and fail fast with a read error instead; saves already
+    /// treat unreadable history as best-effort, and the next load succeeds.
+    nonisolated static func requireDownloadedHistory(_ location: URL) throws {
+        var info = stat()
+        guard lstat(location.path, &info) == 0, info.st_flags & 0x4000_0000 != 0 /* SF_DATALESS */ else { return }
+        try? FileManager.default.startDownloadingUbiquitousItem(at: location)
+        throw CocoaError(.fileReadUnknown, userInfo: [NSLocalizedDescriptionKey: "Version history is still downloading from iCloud. Try again in a moment."])
+    }
+    /// A coordinated read can still fail transiently while iCloud syncs; ask
+    /// the provider for the file and retry once.
     func historyRecord(_ path: String) throws -> Data {
+        try Self.requireDownloadedHistory(try url(for: path))
         do { return try read(path) } catch where NativeHistory.unreadableFile(error) {
             try? FileManager.default.startDownloadingUbiquitousItem(at: try url(for: path))
             return try read(path)
@@ -264,81 +278,87 @@ extension VaultFiles {
                 for (path, bytes) in snapshot.records where known.insert(path).inserted { result.append(.init(path: path, before: bytes, after: bytes)) }
                 continue
             }
-            let earlier = snapshot.versions.first { $0.content.map(NativeHistory.stripped) == NativeHistory.stripped(before) }
-            var additions: [VaultFileChange] = []
-            var blobs = Set<String>()
-            func images(_ text: String, historical: Bool) throws -> [[String: Any]] {
-                var refs = Set<String>()
-                return try NativeHistory.imageLinks(NoteDocument.split(text).body).compactMap { link in
-                    guard refs.insert(link.value).inserted, let parsed = URL(string: link.value), parsed.scheme == nil else { return nil }
-                    let ext = parsed.pathExtension.lowercased().range(of: #"^[a-z0-9]{1,12}$"#, options: .regularExpression) != nil ? parsed.pathExtension.lowercased() : "bin"
-                    if observation != nil && historical {
-                        // The file may already contain newer image bytes. Reuse
-                        // a verified frozen image, never guess the earlier bytes.
-                        if let previous = (earlier?.object["images"] as? [[String: Any]])?.first(where: { $0["path"] as? String == link.value }),
-                           let hash = previous["hash"] as? String, hash.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
-                           let bytes = try historyData(".zerus/history/blobs/" + hash), NativeHistory.hash(bytes) == hash {
-                            let path = ".zerus/history/blobs/" + hash
-                            if blobs.insert(path).inserted { additions.append(.init(path: path, before: bytes, after: bytes)) }
-                            return previous
+            do {
+                let earlier = snapshot.versions.first { $0.content.map(NativeHistory.stripped) == NativeHistory.stripped(before) }
+                var additions: [VaultFileChange] = []
+                var blobs = Set<String>()
+                func images(_ text: String, historical: Bool) throws -> [[String: Any]] {
+                    var refs = Set<String>()
+                    return try NativeHistory.imageLinks(NoteDocument.split(text).body).compactMap { link in
+                        guard refs.insert(link.value).inserted, let parsed = URL(string: link.value), parsed.scheme == nil else { return nil }
+                        let ext = parsed.pathExtension.lowercased().range(of: #"^[a-z0-9]{1,12}$"#, options: .regularExpression) != nil ? parsed.pathExtension.lowercased() : "bin"
+                        if observation != nil && historical {
+                            // The file may already contain newer image bytes. Reuse
+                            // a verified frozen image, never guess the earlier bytes.
+                            if let previous = (earlier?.object["images"] as? [[String: Any]])?.first(where: { $0["path"] as? String == link.value }),
+                               let hash = previous["hash"] as? String, hash.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil,
+                               let bytes = try historyData(".zerus/history/blobs/" + hash), NativeHistory.hash(bytes) == hash {
+                                let path = ".zerus/history/blobs/" + hash
+                                if blobs.insert(path).inserted { additions.append(.init(path: path, before: bytes, after: bytes)) }
+                                return previous
+                            }
+                            return ["path": link.value, "hash": NSNull(), "extension": ext]
                         }
-                        return ["path": link.value, "hash": NSNull(), "extension": ext]
+                        let candidates = (try? Self.resourceCandidates(link.value, notePath: change.path, root: root)) ?? []
+                        guard let location = candidates.first(where: { candidate in
+                            let path = String(candidate.path.dropFirst(root.standardizedFileURL.path.count + 1))
+                            return FileManager.default.fileExists(atPath: candidate.path) || original.contains(where: { $0.path == path && $0.after != nil })
+                        }) else { return ["path": link.value, "hash": NSNull(), "extension": ext] }
+                        let relative = String(location.path.dropFirst(root.standardizedFileURL.path.count + 1))
+                        // If this transaction replaces an image, preserve each side's bytes.
+                        let data: Data
+                        if let transaction = original.first(where: { $0.path == relative }) {
+                            guard let bytes = text == after ? transaction.after : transaction.before else { return ["path": link.value, "hash": NSNull(), "extension": ext] }
+                            data = bytes
+                        } else { data = try read(relative) }
+                        let hash = NativeHistory.hash(data), path = ".zerus/history/blobs/" + hash
+                        let existing = try historyData(path)
+                        guard existing == nil || NativeHistory.hash(existing!) == hash else { throw VaultFailure(message: "A history image blob is corrupt. Its data is preserved.") }
+                        if blobs.insert(path).inserted { additions.append(.init(path: path, before: existing, after: data)) }
+                        if !known.contains(relative), !additions.contains(where: { $0.path == relative }) { let current = try read(relative); additions.append(.init(path: relative, before: current, after: current)) }
+                        return ["path": link.value, "hash": hash, "extension": ext]
                     }
-                    let candidates = (try? Self.resourceCandidates(link.value, notePath: change.path, root: root)) ?? []
-                    guard let location = candidates.first(where: { candidate in
-                        let path = String(candidate.path.dropFirst(root.standardizedFileURL.path.count + 1))
-                        return FileManager.default.fileExists(atPath: candidate.path) || original.contains(where: { $0.path == path && $0.after != nil })
-                    }) else { return ["path": link.value, "hash": NSNull(), "extension": ext] }
-                    let relative = String(location.path.dropFirst(root.standardizedFileURL.path.count + 1))
-                    // If this transaction replaces an image, preserve each side's bytes.
-                    let data: Data
-                    if let transaction = original.first(where: { $0.path == relative }) {
-                        guard let bytes = text == after ? transaction.after : transaction.before else { return ["path": link.value, "hash": NSNull(), "extension": ext] }
-                        data = bytes
-                    } else { data = try read(relative) }
-                    let hash = NativeHistory.hash(data), path = ".zerus/history/blobs/" + hash
-                    let existing = try historyData(path)
-                    guard existing == nil || NativeHistory.hash(existing!) == hash else { throw VaultFailure(message: "A history image blob is corrupt. Its data is preserved.") }
-                    if blobs.insert(path).inserted { additions.append(.init(path: path, before: existing, after: data)) }
-                    if !known.contains(relative), !additions.contains(where: { $0.path == relative }) { let current = try read(relative); additions.append(.init(path: relative, before: current, after: current)) }
-                    return ["path": link.value, "hash": hash, "extension": ext]
                 }
-            }
-            let timestamp = NativeRevisionIndex.timestamp(), origin = historyOriginID
-            var parent = snapshot.versions.first { $0.hash == NativeHistory.hash(before) && $0.content != nil }
-            func entry(_ text: String, id: String, parentID: String?, depth: Int, time: String, baseline: Bool) throws -> NativeHistoryVersion {
-                let checkpoint = depth % 3 == 0
-                var object: [String: Any] = ["schema": 1, "id": id, "noteId": noteID, "timestamp": time, "source": source, "originId": origin, "parentId": parentID as Any? ?? NSNull(), "depth": depth, "kind": checkpoint ? "checkpoint" : "delta", "baseHash": checkpoint ? NSNull() : NativeHistory.hash(before) as Any, "resultHash": NativeHistory.hash(text), "images": try images(text, historical: baseline), "kept": false, "label": baseline ? "History started" as Any : NSNull()]
-                if checkpoint { object["content"] = text } else { object["delta"] = NativeHistory.delta(before, text) }
-                let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]), path = ".zerus/history/notes/" + noteID + "/" + id + ".json"
-                additions.append(.init(path: path, before: nil, after: bytes))
-                return .init(path: path, bytes: bytes, id: id, parentID: parentID, timestamp: time, source: source, kept: false, label: baseline ? "History started" : nil, checkpoint: checkpoint, depth: depth, hash: NativeHistory.hash(text), content: text)
-            }
-            let baselineTime = alreadyRecorded
-                ? NativeRevisionIndex.timestamp(min(observation!.before.modified, (latest.flatMap { NativeRevisionIndex.date($0.timestamp) } ?? Date()).addingTimeInterval(-0.001)))
-                : timestamp
-            if parent == nil { parent = try entry(before, id: UUID().uuidString.lowercased(), parentID: nil, depth: 0, time: baselineTime, baseline: true) }
-            let nextTime = NativeRevisionIndex.timestamp(max(Date(), (NativeRevisionIndex.date(parent!.timestamp) ?? Date()).addingTimeInterval(0.001)))
-            let next = alreadyRecorded ? nil : try entry(after, id: UUID().uuidString.lowercased(), parentID: parent!.id, depth: parent!.depth + 1, time: nextTime, baseline: false)
-            // Use the same checkpoint-family retention contract. Unknown or
-            // incomplete records suppress pruning rather than risking loss.
-            let all = snapshot.versions + (snapshot.versions.contains(where: { $0.id == parent!.id }) ? [] : [parent!]) + (next.map { [$0] } ?? [])
-            if let limit = snapshot.limit, snapshot.problems.isEmpty, !snapshot.versions.contains(where: \.incomplete) {
-                let removed = NativeHistory.prunedPaths(all, limit: limit, preserving: source == "restore" || observation != nil ? [parent!.id] : [])
-                if !removed.isEmpty, try scan().notes.filter({ $0.stableID == noteID }).count <= 1 {
-                    for item in snapshot.versions where removed.contains(item.path) { additions.append(.init(path: item.path, before: item.bytes, after: nil)) }
+                let timestamp = NativeRevisionIndex.timestamp(), origin = historyOriginID
+                var parent = snapshot.versions.first { $0.hash == NativeHistory.hash(before) && $0.content != nil }
+                func entry(_ text: String, id: String, parentID: String?, depth: Int, time: String, baseline: Bool) throws -> NativeHistoryVersion {
+                    let checkpoint = depth % 3 == 0
+                    var object: [String: Any] = ["schema": 1, "id": id, "noteId": noteID, "timestamp": time, "source": source, "originId": origin, "parentId": parentID as Any? ?? NSNull(), "depth": depth, "kind": checkpoint ? "checkpoint" : "delta", "baseHash": checkpoint ? NSNull() : NativeHistory.hash(before) as Any, "resultHash": NativeHistory.hash(text), "images": try images(text, historical: baseline), "kept": false, "label": baseline ? "History started" as Any : NSNull()]
+                    if checkpoint { object["content"] = text } else { object["delta"] = NativeHistory.delta(before, text) }
+                    let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]), path = ".zerus/history/notes/" + noteID + "/" + id + ".json"
+                    additions.append(.init(path: path, before: nil, after: bytes))
+                    return .init(path: path, bytes: bytes, id: id, parentID: parentID, timestamp: time, source: source, kept: false, label: baseline ? "History started" : nil, checkpoint: checkpoint, depth: depth, hash: NativeHistory.hash(text), content: text)
                 }
-            }
+                let baselineTime = alreadyRecorded
+                    ? NativeRevisionIndex.timestamp(min(observation!.before.modified, (latest.flatMap { NativeRevisionIndex.date($0.timestamp) } ?? Date()).addingTimeInterval(-0.001)))
+                    : timestamp
+                if parent == nil { parent = try entry(before, id: UUID().uuidString.lowercased(), parentID: nil, depth: 0, time: baselineTime, baseline: true) }
+                let nextTime = NativeRevisionIndex.timestamp(max(Date(), (NativeRevisionIndex.date(parent!.timestamp) ?? Date()).addingTimeInterval(0.001)))
+                let next = alreadyRecorded ? nil : try entry(after, id: UUID().uuidString.lowercased(), parentID: parent!.id, depth: parent!.depth + 1, time: nextTime, baseline: false)
+                // Use the same checkpoint-family retention contract. Unknown or
+                // incomplete records suppress pruning rather than risking loss.
+                let all = snapshot.versions + (snapshot.versions.contains(where: { $0.id == parent!.id }) ? [] : [parent!]) + (next.map { [$0] } ?? [])
+                if let limit = snapshot.limit, snapshot.problems.isEmpty, !snapshot.versions.contains(where: \.incomplete) {
+                    let removed = NativeHistory.prunedPaths(all, limit: limit, preserving: source == "restore" || observation != nil ? [parent!.id] : [])
+                    if !removed.isEmpty, try scan().notes.filter({ $0.stableID == noteID }).count <= 1 {
+                        for item in snapshot.versions where removed.contains(item.path) { additions.append(.init(path: item.path, before: item.bytes, after: nil)) }
+                    }
+                }
 
-            // Exact dependencies retain foreign edits and changed ancestry.
-            let deleted = Set(additions.filter { $0.after == nil }.map(\.path))
-            for (path, bytes) in snapshot.records where !deleted.contains(path) { additions.append(.init(path: path, before: bytes, after: bytes)) }
-            for item in additions {
-                if known.insert(item.path).inserted { result.append(item) }
-                else if let index = result.firstIndex(where: { $0.path == item.path }), result[index].before != item.before || result[index].after != item.after {
-                    guard result[index].before == result[index].after, result[index].before == item.before else { throw VaultFailure(message: "History files conflict with another prepared change.") }
-                    result[index] = item
+                // Exact dependencies retain foreign edits and changed ancestry.
+                let deleted = Set(additions.filter { $0.after == nil }.map(\.path))
+                for (path, bytes) in snapshot.records where !deleted.contains(path) { additions.append(.init(path: path, before: bytes, after: bytes)) }
+                for item in additions {
+                    if known.insert(item.path).inserted { result.append(item) }
+                    else if let index = result.firstIndex(where: { $0.path == item.path }), result[index].before != item.before || result[index].after != item.after {
+                        guard result[index].before == result[index].after, result[index].before == item.before else { throw VaultFailure(message: "History files conflict with another prepared change.") }
+                        result[index] = item
+                    }
                 }
+            } catch where source != "restore" && NativeHistory.unreadableFile(error) {
+                // An image blob is still an iCloud placeholder: skip this
+                // note's history entry rather than blocking or failing the save.
+                continue
             }
         }
         // Publish image blobs and history first, then note pointers.
