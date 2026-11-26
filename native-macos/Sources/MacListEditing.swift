@@ -1860,6 +1860,44 @@ import Markdown
     static func lift(_ original: NSAttributedString, paragraph: NSRange) -> Outcome {
         lifting(original, paragraph: paragraph, removingHead: false)
     }
+    /// Backspace out of an empty item between two list rows leaves one empty
+    /// line, and a further Backspace there rejoins the list.
+    static func backspaceLift(_ original: NSAttributedString, paragraph: NSRange) -> Outcome {
+        let outcome = lift(original, paragraph: paragraph)
+        guard case .changed(let edit) = outcome else { return outcome }
+        return .changed(collapsingLiftedEmptyGap(edit))
+    }
+    /// An empty item lifted out between two list rows becomes one empty line.
+    /// Markdown still needs blank lines around it, but the serializer adds
+    /// those; showing them as extra rows makes the gap three lines tall.
+    private static func collapsingLiftedEmptyGap(_ edit: Edit) -> Edit {
+        let text = edit.text, raw = text.string as NSString
+        guard edit.selection.length == 0, edit.selection.location < raw.length else { return edit }
+        func blank(_ row: NSRange) -> Bool { raw.substring(with: row).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        func plain(_ row: NSRange) -> Bool {
+            let attrs = text.attributes(at: row.location, effectiveRange: nil)
+            return attrs[.macListContext] == nil && (attrs[.macBlock] as? String ?? "").isEmpty
+                && attrs[.macCode] == nil && attrs[.macTable] == nil && attrs[.macRule] == nil
+        }
+        func listRow(_ row: NSRange) -> Bool {
+            !blank(row) && text.attribute(.macListContext, at: row.location, effectiveRange: nil) != nil
+        }
+        let row = raw.paragraphRange(for: edit.selection)
+        guard edit.selection.location == row.location, blank(row), plain(row),
+              row.location > 0, NSMaxRange(row) < raw.length else { return edit }
+        let above = raw.paragraphRange(for: NSRange(location: row.location - 1, length: 0))
+        let below = raw.paragraphRange(for: NSRange(location: NSMaxRange(row), length: 0))
+        guard above.location > 0, NSMaxRange(below) < raw.length,
+              blank(above), plain(above), text.attribute(.macEmptyParagraph, at: above.location, effectiveRange: nil) == nil,
+              blank(below), plain(below), text.attribute(.macEmptyParagraph, at: below.location, effectiveRange: nil) == nil else { return edit }
+        let before = raw.paragraphRange(for: NSRange(location: above.location - 1, length: 0))
+        let after = raw.paragraphRange(for: NSRange(location: NSMaxRange(below), length: 0))
+        guard listRow(before), listRow(after) else { return edit }
+        let output = NSMutableAttributedString(attributedString: text)
+        output.deleteCharacters(in: below)
+        output.deleteCharacters(in: above)
+        return Edit(text: output, selection: NSRange(location: row.location - above.length, length: 0), typing: edit.typing)
+    }
     /// Delete and Cut share the same exact-paragraph ownership boundary.
     static func deletingParagraph(_ original: NSAttributedString, range: NSRange, cut: Bool = false) -> Outcome {
         if let edit = MacHorizontalRule.removingOwnedRule(original, range: range) { return .changed(edit) }

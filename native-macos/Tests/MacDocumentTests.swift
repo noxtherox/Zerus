@@ -5805,6 +5805,23 @@ final class MacDocumentTests: XCTestCase {
             }
         }
     }
+    @MainActor func testBackspacingOutOfAClearedMiddleItemLeavesOneLineAndThenRejoinsTheList() throws {
+        for ending in ["\n", "\r\n"] {
+            let source = "- A one.\n- B two.\n- C three.\n".replacingOccurrences(of: "\n", with: ending)
+            withEditor(source) { view, coordinator in
+                view.setSelectedRange((view.string as NSString).range(of: "B two.")); view.deleteBackward(nil)
+                XCTAssertEqual(view.string, "• A one.\n• \n• C three.\n")
+                view.deleteBackward(nil)
+                XCTAssertEqual(view.string, "• A one.\n\n• C three.\n", "The lifted empty item takes one row, not three")
+                XCTAssertEqual(view.selectedRange(), NSRange(location: 9, length: 0))
+                XCTAssertEqual(coordinator.lastMarkdown, "- A one.\n\n- C three.\n".replacingOccurrences(of: "\n", with: ending))
+                view.deleteBackward(nil)
+                XCTAssertEqual(view.string, "• A one.\n• C three.\n")
+                XCTAssertEqual(view.selectedRange(), NSRange(location: 8, length: 0))
+                XCTAssertEqual(coordinator.lastMarkdown, "- A one.\n- C three.\n".replacingOccurrences(of: "\n", with: ending))
+            }
+        }
+    }
     @MainActor func testBackspaceAtListBodyStartLiftsTheItemWithoutLosingOwnedContent() throws {
         for (source, expected, word) in [
             ("- Parent\n  > Quote\n  >\n  > - Item\n  > - Peer\n- Sibling\n", "- Parent\n  > Quote\n  >\n  > Item\n  > \n  > - Peer\n- Sibling\n", "Item"),
@@ -5919,7 +5936,7 @@ final class MacDocumentTests: XCTestCase {
         } }
         for ending in ["\n", "\r\n"] { for selectMarker in [false, true] {
             let source = "- Before\n- \n- Sibling\n".replacingOccurrences(of: "\n", with: ending)
-            let expected = "- Before\n\n\n\n- Sibling\n".replacingOccurrences(of: "\n", with: ending)
+            let expected = "- Before\n\n- Sibling\n".replacingOccurrences(of: "\n", with: ending)
             withEditor(source) { view, coordinator in
                 let empty = (view.string as NSString).range(of: "• \n")
                 let selected = NSRange(location: empty.location + (selectMarker ? 0 : 2), length: selectMarker ? 2 : 0)
@@ -5929,7 +5946,7 @@ final class MacDocumentTests: XCTestCase {
                 XCTAssertEqual(view.selectedRange(), selected)
                 coordinator.action("redo"); XCTAssertEqual(coordinator.lastMarkdown, expected)
                 view.insertText("New", replacementRange: view.selectedRange())
-                XCTAssertEqual(coordinator.lastMarkdown, "- Before\n\nNew\n\n- Sibling\n".replacingOccurrences(of: "\n", with: ending))
+                XCTAssertEqual(coordinator.lastMarkdown, "- Before\n\nNew\n- Sibling\n".replacingOccurrences(of: "\n", with: ending))
                 let paragraphs = Document(parsing: coordinator.lastMarkdown).children.compactMap { ($0 as? Paragraph)?.plainText }
                 XCTAssertEqual(paragraphs, ["New"], "Typing into an empty lifted head must not join the previous item")
             }
