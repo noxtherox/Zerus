@@ -51,6 +51,14 @@ struct NativeHistoryPlan: Sendable {
 enum NativeHistory {
     static func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     static func hash(_ text: String) -> String { hash(Data(text.utf8)) }
+    /// File-system read failures (not Zerus validation failures).
+    static func unreadableFile(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSPOSIXErrorDomain { return true }
+        guard error.domain == NSCocoaErrorDomain else { return false }
+        // NSFileNoSuchFileError, NSFileLockingError, then the NSFileRead* range (256...511).
+        return [NSFileNoSuchFileError, NSFileLockingError].contains(error.code) || (256...511).contains(error.code)
+    }
     static func identity(_ value: String) -> Bool { value.range(of: #"^[A-Za-z0-9_-]{1,128}$"#, options: .regularExpression) != nil }
     static func stripped(_ text: String) -> String {
         let parsed = NativeFrontmatter(text), result = NSMutableString(string: text)
@@ -130,6 +138,15 @@ extension VaultFiles {
         let location = try url(for: path)
         return FileManager.default.fileExists(atPath: location.path) ? try read(path) : nil
     }
+    /// iCloud "Optimize Mac Storage" evicts history records to dataless
+    /// placeholders. A coordinated read normally downloads them, but a
+    /// download can fail transiently; ask the provider for the file and retry once.
+    func historyRecord(_ path: String) throws -> Data {
+        do { return try read(path) } catch where NativeHistory.unreadableFile(error) {
+            try? FileManager.default.startDownloadingUbiquitousItem(at: try url(for: path))
+            return try read(path)
+        }
+    }
     func historyRecordPaths(_ noteID: String) throws -> Set<String> {
         guard NativeHistory.identity(noteID) else { throw VaultFailure(message: "This note has an unsupported history identity.") }
         let prefix = ".zerus/history/notes/" + noteID, folder = try url(for: prefix)
@@ -147,7 +164,7 @@ extension VaultFiles {
         let settings = configuration.bytes, enabled = configuration.enabled, limit = configuration.limit
         guard let noteID = identity ?? note.stableID else { return .init(root: root, note: note, versions: [], records: [:], problems: [], settingsBytes: settings, enabled: enabled, limit: limit) }
         var records: [String: Data] = [:]
-        for path in try historyRecordPaths(noteID) { records[path] = try read(path) }
+        for path in try historyRecordPaths(noteID) { records[path] = try historyRecord(path) }
         let decoded = try historyVersions(noteID: noteID, records: records)
         return .init(root: root, note: note, versions: decoded.versions, records: records, problems: decoded.problems, settingsBytes: settings, enabled: enabled, limit: limit)
     }
@@ -219,7 +236,13 @@ extension VaultFiles {
             guard let beforeData = change.before, let afterData = change.after, let expected = NoteDocument.decodeUTF8(beforeData), let after = NoteDocument.decodeUTF8(afterData), let noteID = NoteDocument(path: change.path, content: after, modified: Date()).stableID, NativeHistory.identity(noteID) else { continue }
             let observation = observations[change.path], before = observation?.before.content ?? expected
             guard NativeHistory.stripped(before) != NativeHistory.stripped(after) else { continue }
-            let snapshot = try historySnapshot(notePath: change.path, identity: noteID)
+            let snapshot: NativeHistorySnapshot
+            do { snapshot = try historySnapshot(notePath: change.path, identity: noteID) } catch where source != "restore" && NativeHistory.unreadableFile(error) {
+                // History is best-effort for ordinary saves: an unavailable
+                // record (e.g. an iCloud placeholder that failed to download)
+                // must never block saving the note itself.
+                continue
+            }
             guard snapshot.enabled || source == "restore" else { continue }
             guard snapshot.note.content == expected else { throw VaultFailure(message: "\(change.path) changed outside Zerus. Reload before saving history.") }
             let settingsPath = ".zerus/history-settings.json"

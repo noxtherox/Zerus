@@ -9,6 +9,26 @@ import PDFKit
 
 @MainActor
 final class MacWorkspaceTests: XCTestCase {
+    func testLeavingANoteRenamesItsFileToTheEditedTitle() async throws {
+        try await withVault(["Inbox/Untitled.md": note("u", title: "Untitled"), "Work/Specs.md": note("s", title: "Project W"), "Other.md": note("o", title: "Other")]) { root, store in
+            await store.openNote("Inbox/Untitled.md")
+            store.changed(store.body.replacingOccurrences(of: "# Untitled", with: "# WeldCloud & OZ Steps"))
+            let saved = await store.save(); XCTAssertTrue(saved)
+            try await Task.sleep(for: .milliseconds(900))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Inbox/Untitled.md").path), "No rename while the note is being edited")
+            await store.openNote("Work/Specs.md")
+            store.changed(store.body.replacingOccurrences(of: "# Project W", with: "# Project X"))
+            await store.openNote("Other.md")
+            for _ in 0..<50 where !FileManager.default.fileExists(atPath: root.appendingPathComponent("Inbox/WeldCloud & OZ Steps.md").path) { try await Task.sleep(for: .milliseconds(100)) }
+            try await Task.sleep(for: .milliseconds(900))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Inbox/WeldCloud & OZ Steps.md").path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("Inbox/Untitled.md").path))
+            XCTAssertTrue(store.notes.contains { $0.path == "Inbox/WeldCloud & OZ Steps.md" && $0.title == "WeldCloud & OZ Steps" })
+            XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Work/Specs.md").path), "An independently named file keeps its name")
+            XCTAssertEqual(store.selection, "Other.md")
+        }
+    }
+
     func testNoteOpeningReusesCurrentTabUnlessNewTabIsRequested() async throws {
         try await withVault(["A.md": note("a", title: "A"), "B.md": note("b", title: "B"), "C.md": note("c", title: "C")]) { _, store in
             await store.openNote("A.md")

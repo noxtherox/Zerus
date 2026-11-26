@@ -20,6 +20,25 @@ final class NativeHistoryTests: XCTestCase {
         try await io.write(".zerus/history/notes/history-note/" + id + ".json", data: bytes, expected: nil)
     }
 
+    func testUnreadableHistoryRecordDoesNotBlockSavingTheNote() async throws {
+        let io = VaultFiles(root: root!), path = "Note.md"
+        var text = "---\nzerus-id: history-note\n---\n# Note\nFirst\n"
+        try await io.write(path, data: Data(text.utf8), expected: nil)
+        _ = try await io.applyHistoryMaintenance(io.prepareHistoryMaintenance(io.historyMaintenanceSnapshot(), intent: .settings(enabled: true, limit: 10)))
+        var next = text + "Second\n"
+        try await io.write(path, data: Data(next.utf8), expected: Data(text.utf8)); text = next
+        let before = try await io.historySnapshot(notePath: path)
+        let record = try XCTUnwrap(before.records.keys.first)
+        let location = root.appendingPathComponent(record)
+        // Stands in for an evicted iCloud placeholder whose download failed.
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: location.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: location.path) }
+        next = text + "Third\n"
+        try await io.write(path, data: Data(next.utf8), expected: Data(text.utf8))
+        let saved = try await io.read(path)
+        XCTAssertEqual(saved, Data(next.utf8))
+    }
+
     func testActualSavesCaptureCompatibleUnicodeDeltasAndCheckpointFamiliesWhileProtectingKeptAndUnknownRecords() async throws {
         let io = VaultFiles(root: root!), path = "Note.md"
         var text = "---\nzerus-id: history-note\n---\n# Note\n😀 first\n"

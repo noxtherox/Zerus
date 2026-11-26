@@ -87,7 +87,11 @@ final class MacWorkspace {
     var folderCollection = false
     var query = "" { didSet { if query != oldValue { editorFocusRequest = nil; clearCollectionSelection() }; persistNavigation(deferWrite: true) } }
     var filters = NativeCollectionFilters() { didSet { if filters != oldValue { clearCollectionSelection() }; persistNavigation() } }
-    var selection: String?
+    var selection: String? { didSet { if let previous = oldValue, previous != selection { scheduleTitleFileSync(previous) } } }
+    /// Title each note had when last opened, used to tell whether its file
+    /// name still follows the title (see `MacTitleFileSync`).
+    @ObservationIgnored private var openedTitles: [String: String] = [:]
+    @ObservationIgnored private var titleSyncJobs: [String: Task<Void, Never>] = [:]
     private(set) var pinnedTabs = Set<MacTab>()
     var tabs: [MacTab] = [] { didSet {
         let kept = pinnedTabs.intersection(Set(tabs))
@@ -1182,6 +1186,7 @@ final class MacWorkspace {
     }
     private func adoptOpenedNote(_ note: NoteDocument, record: Bool, newTab: Bool = false) {
         headingRequest = nil; draftState.visibleHeading = nil; browsingCollection = false; baseline = note; selection = note.path; body = drafts[note.path] ?? note.parts.body
+        titleSyncJobs.removeValue(forKey: note.path)?.cancel(); openedTitles[note.path] = note.title
         baselineIdentityUnique = note.stableID.map { id in notes.filter { !$0.trashed && $0.stableID == id }.count == 1 } ?? false
         noteDiskChange = nil; retainedExport = nil; retainedExportReady = false
         sourceMode = openingRequiresSource(body)
@@ -1459,6 +1464,41 @@ final class MacWorkspace {
         if folderCollection && !folders.contains(destination) { restoreCollection("All Notes") }
         if activeTab == nil { if let tab = valid.active { await activateTab(tab) } else { await openCollection("All Notes") } }
         await refreshMetadata(); persistNavigation()
+    }
+    /// Renaming recreates the path-keyed editor (losing cursor and Undo), so a
+    /// title edit renames the file shortly after the note is left, not mid-typing.
+    private func scheduleTitleFileSync(_ path: String) {
+        guard let opened = openedTitles.removeValue(forKey: path) else { return }
+        titleSyncJobs.removeValue(forKey: path)?.cancel()
+        titleSyncJobs[path] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await self?.syncFileNameToTitle(path, openedTitle: opened)
+        }
+    }
+    private func syncFileNameToTitle(_ path: String, openedTitle: String) async {
+        titleSyncJobs[path] = nil
+        if let pending = writes { _ = await pending.value }
+        guard selection != path, drafts[path] == nil, !busy, !preparingToClose, !schemaMaintenanceSaving, !noteMovesSaving, let io,
+              let note = notes.first(where: { $0.path == path }), !note.trashed, note.stableID != nil,
+              let title = MacTitleFileSync.title(path: path, title: note.title, openedTitle: openedTitle) else { return }
+        let origin = generation
+        do {
+            let snapshot = try await io.relationDefinitionSnapshot()
+            let plan = try await io.prepareRename(snapshot, source: path, title: title, renameFile: true)
+            guard origin == generation, selection != path, drafts[path] == nil else { return }
+            let result = try await io.applyRelationMaintenance(plan.maintenance)
+            guard origin == generation else { return }
+            apply(result)
+            guard let renamed = result.notes.first(where: { !$0.trashed && $0.stableID == note.stableID }), renamed.path != path else { return }
+            remapMovedNotePaths([path: renamed.path])
+            // The note was reopened while its file moved: adopt the new path.
+            if baseline?.path == path { baseline = renamed; if let draft = drafts.removeValue(forKey: path) { drafts[renamed.path] = draft } }
+            persistNavigation()
+        } catch {
+            // Keep the current file name (e.g. the target name is taken).
+            // The explicit Rename command reports why.
+        }
     }
     func rename(_ note: NoteDocument, title: String) async {
         guard await save(), let io else { return }
