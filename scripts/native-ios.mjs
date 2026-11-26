@@ -62,7 +62,10 @@ try {
     const common = ['-project', 'native-ios/ZerusNative.xcodeproj', '-scheme', 'ZerusNative', '-configuration', configuration,
       '-destination', simulator ? `platform=iOS Simulator,id=${simulator}` : device ? `platform=iOS,id=${device}` : 'generic/platform=iOS', '-derivedDataPath', derived];
     run('xcodebuild', [...common, '-showBuildSettings'], true);
-    run('xcodebuild', [...common, ...(action === 'test' ? ['test', '-collect-test-diagnostics', 'never', ...(args.includes('--unit-only') ? ['-only-testing:ZerusNativeTests'] : [])] : simulator ? ['build'] : ['clean', 'build']), ...(simulator ? ['CODE_SIGNING_ALLOWED=YES', 'CODE_SIGN_IDENTITY=-'] : ['-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration'])]);
+    // Debug Simulator builds use Xcode's content-addressed compilation cache, so unchanged
+    // Swift/Clang sources (notably the MLX packages) are reused across clean builds and CI runs.
+    const cache = simulator ? ['COMPILATION_CACHE_ENABLE_CACHING=YES', `COMPILATION_CACHE_CAS_PATH=${path.join(derived, 'CompilationCache')}`] : [];
+    run('xcodebuild', [...common, ...cache, ...(action === 'test' ? ['test', '-collect-test-diagnostics', 'never', ...(args.includes('--unit-only') ? ['-only-testing:ZerusNativeTests'] : [])] : simulator ? ['build'] : ['clean', 'build']), ...(simulator ? ['CODE_SIGNING_ALLOWED=YES', 'CODE_SIGN_IDENTITY=-'] : ['-allowProvisioningUpdates', '-allowProvisioningDeviceRegistration'])]);
     if (!simulator) verifyApp();
   }
 } catch (error) {
