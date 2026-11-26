@@ -377,13 +377,26 @@ final class MacWorkspace {
         let kept = baseline.flatMap { note in isDirty ? MacChatContextSnapshot.Draft(baseline: note, content: note.replacingBody(body)) : nil }
         return .init(workspaceID: origin, root: root, notes: fresh.notes, drafts: kept.map { [$0] } ?? [])
     }
+    /// iCloud can evict `.zerus/*.json` (properties, views, type icons…) to
+    /// dataless placeholders. Every scan reads some of them, and a coordinated
+    /// read of a placeholder blocks until it downloads. Ask iCloud to fetch
+    /// them as soon as the vault opens so later reads do not stall.
+    nonisolated static func requestLocalVaultMetadata(_ root: URL) {
+        let folder = root.appendingPathComponent(".zerus", isDirectory: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.isRegularFileKey]) else { return }
+        for file in files where file.pathExtension == "json" {
+            var info = stat()
+            guard lstat(file.path, &info) == 0, info.st_flags & 0x4000_0000 != 0 /* SF_DATALESS */ else { continue }
+            try? FileManager.default.startDownloadingUbiquitousItem(at: file)
+        }
+    }
     func openSearchNote(path: String, stableID: String?, workspaceID: UUID) async throws {
         guard workspaceID == self.workspaceID, let io else { throw VaultFailure(message: "The vault changed. Refresh search.") }
         let fresh = try await io.scan()
         guard workspaceID == self.workspaceID else { throw CancellationError() }
         let matches = fresh.notes.filter { !$0.trashed && (stableID == nil ? $0.path == path : $0.stableID == stableID) }
         guard matches.count == 1, let note = matches.first else { throw VaultFailure(message: "This result changed. Refresh search before opening it.") }
-        apply(fresh); await openNote(note.path)
+        apply(fresh); await openNote(note.path, awaitInspector: false)
         guard selection == note.path else { throw VaultFailure(message: issue ?? "Save the current note before opening this result.") }
     }
     func openSearchConversation(_ conversation: NativeSearchConversation, workspaceID: UUID) async throws -> MacChatController {
@@ -540,6 +553,7 @@ final class MacWorkspace {
         let editingRevision = noteEditRevision
         do {
             let worker = VaultFiles(root: url)
+            Task.detached(priority: .utility) { Self.requestLocalVaultMetadata(url) }
             let recoveredFolderRename = try await worker.macPrepareStartup()
             let identity = try? await Task.detached { try MacStartupIdentity.read(url) }.value
             // A completed save in another live window may still have its
@@ -1170,7 +1184,10 @@ final class MacWorkspace {
             await openNote(path)
         }
     }
-    func openNote(_ path: String, record: Bool = true, preserveCollection: Bool = false, newTab: Bool = false) async {
+    /// `awaitInspector: false` returns once the note is in the editor and
+    /// loads its saved versions in the background. Version history can sit on
+    /// slow (iCloud) storage and must not hold up callers such as search.
+    func openNote(_ path: String, record: Bool = true, preserveCollection: Bool = false, newTab: Bool = false, awaitInspector: Bool = true) async {
         guard path != selection else { browsingCollection = false; editorFocusRequest = UUID(); return }
         guard await save(), let note = notes.first(where: { $0.path == path }) else { return }
         persistNavigation()
@@ -1182,7 +1199,7 @@ final class MacWorkspace {
             restoreCollection(target, folder: filed && !note.trashed && !note.path.hasPrefix(".zerus/"))
         }
         adoptOpenedNote(note, record: record, newTab: newTab)
-        await loadInspector()
+        if awaitInspector { await loadInspector() } else { Task { await loadInspector() } }
     }
     private func adoptOpenedNote(_ note: NoteDocument, record: Bool, newTab: Bool = false) {
         headingRequest = nil; draftState.visibleHeading = nil; browsingCollection = false; baseline = note; selection = note.path; body = drafts[note.path] ?? note.parts.body
