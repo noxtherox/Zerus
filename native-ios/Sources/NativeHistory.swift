@@ -34,6 +34,9 @@ struct NativeHistorySnapshot: Sendable {
     let settingsBytes: Data?
     let enabled: Bool
     let limit: Int?
+    /// Records that are listed but cannot be read yet, such as iCloud
+    /// placeholders still downloading. Saves skip them; reviews refuse.
+    var unreadable: Set<String> = []
     var directory: String { ".zerus/history/notes/" + (note.stableID ?? "") }
 }
 
@@ -146,10 +149,17 @@ extension VaultFiles {
         let configuration = try historyConfiguration()
         let settings = configuration.bytes, enabled = configuration.enabled, limit = configuration.limit
         guard let noteID = identity ?? note.stableID else { return .init(root: root, note: note, versions: [], records: [:], problems: [], settingsBytes: settings, enabled: enabled, limit: limit) }
-        var records: [String: Data] = [:]
-        for path in try historyRecordPaths(noteID) { records[path] = try read(path) }
+        var records: [String: Data] = [:], unreadable = Set<String>()
+        // One unreadable record must not block saving the note. It is left
+        // untouched, and the reported problem suppresses automatic pruning.
+        for path in try historyRecordPaths(noteID) {
+            do { records[path] = try read(path) }
+            catch is CancellationError { throw CancellationError() }
+            catch { unreadable.insert(path) }
+        }
         let decoded = try historyVersions(noteID: noteID, records: records)
-        return .init(root: root, note: note, versions: decoded.versions, records: records, problems: decoded.problems, settingsBytes: settings, enabled: enabled, limit: limit)
+        let problems = decoded.problems + unreadable.sorted().map { "\(($0 as NSString).lastPathComponent): could not be read and may still be downloading. The file is untouched." }
+        return .init(root: root, note: note, versions: decoded.versions, records: records, problems: problems, settingsBytes: settings, enabled: enabled, limit: limit, unreadable: unreadable)
     }
 
     func historyVersions(noteID: String, records: [String: Data]) throws -> (versions: [NativeHistoryVersion], problems: [String]) {
@@ -332,6 +342,7 @@ extension VaultFiles {
     }
     func prepareHistory(_ snapshot: NativeHistorySnapshot, action: NativeHistoryAction) throws -> NativeHistoryPlan {
         guard root == snapshot.root, try read(snapshot.note.path) == Data(snapshot.note.content.utf8), try historyData(".zerus/history-settings.json") == snapshot.settingsBytes else { throw VaultFailure(message: "The note or its history settings changed. Reload history before continuing.") }
+        guard snapshot.unreadable.isEmpty else { throw VaultFailure(message: "Some history files for this note could not be read and may still be downloading. Try again once they finish syncing.") }
         if let id = snapshot.note.stableID {
             guard try historyRecordPaths(id) == Set(snapshot.records.keys) else { throw VaultFailure(message: "History changed. Reload it before continuing.") }
         }
