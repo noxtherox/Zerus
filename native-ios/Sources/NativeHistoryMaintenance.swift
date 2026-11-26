@@ -157,6 +157,42 @@ extension VaultFiles {
         return paths
     }
 
+    /// Blob paths listed by history records about to be removed, or nil when a
+    /// record cannot be read and every blob must be considered.
+    nonisolated static func historyBlobCandidates(_ removed: [VaultFileChange]) -> Set<String>? {
+        var result = Set<String>()
+        for change in removed {
+            guard let bytes = change.before, let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any],
+                  let images = object["images"] as? [[String: Any]] else { return nil }
+            for image in images {
+                guard let hash = image["hash"] as? String else { continue }
+                guard hash.utf8.count == 64, hash.utf8.allSatisfy(isLowerHex) else { return nil }
+                result.insert(".zerus/history/blobs/" + hash)
+            }
+        }
+        return result
+    }
+    private nonisolated static func isLowerHex(_ byte: UInt8) -> Bool { (48...57).contains(byte) || (97...102).contains(byte) }
+    /// Every 64-character lowercase-hex window found in `strings`. A blob hash
+    /// occurs in a string exactly when it is one of that string's windows.
+    nonisolated static func hexWindows(_ strings: [String]) -> Set<String> {
+        var result = Set<String>()
+        for text in strings {
+            let bytes = Array(text.utf8)
+            var start = 0
+            while start < bytes.count {
+                guard isLowerHex(bytes[start]) else { start += 1; continue }
+                var end = start
+                while end < bytes.count, isLowerHex(bytes[end]) { end += 1 }
+                if end - start >= 64 {
+                    for offset in start...(end - 64) { result.insert(String(decoding: bytes[offset..<(offset + 64)], as: UTF8.self)) }
+                }
+                start = end
+            }
+        }
+        return result
+    }
+
     /// Shared blobs are collected only after inspecting surviving records,
     /// current/trashed notes, deliberate revisions and recovery/audit metadata.
     func historyBlobCleanup(_ original: [VaultFileChange], snapshot: NativeHistoryMaintenanceSnapshot, collectBlobs: Bool = true, blobCandidates: Set<String>? = nil) throws -> (changes: [VaultFileChange], removed: [String], warnings: [String]) {
@@ -194,10 +230,13 @@ extension VaultFiles {
         if known.insert(".zerus/history-settings.json").inserted { changes.append(.init(path: ".zerus/history-settings.json", before: snapshot.configuration.bytes, after: snapshot.configuration.bytes)) }
         var removed: [String] = []
         if shouldCollect && canClean {
+            // One pass over every reference replaces a substring search per
+            // blob, which was quadratic on large vaults and stalled saves.
+            let referenced = Self.hexWindows(references)
             for path in blobPaths.sorted() {
                 try Task.checkCancellation()
-                let hash = (path as NSString).lastPathComponent
-                guard !references.contains(where: { $0.contains(hash) }), !known.contains(path) else { continue }
+                let hash = String(path.split(separator: "/").last ?? "")
+                guard !referenced.contains(hash), !known.contains(path) else { continue }
                 changes.append(.init(path: path, before: try read(path), after: nil)); removed.append(path)
             }
         } else if shouldCollect { warnings += snapshot.inventory.unexpected.sorted().map { "Unrecognized file prevents image cleanup: " + $0 } }
