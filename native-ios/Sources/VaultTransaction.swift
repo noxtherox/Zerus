@@ -87,10 +87,17 @@ extension VaultFiles {
         // Deriving them again would change the bytes being synchronized.
         var preparedChanges = try preservingRemoteBytes ? changes : includingAutomaticHistory(includingSavedLinkIndex(changes), source: historySource)
         var cleanupSnapshot = historyCleanupSnapshot
-        if !preservingRemoteBytes, cleanupSnapshot == nil, preparedChanges.contains(where: { $0.path.hasPrefix(".zerus/history/notes/") && $0.before != nil && $0.after == nil }) {
-            let snapshot = try historyMaintenanceSnapshot()
-            preparedChanges = try historyBlobCleanup(preparedChanges, snapshot: snapshot).changes
-            cleanupSnapshot = snapshot
+        let removedRecords = preparedChanges.filter { $0.path.hasPrefix(".zerus/history/notes/") && $0.before != nil && $0.after == nil }
+        // Removing records can orphan only the blobs those records listed.
+        // Inspect the whole vault only when such a blob exists; automatic
+        // retention on an ordinary save otherwise stays local to its note.
+        if !preservingRemoteBytes, cleanupSnapshot == nil, !removedRecords.isEmpty {
+            let candidates = Self.historyBlobCandidates(removedRecords)
+            if candidates.map({ !$0.isEmpty }) ?? true {
+                let snapshot = try historyMaintenanceSnapshot(includeVersions: false)
+                preparedChanges = try historyBlobCleanup(preparedChanges, snapshot: snapshot, blobCandidates: candidates).changes
+                cleanupSnapshot = snapshot
+            }
         }
         let changes = preparedChanges
         let historyValidation = cleanupSnapshot

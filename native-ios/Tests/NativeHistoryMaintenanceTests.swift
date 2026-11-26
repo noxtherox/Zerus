@@ -21,6 +21,39 @@ final class NativeHistoryMaintenanceTests: XCTestCase {
         let object: [String: Any] = ["schema":1, "id":id, "noteId":note, "timestamp":String(format: "2026-11-01T12:00:%02d.000Z", ordinal), "source":"desktop", "originId":"fixture", "parentId":NSNull(), "depth":0, "kind":"checkpoint", "baseHash":NSNull(), "resultHash":hash(Data(text.utf8)), "content":text, "images":images, "kept":kept, "label":kept ? "Milestone" as Any : NSNull(), "foreign":["retain":[1,2,3]]]
         try await io.write(path, data: JSONSerialization.data(withJSONObject: object), expected: nil); return path
     }
+    func testHexWindowsMatchEveryEmbeddedHashExactly() {
+        let hash = String(repeating: "ab", count: 32), longer = "0" + hash + "f"
+        let windows = VaultFiles.hexWindows(["blobs/" + hash + ".png", "x" + longer, hash.uppercased(), String(hash.dropLast())])
+        XCTAssertTrue(windows.contains(hash))
+        XCTAssertTrue(windows.contains(String(longer.prefix(64))))
+        XCTAssertTrue(windows.contains(String(longer.suffix(64))))
+        XCTAssertEqual(windows.count, 3, "Uppercase and short runs never match a blob hash")
+    }
+
+    func testAutomaticRetentionCollectsOnlyBlobsListedByRemovedRecords() async throws {
+        let io = VaultFiles(root: root!), path = "Note.md"
+        _ = try await io.applyHistoryMaintenance(io.prepareHistoryMaintenance(io.historyMaintenanceSnapshot(), intent: .settings(enabled: true, limit: 1)))
+        let image = Data("pixels".utf8), stray = try await blob(io, "stray")
+        try await io.write("assets/live.png", data: image, expected: nil)
+        var text = "---\nzerus-id: blob-note\n---\n# Note\n![](assets/live.png)\n"
+        try await io.write(path, data: Data(text.utf8), expected: nil)
+        for value in ["One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight"] {
+            let next = "---\nzerus-id: blob-note\n---\n# Note\n![](assets/live.png)\n" + value + "\n"
+            try await io.write(path, data: Data(next.utf8), expected: Data(text.utf8)); text = next
+        }
+        let imageBlob = ".zerus/history/blobs/" + hash(image)
+        let listed = try await io.historySnapshot(notePath: path)
+        XCTAssertTrue(listed.records.values.contains { String(decoding: $0, as: UTF8.self).contains(hash(image)) })
+        for value in ["Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen"] {
+            let next = "---\nzerus-id: blob-note\n---\n# Note\n" + value + "\n"
+            try await io.write(path, data: Data(next.utf8), expected: Data(text.utf8)); text = next
+        }
+        let final = try await io.historySnapshot(notePath: path)
+        XCTAssertFalse(final.records.values.contains { String(decoding: $0, as: UTF8.self).contains(hash(image)) })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(imageBlob).path), "A blob orphaned by pruning is collected")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent(stray).path), "Unrelated blobs wait for explicit cleanup")
+    }
+
     private func fixture(_ folder: URL) async throws -> (VaultFiles, String, String) {
         let io = VaultFiles(root: folder)
         try await io.write("Note.md", data: Data("---\nzerus-id: history-note\n---\n# Note\nCurrent\n".utf8), expected: nil)
