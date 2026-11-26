@@ -6875,6 +6875,37 @@ final class MacDocumentTests: XCTestCase {
         try operation(view, coordinator, host)
     }
     // Bare NSTextView fixtures also exercise coordinator recovery from malformed native rows.
+    @MainActor func testTypingOverASelectionEndingAtTheNextItemKeepsItsMarkerOutOfTheBody() {
+        // A selection ending at the next row's start must not leave that row's
+        // presentation marker in the joined body as literal text.
+        for ending in ["\n", "\r\n"] {
+            let source = "Intro\n* Assembly\n\n  * \n".replacingOccurrences(of: "\n", with: ending)
+            var issues: [String] = []
+            withEditor(source, onPasteError: { issues.append($0) }) { view, coordinator in
+                let raw = view.string as NSString, start = raw.range(of: "Assembly").location
+                let nested = raw.paragraphRange(for: NSRange(location: raw.length - 1, length: 0))
+                view.setSelectedRange(NSRange(location: start, length: nested.location - start))
+                view.insertText("#", replacementRange: view.selectedRange())
+                view.insertText("#", replacementRange: view.selectedRange())
+                XCTAssertEqual(coordinator.lastMarkdown, "Intro\n* \\##\n".replacingOccurrences(of: "\n", with: ending))
+                XCTAssertTrue(issues.isEmpty, "\(issues)")
+            }
+        }
+        withEditor("- Alpha\n- Beta\n") { view, coordinator in
+            let raw = view.string as NSString, beta = raw.paragraphRange(for: raw.range(of: "Beta"))
+            let start = raw.range(of: "pha").location
+            view.setSelectedRange(NSRange(location: start, length: beta.location - start))
+            view.insertText("X", replacementRange: view.selectedRange())
+            XCTAssertEqual(coordinator.lastMarkdown, "- AlXBeta\n")
+        }
+        withEditor("- Alpha\n- Beta\n") { view, coordinator in
+            let raw = view.string as NSString, beta = raw.paragraphRange(for: raw.range(of: "Beta"))
+            view.setSelectedRange(NSRange(location: 0, length: beta.location))
+            view.insertText("X", replacementRange: view.selectedRange())
+            XCTAssertFalse(coordinator.lastMarkdown.contains("•"), coordinator.lastMarkdown)
+            XCTAssertEqual(coordinator.lastMarkdown, "- XBeta\n")
+        }
+    }
     @MainActor private func withEditor(_ source: String, sourceMode: Bool = false, notes: [NoteDocument] = [], root: URL? = nil, path: String = "", scope: UUID? = nil, onPasteError: @escaping (String) -> Void = { _ in }, operation: (NSTextView, MacRichEditor.Coordinator) throws -> Void) rethrows {
         try autoreleasepool {
             let editor = MacRichEditor(markdown: source, source: sourceMode, editable: true, root: root, path: path, onChange: { _ in }, onLink: { _ in }, onPasteError: onPasteError, linkNotes: { notes }, commandScope: scope)

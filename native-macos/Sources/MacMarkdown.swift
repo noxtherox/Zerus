@@ -5229,7 +5229,7 @@ private final class MacEditorTextView: NSTextView, NSLayoutManagerDelegate {
         raw.enumerateSubstrings(in: visible, options: [.byParagraphs, .substringNotRequired]) { _, paragraph, _, _ in
             guard self.listMarker(atParagraph: paragraph.location, in: rich) == "• " else { return }
             let glyph = manager.glyphIndexForCharacter(at: paragraph.location)
-            guard glyph < manager.numberOfGlyphs, !manager.isNotShownAttribute(forGlyphAt: glyph) else { return }
+            guard glyph < manager.numberOfGlyphs, !manager.notShownAttribute(forGlyphAt: glyph) else { return }
             let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
             let bullet = manager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
             let font = rich.attribute(.font, at: paragraph.location, effectiveRange: nil) as? NSFont ?? MacMarkdown.font("")
