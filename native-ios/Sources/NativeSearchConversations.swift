@@ -12,7 +12,7 @@ extension VaultFiles {
                 if values.isSymbolicLink != true { documents.append(.init(path: path, modified: values.contentModificationDate ?? .distantPast)) }
             } catch { problems.append("Some file details are still unavailable. Refresh to retry.") }
         }
-        guard CloudAIFeature.enabled else { return .init(files: documents, conversations: [], problems: Array(Set(problems)).sorted()) }
+        guard CloudAIFeature.conversationsSearchable else { return .init(files: documents, conversations: [], problems: Array(Set(problems)).sorted()) }
         do {
         let directory = try url(for: ".zerus/chats")
         if FileManager.default.fileExists(atPath: directory.path) {

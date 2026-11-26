@@ -232,6 +232,7 @@ struct SettingsView: View {
                 }
                 Section {
                     NavigationLink { NativeAppearanceView() } label: { Label("Appearance", systemImage: "paintpalette") }.accessibilityIdentifier("settings.appearance")
+                    NavigationLink { NativeLocalAISettingsView() } label: { Label("On-device AI", systemImage: "sparkles") }.accessibilityIdentifier("settings.localAI")
                 }
                 if CloudAIFeature.enabled {
                     Section("AI") {

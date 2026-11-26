@@ -23,13 +23,14 @@ extension View {
 }
 
 enum MacSettingsPane: String, CaseIterable, Identifiable {
-    case general, appearance, editor, newNotes, properties, history, cli, maintenance
+    case general, appearance, editor, ai, newNotes, properties, history, cli, maintenance
     var id: String { rawValue }
     var title: String {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
         case .editor: "Editor"
+        case .ai: "On-device AI"
         case .newNotes: "New notes"
         case .properties: "Properties pane"
         case .history: "Version history"
@@ -42,6 +43,7 @@ enum MacSettingsPane: String, CaseIterable, Identifiable {
         case .general: "gearshape"
         case .appearance: "circle.lefthalf.filled"
         case .editor: "pencil.line"
+        case .ai: "sparkles"
         case .newNotes: "square.and.pencil"
         case .properties: "sidebar.right"
         case .history: "clock.arrow.circlepath"
@@ -59,7 +61,7 @@ struct MacSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     private var vault: MacWorkspace? { workspace?.root != nil ? workspace : nil }
     private var groups: [[MacSettingsPane]] {
-        [[.general, .appearance, .editor], vault == nil ? [] : [.newNotes, .properties, .history], vault == nil ? [.cli] : [.cli, .maintenance]].filter { !$0.isEmpty }
+        [[.general, .appearance, .editor, .ai], vault == nil ? [] : [.newNotes, .properties, .history], vault == nil ? [.cli] : [.cli, .maintenance]].filter { !$0.isEmpty }
     }
     private var pane: MacSettingsPane {
         let value = MacSettingsPane(rawValue: storedPane) ?? .general
@@ -96,6 +98,7 @@ struct MacSettingsView: View {
         case .general: MacGeneralSettingsPane()
         case .appearance: MacAppearanceSettingsPane()
         case .editor: MacEditorSettingsPane()
+        case .ai: MacLocalAISettingsPane(workspace: workspace)
         case .newNotes: if let vault { framed(.newNotes) { ScrollView { MacNewNoteSettingsView(workspace: vault) } } }
         case .properties: if let vault { framed(.properties) { ScrollView { MacPaneSettingsView(workspace: vault) } } }
         case .history: if let vault { framed(.history) { MacHistoryManagementView(workspace: vault) } }

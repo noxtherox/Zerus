@@ -94,7 +94,10 @@ final class ChunkingTests: XCTestCase {
         let chunks = LocalAIChunker.chunks(for: note, maxCharacters: 900)
         XCTAssertGreaterThanOrEqual(chunks.count, 3)
         XCTAssertTrue(chunks.allSatisfy { $0.text.count <= 900 && $0.title == "Lisbon trip" })
-        XCTAssertFalse(chunks.contains { $0.text.contains("tags:") }, "frontmatter is not embedded")
+        XCTAssertEqual(chunks.first?.text, "Properties:\ntags: [travel]", "properties are searchable")
+        XCTAssertEqual(chunks.filter { $0.text.contains("tags:") }.count, 1)
+        let managed = LocalAINote(path: "x.md", content: "---\nzerus-id: abc\nstatus: open\npeople:\n  - Ana\n  - Rui\nzerus-pinned: true\n---\nBody")
+        XCTAssertEqual(managed.properties, "status: open\npeople:\n  - Ana\n  - Rui", "Zerus-managed keys are left out")
         XCTAssertEqual(chunks.map(\.ordinal), Array(0 ..< chunks.count))
         XCTAssertEqual(LocalAINote(path: "a/Plain.md", content: "text").title, "Plain")
         XCTAssertEqual(LocalAINote(path: "a/Empty.md", content: "").title, "Empty")
@@ -231,6 +234,13 @@ final class PipelineTests: XCTestCase {
         XCTAssertTrue(answer.verified)
         XCTAssertTrue(model.users[0].contains("<note id=\"garden\">"))
         XCTAssertTrue(model.users[0].hasSuffix("Answer in English."))
+
+        let uncited = ScriptedModel([#"{"evidence":["basil in April"],"answer":"Basil.","found":true,"sources":[]}"#])
+        let cited = try await LocalAIPipelines(model: uncited).ask("When?", sources: [
+            .init(id: "trip", path: "trip.md", content: "Porto"),
+            .init(id: "garden", path: "garden.md", content: "Plant tomatoes and basil in April."),
+        ], language: "en")
+        XCTAssertEqual(cited.sources, ["garden.md"], "uncited answers cite the notes holding the evidence")
 
         let invented = ScriptedModel([#"{"evidence":["roses in June"],"answer":"Roses.","found":true,"sources":["garden"]}"#])
         let unverified = try await LocalAIPipelines(model: invented).ask("What?", sources: [.init(id: "garden", path: "g.md", content: "tomatoes")], language: "en")

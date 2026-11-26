@@ -11,6 +11,9 @@ struct MacWorkspaceView: View {
     @AppStorage("zerus.mac.dateFormat") private var dateFormat = "DD/MM/YYYY"
     @AppStorage("zerus.mac.codeBlocks") private var codeBlocks = false
     @AppStorage("zerus.mac.interfaceZoom") private var interfaceZoom = 100
+    /// In full screen the traffic lights leave the title bar, so it needs no
+    /// room for them.
+    @State private var fullScreen = false
     @StateObject private var editorSessions = MacEditorSessions()
     @State private var clipboardBusy = false
     @State private var showAllRecents = false
@@ -55,6 +58,9 @@ struct MacWorkspaceView: View {
         GeometryReader { geometry in
             let standalone = store.root == nil || ((store.destination == "Tasks" || store.destination == "External Notes") && !store.folderCollection)
             let layout = MacWorkspaceArrangement(width: geometry.size.width, sidebar: sidebar && !focusMode, inspector: store.inspector && !focusMode, hasNote: store.selection != nil, list: store.viewMode == "List" && !focusMode, browsing: store.browsingCollection && !focusMode, standalone: standalone)
+            VStack(spacing: 0) {
+            titleBar(layout, standalone: standalone)
+            Divider()
             ZStack {
                 VStack(spacing: 0) {
                     if store.usingStartupCache {
@@ -80,8 +86,7 @@ struct MacWorkspaceView: View {
                     }
                 }
             }
-            .toolbar { workspaceToolbar(layout, standalone: standalone) }
-            .toolbar(removing: .title)
+            }
             .onChange(of: store.inspectorRequest) { _, _ in toggleInspector(layout) }
             .onChange(of: layout.canInlineSidebar) { _, inline in if inline { compactLibrary = false } }
             .onChange(of: layout.canInlineInspector) { _, inline in if inline { compactInspector = false } }
@@ -103,6 +108,7 @@ struct MacWorkspaceView: View {
         .onChange(of: store.editorSheetActive) { _, active in if !active { Task { await store.desktopFiles.drain(in: store) } } }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in Task { await store.desktopFiles.drain(in: store) } }
         .modifier(MacVaultRefresh(store: store))
+        .modifier(MacLocalAIWorkspace(store: store))
         .onChange(of: store.root) { _, _ in managingVaults = false }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await store.refresh() } }
         .alert("Zerus", isPresented: Binding(get: { store.issue != nil }, set: { if !$0 { store.issue = nil } })) { Button("OK") { store.issue = nil } } message: { Text(store.issue ?? "") }
@@ -148,72 +154,87 @@ struct MacWorkspaceView: View {
             MacWorkspacePanes(layout: layout, interactionEnabled: !compactLibrary && !compactInspector && !store.busy, library: sidebarView, collection: collectionView, editor: editorView, inspector: inspectorView)
         }
     }
-    @ToolbarContentBuilder private func workspaceToolbar(_ layout: MacWorkspaceArrangement, standalone: Bool) -> some ToolbarContent {
-        ToolbarItem(placement: .navigation) {
+    /// The window's title bar, drawn by the app like Firefox's or Outlook's
+    /// rather than as a system toolbar: one row in which the tabs take
+    /// whatever width the buttons leave, so narrowing the window narrows the
+    /// tabs and the buttons stay pinned to the right edge. Empty space drags
+    /// the window, and double-clicking it performs the system title-bar
+    /// action.
+    @ViewBuilder private func titleBar(_ layout: MacWorkspaceArrangement, standalone: Bool) -> some View {
+        let factor = MacInterfaceZoom.factor(interfaceZoom)
+        HStack(spacing: 8) {
+            // Room for the traffic lights, which keep their size at any zoom.
+            Color.clear.frame(width: fullScreen ? 0 : 78 / factor, height: 1)
             Button {
                 if focusMode { focusMode = false; sidebar = true }
                 else if layout.sidebar { sidebar = false }
                 else if layout.canInlineSidebar { sidebar = true }
                 else { compactInspector = false; compactLibrary.toggle() }
-            } label: { Image(systemName: "sidebar.left") }.disabled(store.busy).help("Show or hide folders").modifier(MacToolbarZoom())
-        }.sharedBackgroundVisibility(.hidden)
-        if store.root != nil {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { Task { await store.historyStep(-1) } } label: { Image(systemName: "chevron.left") }.disabled(!store.canHistoryStep(-1) || store.busy).help("Back").modifier(MacToolbarZoom())
-                Button { Task { await store.historyStep(1) } } label: { Image(systemName: "chevron.right") }.disabled(!store.canHistoryStep(1) || store.busy).help("Forward").modifier(MacToolbarZoom())
+            } label: { Image(systemName: "sidebar.left") }.disabled(store.busy).help("Show or hide folders")
+            if store.root != nil {
+                MacTitleBarCapsule {
+                    Button { Task { await store.historyStep(-1) } } label: { Image(systemName: "chevron.left") }.disabled(!store.canHistoryStep(-1) || store.busy).help("Back")
+                    Button { Task { await store.historyStep(1) } } label: { Image(systemName: "chevron.right") }.disabled(!store.canHistoryStep(1) || store.busy).help("Forward")
+                }
             }
-        }
-        ToolbarItem(placement: .navigation) {
-            MacTabBar(store: store, available: tabBarWidth(layout, standalone: standalone)).modifier(MacToolbarZoom())
-        }.sharedBackgroundVisibility(.hidden)
-        // Only add this group when it shows something: an empty toolbar group
-        // still holds a slot at the trailing edge.
-        let browseToggle = !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil
-        if browseToggle || store.busy {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if browseToggle {
-                Button {
-                    store.browsingCollection.toggle()
-                } label: { Label(store.browsingCollection ? "Back to note" : "Notes", systemImage: store.browsingCollection ? "doc.text" : "list.bullet") }.disabled(clipboardBusy || store.busy).help(store.browsingCollection ? "Return to the selected note" : "Browse notes").modifier(MacToolbarZoom())
+            // GeometryReader pins its content to the top; centre the 30-point
+            // strip in the row so the tabs line up with the 36-point capsules.
+            GeometryReader { proxy in
+                MacTabBar(store: store, available: proxy.size.width)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
             }
-            if store.busy { ProgressView().controlSize(.small).modifier(MacToolbarZoom()) }
+            .frame(height: 36)
+            trailingControls(layout, standalone: standalone)
         }
+        .buttonStyle(MacTitleBarButtonStyle())
+        .padding(.trailing, 10)
+        .padding(.leading, 8)
+        // A system title bar with a toolbar is 52 points tall; the bar grows
+        // with larger zoom so its controls keep their margins, and the
+        // traffic lights stay centred in it (see `MacTrafficLights`).
+        .frame(height: MacTrafficLights.height(zoom: factor) / factor)
+        .background {
+            Color.clear.contentShape(Rectangle())
+                .gesture(WindowDragGesture())
+                .simultaneousGesture(TapGesture(count: 2).onEnded { MacTitleBarDoubleClick.perform(in: NSApp.keyWindow) })
         }
-        // Three capsules: creating stands alone, the note's own controls sit
-        // together, and the inspector toggle closes the row.
-        ToolbarItem(placement: .primaryAction) {
-            Button { newNoteSheet = true } label: { Image(systemName: "square.and.pencil") }.disabled(store.root == nil || store.busy).help("New note…").modifier(MacToolbarZoom())
-        }
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItemGroup(placement: .primaryAction) {
-            Button { store.showSearch = true } label: { Image(systemName: "magnifyingglass") }.disabled(store.busy).help("Search everything (⌘F)").modifier(MacToolbarZoom())
-            if CloudAIFeature.enabled {
-                Button { store.showChat = true } label: { Label("AI", systemImage: "sparkles").labelStyle(.titleAndIcon) }.foregroundStyle(macAccent).disabled(store.root == nil || store.busy).help("AI chat").modifier(MacToolbarZoom())
-            }
-            if let note = store.current {
-                Menu { noteActions(note).labelStyle(.titleAndIcon) } label: { Label("Note actions", systemImage: "ellipsis") }.menuIndicator(.hidden).disabled(store.busy).help("Note actions").modifier(MacToolbarZoom())
-            }
-        }
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-        ToolbarItem(placement: .primaryAction) {
-            Button { toggleInspector(layout) } label: { Image(systemName: "sidebar.right") }.disabled(store.selection == nil || store.busy).help("Show or hide inspector").modifier(MacToolbarZoom())
-        }
+        .background(MacTrafficLights(height: MacTrafficLights.height(zoom: factor), fullScreen: $fullScreen))
     }
-    /// The tab strip is one toolbar item, so it is sized from the window width
-    /// minus the traffic lights and the other toolbar items. Overestimating the
-    /// reserve only leaves extra space before the trailing buttons; an item that
-    /// is too wide would push them into the toolbar's overflow menu.
-    private func tabBarWidth(_ layout: MacWorkspaceArrangement, standalone: Bool) -> CGFloat {
-        // Trailing items follow the tab strip directly, so an overestimate
-        // shows as an empty gap at the window's edge. Leading: traffic lights,
-        // sidebar and back/forward. Trailing: the new-note and inspector
-        // capsules, plus the search · AI · ⋯ capsule sized by what it shows.
-        var reserved: CGFloat = 205 + 14 + 48 + 48 + 8 + 37
-        if store.current != nil { reserved += 37 }
-        if CloudAIFeature.enabled { reserved += 62 }
-        if !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil { reserved += 130 }
-        if store.busy { reserved += 36 }
-        return layout.width - reserved / MacInterfaceZoom.factor(interfaceZoom)
+    @ViewBuilder private func trailingControls(_ layout: MacWorkspaceArrangement, standalone: Bool) -> some View {
+        let browseToggle = !standalone && (layout.singleColumn || store.viewMode != "List") && store.selection != nil
+        GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+                if browseToggle || store.busy {
+                    MacTitleBarCapsule {
+                        if browseToggle {
+                            Button { store.browsingCollection.toggle() } label: {
+                                Label(store.browsingCollection ? "Back to note" : "Notes", systemImage: store.browsingCollection ? "doc.text" : "list.bullet").labelStyle(.iconOnly)
+                            }.disabled(clipboardBusy || store.busy).help(store.browsingCollection ? "Return to the selected note" : "Browse notes")
+                        }
+                        if store.busy { ProgressView().controlSize(.small).frame(width: 34) }
+                    }
+                }
+                MacTitleBarCapsule {
+                    Button { newNoteSheet = true } label: { Image(systemName: "square.and.pencil") }.disabled(store.root == nil || store.busy).help("New note…")
+                }
+                MacTitleBarCapsule {
+                    Button { store.showSearch = true } label: { Image(systemName: "magnifyingglass") }.disabled(store.busy).help("Search everything (⌘F)")
+                    if CloudAIFeature.enabled {
+                        Button { store.showChat = true } label: { Label("AI", systemImage: "sparkles").labelStyle(.titleAndIcon).padding(.horizontal, 6) }.foregroundStyle(macAccent).disabled(store.root == nil || store.busy).help("AI chat")
+                    } else {
+                        MacLocalAIMenu(store: store, settings: $settings)
+                    }
+                    if let note = store.current {
+                        Menu { noteActions(note).labelStyle(.titleAndIcon) } label: { Image(systemName: "ellipsis") }.menuIndicator(.hidden).disabled(store.busy).help("Note actions").accessibilityLabel("Note actions")
+                    }
+                }
+                MacTitleBarCapsule {
+                    Button { toggleInspector(layout) } label: { Image(systemName: "sidebar.right") }.disabled(store.selection == nil || store.busy).help("Show or hide inspector")
+                }
+            }
+        }
+        .buttonStyle(MacTitleBarButtonStyle())
+        .menuStyle(.button)
     }
     private func toggleInspector(_ layout: MacWorkspaceArrangement) {
         guard !store.busy, store.selection != nil else { return }
@@ -575,7 +596,13 @@ struct MacWorkspaceView: View {
                     MacInspectorPathFooter(path: note.path)
                 }
             }.padding(.horizontal, 10).padding(.vertical, 12)
-        }.background(theme.color(.surface))
+        }.frame(maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if let note = store.current {
+                VStack(spacing: 0) { Divider(); MacInspectorNoteStatus(store: store, draft: store.draftState, note: note) }.background(theme.color(.surface))
+            }
+        }
+        .background(theme.color(.surface))
     }
     private func inspectorSection<Content: View>(_ section: MacPaneSection, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -837,9 +864,23 @@ extension URL: @retroactive Identifiable { public var id: String { absoluteStrin
             Divider()
             if store.sourceMode { HStack { Image(systemName: "doc.plaintext"); Text("Markdown source"); Spacer(); Button("Rich text") { store.sourceMode = false } }.font(.caption).foregroundStyle(.secondary).padding(8).background(.quaternary.opacity(0.4)) }
             MacRichEditor(markdown: editorBody, source: store.sourceMode, editable: !note.trashed && !store.busy && !store.preparingToClose && !store.schemaMaintenanceSaving && !store.noteMovesSaving, root: store.root, path: note.path, onChange: { if current() { store.changedEditor($0) } }, onEditingIntent: { if current() { store.editingIntent() } }, onLink: { value in Task { if current() { await store.follow(value) } } }, onSourceChange: { if current() { store.sourceMode = $0 } }, onPasteError: { if current() { store.issue = $0 } }, onPasteBusy: { if current() { clipboard.wrappedValue = $0 } }, linkNotes: { store.workspaceID == origin ? store.noteSearchSources().notes : [] }, headingRequest: store.headingRequest, focusRequest: store.editorFocusRequest, onVisibleHeading: { index in if current(), store.draftState.visibleHeading != index { store.draftState.visibleHeading = index } }, commandScope: origin, isCurrent: current, readDocument: { (store.editorBody(store.body), store.sourceMode) }, sessions: sessions, createLink: { title in try await store.createLinkedNote(title: title, folder: (note.path as NSString).deletingLastPathComponent, workspaceID: origin) }).overlay(alignment: .topTrailing) { if clipboardBusy { HStack { ProgressView().controlSize(.small); Text("Preparing clipboard… Esc to cancel").font(.caption) }.padding(12).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8)).padding() } }.id(note.path + store.workspaceID.uuidString)
-            Divider()
-            HStack { Text(draft.saveStatus); Spacer(); MacWordCountLabel(markdown: editorBody).id(note.path + origin.uuidString); Button(store.sourceMode ? "Source" : "Rich text") { store.sourceMode.toggle() }.buttonStyle(MacBoxButtonStyle()) }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 26)
         }
+    }
+}
+
+/// Save state, word count and editing mode, pinned to the bottom of the
+/// properties pane. Only this row observes every draft change.
+@MainActor private struct MacInspectorNoteStatus: View {
+    @Bindable var store: MacWorkspace
+    @ObservedObject var draft: MacNoteDraftState
+    let note: NoteDocument
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(draft.saveStatus).lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 4)
+            MacWordCountLabel(markdown: store.editorBody(draft.body)).id(note.path + store.workspaceID.uuidString)
+            Button(store.sourceMode ? "Source" : "Rich text") { store.sourceMode.toggle() }.buttonStyle(MacBoxButtonStyle())
+        }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 16).frame(height: 30)
     }
 }
 
@@ -887,6 +928,111 @@ private struct MacVaultRefresh: ViewModifier {
                 if Task.isCancelled { break }
                 await store.refresh()
             }
+        }
+    }
+}
+
+/// A Liquid Glass capsule grouping title-bar buttons, matching the native
+/// toolbar groups the row replaces.
+private struct MacTitleBarCapsule<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(spacing: 0) { content }
+            .padding(.horizontal, 1)
+            .frame(height: 36)
+            .glassEffect(.regular.interactive(), in: .capsule)
+    }
+}
+
+/// Icon buttons sized like native toolbar items.
+private struct MacTitleBarButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 15))
+            .frame(minWidth: 34, minHeight: 34)
+            .contentShape(Capsule())
+            .opacity(enabled ? (configuration.isPressed ? 0.6 : 1) : 0.35)
+    }
+}
+
+/// Keeps the traffic lights vertically centred in the app-drawn title bar,
+/// which is taller than the bare system title bar, and reports full screen,
+/// where the buttons leave the bar. AppKit re-lays out the buttons on resize
+/// and appearance changes, so they are re-positioned after each layout.
+private struct MacTrafficLights: NSViewRepresentable {
+    /// Bar height in window points: 52, or more when zoom enlarges the
+    /// 36-point controls.
+    static func height(zoom: CGFloat) -> CGFloat { max(52, (36 * zoom + 16).rounded()) }
+    var height: CGFloat
+    @Binding var fullScreen: Bool
+    func makeNSView(context: Context) -> Probe { Probe { value in if fullScreen != value { fullScreen = value } } }
+    func updateNSView(_ view: Probe, context: Context) { view.barHeight = height; view.place() }
+    final class Probe: NSView {
+        var barHeight: CGFloat = 52
+        private static let leadingInset: CGFloat = 19
+        private static let spacing: CGFloat = 23
+        private let onFullScreen: (Bool) -> Void
+        private var observers: [NSObjectProtocol] = []
+        init(onFullScreen: @escaping (Bool) -> Void) { self.onFullScreen = onFullScreen; super.init(frame: .zero) }
+        required init?(coder: NSCoder) { nil }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver); observers = []; watched = nil
+            guard let window else { return }
+            let center = NotificationCenter.default
+            for name in [NSWindow.didResizeNotification, NSWindow.didEnterFullScreenNotification, NSWindow.didExitFullScreenNotification, NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+                observers.append(center.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.place() }
+                })
+            }
+            place()
+            DispatchQueue.main.async { [weak self] in self?.place() }
+        }
+        deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+        override func layout() { super.layout(); place() }
+        func place() {
+            guard let window else { return }
+            let full = window.styleMask.contains(.fullScreen)
+            onFullScreen(full)
+            guard !full, let close = window.standardWindowButton(.closeButton),
+                  let bar = close.superview, let container = bar.superview else { return }
+            // Grow AppKit's title-bar area to the drawn bar's height so the
+            // buttons can sit at its centre, then centre them vertically.
+            let height = barHeight
+            if let frameView = container.superview {
+                let frame = NSRect(x: 0, y: frameView.bounds.height - height, width: frameView.bounds.width, height: height)
+                if container.frame != frame { container.frame = frame }
+            }
+            let barFrame = NSRect(x: 0, y: 0, width: container.bounds.width, height: height)
+            if bar.frame != barFrame { bar.frame = barFrame }
+            // Horizontally, match where a window with a toolbar puts them.
+            for (index, type) in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].enumerated() {
+                guard let button = window.standardWindowButton(type) else { continue }
+                let origin = NSPoint(x: Self.leadingInset + CGFloat(index) * Self.spacing, y: ((height - button.frame.height) / 2).rounded())
+                if button.frame.origin != origin { button.setFrameOrigin(origin) }
+            }
+            watch(container)
+        }
+        /// AppKit re-lays out the title bar on its own (resizing, key state,
+        /// appearance), so re-centre whenever its frame changes.
+        private weak var watched: NSView?
+        private func watch(_ container: NSView) {
+            guard watched !== container else { return }
+            watched = container
+            for view in [container] + container.subviews {
+                view.postsFrameChangedNotifications = true
+                observers.append(NotificationCenter.default.addObserver(forName: NSView.frameDidChangeNotification, object: view, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.placeSoon() }
+                })
+            }
+        }
+        private var queued = false
+        private func placeSoon() {
+            guard !queued else { return }
+            queued = true
+            DispatchQueue.main.async { [weak self] in self?.queued = false; self?.place() }
         }
     }
 }

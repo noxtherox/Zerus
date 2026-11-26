@@ -27,6 +27,25 @@ public struct LocalAINote: Sendable, Hashable {
         return ((path as NSString).lastPathComponent as NSString).deletingPathExtension
     }
 
+    /// The note's properties (YAML frontmatter) as readable lines, without
+    /// Zerus-managed keys ("zerus-…"), for search and Ask context.
+    public var properties: String {
+        var lines: [String] = []
+        var skipping = false
+        for raw in parts.frontmatter.components(separatedBy: "\n") {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+            if raw.first?.isWhitespace == true || trimmed.hasPrefix("- ") {
+                if !skipping { lines.append("  " + trimmed) }
+                continue
+            }
+            let key = trimmed.split(separator: ":", maxSplits: 1).first.map(String.init) ?? trimmed
+            skipping = key.lowercased().hasPrefix("zerus-")
+            if !skipping { lines.append(trimmed) }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// SHA-256 of the content; the index re-embeds a note only when it changes.
     public var contentHash: String {
         SHA256.hash(data: Data(content.utf8)).map { String(format: "%02x", $0) }.joined()
@@ -66,6 +85,9 @@ public struct LocalAIChunk: Sendable, Hashable {
 }
 
 public enum LocalAIChunker {
+    /// Bumped whenever chunking changes, so indexes rebuild.
+    public static let version = 2
+
     /// Splits the body into heading sections, then packs paragraphs up to
     /// `maxCharacters`. The phase 1 retrieval results used 900.
     public static func chunks(for note: LocalAINote, maxCharacters: Int = 900) -> [LocalAIChunk] {
@@ -104,6 +126,9 @@ public enum LocalAIChunker {
             if !buffer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { texts.append(buffer) }
         }
         texts = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        // Properties are searchable too (tags, status, dates, people…).
+        let properties = note.properties
+        if !properties.isEmpty { texts.insert("Properties:\n" + String(properties.prefix(maxCharacters)), at: 0) }
         if texts.isEmpty { texts = [title] }
         return texts.enumerated().map { LocalAIChunk(path: note.path, ordinal: $0.offset, title: title, text: $0.element) }
     }

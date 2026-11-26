@@ -1,6 +1,6 @@
 # Local AI plan (native macOS + native iOS)
 
-Status: agreed 2026-11-25. Phase 1 closed 2026-11-25; phase 2 (hide cloud AI UI) done; phase 3 (shared core) done.
+Status: agreed 2026-11-25. Phase 1 closed 2026-11-25; phase 2 (hide cloud AI UI) done; phase 3 (shared core) done; phase 4 (macOS UI) and phase 5 (iOS UI) implemented; iOS on-device run of the app pending.
 
 ## Decisions
 
@@ -164,3 +164,53 @@ store and loader, SQLite search index).
 Still open for phases 4 and 5: Settings UI (download, delete, capability
 message), wiring the index to vault changes, `BGProcessingTask` indexing on
 iOS, and the 6 GB iPhone run.
+
+## Phase 4 (macOS UI, 2026-11-25)
+
+- **Settings → On-device AI:** model sizes and licenses, Download (Wi-Fi or
+  Ethernet only unless allowed), progress and Cancel, Delete Models, the
+  capability message, and the vault's index status with Rebuild.
+- **Indexing:** `MacLocalAIIndexing` syncs the vault's notes to the
+  per-device index 3 s after changes and embeds only changed notes.
+- **Search:** "Best matches" from embeddings lead the keyword groups once the
+  index is complete. "Ask your notes" (⌘↵ in search, ⌘J from anywhere) opens
+  Ask: router, then Ask with citations, a summary of the best match, or, for
+  edits, a choice among the top 3 notes (or a new note). Up to 6 follow-ups;
+  nothing is persisted.
+- **Note actions** (toolbar ✦ menu): Summarize, Rewrite Selection, Edit Note,
+  Add to Note, Change Properties, New Note with AI. Text edits show a diff
+  and apply through the editor as one "AI Edit" undo step, refused if the note
+  changed meanwhile. Property changes show before/after and offer Undo.
+- **Tests:** `MacLocalAITests` (editor bridge, properties, new notes) and
+  `MacLocalAIModelTests`, which runs real models inside the app process
+  (indexing, semantic and exact search, Ask with citations) when the pinned
+  snapshots are in the Hugging Face cache.
+
+## Phase 5 (iOS UI, 2026-11-25)
+
+- Shared logic for both apps lives in `native-ios/Sources/NativeLocalAI.swift`
+  (controller, action runner, Ask engine; macOS compiles it too). Each app
+  keeps only its UI.
+- **Settings → On-device AI:** runs the self-test first. On unsupported
+  devices (A13, Simulator) it only shows "On-device AI isn't supported on
+  this device. Keyword search stays available." Phones under 6 GB are offered
+  the embedding model only (semantic search). Includes cellular opt-in,
+  download/cancel/delete and index status.
+- **Indexing:** while the app is open (debounced), plus a
+  `BGProcessingTask` (`com.zerus.notes.localAI.index`, external power
+  required) when the index is unfinished as the app goes to the background.
+  The language model unloads on memory warnings, in the background, and
+  after 2 idle minutes.
+- **Search:** "Ask your notes" row and "Best matches" section. Ask works as
+  on macOS; an edit chosen in Ask opens the note and starts the reviewed edit.
+- **Note ✦ menu:** in the note's actions menu. Text edits show a line diff
+  and apply through the editor as one undoable edit; properties show
+  before/after with Undo.
+- **Entitlement:** `com.apple.developer.kernel.increased-memory-limit`.
+- **Runtime fix:** creating the runtime no longer touches MLX; it crashed the
+  Simulator at launch.
+- **Tests:** `NativeLocalAITests` (editor bridge with undo, properties, diff);
+  all 187 iOS unit tests pass.
+- **Still pending:** running this app build on a physical 6 GB+ iPhone. The
+  probe already verified the same package and models on the iPhone 18 Pro
+  Max.

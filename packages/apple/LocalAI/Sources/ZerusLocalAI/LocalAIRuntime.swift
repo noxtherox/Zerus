@@ -10,6 +10,12 @@ public struct LocalAICapabilities: Sendable, Equatable {
     public let languageModel: Bool
     /// Why something is unavailable, for Settings.
     public let limitation: String?
+
+    public init(semanticSearch: Bool, languageModel: Bool, limitation: String?) {
+        self.semanticSearch = semanticSearch
+        self.languageModel = languageModel
+        self.limitation = limitation
+    }
 }
 
 /// Owns the loaded MLX models for the app process. Models load lazily from
@@ -48,6 +54,14 @@ public actor LocalAIRuntime {
         self.embeddingSpec = embeddingSpec
         self.languageSpec = languageSpec
         self.defaults = defaults
+        // MLX is not touched here: creating the runtime must be safe on any
+        // device (and the Simulator), before the self-test has passed.
+    }
+
+    private var configuredMLX = false
+    private func configureMLX() {
+        guard !configuredMLX else { return }
+        configuredMLX = true
         MLX.Memory.cacheLimit = 64 << 20
     }
 
@@ -84,6 +98,7 @@ public actor LocalAIRuntime {
         if let embedderLoad { return try await embedderLoad.value }
         guard ensureSelfTest() else { throw Failure.unsupportedDevice(capabilities().limitation ?? "") }
         guard store.state(of: embeddingSpec) == .installed else { throw Failure.notInstalled(embeddingSpec) }
+        configureMLX()
         let spec = embeddingSpec, directory = store.directory(for: spec)
         let task = Task { try await MLXEmbedder(spec: spec, directory: directory) }
         embedderLoad = task
@@ -100,6 +115,7 @@ public actor LocalAIRuntime {
             throw Failure.unsupportedDevice(capabilities().limitation ?? "")
         }
         guard store.state(of: languageSpec) == .installed else { throw Failure.notInstalled(languageSpec) }
+        configureMLX()
         let spec = languageSpec, directory = store.directory(for: spec)
         let task = Task { try await MLXLanguageModel(spec: spec, directory: directory) }
         languageLoad = task
@@ -114,11 +130,13 @@ public actor LocalAIRuntime {
     /// Frees the language model (~1.2–2 GB); call on memory warnings, when
     /// the app goes to the background, or after inactivity.
     public func unloadLanguageModel() {
+        guard loadedLanguageModel != nil else { return }
         loadedLanguageModel = nil
         MLX.Memory.clearCache()
     }
 
     public func unloadAll() {
+        guard loadedLanguageModel != nil || loadedEmbedder != nil else { return }
         loadedLanguageModel = nil
         loadedEmbedder = nil
         MLX.Memory.clearCache()
@@ -152,6 +170,11 @@ public struct LocalAISelfTest {
     }
 
     public mutating func run() {
+        #if targetEnvironment(simulator)
+        // MLX needs a real Apple GPU; the Simulator cannot run it.
+        defaults.set("failed", forKey: key)
+        return
+        #endif
         defaults.set("running", forKey: key)
         defaults.synchronize()
         defaults.set(Self.workload() ? "passed" : "failed", forKey: key)

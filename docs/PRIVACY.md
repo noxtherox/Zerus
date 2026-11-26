@@ -4,6 +4,18 @@ Effective date: 10 September 2026
 
 This policy describes Zerus for Windows, published by noxtherox, including the optional AI features in version 0.3.18.
 
+## Native macOS and iOS apps: on-device AI
+
+The native SwiftUI apps (separate from the Windows release described above) do
+not send notes or questions to an AI provider. Their AI features run entirely
+on your device. The only network use for AI is an optional download, which you
+start in Settings, of two model files from Hugging Face (huggingface.co).
+Hugging Face receives an ordinary download request, including your IP
+address; no account, note content, question or identifier is sent. The models
+and the per-device search index are stored in the app's Application Support
+folder, outside your vault. They are excluded from backups, never synced, and
+removed with **Delete Models**.
+
 ## Your files and local data
 
 Zerus is a local-first Markdown application. Notes, attachments, task information, vault metadata, and conversation history are stored on your device in the folders you choose or in local application storage. Ordinary note editing does not require a Zerus account or upload your vault to a Zerus-operated server.

@@ -7,11 +7,13 @@ extension NSAttributedString.Key {
 
 /// A block attachment fills the current writing column without becoming an image asset.
 final class MacRuleAttachment: NSTextAttachment {
+    /// Follows the editor theme; the editor recaches rule images when it changes.
+    static var strokeColor: NSColor = .separatorColor
     init() {
         super.init(data: nil, ofType: nil)
         bounds = NSRect(x: 0, y: 0, width: 800, height: 22)
         image = NSImage(size: bounds.size, flipped: false) { rect in
-            NSColor.separatorColor.setStroke()
+            MacRuleAttachment.strokeColor.setStroke()
             let path = NSBezierPath(); path.move(to: NSPoint(x: 0, y: rect.midY))
             path.line(to: NSPoint(x: rect.width, y: rect.midY)); path.lineWidth = 1; path.stroke()
             return true

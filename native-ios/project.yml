@@ -19,6 +19,8 @@ packages:
     path: ../packages/apple/ChatGPTCore
   ZerusIOSServices:
     path: ../packages/apple/IOSServices
+  ZerusLocalAI:
+    path: ../packages/apple/LocalAI
 settings:
   base:
     SWIFT_VERSION: '5.0'
@@ -43,6 +45,10 @@ targets:
         product: Markdown
       - package: ZerusIOSServices
       - package: ZerusChatGPTCore
+      - package: ZerusLocalAI
+        product: ZerusLocalAICore
+      - package: ZerusLocalAI
+        product: ZerusLocalAI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zerus.notes
@@ -89,6 +95,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: Capture audio while you dictate a draft message.
         NSSpeechRecognitionUsageDescription: Transcribe your speech on this device into a draft message.
+        # On-device AI: the search index is built while charging.
+        UIBackgroundModes: [processing]
+        BGTaskSchedulerPermittedIdentifiers: [com.zerus.notes.localAI.index]
   ZerusNativeTests:
     type: bundle.unit-test
     platform: iOS

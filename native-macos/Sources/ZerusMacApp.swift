@@ -4,7 +4,7 @@ import AppKit
 @main struct ZerusMacApp: App {
     @NSApplicationDelegateAdaptor(MacAppDelegate.self) private var delegate
     var body: some Scene {
-        WindowGroup(id: "workspace") { MacWindow() }.handlesExternalEvents(matching: ["*"]).defaultSize(width: 1400, height: 850).windowResizability(.contentMinSize).windowStyle(.titleBar).commands { MacCommands() }
+        WindowGroup(id: "workspace") { MacWindow() }.handlesExternalEvents(matching: ["*"]).defaultSize(width: 1400, height: 850).windowResizability(.contentMinSize).windowStyle(.hiddenTitleBar).commands { MacCommands() }
         Settings { MacZoomPresentation { MacSettingsView() }.modifier(MacThemeHost()) }
     }
 }
@@ -14,7 +14,7 @@ struct MacWindow: View {
     @StateObject private var holder = MacWorkspaceHolder()
     private var store: MacWorkspace { holder.store }
     @AppStorage("zerus.mac.appearance") private var appearance = "light"
-    var body: some View { MacZoomViewport { MacWorkspaceView(store: store) }.frame(minWidth: 600, minHeight: 620).modifier(MacThemeHost()).disabled(store.preparingToClose).background(MacWindowCloseProtector(workspace: store).frame(width: 0, height: 0)).preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil) }
+    var body: some View { MacZoomViewport(separatesToolbar: false) { MacWorkspaceView(store: store) }.ignoresSafeArea(.container, edges: .top).frame(minWidth: 600, minHeight: 620).modifier(MacThemeHost()).disabled(store.preparingToClose).background(MacWindowCloseProtector(workspace: store).frame(width: 0, height: 0)).preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil) }
 }
 @MainActor final class MacWorkspaceHolder: ObservableObject { let store = MacWorkspace() }
 final class MacAppDelegate: NSObject, NSApplicationDelegate {
@@ -112,6 +112,7 @@ struct MacCommands: Commands {
             Button("Find in Note") { MacNoteFind.show() }.keyboardShortcut("f", modifiers: [.command, .shift])
             Button("Show Inspector") { store?.inspectorRequest += 1 }.keyboardShortcut("i", modifiers: [.command, .option]).disabled(locked || store?.selection == nil)
             if CloudAIFeature.enabled { Button("AI Chat") { store?.showChat = true }.keyboardShortcut("j").disabled(locked) }
+            else { Button("Ask Your Notes") { store?.showSearch = true }.keyboardShortcut("j").disabled(locked) }
         }
     }
 }

@@ -10,10 +10,12 @@ struct ZerusNativeApp: App {
     @StateObject private var external = NativeExternalNotesModel()
     @Environment(\.scenePhase) private var phase
     @StateObject private var appearance = NativeAppearanceStore.shared
+    init() { NativeLocalAIBackground.register() }
     var body: some Scene {
         WindowGroup("Zerus", id: "workspace") {
             WorkspaceView().environment(vault).environmentObject(external).environmentObject(appearance)
                 .modifier(NativeAppearancePresentation(appearance: appearance))
+                .modifier(NativeLocalAILifecycle(vault: vault))
                 .task { await vault.restore(); await external.restore(); if phase == .active { vault.startForegroundRefresh(); external.startRefresh() } }
                 .onChange(of: phase) { _, value in
                     Task {
@@ -64,7 +66,7 @@ enum NativeNotesRoute: Hashable {
 private struct NativeWorkspaceNavigation: View {
     @Binding var tab: Int
     let compose: () -> Void
-    private let destinations = [(0, "Notes", "square.stack", "notes"), (1, "Tasks", "checkmark.circle", "tasks"), (3, "Ask", "sparkles", "ask"), (4, "Search", "magnifyingglass", "search")].filter { $0.0 != 3 || CloudAIFeature.enabled }
+    private let destinations = [(0, "Notes", "square.stack", "notes"), (1, "Tasks", "checkmark.circle", "tasks"), (3, "Ask", "sparkles", "ask"), (4, "Search", "magnifyingglass", "search")]
     var body: some View {
         HStack(spacing: 2) {
             ForEach(destinations, id: \.0) { value, title, symbol, identifier in
@@ -161,7 +163,11 @@ struct WorkspaceView: View {
                     Tab("Tasks", systemImage: "checkmark.circle", value: 1) { TasksView(open: open, library: showLibrary, settings: { settings = true }).toolbar(.hidden, for: .tabBar) }
                     Tab("Ask", systemImage: "sparkles", value: 3) {
                         Group {
-                        if vault.chatStorageReady { NativeChatView(workspaceID: vault.workspaceID, chat: NativeChat.shared(for: root), searchRequest: askRequest, searchRequestHandled: { askRequest = nil }, library: showLibrary, settings: { settings = true }).id(vault.workspaceID) }
+                        if vault.chatStorageReady, !CloudAIFeature.enabled {
+                            // On-device chat with the notes (docs/local-ai-plan.md).
+                            NativeLocalChatView(chat: NativeChat.shared(for: root), open: open, library: showLibrary, settings: { settings = true }).id(vault.workspaceID)
+                        }
+                        else if vault.chatStorageReady { NativeChatView(workspaceID: vault.workspaceID, chat: NativeChat.shared(for: root), searchRequest: askRequest, searchRequestHandled: { askRequest = nil }, library: showLibrary, settings: { settings = true }).id(vault.workspaceID) }
                         else if let issue = vault.chatStorageIssue { ContentUnavailableView { Label("Conversations unavailable", systemImage: "bubble.left.and.exclamationmark.bubble.right") } description: { Text(issue) } actions: { Button("Retry") { Task { await vault.prepareChatStorage() } }.accessibilityIdentifier("chat.storage.retry") } }
                         else { ProgressView("Opening conversations…") }
                         }.toolbar(.hidden, for: .tabBar)
@@ -589,6 +595,8 @@ struct NoteEditorScreen: View {
     @State private var exporting = false
     @State private var imageManagement = false
     @StateObject private var editorActions = NativeEditorActions()
+    @State private var localAIRequest: NativeLocalAIRequest?
+    @State private var localAIIssue: String?
     @State private var markdownAnalysis = MarkdownText.Analysis()
     private var statusLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
@@ -626,6 +634,20 @@ struct NoteEditorScreen: View {
                     Button("Retry images") { imageRetry = UUID() }.frame(minHeight: 44).accessibilityIdentifier("note.images.retry")
                 }.font(.caption).padding(.horizontal, 24)
             }
+        }
+    }
+    private func startLocalAI(_ kind: LocalAIActionKind, instruction: String = "", autoRun: Bool = false) {
+        do { localAIRequest = try NativeLocalAIRequest.make(kind, session: session, editor: editorActions, instruction: instruction, autoRun: autoRun) }
+        catch { localAIIssue = error.localizedDescription }
+    }
+    /// An edit chosen in Ask for this note: run it once the editor is ready.
+    private func pickUpLocalAI() {
+        guard let handOff = NativeLocalAI.shared.handOff, handOff.path == session.document.path,
+              handOff.workspaceID == vault.workspaceID else { return }
+        NativeLocalAI.shared.handOff = nil
+        Task {
+            for _ in 0 ..< 30 where editorActions.localAISnapshot() == nil { try? await Task.sleep(for: .milliseconds(100)) }
+            startLocalAI(handOff.kind, instruction: handOff.instruction, autoRun: true)
         }
     }
     private func finishAndCloseNote() {
@@ -751,6 +773,7 @@ struct NoteEditorScreen: View {
                         if session.document.fileHub == nil { Button("Attach a document", systemImage: "doc.badge.plus") { fileHubForm = true } }
                         Button("Attach a file", systemImage: "paperclip") { attachmentPicker = true }
                     }
+                    NativeLocalAIMenu { kind in startLocalAI(kind) }
                     Button("Insert note link", systemImage: "link") {
                         insertNoteLink = editorActions.coordinator?.manualNoteLink()
                         linkPicker = insertNoteLink != nil
@@ -771,6 +794,14 @@ struct NoteEditorScreen: View {
             }
         }
         .sheet(isPresented: $history) { NativeHistoryView(session: session) }
+        .sheet(item: $localAIRequest) { request in
+            NativeLocalAIActionView(request: request, session: session, editor: editorActions, openNote: openNote)
+        }
+        .onChange(of: NativeLocalAI.shared.handOff) { pickUpLocalAI() }
+        .alert("On-device AI", isPresented: Binding(get: { localAIIssue != nil }, set: { if !$0 { localAIIssue = nil } })) {
+            Button("OK") { localAIIssue = nil }
+        } message: { Text(localAIIssue ?? "") }
+        .onAppear { pickUpLocalAI() }
         .sheet(isPresented: $clipboardPaste, onDismiss: {
             if let providers = clipboardProviders { clipboardProviders = nil; editorActions.paste(providers) }
         }) { NativeClipboardPasteSheet { clipboardProviders = $0 } }

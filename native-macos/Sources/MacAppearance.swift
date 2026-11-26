@@ -160,10 +160,13 @@ final class MacEditorThemeColors {
     }
     private lazy var text = dynamic(.text)
     private lazy var link = dynamic(.link)
-    func color(_ role: MacThemeRole) -> NSColor { role == .link ? link : text }
-    private func dynamic(_ role: MacThemeRole) -> NSColor {
+    private lazy var accent = dynamic(.accent)
+    /// Horizontal rules use a softened accent so they divide without shouting.
+    private(set) lazy var rule = dynamic(.accent, alpha: 0.45)
+    func color(_ role: MacThemeRole) -> NSColor { role == .link ? link : role == .accent ? accent : text }
+    private func dynamic(_ role: MacThemeRole, alpha: CGFloat = 1) -> NSColor {
         NSColor(name: nil) { [weak self] appearance in
-            let chosen = self?.theme.nsColor(role) ?? role.fallback
+            let chosen = (self?.theme.nsColor(role) ?? role.fallback).withAlphaComponent(alpha)
             var resolved = chosen
             appearance.performAsCurrentDrawingAppearance { resolved = chosen.usingColorSpace(.sRGB) ?? chosen }
             return resolved
@@ -183,8 +186,8 @@ struct MacThemeHost: ViewModifier {
         let dark = appearance == "dark" || appearance != "light" && scheme == .dark
         let theme = MacTheme(palette: dark ? preferences?.darkTheme : preferences?.lightTheme)
         content.environment(\.macTheme, theme).tint(theme.color(.accent))
-            .toolbarBackground(theme.color(.sidebarBg), for: .windowToolbar)
-            .toolbarBackground(.visible, for: .windowToolbar)
+            // The workspace draws its own title bar; AppKit's stays transparent over it.
+            .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             .background(MacThemeWindowBackground(color: theme.nsColor(.sidebarBg)).frame(width: 0, height: 0))
     }
 }
