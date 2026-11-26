@@ -4481,7 +4481,7 @@ struct MacRichEditor: NSViewRepresentable {
                         let backspace = selected.length == 0 && selected.location == body && NSMaxRange(affectedCharRange) == body
                         let markerSelected = selected == NSRange(location: paragraph.location, length: prefix.display.utf16.count) && affectedCharRange == selected
                         if backspace || markerSelected {
-                            switch MacListEditing.lift(original, paragraph: paragraph) {
+                            switch MacListEditing.backspaceLift(original, paragraph: paragraph) {
                             case .changed(let edit): commitListDeletion(edit, original: original, range: paragraph, name: "Lift list item")
                             case .refused(let issue): if let issue { parent.onPasteError(issue) } else { NSSound.beep() }
                             case .notList, .unchanged: break
