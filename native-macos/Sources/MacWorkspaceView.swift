@@ -112,6 +112,12 @@ struct MacWorkspaceView: View {
         .onChange(of: store.root) { _, _ in managingVaults = false }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in Task { await store.refresh() } }
         .alert("Zerus", isPresented: Binding(get: { store.issue != nil }, set: { if !$0 { store.issue = nil } })) { Button("OK") { store.issue = nil } } message: { Text(store.issue ?? "") }
+        .alert("A note with this name already exists", isPresented: Binding(get: { store.moveConflict != nil }, set: { if !$0 { store.moveConflict = nil } }), presenting: store.moveConflict) { conflict in
+            let name = { (path: String) in ((path as NSString).lastPathComponent as NSString).deletingPathExtension }
+            if let titled = conflict.fromTitle { Button("Name it “\(name(titled))”") { Task { await store.resolveMoveConflict(conflict, destination: titled) } } }
+            Button("Keep both as “\(name(conflict.keepBoth))”") { Task { await store.resolveMoveConflict(conflict, destination: conflict.keepBoth) } }
+            Button("Cancel", role: .cancel) { store.moveConflict = nil }
+        } message: { conflict in Text("“\(conflict.existing)” is already taken. Choose a name for the moved note. The existing note won’t be changed.") }
         .macSheet(item: $prompt) { item in promptView(item) }
         .macSheet(isPresented: $store.showNoteRecovery) { MacNoteRecoveryView(workspace: store) }
         .macSheet(isPresented: $store.showSearch) { MacSearchView(workspace: store) }

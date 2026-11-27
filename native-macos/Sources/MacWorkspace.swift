@@ -159,6 +159,8 @@ final class MacWorkspace {
     private var startupTaskData: Data?
     @ObservationIgnored private var cacheWrite: Task<Void, Never>?
     var issue: String?
+    /// A single-note move waiting for the person to choose a free filename.
+    var moveConflict: NativeMoveConflict?
     var saveStatus: String {
         get { draftState.saveStatus }
         set { if draftState.saveStatus != newValue { draftState.saveStatus = newValue } }
@@ -1549,12 +1551,26 @@ final class MacWorkspace {
         guard await save(), let io else { return }
         do {
             let snapshot = try await io.relationDefinitionSnapshot()
-            let path = (folder.isEmpty ? "" : folder + "/") + (note.path as NSString).lastPathComponent
-            let plan = try await io.prepareMove(snapshot, source: note.path, destination: path)
-            let moved = try await io.applyMacNoteMove(plan, source: note.path, destination: path)
-            apply(moved.snapshot); selection = nil; baseline = nil; tabs.removeAll { $0 == .note(note.path) }; await openNote(path)
-            if !moved.warnings.isEmpty { issue = moved.warnings.map(\.reason).joined(separator: "\n") }
+            let taken = Set(snapshot.notes.map { $0.path.lowercased() })
+            let title = notes.first { $0.path == note.path }?.title ?? note.title
+            // The filename is taken there: let the person pick a name instead of failing.
+            if let conflict = NativeMoveDestination.conflict(source: note.path, folder: folder, title: title, taken: { taken.contains($0.lowercased()) }) { moveConflict = conflict; return }
+            try await move(note, to: (folder.isEmpty ? "" : folder + "/") + (note.path as NSString).lastPathComponent, snapshot: snapshot)
         } catch { issue = error.localizedDescription }
+    }
+    /// Finishes a move after the person chose a name for a taken filename.
+    func resolveMoveConflict(_ conflict: NativeMoveConflict, destination: String) async {
+        if moveConflict?.id == conflict.id { moveConflict = nil }
+        guard await save(), let io, let note = notes.first(where: { $0.path == conflict.source && !$0.trashed }) else { return }
+        do { try await move(note, to: destination, snapshot: try await io.relationDefinitionSnapshot()) }
+        catch { issue = error.localizedDescription }
+    }
+    private func move(_ note: NoteDocument, to path: String, snapshot: NativeRelationDefinitionSnapshot) async throws {
+        guard let io else { return }
+        let plan = try await io.prepareMove(snapshot, source: note.path, destination: path)
+        let moved = try await io.applyMacNoteMove(plan, source: note.path, destination: path)
+        apply(moved.snapshot); selection = nil; baseline = nil; tabs.removeAll { $0 == .note(note.path) }; await openNote(path)
+        if !moved.warnings.isEmpty { issue = moved.warnings.map(\.reason).joined(separator: "\n") }
     }
     func commitBulk(_ plan: NativeBulkPlan) async throws {
         guard plan.snapshot.source.schema.root == root, plan.snapshot.source.schema.workspaceID == generation, let io, await save(), plan.snapshot.source.schema.workspaceID == generation else { throw VaultFailure(message: "The vault changed or saving is blocked. Review the organization change again.") }

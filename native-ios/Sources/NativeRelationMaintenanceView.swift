@@ -11,6 +11,7 @@ struct NativeMoveNoteView: View {
     @State private var busy = false
     @State private var failure: String?
     @State private var plan: NativeRelationMaintenancePlan?
+    @State private var conflict: NativeMoveConflict?
     private var folders: [String] {
         var result = Set(["Inbox"])
         for folder in vault.folders {
@@ -47,8 +48,14 @@ struct NativeMoveNoteView: View {
             .interactiveDismissDisabled(busy)
             .task { await reload() }
             .sheet(item: $plan) { plan in NativeRelationMaintenanceReview(plan: plan) { self.plan = nil; moved() } }
+            .confirmationDialog("A note with this name already exists", isPresented: Binding(get: { conflict != nil }, set: { if !$0 { conflict = nil } }), titleVisibility: .visible, presenting: conflict) { conflict in
+                if let titled = conflict.fromTitle { Button("Name it “\(Self.name(titled))”") { review(titled) }.accessibilityIdentifier("move.conflict.title") }
+                Button("Keep both as “\(Self.name(conflict.keepBoth))”") { review(conflict.keepBoth) }.accessibilityIdentifier("move.conflict.keepBoth")
+                Button("Cancel", role: .cancel) {}
+            } message: { conflict in Text("“\(conflict.existing)” is already taken. Choose a name for the moved note. The existing note won’t be changed.") }
         }
     }
+    private static func name(_ path: String) -> String { ((path as NSString).lastPathComponent as NSString).deletingPathExtension }
     private func reload() async {
         guard workspace == vault.workspaceID else { return }
         busy = true
@@ -66,7 +73,16 @@ struct NativeMoveNoteView: View {
             var number = 2
             while snapshot.notes.contains(where: { $0.path.caseInsensitiveCompare(prefix + filename) == .orderedSame }) { filename = stem + " \(number).md"; number += 1 }
         }
-        let destination = prefix + filename
+        // The filename is taken there: let the person pick a name instead of failing.
+        if !notePath.hasPrefix(".zerus/links/"), let note = snapshot.notes.first(where: { $0.path == notePath }),
+           let conflict = NativeMoveDestination.conflict(source: source, folder: String(prefix.dropLast()), title: note.title, taken: { path in snapshot.notes.contains { $0.path.caseInsensitiveCompare(path) == .orderedSame } }) {
+            self.conflict = conflict; return
+        }
+        review(prefix + filename)
+    }
+    private func review(_ destination: String) {
+        guard let snapshot else { return }
+        let source = notePath
         busy = true; failure = nil
         Task {
             defer { busy = false }
