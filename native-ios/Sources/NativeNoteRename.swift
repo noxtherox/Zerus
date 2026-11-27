@@ -109,3 +109,45 @@ extension VaultFiles {
         return NativeNoteRenamePlan(title: title, maintenance: maintenance, taskLinksUpdated: taskCount)
     }
 }
+
+/// A move whose filename is already taken in the destination folder, with the
+/// names the person can choose instead. An existing note is never replaced.
+struct NativeMoveConflict: Identifiable, Sendable {
+    let id = UUID()
+    let source: String
+    /// The taken path, e.g. `Notes/Untitled.md`.
+    let existing: String
+    /// The original name with the next free number, e.g. `Notes/Untitled 2.md`.
+    let keepBoth: String
+    /// A free name from the note's title, or nil when the title gives the same name.
+    let fromTitle: String?
+}
+
+enum NativeMoveDestination {
+    /// `path`, or the first numbered variant (`Name 2.md`, `Name 3.md`, …) not taken.
+    static func free(_ path: String, taken: (String) -> Bool) -> String {
+        guard taken(path) else { return path }
+        let directory = (path as NSString).deletingLastPathComponent, name = (path as NSString).lastPathComponent
+        let ext = (name as NSString).pathExtension, stem = (name as NSString).deletingPathExtension
+        var number = 2
+        while true {
+            let file = "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext)
+            let candidate = directory.isEmpty ? file : directory + "/" + file
+            if !taken(candidate) { return candidate }
+            number += 1
+        }
+    }
+    /// The conflict for moving `source` into `folder` ("" is the vault root), or
+    /// nil when its filename is free there. `taken` must compare case-insensitively.
+    static func conflict(source: String, folder: String, title: String, taken: (String) -> Bool) -> NativeMoveConflict? {
+        let prefix = folder.isEmpty ? "" : folder + "/", name = (source as NSString).lastPathComponent
+        let requested = prefix + name
+        guard requested.caseInsensitiveCompare(source) != .orderedSame, taken(requested) else { return nil }
+        var fromTitle: String?
+        if let clean = try? NativeNoteRename.cleanTitle(title) {
+            let suggested = NativeNoteRename.suggestedFilename(clean, path: source)
+            if suggested.caseInsensitiveCompare(name) != .orderedSame { fromTitle = free(prefix + suggested, taken: taken) }
+        }
+        return .init(source: source, existing: requested, keepBoth: free(requested, taken: taken), fromTitle: fromTitle)
+    }
+}
