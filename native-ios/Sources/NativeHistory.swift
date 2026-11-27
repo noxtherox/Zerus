@@ -254,7 +254,9 @@ extension VaultFiles {
 
     /// Builds the shared web-compatible history payload in the same journal as
     /// the note. An interrupted save cannot leave a note without its baseline.
-    func includingAutomaticHistory(_ original: [VaultFileChange], source: String, observations: [String: NativeHistoryObservation] = [:]) throws -> [VaultFileChange] {
+    /// `labels` names the new automatic version of a note path, e.g. why a
+    /// paired relation change touched it. Baseline versions keep their label.
+    func includingAutomaticHistory(_ original: [VaultFileChange], source: String, observations: [String: NativeHistoryObservation] = [:], labels: [String: String] = [:]) throws -> [VaultFileChange] {
         var result = original, known = Set(original.map(\.path))
         for change in original where (change.before != change.after || observations[change.path] != nil) && (change.path as NSString).pathExtension.lowercased() == "md" && !change.path.hasPrefix(".zerus/history/") {
             guard let beforeData = change.before, let afterData = change.after, let expected = NoteDocument.decodeUTF8(beforeData), let after = NoteDocument.decodeUTF8(afterData), let noteID = NoteDocument(path: change.path, content: after, modified: Date()).stableID, NativeHistory.identity(noteID) else { continue }
@@ -323,11 +325,12 @@ extension VaultFiles {
                 var parent = snapshot.versions.first { $0.hash == NativeHistory.hash(before) && $0.content != nil }
                 func entry(_ text: String, id: String, parentID: String?, depth: Int, time: String, baseline: Bool) throws -> NativeHistoryVersion {
                     let checkpoint = depth % 3 == 0
-                    var object: [String: Any] = ["schema": 1, "id": id, "noteId": noteID, "timestamp": time, "source": source, "originId": origin, "parentId": parentID as Any? ?? NSNull(), "depth": depth, "kind": checkpoint ? "checkpoint" : "delta", "baseHash": checkpoint ? NSNull() : NativeHistory.hash(before) as Any, "resultHash": NativeHistory.hash(text), "images": try images(text, historical: baseline), "kept": false, "label": baseline ? "History started" as Any : NSNull()]
+                    let label = baseline ? "History started" : labels[change.path]
+                    var object: [String: Any] = ["schema": 1, "id": id, "noteId": noteID, "timestamp": time, "source": source, "originId": origin, "parentId": parentID as Any? ?? NSNull(), "depth": depth, "kind": checkpoint ? "checkpoint" : "delta", "baseHash": checkpoint ? NSNull() : NativeHistory.hash(before) as Any, "resultHash": NativeHistory.hash(text), "images": try images(text, historical: baseline), "kept": false, "label": label as Any? ?? NSNull()]
                     if checkpoint { object["content"] = text } else { object["delta"] = NativeHistory.delta(before, text) }
                     let bytes = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes]), path = ".zerus/history/notes/" + noteID + "/" + id + ".json"
                     additions.append(.init(path: path, before: nil, after: bytes))
-                    return .init(path: path, bytes: bytes, id: id, parentID: parentID, timestamp: time, source: source, kept: false, label: baseline ? "History started" : nil, checkpoint: checkpoint, depth: depth, hash: NativeHistory.hash(text), content: text)
+                    return .init(path: path, bytes: bytes, id: id, parentID: parentID, timestamp: time, source: source, kept: false, label: label, checkpoint: checkpoint, depth: depth, hash: NativeHistory.hash(text), content: text)
                 }
                 let baselineTime = alreadyRecorded
                     ? NativeRevisionIndex.timestamp(min(observation!.before.modified, (latest.flatMap { NativeRevisionIndex.date($0.timestamp) } ?? Date()).addingTimeInterval(-0.001)))

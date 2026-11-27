@@ -45,6 +45,31 @@ final class NativeRelationTests: XCTestCase {
         XCTAssertEqual(clearedA, Data(a.utf8)); XCTAssertEqual(clearedC, Data(c.utf8))
     }
 
+    func testRemovingAndRelinkingLabelsAutomaticHistoryOnBothNotes() async throws {
+        let io = VaultFiles(root: root!)
+        let schema = #"{"Tasks":[{"name":"Epic","type":"relation","relationTypeKey":"Epics","relationPairId":"pair"}],"Epics":[{"name":"Tasks","type":"relation","relationTypeKey":"Tasks","relationPairId":"pair","relationMultiple":true}]}"#
+        let a = "---\nzerus-id: t1\n---\n# Task One\n", b = "---\nzerus-id: e1\nTasks: [\"zerus:t9|Other\"]\n---\n# Epic One\n"
+        for (path, text) in [(".zerus/properties.json", schema), ("Tasks/A.md", a), ("Epics/B.md", b)] { try await io.write(path, data: Data(text.utf8), expected: nil) }
+        _ = try await io.applyRelation(io.relationSnapshot(notePath: "Tasks/A.md", name: "Epic").plan(selected: ["Epics/B.md"], unresolved: []))
+        let linkedA = try await io.read("Tasks/A.md"), linkedB = try await io.read("Epics/B.md")
+        let removal = try await io.relationSnapshot(notePath: "Tasks/A.md", name: "Epic").plan(selected: [], unresolved: [])
+        _ = try await io.applyRelation(removal, historyLabels: ["Tasks/A.md": "Removed “Epic One” from Epic", "Epics/B.md": "Unlinked from “Task One” (Epic)"])
+        let removedA = try await io.read("Tasks/A.md"), removedB = try await io.read("Epics/B.md")
+        XCTAssertFalse(String(decoding: removedA, as: UTF8.self).contains("Epic:"))
+        XCTAssertEqual(String(decoding: removedB, as: UTF8.self), b, "The inverse keeps its other links")
+        let historyA = try await io.historySnapshot(notePath: "Tasks/A.md"), historyB = try await io.historySnapshot(notePath: "Epics/B.md")
+        XCTAssertTrue(historyA.versions.contains { $0.label == "Removed “Epic One” from Epic" })
+        XCTAssertTrue(historyB.versions.contains { $0.label == "Unlinked from “Task One” (Epic)" })
+        // Unlabeled saves stay unlabeled; only the baseline is named.
+        XCTAssertEqual(Set(historyA.versions.compactMap(\.label)), ["History started", "Removed “Epic One” from Epic"])
+        let relink = try await io.relationSnapshot(notePath: "Tasks/A.md", name: "Epic").plan(selected: ["Epics/B.md"], unresolved: [])
+        _ = try await io.applyRelation(relink, historyLabels: ["Tasks/A.md": "Restored “Epic One” to Epic", "Epics/B.md": "Relinked to “Task One” (Epic)"])
+        let restoredA = try await io.read("Tasks/A.md"), restoredB = try await io.read("Epics/B.md")
+        XCTAssertEqual(restoredA, linkedA); XCTAssertEqual(restoredB, linkedB)
+        let relinkedB = try await io.historySnapshot(notePath: "Epics/B.md")
+        XCTAssertTrue(relinkedB.versions.contains { $0.label == "Relinked to “Task One” (Epic)" })
+    }
+
     func testPairedInverseRetainsOtherLinksAndRejectsStaleNotesAndSchemas() async throws {
         let io = VaultFiles(root: root!)
         let schema = #"{"Tasks":[{"name":"Epic","type":"relation","relationTypeKey":"Epics","relationPairId":"shared-pair"}],"Epics":[{"name":"Tasks","type":"relation","relationTypeKey":"Tasks","relationPairId":"shared-pair","relationMultiple":false,"foreignSetting":42}]}"#

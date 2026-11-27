@@ -177,6 +177,9 @@ struct MacInspectorNoteLink: View {
     var available = true
     /// The linked note's folder icon; notes in folders without one keep the document symbol.
     var icon: String?
+    /// Shown as a trash button while hovering; nil for read-only rows such as backlinks.
+    var removeHelp = "Remove relation"
+    var remove: (() -> Void)?
     let open: () -> Void
     @State private var hovering = false
     var body: some View {
@@ -192,12 +195,57 @@ struct MacInspectorNoteLink: View {
                     if let detail, !detail.isEmpty { Text(detail).macFont(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle) }
                 }
                 Spacer(minLength: 0)
+                // Reserve the trash button's width so titles do not reflow on hover.
+                if remove != nil { Color.clear.frame(width: 20, height: 1) }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
             .background(Color.primary.opacity(hovering ? 0.08 : 0.04), in: RoundedRectangle(cornerRadius: 7))
             .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.07)))
             .contentShape(Rectangle())
-        }.buttonStyle(.plain).disabled(!available).onHover { hovering = $0 }
+        }.buttonStyle(.plain).disabled(!available)
+        // Outside the (possibly disabled) open button so unavailable links can be removed too.
+        .overlay(alignment: .trailing) {
+            if let remove, hovering { MacInspectorRemoveButton(help: removeHelp, action: remove).padding(.trailing, 6) }
+        }
+        .onHover { hovering = $0 }
+    }
+}
+
+private struct MacInspectorRemoveButton: View {
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "trash").macFont(.system(size: 11, weight: .medium))
+                .frame(width: 20, height: 20)
+                .background(Color.primary.opacity(hovering ? 0.1 : 0), in: RoundedRectangle(cornerRadius: 5))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).foregroundStyle(hovering ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+            .onHover { hovering = $0 }.help(help).accessibilityLabel(help)
+    }
+}
+
+/// Shown after a relation is removed; Undo relinks both notes together.
+struct MacRelationUndoBanner: View {
+    let text: String
+    let disabled: Bool
+    let undo: () -> Void
+    let dismiss: () -> Void
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "trash").macFont(.system(size: 10.5)).foregroundStyle(.secondary)
+            Text(text).macFont(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+            Spacer(minLength: 4)
+            Button("Undo", action: undo).buttonStyle(.plain).macFont(.system(size: 12, weight: .semibold)).foregroundStyle(Color.accentColor)
+                .disabled(disabled).help("Link this note again on both sides")
+            Button(action: dismiss) { Image(systemName: "xmark").macFont(.system(size: 9.5, weight: .semibold)).frame(width: 16, height: 16).contentShape(Rectangle()) }
+                .buttonStyle(.plain).foregroundStyle(.tertiary).help("Dismiss").accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
+        .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.primary.opacity(0.07)))
+        .padding(.bottom, 4)
     }
 }
 

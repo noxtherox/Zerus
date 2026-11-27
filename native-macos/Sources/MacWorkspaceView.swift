@@ -31,6 +31,7 @@ struct MacWorkspaceView: View {
     @State private var secondInput = ""
     @State private var typedProperty: MacPropertyEdit?
     @State private var relationName: String?
+    @State private var relationRemoval: MacRelationRemoval?
     @State private var schemaOwner: String?
     @State private var propertyName = ""
     @State private var propertyValue = ""
@@ -677,6 +678,10 @@ struct MacWorkspaceView: View {
         if let note = store.current {
             let frontmatter = NativeFrontmatter(note.content)
             let relations = currentDefinitions.filter { !$0.hidden && $0.type == .relation }
+            if let undo = store.relationUndo, undo.workspaceID == store.workspaceID, undo.sourcePath == note.path {
+                MacRelationUndoBanner(text: "Removed “\(undo.title)” from \(undo.relation)", disabled: store.busy,
+                                      undo: { Task { await store.undoRelationRemoval() } }, dismiss: { store.relationUndo = nil })
+            }
             ForEach(relations) { definition in
                 let targets = frontmatter.entry(definition.name)?.value?.selections ?? []
                 VStack(alignment: .leading, spacing: 4) {
@@ -688,7 +693,10 @@ struct MacWorkspaceView: View {
                         let reference = NoteReference(wikilink: "[[" + text + "]]")
                         let found = reference?.targets(in: store.notes) ?? []
                         let target = found.count == 1 ? found[0] : nil
-                        MacInspectorNoteLink(title: target?.title ?? (reference?.explicitLabel == true ? reference!.label : text), detail: target?.folder, available: target != nil, icon: target.flatMap { store.folderIcon($0.folder) }) {
+                        let title = target?.title ?? (reference?.explicitLabel == true ? reference!.label : text)
+                        MacInspectorNoteLink(title: title, detail: target?.folder, available: target != nil, icon: target.flatMap { store.folderIcon($0.folder) },
+                                             removeHelp: "Remove from " + definition.name,
+                                             remove: store.busy ? nil : { Task { relationRemoval = await store.prepareRelationRemoval(definition.name, reference: text, title: title) } }) {
                             if let target { Task { await store.openNote(target.path) } }
                         }
                     }
@@ -701,7 +709,18 @@ struct MacWorkspaceView: View {
                     MacInspectorNoteLink(title: linked.title, detail: linked.folder, icon: store.folderIcon(linked.folder)) { Task { await store.openNote(linked.path) } }
                 }
             }
+            .confirmationDialog("Remove relation?", isPresented: Binding(get: { relationRemoval != nil }, set: { if !$0 { relationRemoval = nil } })) {
+                Button("Remove", role: .destructive) { if let removal = relationRemoval { Task { await store.commitRelationRemoval(removal) } } }
+            } message: { Text(relationRemovalMessage) }
         }
+    }
+    private var relationRemovalMessage: String {
+        guard let removal = relationRemoval else { return "" }
+        var text = removal.resolved
+            ? "“\(removal.title)” will be removed from \(removal.relation). The matching link back to this note on “\(removal.title)” is removed too. Neither note is deleted, and you can undo this for both notes afterwards."
+            : "The unavailable link “\(removal.title)” will be removed from \(removal.relation)."
+        if !removal.otherChanges.isEmpty { text += "\n\nThese notes are also updated to keep their paired links consistent:\n" + removal.otherChanges.joined(separator: "\n") }
+        return text
     }
     private func inspectorType(_ definition: NativePropertyDefinition?, value: NativePropertyValue?) -> NativePropertyType {
         if let type = definition?.type, type != .unsupported { return type }

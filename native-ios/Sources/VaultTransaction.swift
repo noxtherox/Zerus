@@ -79,13 +79,13 @@ private final class TransactionResult: @unchecked Sendable {
 }
 
 extension VaultFiles {
-    func applyTransaction(_ changes: [VaultFileChange], historySource: String = "mobile", historyCleanupSnapshot: NativeHistoryMaintenanceSnapshot? = nil, reading: [URL] = [], selectedReading: [NativeFileLease] = [], preservingRemoteBytes: Bool = false, validate: @escaping @Sendable () throws -> Void = {}) throws {
+    func applyTransaction(_ changes: [VaultFileChange], historySource: String = "mobile", historyLabels: [String: String] = [:], historyCleanupSnapshot: NativeHistoryMaintenanceSnapshot? = nil, reading: [URL] = [], selectedReading: [NativeFileLease] = [], preservingRemoteBytes: Bool = false, validate: @escaping @Sendable () throws -> Void = {}) throws {
         guard !changes.isEmpty else { return }
         guard Set(changes.map(\.path)).count == changes.count else { throw VaultFailure(message: "A file appears more than once in this change.") }
         try recoverTransactions()
         // A replicated snapshot already contains its remote indexes/history.
         // Deriving them again would change the bytes being synchronized.
-        var preparedChanges = try preservingRemoteBytes ? changes : includingAutomaticHistory(includingSavedLinkIndex(changes), source: historySource)
+        var preparedChanges = try preservingRemoteBytes ? changes : includingAutomaticHistory(includingSavedLinkIndex(changes), source: historySource, labels: historyLabels)
         var cleanupSnapshot = historyCleanupSnapshot
         let removedRecords = preparedChanges.filter { $0.path.hasPrefix(".zerus/history/notes/") && $0.before != nil && $0.after == nil }
         // Removing records can orphan only the blobs those records listed.

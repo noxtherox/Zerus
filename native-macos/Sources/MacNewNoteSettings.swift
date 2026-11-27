@@ -83,46 +83,120 @@ struct MacNewNoteSettingsView: View {
 struct MacNewNoteSheet: View {
     @Bindable var workspace: MacWorkspace
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.macTheme) private var theme
     @State private var title = ""
     @State private var folder: String
+    @State private var collapsed: Set<String>
     @State private var creating = false
-    @FocusState private var titleFocused: Bool
+    @FocusState private var focus: Field?
+    private enum Field: Hashable { case title, tree }
     private let workspaceID: UUID
     init(workspace: MacWorkspace) {
         self.workspace = workspace
         workspaceID = workspace.workspaceID
         let current = workspace.folderCollection && MacNewNotePreferences.ordinary(workspace.destination) ? workspace.destination : workspace.defaultNoteFolder
         _folder = State(initialValue: current)
+        // Mirror the sidebar's collapsed folders, but always reveal the
+        // preselected destination.
+        _collapsed = State(initialValue: workspace.collapsedFolders.filter { !MacFolderOrdering.within(current, $0) || current == $0 })
     }
-    private var options: [String] { Array(Set(workspace.defaultNoteFolderOptions + [folder])).sorted { $0.localizedStandardCompare($1) == .orderedAscending } }
+    /// Every destination plus its ancestors, in the sidebar's order.
+    private var tree: [String] {
+        var paths = Set(workspace.defaultNoteFolderOptions + [folder])
+        for path in paths {
+            var parts = path.split(separator: "/").map(String.init)
+            while parts.count > 1 { parts.removeLast(); paths.insert(parts.joined(separator: "/")) }
+        }
+        return MacFolderOrdering(folders: Array(paths), preference: workspace.orderedFolders).ordered
+    }
+    private var visible: [String] {
+        tree.filter { path in !collapsed.contains { path.hasPrefix($0 + "/") } }
+    }
+    private func hasChildren(_ path: String, in all: [String]) -> Bool { all.contains { $0.hasPrefix(path + "/") } }
+    private var text: Color { theme.color(.text) }
+    private var accent: Color { theme.color(.accent) }
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        let all = tree, rows = visible
+        VStack(alignment: .leading, spacing: 14) {
             Text("New note").macFont(.title2.bold())
-            TextField("Title", text: $title, prompt: Text("Untitled")).textFieldStyle(.roundedBorder).focused($titleFocused).onSubmit(create)
+            TextField("Title", text: $title, prompt: Text("Untitled").foregroundStyle(text.opacity(0.4)))
+                .textFieldStyle(.plain).focused($focus, equals: .title).onSubmit(create)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(text.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(focus == .title ? accent.opacity(0.8) : text.opacity(0.15), lineWidth: focus == .title ? 2 : 1))
+                .onKeyPress(.downArrow) { move(1, rows); return .handled }
+                .onKeyPress(.upArrow) { move(-1, rows); return .handled }
             Text("Folder").macFont(.headline)
             ScrollViewReader { proxy in
-                List(options, id: \.self, selection: Binding(get: { Optional(folder) }, set: { if let value = $0 { folder = value } })) { option in
-                    HStack(spacing: 8) {
-                        MacFolderIcon(value: workspace.folderIcon(option)).foregroundStyle(.secondary).frame(width: 18).accessibilityHidden(true)
-                        Text(option.replacingOccurrences(of: "/", with: " / "))
-                        Spacer()
-                        if option == workspace.defaultNoteFolder { Text("Default").macFont(.caption).foregroundStyle(.secondary) }
-                    }.tag(option).contentShape(Rectangle())
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(rows, id: \.self) { path in row(path, expandable: hasChildren(path, in: all)).id(path) }
+                    }.padding(5)
                 }
-                .listStyle(.bordered(alternatesRowBackgrounds: false)).frame(height: 240)
+                .frame(height: 260)
+                .background(text.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focus == .tree ? accent.opacity(0.6) : text.opacity(0.12)))
+                .focusable().focused($focus, equals: .tree).focusEffectDisabled()
+                .onKeyPress(.downArrow) { move(1, rows); return .handled }
+                .onKeyPress(.upArrow) { move(-1, rows); return .handled }
+                .onKeyPress(.rightArrow) { setCollapsed(folder, false, all); return .handled }
+                .onKeyPress(.leftArrow) {
+                    if hasChildren(folder, in: all), !collapsed.contains(folder) { collapsed.insert(folder) }
+                    else if let slash = folder.lastIndex(of: "/") { folder = String(folder[..<slash]) }
+                    return .handled
+                }
                 .onAppear { proxy.scrollTo(folder, anchor: .center) }
+                .onChange(of: folder) { _, value in withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(value) } }
             }
             if workspace.workspaceID != workspaceID { Text("The vault changed. Close and try again.").macFont(.caption).foregroundStyle(.red) }
             HStack {
                 if creating { ProgressView().controlSize(.small) }
+                Text(folder.replacingOccurrences(of: "/", with: " › ")).macFont(.caption).foregroundStyle(text.opacity(0.55)).lineLimit(1).truncationMode(.head)
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Create", action: create).keyboardShortcut(.defaultAction)
+                Button("Create", action: create).keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent).tint(accent)
                     .disabled(creating || workspace.busy || workspace.workspaceID != workspaceID)
             }
         }
-        .padding(24).frame(width: 420)
-        .onAppear { titleFocused = true }
+        .foregroundStyle(text)
+        .padding(24).frame(width: 440)
+        .background(theme.color(.surface))
+        .onAppear { focus = .title }
+    }
+    private func row(_ path: String, expandable: Bool) -> some View {
+        let selected = path == folder
+        let depth = path.filter { $0 == "/" }.count
+        return HStack(spacing: 0) {
+            Button { setCollapsed(path, !collapsed.contains(path), tree) } label: {
+                Image(systemName: collapsed.contains(path) ? "chevron.right" : "chevron.down")
+                    .macFont(.system(size: 9, weight: .semibold)).foregroundStyle(text.opacity(0.5))
+                    .frame(width: 18).frame(maxHeight: .infinity).contentShape(Rectangle())
+            }.buttonStyle(MacBoxButtonStyle()).disabled(!expandable).opacity(expandable ? 1 : 0)
+                .accessibilityLabel((collapsed.contains(path) ? "Expand " : "Collapse ") + path)
+            Button { folder = path } label: {
+                HStack(spacing: 7) {
+                    MacFolderIcon(value: workspace.folderIcon(path), size: 15).foregroundStyle(selected ? accent : text.opacity(0.6))
+                    Text((path as NSString).lastPathComponent).lineLimit(1)
+                    Spacer(minLength: 4)
+                    if path == workspace.defaultNoteFolder { Text("Default").macFont(.caption).foregroundStyle(text.opacity(0.5)) }
+                }.padding(.vertical, 5).padding(.trailing, 8).contentShape(Rectangle())
+            }.buttonStyle(MacBoxButtonStyle()).accessibilityAddTraits(selected ? .isSelected : [])
+                .simultaneousGesture(TapGesture(count: 2).onEnded { folder = path; create() })
+        }
+        .padding(.leading, CGFloat(depth) * 14)
+        .background(selected ? accent.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 6))
+    }
+    private func move(_ step: Int, _ rows: [String]) {
+        guard !rows.isEmpty else { return }
+        let index = rows.firstIndex(of: folder) ?? (step > 0 ? -1 : rows.count)
+        folder = rows[max(0, min(rows.count - 1, index + step))]
+    }
+    private func setCollapsed(_ path: String, _ value: Bool, _ all: [String]) {
+        guard hasChildren(path, in: all) else { return }
+        if value {
+            collapsed.insert(path)
+            if folder.hasPrefix(path + "/") { folder = path }
+        } else { collapsed.remove(path) }
     }
     private func create() {
         guard !creating, workspace.workspaceID == workspaceID else { return }

@@ -4249,15 +4249,21 @@ struct MacRichEditor: NSViewRepresentable {
             guard view.selectedRange().length == 0, !view.string.isEmpty else { return }
             let cursor = view.selectedRange().location, raw = view.string as NSString
             let paragraph = raw.paragraphRange(for: NSRange(location: max(0, cursor - 1), length: 0))
-            let value = raw.substring(with: paragraph).trimmingCharacters(in: .newlines)
-            guard cursor == paragraph.location + (value as NSString).length else { return }
+            let line = raw.substring(with: paragraph).trimmingCharacters(in: .newlines) as NSString
+            let headLength = cursor - paragraph.location
+            guard headLength > 0, headLength <= line.length else { return }
+            // The typed prefix is the text before the caret. A non-empty body
+            // after it means the user is restyling an existing line, which
+            // only a just-typed space may trigger.
+            let value = line.substring(to: headLength), body = line.substring(from: headLength)
+            if !body.isEmpty, typedCharacter != " " || !value.hasSuffix(" ") { return }
             let previousAttributes = view.attributedString().attributes(at: min(paragraph.location, raw.length - 1), effectiveRange: nil)
             // Block shortcuts target flat list text. Text inside an owned
             // heading, quote or explicit paragraph must not replace its item.
             if let context = previousAttributes[.macListContext] as? MacListContext,
                !context.suffix.isEmpty || context.blockParagraph { return }
             let currentBlock = previousAttributes[.macBlock] as? String ?? ""
-            if MacBlockPrefix(currentBlock)?.list != true, MacBlockPrefix(currentBlock)?.heading != true,
+            if body.isEmpty, MacBlockPrefix(currentBlock)?.list != true, MacBlockPrefix(currentBlock)?.heading != true,
                value.hasSuffix(" "), value.range(of: #"^(---|\*\*\*|___) $"#, options: .regularExpression) != nil {
                 let original = view.attributedString(), output = NSMutableAttributedString(attributedString: original)
                 let attrs = original.attributes(at: paragraph.location, effectiveRange: nil)
@@ -4274,8 +4280,26 @@ struct MacRichEditor: NSViewRepresentable {
             var block: String?
             if currentBlock.isEmpty, let prefix = MacBlockPrefix(value, inheritedQuoteIndentation: false), prefix.source == value { block = value }
             else if let current = MacBlockPrefix(currentBlock), !current.list, !current.heading, let prefix = MacBlockPrefix(value, inheritedQuoteIndentation: false), prefix.source == value { block = currentBlock + value }
+            else if let current = MacBlockPrefix(currentBlock), current.heading, let prefix = MacBlockPrefix(value, inheritedQuoteIndentation: false), prefix.source == value, !prefix.marker.isEmpty { block = current.quotes + value }
             else if let current = MacBlockPrefix(currentBlock), current.list, !current.checklist, value == current.display + "[ ] " || value == current.display + "[x] " || value == current.display + "[X] " { block = current.replacingMarker(current.marker + (value.contains("[ ]") ? "[ ] " : "[x] ")) }
             guard let block else { return }
+            if !body.isEmpty {
+                // Restyle the existing line: drop only the typed characters
+                // (an existing list marker is replaced by settingBlock) and
+                // keep the body's inline formatting.
+                let original = view.attributedString()
+                let shown = MacMarkdown.displayPrefix(currentBlock) as NSString
+                let kept = value.hasPrefix(shown as String) ? shown.length : 0
+                let item = NSMutableAttributedString(attributedString: original.attributedSubstring(from: paragraph))
+                item.deleteCharacters(in: NSRange(location: kept, length: headLength - kept))
+                let replacement = MacMarkdown.settingBlock(item, to: block)
+                let output = NSMutableAttributedString(attributedString: original); output.replaceCharacters(in: paragraph, with: replacement)
+                let caret = paragraph.location + (MacMarkdown.displayPrefix(block) as NSString).length
+                var typing = caret < output.length ? output.attributes(at: caret, effectiveRange: nil) : typingAttributes(block: block)
+                for key in [NSAttributedString.Key.macOriginal, .macSignature, .macParagraphID, .macParagraphSource, .macParagraphSignature, .macListBreak, .macHardBreak] { typing.removeValue(forKey: key) }
+                commit(output, selection: NSRange(location: caret, length: 0), typing: typing, name: "Markdown shortcut")
+                return
+            }
             var typing = typingAttributes(block: block)
             let hasNewline = raw.substring(with: paragraph).hasSuffix("\n")
             let endingAttributes = hasNewline ? view.attributedString().attributes(at: NSMaxRange(paragraph) - 1, effectiveRange: nil) : previousAttributes

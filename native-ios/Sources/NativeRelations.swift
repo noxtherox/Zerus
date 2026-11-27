@@ -236,17 +236,17 @@ extension VaultFiles {
         _ = try snapshot.definition(); _ = try snapshot.references()
         return snapshot
     }
-    func applyRelation(_ plan: NativeRelationPlan) throws -> VaultSnapshot {
-        try applyRelationChanges(schema: plan.snapshot.schema, notes: plan.snapshot.notes, changes: plan.changes)
+    func applyRelation(_ plan: NativeRelationPlan, historyLabels: [String: String] = [:]) throws -> VaultSnapshot {
+        try applyRelationChanges(schema: plan.snapshot.schema, notes: plan.snapshot.notes, changes: plan.changes, historyLabels: historyLabels)
     }
-    func applyRelationChanges(schema: NativeSchemaSnapshot, notes: [NoteDocument], changes: [VaultFileChange], reading: [URL] = [], validate: @escaping @Sendable () throws -> Void = {}) throws -> VaultSnapshot {
+    func applyRelationChanges(schema: NativeSchemaSnapshot, notes: [NoteDocument], changes: [VaultFileChange], reading: [URL] = [], historyLabels: [String: String] = [:], validate: @escaping @Sendable () throws -> Void = {}) throws -> VaultSnapshot {
         guard schema.root == root else { throw VaultFailure(message: "The vault changed. Reload this relation.") }
         let current = try scan()
         struct Identity: Hashable { let path: String; let title: String; let stableID: String? }
         let before = Set(notes.map { Identity(path: $0.path, title: $0.title, stableID: $0.stableID) })
         let now = Set(current.notes.map { Identity(path: $0.path, title: $0.title, stableID: $0.stableID) })
         guard before == now else { throw VaultFailure(message: "Notes were added, moved or renamed while this relation was being reviewed. Reload it to use the latest targets.") }
-        try applyTransaction(changes, reading: reading, validate: validate)
+        try applyTransaction(changes, historyLabels: historyLabels, reading: reading, validate: validate)
         return try scan()
     }
 }

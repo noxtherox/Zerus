@@ -87,7 +87,11 @@ final class MacWorkspace {
     var folderCollection = false
     var query = "" { didSet { if query != oldValue { editorFocusRequest = nil; clearCollectionSelection() }; persistNavigation(deferWrite: true) } }
     var filters = NativeCollectionFilters() { didSet { if filters != oldValue { clearCollectionSelection() }; persistNavigation() } }
-    var selection: String? { didSet { if let previous = oldValue, previous != selection { scheduleTitleFileSync(previous) } } }
+    var selection: String? { didSet {
+        if let previous = oldValue, previous != selection { scheduleTitleFileSync(previous) }
+        // Undo is offered only on the note the relation was removed from.
+        if relationUndo != nil, relationUndo?.sourcePath != selection { relationUndo = nil }
+    } }
     /// Title each note had when last opened, used to tell whether its file
     /// name still follows the title (see `MacTitleFileSync`).
     @ObservationIgnored private var openedTitles: [String: String] = [:]
@@ -159,6 +163,8 @@ final class MacWorkspace {
     private var startupTaskData: Data?
     @ObservationIgnored private var cacheWrite: Task<Void, Never>?
     var issue: String?
+    /// The last relation removal on the selected note, which can be undone on both sides.
+    var relationUndo: MacRelationUndo?
     var saveStatus: String {
         get { draftState.saveStatus }
         set { if draftState.saveStatus != newValue { draftState.saveStatus = newValue } }
@@ -1758,4 +1764,93 @@ final class MacWorkspace {
         } else { issue = targets.isEmpty ? "This note link could not be found in the current vault." : "This note link matches more than one note. Use a stable note link." }
     }
     func reveal(_ note: NoteDocument) { if let root { NSWorkspace.shared.activateFileViewerSelecting([root.appendingPathComponent(note.path)]) } }
+}
+
+/// A reviewed removal of one target from a paired relation. The plan is built
+/// by the same planner as the relation editor, so the inverse link on the
+/// target note is removed in the same transaction.
+struct MacRelationRemoval: Identifiable {
+    let id = UUID()
+    let workspaceID: UUID
+    let sourcePath: String
+    let relation: String
+    let title: String
+    /// The removed note; nil for an unresolved link, which has no inverse.
+    let targetPath: String?
+    var resolved: Bool { targetPath != nil }
+    let plan: NativeRelationPlan
+    /// Labels for each note's automatic history version.
+    let historyLabels: [String: String]
+    /// Changed notes other than the source and the removed target, e.g. legacy
+    /// links that the planner upgrades to stable paired links.
+    let otherChanges: [String]
+}
+
+/// Re-adds a removed target through the paired planner, so both notes are
+/// restored together. Restoring one note from history would leave the other
+/// note's inverse link missing.
+struct MacRelationUndo: Equatable {
+    let workspaceID: UUID
+    let sourcePath: String
+    let relation: String
+    let targetPath: String
+    let title: String
+}
+
+extension MacWorkspace {
+    static func relationHistoryLabels(_ changed: [String], source: String, target: String?, sourceTitle: String, targetTitle: String, relation: String, restoring: Bool) -> [String: String] {
+        var labels: [String: String] = [:]
+        for path in changed { labels[path] = "Relation links updated with “\(sourceTitle)”" }
+        labels[source] = restoring ? "Restored “\(targetTitle)” to \(relation)" : target == nil ? "Removed unavailable link “\(targetTitle)” from \(relation)" : "Removed “\(targetTitle)” from \(relation)"
+        if let target { labels[target] = restoring ? "Relinked to “\(sourceTitle)” (\(relation))" : "Unlinked from “\(sourceTitle)” (\(relation))" }
+        return labels
+    }
+    /// Plans removing `reference` (a raw frontmatter value) from relation `name`
+    /// on the selected note. Nothing is written until `commitRelationRemoval`.
+    func prepareRelationRemoval(_ name: String, reference: String, title: String) async -> MacRelationRemoval? {
+        guard !busy, let io, let path = selection else { return nil }
+        let origin = workspaceID
+        // The snapshot reads from disk, so pending editor text must land first.
+        guard await save(), origin == workspaceID, selection == path else { return nil }
+        do {
+            let snapshot = try await io.relationSnapshot(notePath: path, name: name)
+            let current = try snapshot.selection()
+            var selected = current.paths, unresolved = Set(current.unresolved)
+            let found = snapshot.matches(reference)
+            var removedPath: String?
+            if unresolved.contains(reference) { unresolved.remove(reference) }
+            else if found.count == 1, selected.contains(found[0].path) { selected.remove(found[0].path); removedPath = found[0].path }
+            else { throw VaultFailure(message: "This relation changed. Reload note information and try again.") }
+            let plan = try snapshot.plan(selected: selected, unresolved: unresolved)
+            guard origin == workspaceID, selection == path else { return nil }
+            let others = plan.changedNotes.filter { $0 != path && $0 != removedPath }
+            let labels = Self.relationHistoryLabels(plan.changedNotes, source: path, target: removedPath, sourceTitle: snapshot.source?.title ?? path, targetTitle: title, relation: name, restoring: false)
+            return MacRelationRemoval(workspaceID: origin, sourcePath: path, relation: name, title: title, targetPath: removedPath, plan: plan, historyLabels: labels, otherChanges: others)
+        } catch { issue = error.localizedDescription; return nil }
+    }
+    func commitRelationRemoval(_ removal: MacRelationRemoval) async {
+        guard let io, removal.workspaceID == workspaceID, selection == removal.sourcePath else { issue = "The note changed. Remove the relation again."; return }
+        guard await save(), removal.workspaceID == workspaceID else { return }
+        do {
+            apply(try await io.applyRelation(removal.plan, historyLabels: removal.historyLabels)); await reloadCurrent()
+            relationUndo = removal.targetPath.map { .init(workspaceID: removal.workspaceID, sourcePath: removal.sourcePath, relation: removal.relation, targetPath: $0, title: removal.title) }
+        } catch { issue = error.localizedDescription }
+    }
+    /// Links the removed note again on both sides. It is appended after the
+    /// relation's current notes, as the relation editor does.
+    func undoRelationRemoval() async {
+        guard let undo = relationUndo, let io, undo.workspaceID == workspaceID, selection == undo.sourcePath else { relationUndo = nil; return }
+        guard await save(), undo.workspaceID == workspaceID, selection == undo.sourcePath else { return }
+        do {
+            let snapshot = try await io.relationSnapshot(notePath: undo.sourcePath, name: undo.relation)
+            guard snapshot.notes.contains(where: { $0.path == undo.targetPath && !$0.trashed }) else { throw VaultFailure(message: "“\(undo.title)” was moved, renamed or trashed. Link it again from \(undo.relation).") }
+            let current = try snapshot.selection()
+            let plan = try snapshot.plan(selected: current.paths.union([undo.targetPath]), unresolved: Set(current.unresolved))
+            guard undo.workspaceID == workspaceID, selection == undo.sourcePath else { return }
+            let target = snapshot.notes.first { $0.path == undo.targetPath }?.title ?? undo.title
+            let labels = Self.relationHistoryLabels(plan.changedNotes, source: undo.sourcePath, target: undo.targetPath, sourceTitle: snapshot.source?.title ?? undo.sourcePath, targetTitle: target, relation: undo.relation, restoring: true)
+            apply(try await io.applyRelation(plan, historyLabels: labels)); await reloadCurrent()
+            relationUndo = nil
+        } catch { issue = error.localizedDescription }
+    }
 }

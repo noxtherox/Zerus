@@ -6856,6 +6856,40 @@ final class MacDocumentTests: XCTestCase {
         try await Task.sleep(nanoseconds: 650_000_000)
         XCTAssertFalse(preview.shown, "A pending hover must not attach a late preview after navigation or editing dismisses it")
     }
+    @MainActor func testTypedBlockPrefixRestylesExistingLine() {
+        func type(_ text: String, into view: NSTextView) { for character in text { view.insertText(String(character), replacementRange: view.selectedRange()) } }
+        for (source, line, typed, expected) in [
+            ("Intro\n\nDo we revoke?\n", "Do we", "* ", "Intro\n\n* Do we revoke?\n"),
+            ("Intro\n\nDo we revoke?\n", "Do we", "- ", "Intro\n\n- Do we revoke?\n"),
+            ("Intro\n\nDo we revoke?\n", "Do we", "1. ", "Intro\n\n1. Do we revoke?\n"),
+            ("Intro\n\nDo we revoke?\n", "Do we", "## ", "Intro\n\n## Do we revoke?\n"),
+            ("Intro\n\nDo we revoke?\n", "Do we", "> ", "Intro\n\n> Do we revoke?\n"),
+            ("# Title\n\n## Section\n", "Section", "### ", "# Title\n\n### Section\n"),
+            ("# Title\n\n## Section\n", "Section", "- ", "# Title\n\n- Section\n"),
+            ("Intro\n\nKeep **bold** text\n", "Keep", "# ", "Intro\n\n# Keep **bold** text\n"),
+        ] {
+            withEditor(source) { view, coordinator in
+                let start = (view.string as NSString).range(of: line)
+                guard start.location != NSNotFound else { XCTFail("Missing line \(line)"); return }
+                view.setSelectedRange(NSRange(location: start.location, length: 0))
+                type(typed, into: view)
+                XCTAssertEqual(coordinator.lastMarkdown, expected, typed)
+                type("X", into: view)
+                XCTAssertTrue(coordinator.lastMarkdown.contains("X" + line), "Typing continues at the start of the restyled body: \(coordinator.lastMarkdown)")
+                coordinator.action("undo"); coordinator.action("undo")
+                XCTAssertFalse(coordinator.lastMarkdown.contains("X"))
+            }
+        }
+        // Mid-sentence spaces and asterisks remain literal text.
+        withEditor("Do we revoke?\n") { view, coordinator in
+            let at = (view.string as NSString).range(of: "revoke")
+            view.setSelectedRange(NSRange(location: at.location, length: 0))
+            type("* ", into: view)
+            XCTAssertFalse(coordinator.lastMarkdown.hasPrefix("* "))
+            XCTAssertFalse(coordinator.lastMarkdown.hasPrefix("- "))
+        }
+    }
+
     func testNotePreviewResolvesIdentityHeadingAndRelativePathsWithoutAmbiguousFallback() {
         let first = NoteDocument(path: "Work/Original.md", content: "---\nzerus-id: original\n---\n# Plan\n\n## Details\nCurrent draft detail.\n", modified: Date())
         let duplicate = NoteDocument(path: "Other/Plan.md", content: "---\nzerus-id: other\n---\n# Plan\nReplacement.\n", modified: Date())
