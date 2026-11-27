@@ -113,6 +113,30 @@ describe("note view configuration", () => {
     }]);
   });
 
+  it("keeps valid property conditions and drops incomplete ones", () => {
+    expect(
+      normalizeTypeViewConfigs({
+        Stories: {
+          filters: {
+            properties: [
+              { name: "ADO ID", valueKeys: null, condition: { kind: "empty" } },
+              { name: "Points", valueKeys: null, condition: { kind: "number", operator: "between", value: 2, endValue: 8 } },
+              { name: "Due", valueKeys: null, condition: { kind: "relative-date", range: "before-today" } },
+              { name: "Broken", valueKeys: null, condition: { kind: "number", operator: "gt", value: "3" } },
+              { name: "Future", valueKeys: null, condition: { kind: "regex" } },
+            ],
+          },
+        },
+      }).Stories.filters.properties,
+    ).toEqual([
+      { name: "ADO ID", valueKeys: null, condition: { kind: "empty" } },
+      { name: "Points", valueKeys: null, condition: { kind: "number", operator: "between", value: 2, endValue: 8 } },
+      { name: "Due", valueKeys: null, condition: { kind: "relative-date", range: "before-today" } },
+      { name: "Broken", valueKeys: null },
+      { name: "Future", valueKeys: null },
+    ]);
+  });
+
   it("reconciles saved Kanban order with current property values", () => {
     expect(
       reconcileBoardColumnOrder(

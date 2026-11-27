@@ -4,7 +4,9 @@ import {
   filterNotes,
   propertyFilterValueKeys,
   propertyValueKey,
+  relativeDateBounds,
   type NoteListFilters,
+  type NotePropertyFilter,
 } from "./filters";
 import type { Note } from "./note-utils";
 import { setFileHubReference } from "./file-hubs";
@@ -302,5 +304,36 @@ describe("note list filters", () => {
         "",
       ).map((item) => item.id),
     ).toEqual(["one"]);
+  });
+
+  it("matches empty, checkbox, number and relative-date conditions", () => {
+    const conditionNotes = [
+      note("blank", "s/blank.md", "ado: \npoints: 5\ndone: true\ndue: 2026-11-26", "2026-11-01T00:00:00.000Z"),
+      note("missing", "s/missing.md", "points: 2\ndue: 2026-11-27", "2026-11-01T00:00:00.000Z"),
+      note("filled", "s/filled.md", "ado: 123\npoints: \"9\"\ndone: false\ndue: 2026-12-03", "2026-11-01T00:00:00.000Z"),
+    ];
+    const now = new Date(2026, 10, 27, 12);
+    const ids = (filter: NotePropertyFilter) =>
+      filterNotes(conditionNotes, { kind: "all" }, "", { ...empty, properties: [filter] }, now)
+        .map((item) => item.id)
+        .sort();
+    expect(ids({ name: "ADO", valueKeys: null, condition: { kind: "empty" } })).toEqual(["blank", "missing"]);
+    expect(ids({ name: "ado", valueKeys: null, condition: { kind: "not-empty" } })).toEqual(["filled"]);
+    expect(ids({ name: "done", valueKeys: null, condition: { kind: "checked" } })).toEqual(["blank"]);
+    expect(ids({ name: "done", valueKeys: null, condition: { kind: "unchecked" } })).toEqual(["filled", "missing"]);
+    expect(ids({ name: "points", valueKeys: null, condition: { kind: "number", operator: "gt", value: 3 } })).toEqual(["blank"]);
+    expect(ids({ name: "points", valueKeys: null, condition: { kind: "number", operator: "between", value: 6, endValue: 1 } })).toEqual(["blank", "missing"]);
+    expect(ids({ name: "due", valueKeys: null, condition: { kind: "relative-date", range: "before-today" } })).toEqual(["blank"]);
+    expect(ids({ name: "due", valueKeys: null, condition: { kind: "relative-date", range: "next-7-days" } })).toEqual(["filled", "missing"]);
+  });
+
+  it("resolves relative ranges with Monday-start weeks and whole months", () => {
+    const friday = new Date(2026, 10, 27, 12);
+    expect(relativeDateBounds("this-week", friday)).toEqual(["2026-11-23", "2026-11-29"]);
+    expect(relativeDateBounds("this-week", new Date(2026, 10, 29))).toEqual(["2026-11-23", "2026-11-29"]);
+    expect(relativeDateBounds("this-month", friday)).toEqual(["2026-11-01", "2026-11-30"]);
+    expect(relativeDateBounds("before-today", friday)).toEqual([null, "2026-11-26"]);
+    expect(relativeDateBounds("after-today", friday)).toEqual(["2026-11-28", null]);
+    expect(relativeDateBounds("last-30-days", friday)).toEqual(["2026-10-29", "2026-11-27"]);
   });
 });

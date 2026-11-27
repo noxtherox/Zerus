@@ -14,6 +14,51 @@ enum NativePropertyDateComparison: String, CaseIterable, Identifiable, Sendable 
     case on = "On", before = "Before", after = "After", onOrBefore = "On or before", onOrAfter = "On or after", between = "Between"
     var id: String { rawValue }
 }
+/// Conditions stored beside value and fixed-date filters. Saved views persist
+/// them under the portable `condition` key that desktop and web also read.
+enum NativePropertyCondition: String, CaseIterable, Identifiable, Sendable {
+    case empty = "Is empty", notEmpty = "Is not empty", checked = "Is checked", unchecked = "Is unchecked"
+    case number = "Number comparison", relativeDate = "Relative date"
+    var id: String { rawValue }
+}
+enum NativeNumberComparison: String, CaseIterable, Identifiable, Sendable {
+    case equal = "=", notEqual = "≠", greater = ">", greaterOrEqual = "≥", less = "<", lessOrEqual = "≤", between = "Between"
+    var id: String { rawValue }
+}
+/// Ranges are resolved against the local calendar day each time a view is
+/// evaluated, so a saved "Overdue" view never goes stale. Weeks start Monday
+/// on every platform so a shared view selects the same notes everywhere.
+enum NativeRelativeDate: String, CaseIterable, Identifiable, Sendable {
+    case overdue = "Before today", today = "Today", tomorrow = "Tomorrow", yesterday = "Yesterday"
+    case next7 = "Next 7 days", last7 = "Last 7 days", thisWeek = "This week", thisMonth = "This month"
+    case next30 = "Next 30 days", last30 = "Last 30 days", upcoming = "After today"
+    var id: String { rawValue }
+    /// Inclusive yyyy-MM-dd bounds; nil leaves that side open.
+    func bounds(now: Date, calendar: Calendar) -> (String?, String?) {
+        var calendar = calendar; calendar.firstWeekday = 2
+        let today = calendar.startOfDay(for: now)
+        func day(_ offset: Int, from base: Date? = nil) -> String { NativeTask.day(calendar.date(byAdding: .day, value: offset, to: base ?? today) ?? today, calendar: calendar) }
+        switch self {
+        case .overdue: return (nil, day(-1))
+        case .today: return (day(0), day(0))
+        case .tomorrow: return (day(1), day(1))
+        case .yesterday: return (day(-1), day(-1))
+        case .next7: return (day(0), day(6))
+        case .last7: return (day(-6), day(0))
+        case .next30: return (day(0), day(29))
+        case .last30: return (day(-29), day(0))
+        case .upcoming: return (day(1), nil)
+        case .thisWeek:
+            let start = calendar.dateInterval(of: .weekOfYear, for: today)?.start ?? today
+            return (day(0, from: start), day(6, from: start))
+        case .thisMonth:
+            let interval = calendar.dateInterval(of: .month, for: today)
+            let start = interval?.start ?? today
+            let length = calendar.range(of: .day, in: .month, for: today)?.count ?? 1
+            return (day(0, from: start), day(length - 1, from: start))
+        }
+    }
+}
 struct NativeCollectionValue: Hashable, Identifiable, Sendable {
     enum Kind: String, Sendable { case text, number, checkbox }
     let kind: Kind
@@ -37,7 +82,61 @@ struct NativeCollectionPropertyFilter: Equatable, Identifiable, Sendable {
     var dateComparison: NativePropertyDateComparison?
     var date = ""
     var endDate = ""
-    func matches(_ fields: NativeFrontmatter) -> Bool {
+    var condition: NativePropertyCondition?
+    var numberComparison: NativeNumberComparison = .equal
+    var number = ""
+    var endNumber = ""
+    var relativeDate: NativeRelativeDate = .today
+    /// A blank, missing or unparseable value counts as empty.
+    static func isEmpty(_ property: NativePropertyValue?) -> Bool {
+        switch property {
+        case nil: return true
+        case .text(let value), .number(let value): return value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .list(let values): return values.allSatisfy { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        case .checkbox: return false
+        }
+    }
+    static func parseNumber(_ value: String) -> Double? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        guard trimmed.range(of: #"^-?(\d+\.?\d*|\.\d+)$"#, options: .regularExpression) != nil else { return nil }
+        return Double(trimmed)
+    }
+    /// An incomplete number condition cannot be saved or applied.
+    var isComplete: Bool {
+        guard condition == .number else { return true }
+        return Self.parseNumber(number) != nil && (numberComparison != .between || Self.parseNumber(endNumber) != nil)
+    }
+    func matches(_ fields: NativeFrontmatter, now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        if let condition {
+            let property = fields.entry(name)?.value
+            switch condition {
+            case .empty: return Self.isEmpty(property)
+            case .notEmpty: return !Self.isEmpty(property)
+            case .checked: return property == .checkbox(true)
+            case .unchecked: return property == .checkbox(false) || Self.isEmpty(property)
+            case .number:
+                // An unfinished number leaves the list unchanged while typing.
+                guard isComplete, let target = Self.parseNumber(number) else { return true }
+                guard case .number(let raw)? = property, let value = Self.parseNumber(raw) else { return false }
+                switch numberComparison {
+                case .equal: return value == target
+                case .notEqual: return value != target
+                case .greater: return value > target
+                case .greaterOrEqual: return value >= target
+                case .less: return value < target
+                case .lessOrEqual: return value <= target
+                case .between:
+                    let end = Self.parseNumber(endNumber) ?? target
+                    return value >= min(target, end) && value <= max(target, end)
+                }
+            case .relativeDate:
+                guard let property else { return false }
+                let (start, end) = relativeDate.bounds(now: now, calendar: calendar)
+                return NativeCollectionValue.values(property).contains { value in
+                    value.kind == .text && Self.isDate(value.value) && start.map { value.value >= $0 } != false && end.map { value.value <= $0 } != false
+                }
+            }
+        }
         guard let property = fields.entry(name)?.value else { return false }
         if let comparison = dateComparison {
             guard Self.isDate(date) else { return false }
@@ -61,6 +160,8 @@ struct NativeCollectionPropertyOption: Identifiable {
     let name: String
     var values: Set<NativeCollectionValue>
     var isDate: Bool
+    var isNumber = false
+    var isCheckbox = false
     var id: String { name.lowercased() }
 }
 struct NativeCollectionFilters: Equatable, Sendable {
@@ -95,7 +196,7 @@ struct NativeCollectionFilters: Equatable, Sendable {
                   search.isEmpty || Self.matches(note, search: search, spaced: spaced) else { return false }
             if properties.isEmpty { return true }
             let fields = NativeFrontmatterCache.read(note.content)
-            return matchAnyProperty ? properties.contains { $0.matches(fields) } : properties.allSatisfy { $0.matches(fields) }
+            return matchAnyProperty ? properties.contains { $0.matches(fields, now: now, calendar: calendar) } : properties.allSatisfy { $0.matches(fields, now: now, calendar: calendar) }
         }.map { note in
             (note: note, pinned: note.pinned, title: sortingByTitle ? (fileNames ? (note.fileHub?.name ?? note.title) : note.title) : "")
         }.sorted { left, right in
@@ -153,7 +254,10 @@ struct NativeCollectionFilters: Equatable, Sendable {
         }
         return options.map { key, option in
             var result = option
-            result.isDate = types[key] == [NativePropertyType.date.rawValue] || (types[key, default: []].isEmpty && !option.values.isEmpty && option.values.allSatisfy { $0.kind == .text && NativeCollectionPropertyFilter.isDate($0.value) })
+            let declared = types[key, default: []]
+            result.isDate = declared == [NativePropertyType.date.rawValue] || (declared.isEmpty && !option.values.isEmpty && option.values.allSatisfy { $0.kind == .text && NativeCollectionPropertyFilter.isDate($0.value) })
+            result.isNumber = declared == [NativePropertyType.number.rawValue] || (declared.isEmpty && !option.values.isEmpty && option.values.allSatisfy { $0.kind == .number })
+            result.isCheckbox = declared == [NativePropertyType.checkbox.rawValue] || (declared.isEmpty && !option.values.isEmpty && option.values.allSatisfy { $0.kind == .checkbox })
             return result
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }

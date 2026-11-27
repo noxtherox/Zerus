@@ -77,16 +77,21 @@ struct MacCollectionState: Codable {
         let comparison: String?
         let date: String
         let endDate: String
+        var condition: String? = nil
+        var numberComparison: String? = nil
+        var number: String? = nil
+        var endNumber: String? = nil
+        var relativeDate: String? = nil
     }
     init(query: String = "", mode: String = "List", filters: NativeCollectionFilters = .init(), hideSubtypes: Bool = false, layout: MacCollectionLayout? = nil) {
         self.layout = layout; self.query = query; self.mode = mode; self.sort = filters.sort.rawValue; self.date = filters.date.rawValue
         includeArchived = filters.includeArchived; folders = filters.folders; extensions = filters.extensions
         matchAnyProperty = filters.matchAnyProperty; self.hideSubtypes = hideSubtypes
-        properties = filters.properties.map { filter in .init(name: filter.name, values: filter.values?.sorted { $0.id < $1.id }.map { .init(kind: $0.kind.rawValue, value: $0.value) }, comparison: filter.dateComparison?.rawValue, date: filter.date, endDate: filter.endDate) }
+        properties = filters.properties.map { filter in .init(name: filter.name, values: filter.values?.sorted { $0.id < $1.id }.map { .init(kind: $0.kind.rawValue, value: $0.value) }, comparison: filter.dateComparison?.rawValue, date: filter.date, endDate: filter.endDate, condition: filter.condition?.rawValue, numberComparison: filter.numberComparison.rawValue, number: filter.number, endNumber: filter.endNumber, relativeDate: filter.relativeDate.rawValue) }
     }
     var filters: NativeCollectionFilters {
         .init(sort: NativeNoteSort(rawValue: sort) ?? .updatedDescending, date: NativeNoteDate(rawValue: date) ?? .any, includeArchived: includeArchived, folders: folders, extensions: extensions, matchAnyProperty: matchAnyProperty, properties: properties.map { property in
-            .init(name: property.name, values: property.values.map { Set($0.compactMap { value in NativeCollectionValue.Kind(rawValue: value.kind).map { NativeCollectionValue(kind: $0, value: value.value) } }) }, dateComparison: property.comparison.flatMap(NativePropertyDateComparison.init(rawValue:)), date: property.date, endDate: property.endDate)
+            .init(name: property.name, values: property.values.map { Set($0.compactMap { value in NativeCollectionValue.Kind(rawValue: value.kind).map { NativeCollectionValue(kind: $0, value: value.value) } }) }, dateComparison: property.comparison.flatMap(NativePropertyDateComparison.init(rawValue:)), date: property.date, endDate: property.endDate, condition: property.condition.flatMap(NativePropertyCondition.init(rawValue:)), numberComparison: property.numberComparison.flatMap(NativeNumberComparison.init(rawValue:)) ?? .equal, number: property.number ?? "", endNumber: property.endNumber ?? "", relativeDate: property.relativeDate.flatMap(NativeRelativeDate.init(rawValue:)) ?? .today)
         })
     }
 }

@@ -7,6 +7,30 @@ import Vision
 @testable import Zerus_Native
 
 final class MacCollectionTests: XCTestCase {
+    func testSavedViewConditionsRoundTripAndLeaveOlderClientsAPresenceFilter() throws {
+        var filters = NativeCollectionFilters()
+        filters.properties = [
+            .init(name: "ADO ID", condition: .empty), .init(name: "Done", condition: .unchecked),
+            .init(name: "Points", condition: .number, numberComparison: .between, number: "2", endNumber: "8"),
+            .init(name: "Due", condition: .relativeDate, relativeDate: .overdue)
+        ]
+        XCTAssertTrue(MacSharedFilters.canPersist(filters))
+        let raw = MacSharedFilters.patch(filters, into: ["properties": [["name": "Due", "date": ["operator": "on", "date": "2026-11-01"], "futureKey": 1]]])
+        let json = try JSONSerialization.jsonObject(with: JSONSerialization.data(withJSONObject: raw))
+        let properties = try XCTUnwrap((json as? [String: Any])?["properties"] as? [[String: Any]])
+        XCTAssertTrue(properties.allSatisfy { $0["valueKeys"] is NSNull && $0["date"] == nil }, "Older clients must read conditions as a presence filter")
+        XCTAssertEqual(properties.last?["futureKey"] as? Int, 1)
+        XCTAssertEqual((properties[2]["condition"] as? [String: Any])?["endValue"] as? Double, 8)
+        let decoded = MacSharedFilters.decode(json).properties
+        XCTAssertEqual(decoded.map(\.condition), [.empty, .unchecked, .number, .relativeDate])
+        XCTAssertEqual(decoded[2].numberComparison, .between); XCTAssertEqual(decoded[2].number, "2"); XCTAssertEqual(decoded[2].endNumber, "8")
+        XCTAssertEqual(decoded[3].relativeDate, .overdue)
+        filters.properties = [.init(name: "Points", condition: .number, number: "")]
+        XCTAssertFalse(MacSharedFilters.canPersist(filters))
+        let state = MacCollectionState(filters: .init(properties: [.init(name: "Due", condition: .relativeDate, relativeDate: .next7)]))
+        let restored = try JSONDecoder().decode(MacCollectionState.self, from: JSONEncoder().encode(state)).filters.properties.first
+        XCTAssertEqual(restored?.condition, .relativeDate); XCTAssertEqual(restored?.relativeDate, .next7)
+    }
     func testCollectionSnippetsKeepWordsSeparateAcrossHTMLBreaksWithoutChangingFiles() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Zerus-snippet-breaks-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

@@ -688,7 +688,7 @@ struct MacWorkspaceView: View {
                         let reference = NoteReference(wikilink: "[[" + text + "]]")
                         let found = reference?.targets(in: store.notes) ?? []
                         let target = found.count == 1 ? found[0] : nil
-                        MacInspectorNoteLink(title: target?.title ?? (reference?.explicitLabel == true ? reference!.label : text), detail: target?.folder, available: target != nil) {
+                        MacInspectorNoteLink(title: target?.title ?? (reference?.explicitLabel == true ? reference!.label : text), detail: target?.folder, available: target != nil, icon: target.flatMap { store.folderIcon($0.folder) }) {
                             if let target { Task { await store.openNote(target.path) } }
                         }
                     }
@@ -698,7 +698,7 @@ struct MacWorkspaceView: View {
                 MacInspectorGroupHeader(title: "Backlinks", count: store.backlinks.count, icon: "arrow.uturn.left")
                 if store.backlinks.isEmpty { Text("No notes link here yet").macFont(.system(size: 12)).foregroundStyle(.quaternary).padding(.horizontal, 6) }
                 ForEach(store.backlinks) { linked in
-                    MacInspectorNoteLink(title: linked.title, detail: linked.folder) { Task { await store.openNote(linked.path) } }
+                    MacInspectorNoteLink(title: linked.title, detail: linked.folder, icon: store.folderIcon(linked.folder)) { Task { await store.openNote(linked.path) } }
                 }
             }
         }

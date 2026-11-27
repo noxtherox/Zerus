@@ -5,8 +5,12 @@ import Foundation
 enum MacSharedFilters {
     static let sorts: [NativeNoteSort: String] = [.updatedDescending: "updated-desc", .updatedAscending: "updated-asc", .createdDescending: "created-desc", .createdAscending: "created-asc", .titleAscending: "title-asc", .titleDescending: "title-desc"]
     static let dates: [NativePropertyDateComparison: String] = [.on: "on", .before: "before", .after: "after", .onOrBefore: "on-or-before", .onOrAfter: "on-or-after", .between: "between"]
+    static let conditions: [NativePropertyCondition: String] = [.empty: "empty", .notEmpty: "not-empty", .checked: "checked", .unchecked: "unchecked", .number: "number", .relativeDate: "relative-date"]
+    static let numbers: [NativeNumberComparison: String] = [.equal: "eq", .notEqual: "neq", .greater: "gt", .greaterOrEqual: "gte", .less: "lt", .lessOrEqual: "lte", .between: "between"]
+    static let relativeDates: [NativeRelativeDate: String] = [.overdue: "before-today", .today: "today", .tomorrow: "tomorrow", .yesterday: "yesterday", .next7: "next-7-days", .last7: "last-7-days", .thisWeek: "this-week", .thisMonth: "this-month", .next30: "next-30-days", .last30: "last-30-days", .upcoming: "after-today"]
     static func canPersist(_ filters: NativeCollectionFilters) -> Bool {
         filters.properties.allSatisfy { filter in
+            if filter.condition != nil { return filter.isComplete }
             if let comparison = filter.dateComparison { return NativeCollectionPropertyFilter.isDate(filter.date) && (comparison != .between || NativeCollectionPropertyFilter.isDate(filter.endDate)) }
             return filter.values?.isEmpty != true
         }
@@ -19,6 +23,7 @@ enum MacSharedFilters {
         filters.matchAnyProperty = raw["propertyMatch"] as? String == "any"
         filters.properties = (raw["properties"] as? [[String: Any]] ?? []).compactMap { property in
             guard let name = (property["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else { return nil }
+            if let condition = decodeCondition(property["condition"], name: name) { return condition }
             let date = property["date"] as? [String: Any]
             let comparison = dates.first { $0.value == date?["operator"] as? String }?.key
             let start = date?["date"] as? String ?? "", end = date?["endDate"] as? String ?? ""
@@ -29,6 +34,40 @@ enum MacSharedFilters {
             return .init(name: name, values: keys.map { Set($0.compactMap(decodeValue)) }, dateComparison: validDate ? comparison : nil, date: validDate ? start : "", endDate: validDate ? end : "")
         }
         return filters
+    }
+    /// Conditions are stored beside `valueKeys: null`, so a client that predates
+    /// them still reads the filter as "has property" instead of dropping it.
+    static func decodeCondition(_ value: Any?, name: String) -> NativeCollectionPropertyFilter? {
+        guard let raw = value as? [String: Any], let condition = conditions.first(where: { $0.value == raw["kind"] as? String })?.key else { return nil }
+        var filter = NativeCollectionPropertyFilter(name: name, condition: condition)
+        switch condition {
+        case .number:
+            guard let comparison = numbers.first(where: { $0.value == raw["operator"] as? String })?.key, let number = numberText(raw["value"]) else { return nil }
+            filter.numberComparison = comparison; filter.number = number
+            if comparison == .between { guard let end = numberText(raw["endValue"]) else { return nil }; filter.endNumber = end }
+        case .relativeDate:
+            guard let range = relativeDates.first(where: { $0.value == raw["range"] as? String })?.key else { return nil }
+            filter.relativeDate = range
+        default: break
+        }
+        return filter
+    }
+    private static func numberText(_ value: Any?) -> String? {
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(), number.doubleValue.isFinite else { return nil }
+        return number.stringValue
+    }
+    static func encodeCondition(_ filter: NativeCollectionPropertyFilter) -> [String: Any]? {
+        guard let condition = filter.condition, let kind = conditions[condition] else { return nil }
+        var raw: [String: Any] = ["kind": kind]
+        switch condition {
+        case .number:
+            raw["operator"] = numbers[filter.numberComparison]
+            raw["value"] = NativeCollectionPropertyFilter.parseNumber(filter.number) ?? 0
+            if filter.numberComparison == .between { raw["endValue"] = NativeCollectionPropertyFilter.parseNumber(filter.endNumber) ?? 0 }
+        case .relativeDate: raw["range"] = relativeDates[filter.relativeDate]
+        default: break
+        }
+        return raw
     }
     static func decodeValue(_ key: String) -> NativeCollectionValue? {
         guard let separator = key.firstIndex(of: ":") else { return nil }
@@ -49,6 +88,12 @@ enum MacSharedFilters {
         raw["properties"] = filters.properties.map { filter -> [String: Any] in
             var property = old.first { ($0["name"] as? String)?.caseInsensitiveCompare(filter.name) == .orderedSame } ?? [:]
             property["name"] = filter.name
+            if let condition = encodeCondition(filter) {
+                property["condition"] = condition; property["valueKeys"] = NSNull()
+                property.removeValue(forKey: "valueKey"); property.removeValue(forKey: "date")
+                return property
+            }
+            property.removeValue(forKey: "condition")
             property["valueKeys"] = filter.values.map { $0.sorted { $0.id < $1.id }.map(valueKey) } as Any? ?? NSNull()
             property.removeValue(forKey: "valueKey")
             if let comparison = filter.dateComparison {

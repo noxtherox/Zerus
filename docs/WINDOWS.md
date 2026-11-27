@@ -43,6 +43,13 @@ node scripts/generate-windows-icons.mjs
 The generator updates only Windows resources, preserving the macOS and mobile
 icons. Rebuild the Windows app to embed the updated icon.
 
+The macOS, iOS and Android icons come from the full-bleed
+`src-tauri/icons/app-icon.svg` (`tauri icon src-tauri/icons/app-icon.svg
+--ios-color "#1E2023"`). Copy the generated `icon.icns`, PNGs and
+`ios/AppIcon-*.png` over `src-tauri/icons/` and both iOS `AppIcon.appiconset`
+folders. Keep `windows-icon.svg`, `app-icon.svg` and `public/zerus-logo*.svg` in
+sync so every platform uses the same mark.
+
 ## Microsoft Store MSIX
 
 Production Store releases use the manually dispatched **Windows desktop build**

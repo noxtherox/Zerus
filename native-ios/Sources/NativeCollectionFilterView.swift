@@ -94,6 +94,13 @@ struct NativeCollectionFilterView: View {
         Binding(get: { values.wrappedValue.contains(value) }, set: { included in if included { values.wrappedValue.insert(value) } else { values.wrappedValue.remove(value) } })
     }
     private func summary(_ value: NativeCollectionPropertyFilter) -> String {
+        if let condition = value.condition {
+            switch condition {
+            case .number: return value.numberComparison == .between ? "Between \(value.number) and \(value.endNumber)" : value.numberComparison.rawValue + " " + value.number
+            case .relativeDate: return value.relativeDate.rawValue
+            default: return condition.rawValue
+            }
+        }
         if let comparison = value.dateComparison { return comparison.rawValue + " " + value.date + (comparison == .between ? " – " + value.endDate : "") }
         guard let values = value.values else { return "Is present" }
         return values.isEmpty ? "No values selected" : values.sorted { $0.id < $1.id }.map(\.label).joined(separator: ", ")
@@ -124,10 +131,11 @@ private struct NativeCollectionPropertyFilterView: View {
     init(option: NativeCollectionPropertyOption, existing: NativeCollectionPropertyFilter?, save: @escaping (NativeCollectionPropertyFilter) -> Void) {
         self.option = option; self.save = save
         _filter = State(initialValue: existing ?? .init(name: option.name))
-        _mode = State(initialValue: existing?.dateComparison != nil ? "date" : existing?.values != nil ? "values" : "present")
+        _mode = State(initialValue: existing?.condition?.id ?? (existing?.dateComparison != nil ? "date" : existing?.values != nil ? "values" : "present"))
         _date = State(initialValue: existing.flatMap { Self.formatter.date(from: $0.date) } ?? Date())
         _endDate = State(initialValue: existing.flatMap { Self.formatter.date(from: $0.endDate) } ?? Date())
     }
+    private var numberReady: Bool { var probe = filter; probe.condition = .number; return probe.isComplete }
     private static var formatter: DateFormatter {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.calendar = Calendar(identifier: .gregorian); f.dateFormat = "yyyy-MM-dd"; return f
     }
@@ -135,7 +143,14 @@ private struct NativeCollectionPropertyFilterView: View {
         Form {
                 Picker("Match", selection: $mode) {
                     Text("Is present").tag("present"); Text("Selected values").tag("values")
-                    if option.isDate { Text("Date comparison").tag("date") }
+                    Text(NativePropertyCondition.empty.rawValue).tag(NativePropertyCondition.empty.id)
+                    Text(NativePropertyCondition.notEmpty.rawValue).tag(NativePropertyCondition.notEmpty.id)
+                    if option.isCheckbox {
+                        Text(NativePropertyCondition.checked.rawValue).tag(NativePropertyCondition.checked.id)
+                        Text(NativePropertyCondition.unchecked.rawValue).tag(NativePropertyCondition.unchecked.id)
+                    }
+                    if option.isNumber { Text(NativePropertyCondition.number.rawValue).tag(NativePropertyCondition.number.id) }
+                    if option.isDate { Text(NativePropertyCondition.relativeDate.rawValue).tag(NativePropertyCondition.relativeDate.id); Text("Date comparison").tag("date") }
                 }.pickerStyle(.navigationLink).accessibilityIdentifier("collection.property.mode")
                 if mode == "values" {
                     Section {
@@ -150,6 +165,12 @@ private struct NativeCollectionPropertyFilterView: View {
                             }.accessibilityIdentifier("collection.value." + value.id)
                         }
                     } footer: { Text("Select one or more values. Text, numbers and checkboxes are matched by their stored type.") }
+                } else if mode == NativePropertyCondition.number.id {
+                    Picker("Comparison", selection: $filter.numberComparison) { ForEach(NativeNumberComparison.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.navigationLink).accessibilityIdentifier("collection.number.comparison")
+                    TextField("Value", text: $filter.number).keyboardType(.numbersAndPunctuation).accessibilityIdentifier("collection.number.value")
+                    if filter.numberComparison == .between { TextField("End value", text: $filter.endNumber).keyboardType(.numbersAndPunctuation).accessibilityIdentifier("collection.number.end") }
+                } else if mode == NativePropertyCondition.relativeDate.id {
+                    Picker("Range", selection: $filter.relativeDate) { ForEach(NativeRelativeDate.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.inline).labelsHidden().accessibilityIdentifier("collection.relative")
                 } else if mode == "date" {
                     Picker("Comparison", selection: Binding(get: { filter.dateComparison ?? .on }, set: { filter.dateComparison = $0 })) { ForEach(NativePropertyDateComparison.allCases) { Text($0.rawValue).tag($0) } }.pickerStyle(.navigationLink)
                     DatePicker("Date", selection: $date, displayedComponents: .date)
@@ -161,11 +182,12 @@ private struct NativeCollectionPropertyFilterView: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Apply") {
                             var value = filter
+                            value.condition = NativePropertyCondition(rawValue: mode)
                             value.values = mode == "values" ? (filter.values ?? []) : nil
                             value.dateComparison = mode == "date" ? (filter.dateComparison ?? .on) : nil
                             value.date = Self.formatter.string(from: date); value.endDate = Self.formatter.string(from: endDate)
                             save(value)
-                        }.disabled(mode == "values" && (filter.values?.isEmpty ?? true)).accessibilityIdentifier("collection.property.apply")
+                        }.disabled(mode == "values" && (filter.values?.isEmpty ?? true) || mode == NativePropertyCondition.number.id && !numberReady).accessibilityIdentifier("collection.property.apply")
                     }
                 }
     }

@@ -114,4 +114,36 @@ final class NativeCollectionFiltersTests: XCTestCase {
         for (path, text) in hubs { let actual = try await io.read(path); XCTAssertEqual(actual, Data(text.utf8)) }
         for (path, text) in fixtures { let actual = try await io.read(path); XCTAssertEqual(actual, Data(text.utf8), path) }
     }
+
+    func testConditionsMatchEmptyCheckboxNumberAndRelativeDatesAgainstTheLocalDay() {
+        var calendar = Calendar(identifier: .gregorian); calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = ISO8601DateFormatter().date(from: "2026-11-27T12:00:00Z")! // Friday
+        func fields(_ text: String) -> NativeFrontmatter { NativeFrontmatter("---\n" + text + "\n---\nBody") }
+        func match(_ filter: NativeCollectionPropertyFilter, _ text: String) -> Bool { filter.matches(fields(text), now: now, calendar: calendar) }
+        let empty = NativeCollectionPropertyFilter(name: "ADO ID", condition: .empty)
+        XCTAssertTrue(match(empty, "Title: A")); XCTAssertTrue(match(empty, "ADO ID:")); XCTAssertTrue(match(empty, "ado id: []"))
+        XCTAssertFalse(match(empty, "ADO ID: 123"))
+        let filled = NativeCollectionPropertyFilter(name: "ADO ID", condition: .notEmpty)
+        XCTAssertTrue(match(filled, "ADO ID: 123")); XCTAssertFalse(match(filled, "ADO ID:")); XCTAssertFalse(match(filled, "Title: A"))
+        let checked = NativeCollectionPropertyFilter(name: "Done", condition: .checked), unchecked = NativeCollectionPropertyFilter(name: "Done", condition: .unchecked)
+        XCTAssertTrue(match(checked, "Done: true")); XCTAssertFalse(match(checked, "Done: false")); XCTAssertFalse(match(checked, "Done: \"true\""))
+        XCTAssertTrue(match(unchecked, "Done: false")); XCTAssertTrue(match(unchecked, "Title: A")); XCTAssertFalse(match(unchecked, "Done: true"))
+        var number = NativeCollectionPropertyFilter(name: "Points", condition: .number, numberComparison: .greater, number: "3")
+        XCTAssertTrue(match(number, "Points: 5")); XCTAssertFalse(match(number, "Points: 3")); XCTAssertFalse(match(number, "Points: \"5\"")); XCTAssertFalse(match(number, "Title: A"))
+        number.numberComparison = .between; number.endNumber = "1.5"
+        XCTAssertTrue(match(number, "Points: 2")); XCTAssertFalse(match(number, "Points: 5"))
+        number.number = "abc"; XCTAssertFalse(number.isComplete); XCTAssertTrue(match(number, "Points: 99"), "An unfinished number must not hide every note")
+        let cases: [(NativeRelativeDate, [String: Bool])] = [
+            (.overdue, ["2026-11-26": true, "2026-11-27": false]),
+            (.today, ["2026-11-27": true, "2026-11-28": false]),
+            (.next7, ["2026-11-27": true, "2026-12-03": true, "2026-12-04": false, "2026-11-26": false]),
+            (.thisWeek, ["2026-11-23": true, "2026-11-29": true, "2026-11-22": false, "2026-11-30": false]),
+            (.thisMonth, ["2026-11-01": true, "2026-11-30": true, "2026-12-01": false]),
+            (.upcoming, ["2026-11-28": true, "2026-11-27": false])
+        ]
+        for (range, expectations) in cases {
+            let filter = NativeCollectionPropertyFilter(name: "Due", condition: .relativeDate, relativeDate: range)
+            for (date, expected) in expectations { XCTAssertEqual(match(filter, "Due: " + date), expected, range.rawValue + " " + date) }
+        }
+    }
 }

@@ -7,6 +7,7 @@ import {
   type NotePropertyMatch,
   type NotePropertyFilter,
   type NoteSort,
+  normalizePropertyCondition,
 } from "@/lib/filters";
 import type { PropertyValue } from "@/lib/frontmatter";
 
@@ -80,12 +81,14 @@ function isNoteSort(value: unknown): value is NoteSort {
 
 function normalizePropertyFilters(value: unknown): NotePropertyFilter[] {
   if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
+  return value.flatMap((entry): NotePropertyFilter[] => {
     if (!entry || typeof entry !== "object") return [];
     const candidate = entry as Partial<NotePropertyFilter> & {
       valueKey?: unknown;
     };
     if (typeof candidate.name !== "string" || !candidate.name.trim()) return [];
+    const condition = normalizePropertyCondition(candidate.condition);
+    if (condition) return [{ name: candidate.name.trim(), valueKeys: null, condition }];
     const date = normalizePropertyDateFilter(candidate.date);
     const legacyValueKey = candidate.valueKey;
     const valueKeys = Array.isArray(candidate.valueKeys)

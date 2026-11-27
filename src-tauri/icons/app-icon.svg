@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 96 96">
+  <rect width="96" height="96" fill="#1E2023"/>
+  <mask id="zerus-orbit-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="96" height="96">
+    <rect width="96" height="96" fill="#fff"/>
+    <circle cx="65.68" cy="30.32" r="14" fill="#000"/>
+  </mask>
+  <g mask="url(#zerus-orbit-gap)">
+    <circle cx="48" cy="48" r="25" fill="none" stroke="#EBEDF0" stroke-width="8"/>
+    <circle cx="48" cy="48" r="3.5" fill="#EBEDF0"/>
+  </g>
+  <circle cx="65.68" cy="30.32" r="10.5" fill="#5B93EA"/>
+</svg>

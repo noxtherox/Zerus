@@ -175,12 +175,18 @@ struct MacInspectorNoteLink: View {
     let title: String
     var detail: String?
     var available = true
+    /// The linked note's folder icon; notes in folders without one keep the document symbol.
+    var icon: String?
     let open: () -> Void
     @State private var hovering = false
     var body: some View {
         Button(action: open) {
             HStack(spacing: 7) {
-                Image(systemName: available ? "doc.text" : "exclamationmark.triangle").macFont(.system(size: 11)).foregroundStyle(available ? AnyShapeStyle(theme.color(.link)) : AnyShapeStyle(.orange))
+                if available, let icon {
+                    MacFolderIcon(value: icon, size: 13).macFont(.system(size: 11)).foregroundStyle(theme.color(.link))
+                } else {
+                    Image(systemName: available ? "doc.text" : "exclamationmark.triangle").macFont(.system(size: 11)).foregroundStyle(available ? AnyShapeStyle(theme.color(.link)) : AnyShapeStyle(.orange))
+                }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).macFont(.system(size: 12.5, weight: .medium)).foregroundStyle(available ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary)).lineLimit(2)
                     if let detail, !detail.isEmpty { Text(detail).macFont(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle) }

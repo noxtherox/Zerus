@@ -36,7 +36,12 @@ struct MacFilterPanel: View {
 private struct MacPropertyFilterControls: View {
     @Binding var filter: NativeCollectionPropertyFilter
     let option: NativeCollectionPropertyOption?
-    var mode: Binding<String> { .init(get: { filter.dateComparison != nil ? "date" : filter.values == nil ? "present" : "values" }, set: { value in
+    var mode: Binding<String> { .init(get: {
+        if let condition = filter.condition { return condition.id }
+        return filter.dateComparison != nil ? "date" : filter.values == nil ? "present" : "values"
+    }, set: { value in
+        let condition = NativePropertyCondition(rawValue: value)
+        filter.condition = condition
         filter.dateComparison = value == "date" ? .on : nil
         filter.values = value == "values" ? [] : nil
         if value == "date" && filter.date.isEmpty { filter.date = NativeTask.day(Date()) }
@@ -46,9 +51,30 @@ private struct MacPropertyFilterControls: View {
             Picker("Compare", selection: mode) {
                 Text("Has property").tag("present")
                 Text("Accepted values").tag("values")
-                if option?.isDate == true || filter.dateComparison != nil { Text("Date comparison").tag("date") }
+                Text(NativePropertyCondition.empty.rawValue).tag(NativePropertyCondition.empty.id)
+                Text(NativePropertyCondition.notEmpty.rawValue).tag(NativePropertyCondition.notEmpty.id)
+                if option?.isCheckbox == true || filter.condition == .checked || filter.condition == .unchecked {
+                    Text(NativePropertyCondition.checked.rawValue).tag(NativePropertyCondition.checked.id)
+                    Text(NativePropertyCondition.unchecked.rawValue).tag(NativePropertyCondition.unchecked.id)
+                }
+                if option?.isNumber == true || filter.condition == .number { Text(NativePropertyCondition.number.rawValue).tag(NativePropertyCondition.number.id) }
+                if option?.isDate == true || filter.dateComparison != nil || filter.condition == .relativeDate {
+                    Text(NativePropertyCondition.relativeDate.rawValue).tag(NativePropertyCondition.relativeDate.id)
+                    Text("Date comparison").tag("date")
+                }
             }
-            if filter.dateComparison != nil {
+            if filter.condition == .number {
+                HStack {
+                    Picker("Number", selection: $filter.numberComparison) { ForEach(NativeNumberComparison.allCases) { Text($0.rawValue).tag($0) } }.labelsHidden().fixedSize()
+                    TextField("Value", text: $filter.number).textFieldStyle(.roundedBorder).frame(width: 80)
+                    if filter.numberComparison == .between { Text("and"); TextField("Value", text: $filter.endNumber).textFieldStyle(.roundedBorder).frame(width: 80) }
+                }
+                if !filter.isComplete { Text("Enter a number.").macFont(.caption2).foregroundStyle(.secondary) }
+            } else if filter.condition == .relativeDate {
+                Picker("Range", selection: $filter.relativeDate) { ForEach(NativeRelativeDate.allCases) { Text($0.rawValue).tag($0) } }
+            } else if filter.condition != nil {
+                EmptyView()
+            } else if filter.dateComparison != nil {
                 Picker("Date", selection: Binding(get: { filter.dateComparison ?? .on }, set: { filter.dateComparison = $0 })) { ForEach(NativePropertyDateComparison.allCases) { Text($0.rawValue).tag($0) } }
                 MacDateField("Date", value: $filter.date, allowEmpty: false, publishOnEdit: false)
                 if filter.dateComparison == .between { MacDateField("End date", value: $filter.endDate, allowEmpty: false, publishOnEdit: false) }
